@@ -264,6 +264,7 @@ function rpo_plan_comparison_path(
     rng=Random.default_rng(),
     runtime_limit_s::Real=Inf,
 )
+    HYPRSupport.require_hypr()
     cfg = _rpo_comparison_config_with_fixed_safe_distance(cfg)
     planner = normalize_rpo_comparison_planner_type(planner_type)
     base_cfg = rpo_pso_config(cfg.pso_config; safe_distance_m=cfg.safe_distance_m)
@@ -462,6 +463,7 @@ end
 
 """Track a retimed RPO path with LQ-MPC and report tracking/fuel metrics."""
 function rpo_track_retimed_path_lqmpc(path_rtn, goal_rtn, geometry, pso_cfg::RPOPSOConfig, tracking::RPOLQMPCTrackingSettings; safe_distance_m::Real=0.0)
+    HYPRSupport.require_hypr()
     retime_cfg = rpo_pso_config(
         pso_cfg;
         retime_dt_s=tracking.dt_s,
@@ -542,6 +544,7 @@ end
 
 """Run all configured RPO planners across all comparison cases."""
 function rpo_run_planner_comparison_batch(cases, geometry, cfg::RPOPlannerComparisonConfig=RPOPlannerComparisonConfig())
+    HYPRSupport.require_hypr()
     cfg = _rpo_comparison_config_with_fixed_safe_distance(cfg)
     comparison_cases = collect(cases)
     planner_types = [normalize_rpo_comparison_planner_type(p) for p in cfg.planners]

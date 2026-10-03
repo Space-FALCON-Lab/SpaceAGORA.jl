@@ -7,12 +7,13 @@ operation, and where your own code belongs.
 This page is for students and new contributors who can already run an example
 and now need to find their way around the repository. It describes the code as
 it is at commit
-[`884307fd`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/commit/884307fdc9476bc88753965b7d6603b69682ad0e)
+[`9be384a2`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/commit/9be384a20dfe28594a35341eed18e6fe945f1049)
 of `main` (browse that tree at
-[github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/884307fd](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/884307fdc9476bc88753965b7d6603b69682ad0e));
+[github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/9be384a2](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/9be384a20dfe28594a35341eed18e6fe945f1049));
 every path below is relative to the repository root at that commit. This is a
 map of existing code, not an approved target layout. Suggested cleanup is
-labelled separately; folder moves and optional algorithm extraction have not landed.
+labelled separately. One-run configuration now lives under `src/simulation/config/`,
+and HYPR execution is available through an explicitly loaded companion package.
 
 Shortest successful command:
 
@@ -53,7 +54,10 @@ identifies where their implementations live.
 A spacecraft contains components; a scenario contains spacecraft.
 `SpacecraftModel` in `src/vehicle/spacecraft/model.jl` holds its links,
 joints, root body, mass properties, actuators and initial conditions.
-`DynamicsModel` holds the spacecraft collection. This physical collection
+`DynamicsModel` in `src/simulation/config/constellation_configuration.jl` holds
+the spacecraft collection and selected dynamics effectors. It remains included
+inside `SpacecraftModels`, preserving the existing type and module identity.
+This physical collection
 can represent a single vehicle, a servicing pair or a constellation; it
 does not by itself allocate tasks or provide a communication network.
 
@@ -73,9 +77,10 @@ coordination belong at the mission level, above individual vehicle construction.
 The source-owner table below distinguishes vehicle construction from dynamics.
 Robot hardware, compliant equations, planning and control are currently spread
 across `src/vehicle/robotics/`, `src/dynamics/multibody_cloth/`,
-`src/gnc/robotics/` and `src/gnc/control/robot_arm_control.jl`. Their future
-package and folder boundaries remain under review; this page does not propose
-a new `control/robotics/` owner.
+`src/gnc/robotics/` and `src/gnc/control/robot_arm_control.jl`. HYPR robot-arm
+search is implemented in `packages/SpaceAGORAHYPR/src/robot/`; configuration
+and compatibility entry points remain in core. Other robotics folder boundaries
+remain under review.
 
 Use a joint simulation when spacecraft interact. The independent
 `run_constellation_ensemble` route in
@@ -93,7 +98,8 @@ the file that performs each step.
 1. **The example builds a configuration.** `examples/AGORA_Basic_Quickstart.jl`
    loads `examples/common.jl`, which activates the project and imports
    `SpaceAGORA`. The configuration is a
-   `SimulationConfiguration`
+   `SimulationConfiguration` defined in
+   `src/simulation/config/simulation_configuration.jl`,
    whose fields are listed on the [configuration page](simulation_configuration.md).
    Studies that derive a variant from an existing configuration use
    `SimulationModel.SimConfig._with_configuration`, defined in the same file, so
@@ -141,8 +147,11 @@ the file that performs each step.
    `src/gnc/guidance/guidance_hooks.jl`,
    `src/gnc/navigation/navigation_hooks.jl`
    and `src/gnc/control/control_hooks.jl`.
-   Concrete algorithms sit in subfolders (`guidance/aerobraking`, `guidance/rpo`,
-   `guidance/landing`, `control/rpo_mpc`, `control/aerobraking`), and the
+   Planner contracts live under `src/gnc/interfaces/` and their RPO lifecycle
+   under `src/gnc/guidance/rpo/`. Shared geometry, timing and metrics live under
+   `src/gnc/shared/`, and RRT kernels under `src/gnc/rrt/`. Concrete implementations also remain in the guidance and
+   control subfolders. Configured HYPR execution lives in the optional
+   `packages/SpaceAGORAHYPR/` companion described below, and the
    aerobraking strategy selector lives in
    `src/mission/operations/aerobraking_policy/`.
    Navigation and guidance hooks run as periodic callbacks between integrator
@@ -174,8 +183,11 @@ the file that performs each step.
 
 ## Map of the repository
 
-Package implementation lives in `src/` and `ext/`. The GRAMSuite extension
-activates when both packages are loaded; installation alone does not load it.
+Core package implementation lives in `src/` and `ext/`; the optional HYPR
+companion has its own source and project under `packages/SpaceAGORAHYPR/`.
+The GRAMSuite extension activates when both packages are loaded; installation
+alone does not load it. HYPR execution is enabled by explicitly loading
+`SpaceAGORAHYPR`, rather than by the GRAMSuite extension.
 The other folders hold tooling, data, examples and documentation. "Owner" below is the
 file or module that defines the behaviour; other code should call it rather
 than copy it.
@@ -183,18 +195,19 @@ than copy it.
 | Path | What it holds | Owner of the shared operation |
 | --- | --- | --- |
 | `src/SpaceAGORA.jl` | Includes the modules below in order and re-exports the public surface | the root package; the supported list is the generated [Public API](../generated/public_api.md) |
-| `src/core/` | Abstract types, configuration structs, reference frames, geodesy, quaternions, runtime types | configuration creation and copying: `core/state/simulation_configuration.jl`; frames: `core/interfaces/reference_system.jl`; quaternions: `core/numerics/quaternion_utils.jl` |
+| `src/core/` | Abstract types, shared state and runtime types, reference frames, geodesy, quaternions | frames: `core/interfaces/reference_system.jl`; quaternions: `core/numerics/quaternion_utils.jl`; model composition: `core/simulation_model.jl` |
 | `src/environment/` | Planets and ephemerides, atmosphere models and presets, gravity fields, terrain grids | density sampling: `environment/atmosphere/density_models.jl`; terrain queries: `environment/terrain/terrain_models.jl` |
 | `src/vehicle/` | Spacecraft components and assembly, structure and mass properties, mesh readers, thrusters, thermal models, kinematics, robotics | vehicle boundary per the [topology contract](../generated/contracts/architecture/canonical_topology_contract.md): `spacecraft/` composes, `structure/` computes mass, inertia and geometry, `actuators/thruster/thruster_hooks.jl` owns thruster hooks |
 | `src/dynamics/` | Translational and rotational equations, the coupled force/torque wrapper and its models, compliant multibody dynamics (currently under `multibody_cloth/`) | effector evaluation: `dynamics/coupled/force_torque_models.jl` |
-| `src/gnc/` | Guidance, navigation and control hooks and the algorithms behind them | the three hook files named above; shared bridge helpers in `gnc/internal/` |
+| `src/gnc/` | Guidance, navigation and control hooks, planner contracts and lifecycle, shared calculations, baseline algorithms and HYPR compatibility types | the three hook files named above; planner contracts: `gnc/interfaces/`; lifecycle: `gnc/guidance/rpo/`; shared calculations: `gnc/shared/`; RRT kernels: `gnc/rrt/`; aerobraking bridge helpers: `gnc/internal/` |
 | `src/mission/` | Aerobraking policy types and strategy selection | `mission/operations/aerobraking_policy/` |
-| `src/simulation/` | The engine (configuration types, setup, RHS, solver policy, execution, checkpoints, persistence), callbacks, campaigns, runtime locks | simulation setup and solve: `simulation/engine/`; callbacks: `simulation/callbacks/`; Monte Carlo and ensembles: `simulation/campaigns/`; shared locks: `simulation/runtime_services.jl` |
+| `src/simulation/` | One-run configuration, the engine (execution settings, setup, RHS, solver policy, execution, checkpoints, persistence), callbacks, campaigns, runtime locks | configuration assembly and copying: `simulation/config/`; setup and solve: `simulation/engine/`; callbacks: `simulation/callbacks/`; Monte Carlo and ensembles: `simulation/campaigns/`; shared locks: `simulation/runtime_services.jl` |
 | `src/parallel/` | Parallel profiles and routing, cost models, worker process pools, in-process policy | route selection and process pools; owned by the parallelization work |
 | `src/io/` | Configuration file loading, serialization helpers, output tables | output recording: `io/outputs/io_outputs.jl` |
 | `src/analysis/` | Telemetry verification studies and example helpers, visualization scene and RPO plots | example helper builders: `analysis/verification/telemetry_verification/example_support.jl` |
 | `src/assets/`, `src/cli/` | Asset lookup for RPO stations and the Odyssey surrogate; the `spaceagora` command | [CLI](../cli.md), [Assets & Modes](../assets.md) |
 | `ext/` | The `GRAMSuite` extension: native GRAM density, SPICE-backed ephemerides, native-free fixed-grid adapter methods | activates when both packages are loaded; see [GRAMSuite Setup](gramsuite_setup.md) |
+| `packages/SpaceAGORAHYPR/` | Optional configured HYPR and robot-arm search | companion execution: `src/SpaceAGORAHYPR.jl`, `src/rpo/` and `src/robot/` within this package; install and load explicitly as described in the [RPO planner guide](rpo_planner_pilot.md#Installing-optional-HYPR) |
 | `examples/` | Runnable scenarios; `common.jl` is the shared bootstrap | primary scenario entrypoints; development viewer demos also live in `scripts/dev/viewer_demos/`; see the [Examples Catalog](examples_catalog.md) |
 | `templates/` | Starting files for a force/torque model, a density model and a control hook | copy one of these to begin an extension |
 | `test/` | Unit, integration, smoke and stress suites, CI gates under `test/gates/`, contract checks under `test/contracts/`, review artifacts under `test/ai_reviews/` | the gates enforce the ownership rules on this page |
@@ -233,8 +246,15 @@ page exists.
 it implements the supported interfaces but is not required for ordinary runs.
 Its integration should use the public API, with a small package extension only
 where conditional integration is needed. The algorithm source belongs in its
-own package, not copied into `ext/`. No HYPR or EDG package extraction is claimed
-to be complete here.
+own package, not copied into `ext/`. `SpaceAGORAHYPR` is the current companion
+for configured HYPR and robot-arm search. Core keeps shared planner interfaces,
+the direct baseline, configuration types and compatibility entry points; calls
+that need HYPR execution report that the companion must be loaded. Install the
+matching checkout and explicitly load `SpaceAGORAHYPR` using the
+[RPO planner guide](rpo_planner_pilot.md#Installing-optional-HYPR). The companion
+currently also imports core internals, so it must match the SpaceAGORA checkout.
+EDG remains in core; this does not claim that every specialized algorithm has
+been extracted.
 
 **Put a study in `benchmarks/studies/` or a research repository when** it is a
 study driver, a parameter sweep or a comparison against another tool. Keep its failure and retry
@@ -267,30 +287,32 @@ of the public repository; review their provenance separately.
 
 ## Remaining cleanup
 
-Status at commit `884307fd`. Each item states what is confirmed, what is
+Status at commit `9be384a2`. Each item states what is confirmed, what is
 deliberate, and who is expected to act; the last sub-list is a proposal, not a
 description of the current code.
 
+**Completed cleanup:**
+
+- [#164](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/pull/164) removed five
+  example-local constant-density definitions and reused the shared model.
+- [#188](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/pull/188) replaced the
+  generated `scripts/tb_matrix_debug_defs_only.jl` copy with a compatibility
+  loader through `scripts/scenario_matrix_debug_support.jl`, which loads
+  `test/gmat_scenario_matrix.jl` in definitions-only mode, repaired the debug runners,
+  and retired the one-time `scripts/dev/test_reorg_b1.sh` migration.
+- [#194](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/pull/194) consolidated
+  results loading and vector-sample extraction in the aerobraking plot helpers.
+  The broader responsibility split remains a separate review item below.
+
 **Confirmed cleanup targets:**
 
-- Four examples redefine the package's constant-density atmosphere model and
-  a fifth file carries an unused copy. Draft pull request
-  [#164](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/pull/164) removes the
-  five definitions and uses the shared model. Follow that PR for its current
-  integration status.
 - `scripts/dev/viewer_demos/cygnss_constellation.jl` builds a configuration by
   copying seven fields instead of calling `_with_configuration`. A candidate for
   the shared copy helper; its explicit DP8 solver, tolerances and scenario
   overrides must be preserved.
-- `scripts/tb_matrix_debug_defs_only.jl` is a 2,331-line generated copy of
-  definitions, and the debug launchers still call a removed
-  `_run_gmat_scenario_matrix_result_once`. A supported definition-loading boundary
-  would remove the copy and let the launchers use the current names.
 - `benchmarks/studies/performance_static_vs_parallel.jl` includes a
   nonexistent sibling; the owner is `benchmarks/scripts/performance_paper_pipeline.jl`.
   Broken include, to be repaired with the parallelization owner.
-- `scripts/dev/test_reorg_b1.sh` is a one-time migration that mutates Git and
-  targets already-moved paths, with no live caller. Retirement candidate.
 
 **Intentional similarities (keep):**
 
@@ -318,8 +340,7 @@ description of the current code.
   defines extension methods itself. A shared bootstrap needs agreement with the
   parallelization and surrogate owners first.
 - `examples/aerobraking_mission_plot_utils.jl` mixes mission setup, event
-  extraction, reference comparison and plotting in 1,870 lines with live
-  consumers; splitting by responsibility is organization work, not a duplicate
+  extraction, reference comparison and plotting with live consumers; splitting by responsibility is organization work, not a duplicate
   removal.
 
 **Proposals (not implemented):**
@@ -328,5 +349,5 @@ description of the current code.
   gates and this page cannot drift apart.
 - Add a `templates/guidance_hook_template.jl` beside the existing control
   hook template, for students building a guidance model.
-- Once #164 merges and the CYGNSS migration lands, refresh the relevant cleanup entries.
+- Refresh the CYGNSS entry when its shared-copy-helper migration lands.
   Repeat the definition scan when later changes justify it.

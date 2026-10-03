@@ -2,6 +2,9 @@
     sandbox = EXPORT_IMPORT_SANDBOX
     @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
     @test Core.eval(sandbox, :(isdefined(@__MODULE__, :RuntimeServices)))
+    @test isdefined(sandbox, :SimulationLifecycle)
+    @test sandbox.SimulationModel.ControlHooks.SimulationLifecycle === sandbox.SimulationLifecycle
+    @test sandbox.SimulationLifecycle.before_reference_control!(nothing, nothing, nothing, nothing, 0.0) === nothing
     @test_nowarn Core.eval(sandbox, :(using .SimulationModel))
 
     required_public_names = [
@@ -52,6 +55,8 @@ end
 
 @testset "Include-Order + Name Ambiguity Smoke" begin
     sandbox = INCLUDE_ORDER_SANDBOX
+    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "gnc", "interfaces", "simulation_lifecycle.jl"))
+    lifecycle = sandbox.SimulationLifecycle
 
     Base.include_string(sandbox, """
     module ConflictingExports
@@ -62,10 +67,13 @@ end
     """)
 
     @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+    @test sandbox.SimulationLifecycle === lifecycle
+    @test sandbox.SimulationModel.ControlHooks.SimulationLifecycle === lifecycle
     Core.eval(sandbox, :(const quat_mult = SimulationModel.quat_mult))
     @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
     @test isdefined(sandbox, :RuntimeServices)
     @test isdefined(sandbox, :SimulationEngine)
+    @test sandbox.SimulationEngine.SimulationLifecycle === lifecycle
     @test Core.eval(sandbox, :(isdefined(SimulationEngine, :run_simulation)))
 end
 

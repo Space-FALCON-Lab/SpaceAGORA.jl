@@ -19,6 +19,9 @@ After pulling a newer SpaceAGORA, run the setup script again. It moves the
 environment to the GRAMSuite revision the checkout now pins, which a plain
 `Pkg.instantiate()` of an earlier setup would not do.
 
+The first setup downloads and compiles several hundred packages, so it can take
+from a few minutes to much longer on a busy machine; later setups reuse them.
+
 Each command-line run starts a new Julia process, which compiles the example
 before its first passage; expect a pause of a few minutes. An interactive
 session compiles once and reuses the code for later runs. When the comparison
@@ -42,7 +45,7 @@ The trailing semicolon keeps the REPL from printing the returned tables. Give
 each run a new directory; the examples on this page use directories under
 `output/`, which git ignores.
 
-The preset resolver installs the identified atmosphere once, and the scenario helper supplies the four identified public SPICE kernels and Mars gravity coefficients. Each first installation prints one line naming its source and one confirming that its SHA256 checksums match. The files, about 224 MB in total (a 47 MB grid and 176 MB of kernels and coefficients), are stored in the `artifacts/` folder of your Julia depot, by default `~/.julia/artifacts`. Subsequent runs reuse installed files. An offline run requires these assets to be installed already:
+The preset resolver installs the identified atmosphere once, and the scenario helper supplies the four identified public SPICE kernels and Mars gravity coefficients. Each first installation prints one line naming its source and one confirming that its SHA256 checksums match. The files, about 224 MB in total (a 47 MB grid and 176 MB of kernels and coefficients), are stored in the `artifacts/` folder of your Julia depot, by default `~/.julia/artifacts`. The atmosphere grid is published under CC BY 4.0: cite it by preset name and version, and credit NASA's GRAM Suite (Mars-GRAM) as the source model. The scenario assets keep the original terms of the NAIF kernels and gravity coefficients (see the [GRAMSuite.jl repository](https://github.com/Space-FALCON-Lab/GRAMSuite.jl)). To list, prefetch or check presets without running the example, use the commands in [Named surrogate data](../cli.md#Named-surrogate-data). Subsequent runs reuse installed files. An offline run requires these assets to be installed already:
 
 ```sh
 julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl --offline --output=output/odyssey_offline
@@ -167,4 +170,4 @@ orbit/atmosphere relative tolerance `1e-7` and absolute tolerance `1e-9`.
 This is an independent usability exercise, not a replay of the reference's
 automatic stiff-solver configuration.
 
-This frozen snapshot is useful for repeatable algorithm development. It does not model other dates, uncertain forcing, atmospheric variability or the accuracy of a flight mission. For advanced atmospheric investigations, configure native GRAM explicitly, or generate and validate a new mission-specific snapshot before using it in repeated runs. Application-specific accuracy and robustness requirements remain separate from this example.
+This frozen snapshot is useful for repeatable algorithm development. It does not model other dates, uncertain forcing, atmospheric variability or the accuracy of a flight mission. For advanced atmospheric investigations, configure native GRAM explicitly ([Compare a surrogate with native GRAM](../user/atmosphere_models.md#Compare-a-surrogate-with-native-GRAM)), or generate and validate a new mission-specific snapshot before using it in repeated runs ([Prepare another frozen snapshot](../user/atmosphere_models.md#Prepare-another-frozen-snapshot)). Application-specific accuracy and robustness requirements remain separate from this example.

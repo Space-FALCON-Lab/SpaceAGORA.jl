@@ -24,7 +24,9 @@ end
         p.shared_buffers.temperatures[sat_idx] = T
     end
     if sat_idx <= length(p.shared_buffers.winds)
-        p.shared_buffers.winds[sat_idx] = wind_vec
+        # `EnvironmentModel.wind = false` stores zero wind whatever the query
+        # returned (a native GRAM query with wind=false returns nominal winds).
+        p.shared_buffers.winds[sat_idx] = EnvironmentModels._environment_wind(p, wind_vec)
     end
     if sat_idx <= length(p.shared_buffers.density_sample_t)
         p.shared_buffers.density_sample_t[sat_idx] = t
@@ -75,7 +77,40 @@ end
     return merge(kin, (rho=atmosphere.rho_kg_m3, T=atmosphere.temperature_k, wind=atmosphere.wind_pp))
 end
 
+"""
+    _density_state_from_kinematics!(p, sat_idx, pos_ii, vel_ii, mass_kg, alt, lat, lon, t,
+                                    density_model, cache_cfg, stats_enabled,
+                                    target_include_j2, caches) -> (rho, T, wind)
+
+One spacecraft's atmosphere sample, through whichever GRAM cache is active.
+The returned wind is zero when the run's `EnvironmentModel.wind` is `false`
+(see `EnvironmentModels._environment_wind_enabled`), including values served
+from a track or look-ahead cache.
+"""
 function _density_state_from_kinematics!(
+    p,
+    sat_idx::Int,
+    pos_ii::SVector{3, Float64},
+    vel_ii::SVector{3, Float64},
+    current_mass_kg::Float64,
+    alt::Float64,
+    lat::Float64,
+    lon::Float64,
+    t::Float64,
+    density_model,
+    cache_cfg,
+    stats_enabled::Bool,
+    target_include_j2::Bool,
+    caches::Vector{Union{Nothing, GramTrackCache}}
+)::Tuple{Float64, Float64, SVector{3, Float64}}
+    rho, T, wind_vec = _density_state_from_kinematics_unmasked!(
+        p, sat_idx, pos_ii, vel_ii, current_mass_kg, alt, lat, lon, t,
+        density_model, cache_cfg, stats_enabled, target_include_j2, caches,
+    )
+    return rho, T, EnvironmentModels._environment_wind(p, wind_vec)
+end
+
+function _density_state_from_kinematics_unmasked!(
     p,
     sat_idx::Int,
     pos_ii::SVector{3, Float64},
@@ -95,9 +130,9 @@ function _density_state_from_kinematics!(
     # Vacuum-predicted GRAM density cache: interpolate from a pre-built spline on
     # log(ρ) along the drag-free trajectory.  Only active inside the atmosphere
     # (in_atmosphere flag) to avoid wasteful builds during coast arcs.
-    # Grid snapshots enforce their spatial domain at every current coordinate;
-    # a trajectory spline must not substitute a previously sampled atmosphere.
-    if env.vacuum_gram_cache_enabled && !(density_model isa EnvironmentModels.GRAMGridAtmosphereModel)
+    # Native-free snapshots (grid and near-surface) enforce their spatial domain at every current
+    # coordinate; a trajectory spline must not substitute a previously sampled atmosphere.
+    if env.vacuum_gram_cache_enabled && !(density_model isa EnvironmentModels._NativeFreeSnapshotModel)
         in_atm = sat_idx <= length(p.shared_buffers.in_atmosphere) &&
                  p.shared_buffers.in_atmosphere[sat_idx]
         if in_atm
@@ -200,7 +235,7 @@ function _density_state_from_kinematics!(
             s.direct_calls += 1
         end)
     end
-    return getDensity(density_model, alt, lat, lon, t, true, p)
+    return getDensity(density_model, alt, lat, lon, t, EnvironmentModels._environment_wind_enabled(p), p)
 end
 
 function _stage_environment_state(x, p, sat_idx::Int, t::Float64; write_buffers::Bool=true)
@@ -254,8 +289,6 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
         density_models = p.shared_buffers.density_models
         fallback_density_model = p.args.environment_model.density_model
         cb_env = _callback_env_config(p)
-        decision = _density_callback_thread_decision(p, args, num_sats)
-        use_threads = decision.use_threads
         use_batch = false
         batch_model = nothing
         use_gram_isolated_pool = false
@@ -275,6 +308,19 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
         elseif batch_model isa EnvironmentModels.GRAMAtmosphereModel
             use_gram_isolated_pool = true
         end
+        # What the threaded region actually contains decides whether threading it
+        # can pay, so the decision is taken after the batch route is resolved and
+        # not before it. On the batch route the loop below stages altitude,
+        # latitude and longitude and nothing else -- the density evaluation
+        # happens afterwards, on one thread, inside getDensityBatch! -- so it is
+        # light work whatever the model is. Off the batch route the loop calls
+        # update_density_sat! per satellite, which is heavy exactly when the
+        # model is (density_model_work_is_heavy).
+        decision = _density_callback_thread_decision(
+            p, args, num_sats;
+            heavy_work=(!use_batch && _density_callback_work_is_heavy(p, num_sats))
+        )
+        use_threads = decision.use_threads
         started_ns = time_ns()
 
         if use_batch
@@ -306,6 +352,25 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
                     lons[i] = kin.lon
                 end
             end
+            # The isolated GRAM pool evaluates native GRAM per satellite on its
+            # own dispatch, so its width comes from a heavy-work decision rather
+            # than from `decision`, which now describes the kinematics pre-fill
+            # above and collapses to 1 on a light model.
+            # lock_free: the pool's workers each hold their own GRAM instance
+            # behind their own lock, so the `:density_callback` source's
+            # 16-thread floor -- which exists because native GRAM is serialized
+            # on the shared lock -- does not apply to them. Without this the
+            # width is pinned to 1 below 16 threads and the pooled call declines,
+            # whatever SPACEAGORA_GRAM_ISOLATED_POOL says.
+            pool_allotment = use_gram_isolated_pool ?
+                _density_callback_thread_decision(
+                    p, args, num_sats; heavy_work=true, lock_free=true
+                ).allotment :
+                decision.allotment
+            # `EnvironmentModel.wind = false` requests no winds (which also keeps
+            # the isolated pool's wind-history guard out of the way) and zeroes
+            # whatever wind the model still returns.
+            wind_requested = EnvironmentModels._environment_wind_enabled(p)
             pooled = use_gram_isolated_pool && _gram_isolated_pool_batch_eval!(
                 p.shared_buffers.densities,
                 p.shared_buffers.temperatures,
@@ -315,9 +380,9 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
                 lats,
                 lons,
                 Float64(integrator.t),
-                true,
+                wind_requested,
                 p;
-                allotment_hint=decision.allotment
+                allotment_hint=pool_allotment
             )
             if !pooled
                 getDensityBatch!(
@@ -329,10 +394,11 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
                     lats,
                     lons,
                     Float64(integrator.t),
-                    true,
+                    wind_requested,
                     p
                 )
             end
+            EnvironmentModels._zero_environment_winds!(p, p.shared_buffers.winds)
             _write_density_time_buffers!(p, num_sats, Float64(integrator.t))
         elseif use_threads
             ParallelPolicy.threaded_foreach_persistent(:density_callback, num_sats, decision.allotment) do i

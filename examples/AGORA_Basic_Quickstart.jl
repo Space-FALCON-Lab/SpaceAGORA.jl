@@ -156,6 +156,13 @@ spacecraft = make_three_body_spacecraft(
     id=1
 )
 
+# Parallel execution is one flag in the solver setup: with
+# `SolverConfig(parallel=true)` SpaceAGORA decides how to use the threads Julia
+# was started with (`julia --threads=auto ...`). It is off here by default so
+# the quickstart stays a plain serial run; set SPACEAGORA_EXAMPLE_PARALLEL=1 to
+# try it. See docs/src/user/parallel_execution.md.
+const QUICKSTART_PARALLEL = get(ENV, "SPACEAGORA_EXAMPLE_PARALLEL", "0") == "1"
+
 # `make_example_config` supplies the standard example boilerplate.
 # We keep the environment intentionally simple here so installation is easy to
 # validate before moving to GRAM-backed workflows.
@@ -170,7 +177,8 @@ args = make_example_config(
     orientation_sim=false,
     keplerian=true,
     EI_km=120.0,
-    verbose=true
+    verbose=true,
+    solver_config=QUICKSTART_PARALLEL ? SolverConfig(parallel=true) : nothing
 )
 
 csv_path = run_and_report(args)

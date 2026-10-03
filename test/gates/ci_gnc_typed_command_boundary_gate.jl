@@ -63,7 +63,9 @@ occursin("controlModel.direction[i] = command.direction_rad", control_propulsive
 
 const GUIDANCE_ROOT = joinpath(REPO_ROOT, "src", "gnc", "guidance")
 const CONTROL_ROOT = joinpath(REPO_ROOT, "src", "gnc", "control")
-const GNC_ROOTS = (GUIDANCE_ROOT, CONTROL_ROOT)
+const GUIDANCE_ROOTS = (GUIDANCE_ROOT, joinpath(REPO_ROOT, "packages", "SpaceAGORAHYPR", "src"),
+    (joinpath(REPO_ROOT, "src", "gnc", owner) for owner in ("shared", "hypr", "rrt"))...)
+const GNC_ROOTS = (GUIDANCE_ROOTS..., CONTROL_ROOT)
 const ALLOWED_MANEUVER_COMMAND_OWNERS = Set([
     joinpath("src", "gnc", "guidance", "thruster_guidance", "thruster_guidance_functions.jl"),
     joinpath("src", "gnc", "control", "propulsive_maneuvers.jl"),
@@ -97,7 +99,7 @@ for root in GNC_ROOTS
                 push!(violations, "$rel: maneuver_commands ownership is restricted to typed guidance writer/control consumer files")
             end
 
-            if startswith(rel, joinpath("src", "gnc", "guidance"))
+            if root in GUIDANCE_ROOTS
                 for (rx, message) in GUIDANCE_FORBIDDEN_PATTERNS
                     occursin(rx, src) || continue
                     push!(violations, "$rel: $message")

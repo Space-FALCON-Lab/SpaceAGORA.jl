@@ -322,6 +322,7 @@ function parse_arguments(argv)
             throw(ArgumentError("Unknown option $arg; use --help."))
         end
     end
+    baseline != variant || throw(ArgumentError("The baseline and variant caps must differ; both are $(baseline) degrees."))
     return (; output_dir=output, offline, baseline_cap_deg=baseline, variant_cap_deg=variant)
 end
 
@@ -331,8 +332,28 @@ function main(argv=ARGS)
     compare_panel_caps(; options...)
 end
 
+# Only CLI parsing and the output-directory preflight use a concise diagnostic.
+# Preset, asset and simulation failures, including ArgumentError, propagate.
+function cli_main(argv=ARGS)
+    options = try
+        parsed = parse_arguments(argv)
+        parsed === nothing || require_new_directory(parsed.output_dir)
+        parsed
+    catch err
+        err isa ArgumentError || rethrow()
+        println(stderr, "ERROR: ", err.msg)
+        return 1
+    end
+    if options === nothing
+        println(USAGE)
+    else
+        compare_panel_caps(; options...)
+    end
+    return 0
+end
+
 end # module
 
 if abspath(PROGRAM_FILE) == @__FILE__
-    OdysseySurrogateExample.main()
+    exit(OdysseySurrogateExample.cli_main())
 end

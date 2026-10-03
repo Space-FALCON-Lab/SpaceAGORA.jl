@@ -47,6 +47,36 @@ end
     @test Set(diffs) == Set(["SPACEAGORA_PARALLEL_POLICY_V2", "SPACEAGORA_PARALLEL_PROFILE"])
 end
 
+@testset "R7 is R6 plus the predictive planner" begin
+    @test PPr.parse_parallel_profile("R7") === PPr.R7
+    @test PPr.parse_parallel_profile("r7_predictive") === PPr.R7
+    @test PPr.parse_parallel_profile("predictive") === PPr.R7
+    @test PPr.parallel_profile_name(PPr.R7) == "R7"
+    r6 = PPr.profile_config(PPr.R6)
+    r7 = PPr.profile_config(PPr.R7)
+    @test r6.campaign_planner == "bandit"
+    @test r7.campaign_planner == "predictive"
+    @test r7.label == "r7_predictive"
+    # R7 keeps the V2 switch: it is R6 plus a planner, not an alternative to it.
+    @test r7.policy_v2
+    # Everything else identical, by construction.
+    for name in fieldnames(PPr.ParallelProfileConfig)
+        name in (:profile, :label, :campaign_planner) && continue
+        @test getfield(r6, name) == getfield(r7, name)
+    end
+    pairs6 = Dict(PPr.profile_env_pairs(PPr.R6; preserve_existing = false))
+    pairs7 = Dict(PPr.profile_env_pairs(PPr.R7; preserve_existing = false))
+    # Every profile states the planner, so a stale shell value cannot decide it.
+    @test Dict(PPr.profile_env_pairs(PPr.R5; preserve_existing = false))["SPACEAGORA_CAMPAIGN_PLANNER"] == "bandit"
+    @test pairs6["SPACEAGORA_CAMPAIGN_PLANNER"] == "bandit"
+    @test pairs7["SPACEAGORA_CAMPAIGN_PLANNER"] == "predictive"
+    @test pairs7["SPACEAGORA_PARALLEL_POLICY_V2"] == "1"
+    @test pairs7["SPACEAGORA_PARALLEL_PROFILE"] == "R7"
+    # The planner is the only env-level difference from R6.
+    diffs = [k for k in keys(pairs7) if pairs6[k] != pairs7[k]]
+    @test Set(diffs) == Set(["SPACEAGORA_CAMPAIGN_PLANNER", "SPACEAGORA_PARALLEL_PROFILE"])
+end
+
 @testset "The switch is snapshotted, default off" begin
     withenv("SPACEAGORA_PARALLEL_POLICY_V2" => nothing) do
         @test !PP.policy_v2_enabled()
@@ -365,40 +395,86 @@ end
     end
 end
 
-@testset "V2 honours a cached heuristic verdict on a long solve" begin
+# Shared by the three cached-verdict testsets below: seed a signature with a
+# heuristic verdict that has reproduced `votes` times and a measured sweep
+# cost, and present it as a long solve.
+function _v2_seed_heuristic!(SE, sig; votes, sweep_ns, solve_ns = 5.0e9)
+    lock(SE._rhs_calib_lock) do
+        delete!(SE._rhs_calib_cache, sig)
+    end
+    for _ in 1:votes
+        SE._rhs_calib_store_heuristic!(sig, 1.0e6; sweep_ns = sweep_ns)
+    end
+    lock(SE._rhs_calib_lock) do
+        SE._rhs_calib_cache[sig]["solve_ns"] = solve_ns
+    end
+    return nothing
+end
+
+_v2_entry(SE, sig, key) = lock(SE._rhs_calib_lock) do
+    get(SE._rhs_calib_cache[sig], key, nothing)
+end
+
+_v2_charge!(SE, sig, ns) = lock(SE._rhs_calib_lock) do
+    e = SE._rhs_calib_cache[sig]
+    e["honoured_ns"] = Float64(get(e, "honoured_ns", 0.0)) + ns
+end
+
+@testset "V2 honors a cached heuristic verdict on a long solve, on a budget" begin
     SE = SpaceAGORA.SimulationEngine
     sig = "v6|machine=v2test|budget=8|sats=257p|effs=1|harm=1|eff=v2test|dens=NoAtmosphereModel|outer=0"
     withenv("SPACEAGORA_RHS_CALIBRATE" => "auto",
+            "SPACEAGORA_RHS_CALIBRATE_REVERIFY_SHARE" => "0.05",
             "SPACEAGORA_RHS_CALIBRATION_PATH" => tempname() * ".toml") do
         setsolve = ns -> lock(SE._rhs_calib_lock) do
             SE._rhs_calib_cache[sig]["solve_ns"] = ns
         end
+        # A verdict whose sweep cost was never measured is re-verified on a long
+        # solve, exactly as an equally unmeasured pinned plan is.
         SE._rhs_calib_store_heuristic!(sig, 1.0)
         setsolve(5.0e9)
         @test SE._rhs_calib_solve_exceeds_threshold(sig)
         @test SE._rhs_calib_cached_verdict(sig, false) === nothing
-        # One heuristic verdict is not reproducible evidence on a long solve:
-        # the sweep's verdict flips on some workloads. Three in a row is.
-        @test SE._rhs_calib_heuristic_votes(sig) == 1
         @test SE._rhs_calib_cached_verdict(sig, true) === nothing
-        SE._rhs_calib_store_heuristic!(sig, 1.0); setsolve(5.0e9)
-        @test SE._rhs_calib_heuristic_votes(sig) == 2
+        # With the sweep's own cost on record the verdict is honored, and stays
+        # honored as it reproduces.
+        for _ in 1:3
+            SE._rhs_calib_store_heuristic!(sig, 1.0; sweep_ns = 0.5e9)
+            setsolve(5.0e9)
+            @test SE._rhs_calib_cached_verdict(sig, true) === :heuristic
+        end
+        @test SE._rhs_calib_heuristic_votes(sig) == 4
+        @test SE._rhs_calib_heuristic_votes(sig) >= SE._rhs_calibrate_heuristic_votes_needed()
+        # But only for a bounded number of calls: reproduction is a record of
+        # what the sweep has said, not an exemption from ever asking again.
+        # 0.5 s of sweep at a 5 % share buys 10 s of honored solve time, which
+        # is two of these 5 s solves.
+        @test _v2_entry(SE, sig, "honoured_ns") == 0.0
+        honored_calls = 0
+        while SE._rhs_calib_cached_verdict(sig, true) === :heuristic && honored_calls <= 10
+            honored_calls += 1
+            _v2_charge!(SE, sig, 5.0e9)
+        end
+        @test honored_calls == 2
+        @test SE._rhs_calib_reverify_due(sig)
         @test SE._rhs_calib_cached_verdict(sig, true) === nothing
-        SE._rhs_calib_store_heuristic!(sig, 1.0); setsolve(5.0e9)
-        @test SE._rhs_calib_heuristic_votes(sig) == 3
-        @test SE._rhs_calib_cached_verdict(sig, true) === :heuristic
-        # The vote count persists through a save/load round trip.
+        # The vote count and the honored clock both persist through a save/load
+        # round trip, so the budget is not refilled by restarting the process.
         SE._rhs_calib_save!()
         lock(SE._rhs_calib_lock) do
             empty!(SE._rhs_calib_cache)
             SE._rhs_calib_loaded[] = false
         end
-        @test SE._rhs_calib_heuristic_votes(sig) == 3
-        # A short solve honours any cached verdict, as shipped.
+        @test SE._rhs_calib_heuristic_votes(sig) == 4
+        @test _v2_entry(SE, sig, "honoured_ns") == 10.0e9
+        @test SE._rhs_calib_cached_verdict(sig, true) === nothing
+        # A short solve honors any cached verdict, as shipped: the budget is a
+        # long-solve rule, and the exhausted clock does not change that.
         setsolve(0.5e9)
         @test SE._rhs_calib_cached_verdict(sig, false) === :heuristic
-        # A cached PLAN is still re-swept on a long solve, switch or not, and
-        # a pinned plan resets the vote count.
+        @test SE._rhs_calib_cached_verdict(sig, true) === :heuristic
+        # A cached PLAN is still re-swept on a long solve, switch or not, and a
+        # pinned plan reports no heuristic votes.
         SE._rhs_calib_store!(sig, SE._make_calib_satellite_batch_plan(), 1.0)
         @test SE._rhs_calib_heuristic_votes(sig) == 0
         setsolve(5.0e9)
@@ -406,6 +482,72 @@ end
         @test SE._rhs_calib_cached_verdict(sig, false) === nothing
         setsolve(0.5e9)
         @test SE._rhs_calib_cached_verdict(sig, true) !== nothing
+        lock(SE._rhs_calib_lock) do
+            delete!(SE._rhs_calib_cache, sig)
+        end
+    end
+end
+
+@testset "An exhausted heuristic verdict re-sweeps, and the sweep may replace it" begin
+    SE = SpaceAGORA.SimulationEngine
+    sig = "v6|machine=v2test|budget=8|sats=1025p|effs=2|harm=50|eff=v2retest|dens=NoAtmosphereModel|outer=0"
+    withenv("SPACEAGORA_RHS_CALIBRATE" => "auto",
+            "SPACEAGORA_RHS_CALIBRATE_REVERIFY_SHARE" => "0.05",
+            "SPACEAGORA_RHS_CALIBRATION_PATH" => tempname() * ".toml") do
+        _v2_seed_heuristic!(SE, sig; votes = 3, sweep_ns = 0.5e9)
+        @test SE._rhs_calib_cached_verdict(sig, true) === :heuristic
+        # Spend the budget: 10 s of honored solve time against a 0.5 s sweep.
+        _v2_charge!(SE, sig, 10.0e9)
+        @test SE._rhs_calib_cached_verdict(sig, true) === nothing
+        # That miss is what makes _calibrate_rhs_plan_if_needed! sweep. This is
+        # the sweep now preferring satellite_batch, written back the way the
+        # sweep writes it back.
+        SE._rhs_calib_store!(sig, SE._make_calib_satellite_batch_plan(), 1.0e6; sweep_ns = 0.5e9)
+        @test _v2_entry(SE, sig, "mode") == "satellite_batch"
+        @test _v2_entry(SE, sig, "honoured_ns") == 0.0
+        @test _v2_entry(SE, sig, "plan_votes") == 1
+        # The solve length survives the switch, so the shape is still long.
+        @test _v2_entry(SE, sig, "solve_ns") == 5.0e9
+        # A plan pinned by one sweep re-verifies on the next long solve; a
+        # second agreeing sweep confirms it and the verdict has changed.
+        @test SE._rhs_calib_cached_verdict(sig, true) === nothing
+        SE._rhs_calib_store!(sig, SE._make_calib_satellite_batch_plan(), 1.0e6; sweep_ns = 0.5e9)
+        @test _v2_entry(SE, sig, "plan_votes") == 2
+        v = SE._rhs_calib_cached_verdict(sig, true)
+        @test v !== nothing && v !== :heuristic
+        @test v.mode === :satellite_batch
+        lock(SE._rhs_calib_lock) do
+            delete!(SE._rhs_calib_cache, sig)
+        end
+    end
+end
+
+@testset "A re-swept heuristic that is still best is re-confirmed, not thrown away" begin
+    SE = SpaceAGORA.SimulationEngine
+    sig = "v6|machine=v2test|budget=8|sats=1025p|effs=2|harm=50|eff=v2reconfirm|dens=NoAtmosphereModel|outer=0"
+    withenv("SPACEAGORA_RHS_CALIBRATE" => "auto",
+            "SPACEAGORA_RHS_CALIBRATE_REVERIFY_SHARE" => "0.05",
+            "SPACEAGORA_RHS_CALIBRATION_PATH" => tempname() * ".toml") do
+        _v2_seed_heuristic!(SE, sig; votes = 3, sweep_ns = 0.5e9)
+        _v2_charge!(SE, sig, 10.0e9)
+        @test SE._rhs_calib_cached_verdict(sig, true) === nothing
+        # The re-sweep ends on the heuristic again. It is one more vote, not a
+        # fresh start: the clock restarts and the next window is as long as the
+        # one just spent, so the re-test amortizes rather than being paid every
+        # campaign.
+        SE._rhs_calib_store_heuristic!(sig, 1.0e6; sweep_ns = 0.6e9)
+        @test SE._rhs_calib_heuristic_votes(sig) == 4
+        @test _v2_entry(SE, sig, "honoured_ns") == 0.0
+        @test _v2_entry(SE, sig, "sweep_ns") == 0.6e9
+        @test _v2_entry(SE, sig, "solve_ns") == 5.0e9
+        @test SE._rhs_calib_cached_verdict(sig, true) === :heuristic
+        # 0.6 s of sweep at a 5 % share buys 12 s of honored solve time.
+        _v2_charge!(SE, sig, 11.0e9)
+        @test !SE._rhs_calib_reverify_due(sig)
+        @test SE._rhs_calib_cached_verdict(sig, true) === :heuristic
+        _v2_charge!(SE, sig, 1.5e9)
+        @test SE._rhs_calib_reverify_due(sig)
+        @test SE._rhs_calib_cached_verdict(sig, true) === nothing
         lock(SE._rhs_calib_lock) do
             delete!(SE._rhs_calib_cache, sig)
         end

@@ -55,12 +55,60 @@ const _THIRD_BODY_MU = Dict{String, Float64}(
 
 @inline _canonical_spice_name(name::String) = replace(lowercase(strip(name)), ' ' => '_')
 @inline _mu_lookup_name(name::String) = replace(_canonical_spice_name(name), "_barycenter" => "")
-@inline function _spice_query_name(name::String)
+
+@inline function _spice_query_name_uncached(name::String)::String
     key = _canonical_spice_name(name)
     if endswith(key, "_barycenter")
         return key
     end
     return key in _SPICE_FORCE_BARYCENTER_BODIES ? key * "_barycenter" : key
+end
+
+# Canonical SPICE body names are resolved on the RHS hot path: the per-satellite
+# environment sample asks for one per third body per spacecraft per derivative
+# evaluation (simulation/engine/effector_sampling.jl), and `strip`, `lowercase`
+# and `replace` each allocate a fresh short string every time. At 256
+# spacecraft, degree-50 harmonics and a Sun/Moon third body, that name
+# resolution was 741 of the 7606 profile samples taken inside the constellation
+# RHS -- ~10% of the derivative evaluation spent lowercasing "Sun" and "Moon"
+# once per spacecraft -- and 706 of the 1457 sampled allocation events.
+#
+# The names come from a handful of model and planet fields and never change
+# during a run, so the resolved form is interned and the hot path becomes one
+# dictionary read with no allocation.
+#
+# Publication is copy-on-write behind a lock: a reader takes the table by an
+# atomic load and that table is never mutated afterwards, so a reader can never
+# observe a rehash in progress even though the RHS resolves names from many
+# threads. The interned value is exactly the String the uncached expression
+# produces, so every downstream comparison, dictionary key and SPICE query is
+# unchanged.
+mutable struct _SpiceQueryNameIntern
+    @atomic table::Dict{String, String}
+end
+
+const _SPICE_QUERY_NAME_INTERN = _SpiceQueryNameIntern(Dict{String, String}())
+const _SPICE_QUERY_NAME_INTERN_LOCK = ReentrantLock()
+
+@noinline function _intern_spice_query_name(name::String)::String
+    return lock(_SPICE_QUERY_NAME_INTERN_LOCK) do
+        current = @atomic :acquire _SPICE_QUERY_NAME_INTERN.table
+        existing = get(current, name, nothing)
+        existing === nothing || return existing
+        resolved = _spice_query_name_uncached(name)
+        # Copy-on-write: publish a table that no reader is walking.
+        updated = copy(current)
+        updated[name] = resolved
+        @atomic :release _SPICE_QUERY_NAME_INTERN.table = updated
+        return resolved
+    end
+end
+
+@inline function _spice_query_name(name::String)::String
+    table = @atomic :acquire _SPICE_QUERY_NAME_INTERN.table
+    cached = get(table, name, nothing)
+    cached === nothing || return cached
+    return _intern_spice_query_name(name)
 end
 @inline function _resolve_third_body_mu(name::String)::Float64
     key = _mu_lookup_name(name)
@@ -427,12 +475,20 @@ end
 # BIT-IDENTICAL to `_harmonics_scalar_force_ii` by construction. Two properties
 # make that true and both are load-bearing:
 #
-#   1. No `@turbo`, `@fastmath` or `@simd`. Those license reassociation and FMA
-#      contraction, which is what made the previous batched kernel round
-#      differently from the scalar one. Plain `@inbounds` loops leave every
-#      floating-point operation where the scalar kernel puts it; LLVM can still
-#      vectorise the batch loops, because their iterations are independent and
-#      proving that needs no fast-math.
+#   1. No `@turbo` or `@fastmath`, and `@simd ivdep` only on the three
+#      per-degree batch loops (`b = 1:B`), never across `l` or `j`. `@turbo`
+#      and `@fastmath` license reassociation and FMA contraction, which is
+#      what made the previous batched kernel round differently from the
+#      scalar one; `@simd ivdep` licenses neither on its own, it only tells
+#      LLVM the iterations don't alias. That is true here regardless of batch
+#      size: each `b` writes only its own workspace slot and reads no other
+#      iteration's, so there is no loop-carried dependency to reorder and no
+#      reduction for the annotation to reassociate — the per-satellite
+#      floating-point operations stay exactly where the scalar kernel puts
+#      them. Plain `@inbounds` on the other loops leaves LLVM to prove
+#      vectorisability on its own, which it does above a batch-size threshold
+#      only; `@simd ivdep` makes the same vectorisation unconditional (see
+#      `git log -1 cd212833aa`).
 #   2. The nesting is degree, then order, then batch. For any one satellite the
 #      sum1..sum4 accumulations therefore run in exactly the scalar kernel's
 #      sequence. Hoisting the batch loop outwards, or reducing across the batch,
@@ -2103,10 +2159,10 @@ share one unit contract.
     alt_m::Float64,
 )::SVector{3, Float64}
     if model.field_model === :igrf
-        # show_warnings=false: the library's reduced-accuracy warning for
+        # show_warnings=Val(false): the library's reduced-accuracy warning for
         # epochs past 2030 has no maxlog and this runs once per RHS call;
         # the model constructors emit it once instead.
-        B_ned_nT = igrf(model.igrf_year, alt_m, lat_rad, lon_rad, Val(:geodetic); show_warnings=false)
+        B_ned_nT = igrf(model.igrf_year, alt_m, lat_rad, lon_rad, Val(:geodetic); show_warnings=Val(false))
         B_pp_nT = ned_to_ecef(B_ned_nT, lat_rad, lon_rad, alt_m)
         return SVector{3, Float64}(l_pi' * B_pp_nT) .* 1e-9
     end

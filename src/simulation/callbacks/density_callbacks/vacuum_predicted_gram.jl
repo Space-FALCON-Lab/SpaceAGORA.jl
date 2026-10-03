@@ -204,6 +204,7 @@ function _build_vacuum_gram_cache!(
 
     pos = pos_ii
     vel = vel_ii
+    wind_requested = EnvironmentModels._environment_wind_enabled(p)
 
     for i in 1:n_pts
         t_i = t + (i - 1) * h
@@ -215,7 +216,7 @@ function _build_vacuum_gram_cache!(
         @inbounds cache.vac_alts[i] = alt_i
         @inbounds cache.vac_positions[i] = pos
 
-        rho, T, wind = getDensity(density_model, alt_i, lat_i, lon_i, t_i, true, p)
+        rho, T, wind = getDensity(density_model, alt_i, lat_i, lon_i, t_i, wind_requested, p)
         @inbounds cache.log_rhos[i] = log(max(rho, 1e-40))
         @inbounds cache.Ts[i] = T
         @inbounds cache.winds[i] = wind
@@ -270,5 +271,5 @@ function _query_vacuum_gram_cache!(
     l_pi = _planet_lpi_at(p, t)
     pos_pp = SVector{3, Float64}(l_pi * pos_ii)
     alt_fb, lat_fb, lon_fb = rtolatlong(pos_pp, planet)
-    return getDensity(density_model, alt_fb, lat_fb, lon_fb, t, true, p)
+    return getDensity(density_model, alt_fb, lat_fb, lon_fb, t, EnvironmentModels._environment_wind_enabled(p), p)
 end

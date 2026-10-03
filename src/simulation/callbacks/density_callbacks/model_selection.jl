@@ -102,7 +102,17 @@ end
     end
     return EnvironmentModels._gram_core_density_state(
         model.core,
-        h,
+        # The same floor the locked scalar path applies before it calls GRAM
+        # (`EM.getDensity(::GRAMAtmosphereModel, ...)` and `EM._gram_point_density`
+        # in ext/SpaceAGORAGRAMSuiteExt.jl, both `max(h, -30.0)`). Without it the
+        # two paths do not merely differ below -30 m: native GRAM raises
+        # "Height below -31 meters. This is an unrecoverable error." and aborts
+        # the solve, so a run that reaches the surface -- an entry or a landing --
+        # completes on the locked path and dies on the pooled one. Measured
+        # directly on this workstation at h = -100 m. At or above -30 m
+        # `max(h, -30.0)` returns `h` itself, so nothing that worked before moves
+        # by a bit.
+        max(h, -30.0),
         lat,
         lon,
         el_time,
@@ -191,6 +201,85 @@ function _warm_gram_pool_model!(
     return nothing
 end
 
+"""
+    _rewarm_reseeded_gram_model!(model)
+
+Warm `model` again after its native perturbation model was reseeded
+(`EnvironmentModels.reset_density_model_history!`). GRAM's `setSeed` marks the
+atmosphere uninitialized, so without this the next update re-takes the one-time
+initialization branch that reaches CSPICE, and pool workers or per-satellite
+instances taking it concurrently reintroduce the abort that
+[`_warm_gram_pool_model!`](@ref) prevents. The same warm query is issued, so a
+reseeded pool or per-satellite instance is again identical to a freshly built
+one. It runs under the process-wide GRAM lock as well as the instance's own.
+"""
+function _rewarm_reseeded_gram_model!(model::EnvironmentModels.GRAMAtmosphereModel)
+    lock(tracked_lock(:gram_density)) do
+        _warm_gram_pool_model!(model, model)
+    end
+    return nothing
+end
+
+"""
+    _gram_isolated_pool_native_count(hs, p) -> Int
+
+How many of the staged altitudes would actually reach native GRAM.
+
+`_gram_isolated_pool_density_state` answers two of them without touching GRAM at
+all: above 2000 km it returns vacuum, and above the entry interface on a
+non-keplerian run it returns the analytic `density_polyfit`. The pool exists to
+spread native GRAM calls; if there are none to spread, building it is pure loss,
+and the loss is not small. Measured on this workstation, 1024 spacecraft all
+above a 120 km entry interface on a non-keplerian run at 8 threads: 0.19 s
+locked against 0.35 s pooled, a factor of 1.83, all of it the four native GRAM
+constructions that `_ensure_gram_isolated_pool!` performs before the per-item
+gate ever runs.
+
+One pass over the staged altitudes, on the thread that is about to dispatch, is
+enough to see that coming. Nothing it decides changes a returned value: both
+arms compute the same vacuum and polyfit results for those items. Nominal-wind
+comparisons found bit identity for the remaining items.
+The automatic route separately excludes history-dependent wind requests.
+"""
+@inline function _gram_isolated_pool_native_count(hs::AbstractVector{<:Real}, p)::Int
+    EI = p.args.environment_model.EI * 1e3
+    keplerian = p.args.mission_configuration.keplerian
+    count = 0
+    @inbounds for i in eachindex(hs)
+        h = Float64(hs[i])
+        h > 2000.0e3 && continue
+        (!(h - EI <= 0.0) && !keplerian) && continue
+        count += 1
+    end
+    return count
+end
+
+"""
+    _gram_pool_declines_history_dependent_winds(mode, wind, density_model) -> Bool
+
+The wind-history rule shared by both native-GRAM pools (the in-process isolated
+pool and the process-backed density service). Each pool runs separate native
+instances, and GRAM's perturbed winds are a random walk over each instance's own
+call history, so pooled winds cannot reproduce the single locked instance's.
+
+- `:auto` declines a batch that requests winds (`wind=true`) when
+  `EnvironmentModels._gram_core_wind_is_history_dependent(core)` holds.
+  Density-only batches (`wind=false`, e.g. `EnvironmentModel.wind = false`)
+  and nominal-wind batches stay eligible.
+- `:on` never declines on this ground: an explicit opt-in accepts separate
+  stochastic histories, and wind results can then depend on pool width.
+- `:off` is not a pool mode that reaches this check; it returns `false`.
+"""
+@inline function _gram_pool_declines_history_dependent_winds(
+    mode::Symbol,
+    wind::Bool,
+    density_model::EnvironmentModels.GRAMAtmosphereModel,
+)::Bool
+    mode === :auto || return false
+    wind || return false
+    return EnvironmentModels._gram_core_wind_is_history_dependent(density_model.core)
+end
+
 @inline function _gram_isolated_pool_batch_eval!(
     rhos::AbstractVector{Float64},
     Ts::AbstractVector{Float64},
@@ -223,6 +312,12 @@ function _gram_isolated_pool_batch_eval!(
     n = length(hs)
     env = _callback_env_config(p)
     _gram_isolated_pool_enabled(env, n) || return false
+    # Separate instances advance separate wind histories. Under automatic
+    # routing, decline before constructing/warming clones or writing outputs.
+    # Both the accepted-step and look-ahead callers then use the locked batch.
+    _gram_pool_declines_history_dependent_winds(
+        env.gram_isolated_pool_mode, wind, density_model
+    ) && return false
     length(rhos) == n || return false
     length(Ts) == n || return false
     length(winds) == n || return false
@@ -231,6 +326,11 @@ function _gram_isolated_pool_batch_eval!(
     if el_time isa AbstractVector{<:Real}
         length(el_time) == n || return false
     end
+
+    # The threshold is about how much native GRAM work there is, not how many
+    # spacecraft there are, so it is applied to the items that would really call
+    # GRAM. See `_gram_isolated_pool_native_count`.
+    _gram_isolated_pool_enabled(env, _gram_isolated_pool_native_count(hs, p)) || return false
 
     max_allotment = min(max(1, allotment_hint), env.gram_isolated_pool_max_workers)
     workers = ParallelPolicy.thread_worker_count(n, max_allotment)

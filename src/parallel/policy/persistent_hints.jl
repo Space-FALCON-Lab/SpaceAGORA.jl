@@ -131,12 +131,7 @@ function _save_persistent_hint_state_locked!()::Nothing
         "schema_version" => 1,
         "history" => rows
     )
-    mkpath(dirname(state.path))
-    tmp_path = state.path * ".tmp"
-    open(tmp_path, "w") do io
-        TOML.print(io, payload)
-    end
-    mv(tmp_path, state.path; force=true)
+    RuntimeServices.write_file_atomically(io -> TOML.print(io, payload), state.path)
     state.dirty = false
     return nothing
 end

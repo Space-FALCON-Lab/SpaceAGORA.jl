@@ -1,4 +1,5 @@
 module ControlHooks
+    import ...SimulationLifecycle
     using ..Structure
 
     using ..ConfigTypes: ODEParams
@@ -15,7 +16,7 @@ module ControlHooks
     using ..AbstractTypes: AbstractTerrainModel
     using ..TerrainModels: NoTerrainModel, DEMTerrainModel
     using ..AerobrakingPolicy: AerobrakingPolicyConfig, DefaultAerobrakingPolicySelector
-    using ..EnvironmentModels: getDensity
+    using ..EnvironmentModels: getDensity, _environment_wind
     using ..EphemeridesModels: ephemerides_requires_spice, planet_frame_lpi
     using ..ReferenceSystems
     using ..LinearAlgebra

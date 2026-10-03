@@ -171,8 +171,10 @@ end
 # it to 228. The silent no-op is the whole reason this helper exists rather than
 # a `jac_prototype=` keyword at the SplitODEProblem call sites.
 @inline function _split_component_function(f, jac_prototype::Union{Nothing, SparseMatrixCSC{Float64, Int}})
+    # Preserve the explicit sparse wrapper's v6 specialization. Unwrapped
+    # problems continue to follow the solver library's normal defaults.
     jac_prototype === nothing && return f
-    return ODEFunction(f; jac_prototype=jac_prototype)
+    return ODEFunction{true, SciMLBase.FullSpecialize}(f; jac_prototype=jac_prototype)
 end
 
 @inline function _build_typed_solver_problem(u0, tspan, p, callbacks, solver_mode::Symbol,
@@ -208,7 +210,7 @@ end
         )
     end
     if jac_prototype !== nothing
-        f = ODEFunction(spacecraft_dynamics!; jac_prototype=jac_prototype)
+        f = ODEFunction{true, SciMLBase.FullSpecialize}(spacecraft_dynamics!; jac_prototype=jac_prototype)
         return ODEProblem(f, u0, tspan, p; callback=callbacks)
     end
     return ODEProblem(spacecraft_dynamics!, u0, tspan, p, callback=callbacks)
@@ -256,6 +258,69 @@ end
     return nothing
 end
 
+"""
+    _results_thin_stride()::Int
+
+Opt-in results thinning stride, read from `SPACEAGORA_RESULTS_THIN_STRIDE`
+(default `"1"`, meaning no thinning). Any value `<= 1` or unparseable is
+treated as `1`. See `_thin_results_segment` for what a stride of `k` keeps.
+"""
+@inline function _results_thin_stride()::Int
+    raw = strip(_engine_env_get("SPACEAGORA_RESULTS_THIN_STRIDE", "1"))
+    parsed = tryparse(Int, raw)
+    (parsed === nothing || parsed < 1) ? 1 : parsed
+end
+
+"""
+    _results_final_only()::Bool
+
+Opt-in "final state only" results thinning, read from
+`SPACEAGORA_RESULTS_FINAL_ONLY` (default `"0"`/off). Takes priority over
+`_results_thin_stride` when both are set.
+"""
+@inline function _results_final_only()::Bool
+    lowercase(strip(_engine_env_get("SPACEAGORA_RESULTS_FINAL_ONLY", "0"))) in ("1", "true", "yes")
+end
+
+"""
+    _thin_results_segment(times, data)
+
+Opt-in state thinning for the *written results output* (CSV / results
+bundle), NOT for the returned `ODESolution` -- `run_simulation`'s
+`return_solution=true` path is unaffected by either setting.
+
+With both settings at their default (off), this is the identity: the exact
+`times`/`data` vectors already built by the caller are returned unchanged,
+so the default output is byte-identical to before this function existed.
+
+With `SPACEAGORA_RESULTS_FINAL_ONLY=1`, only the last saved state is kept.
+Otherwise, with `SPACEAGORA_RESULTS_THIN_STRIDE=k` (k > 1), every k-th saved
+state is kept, always including the final state (a checkpointed or
+callback-driven save cadence need not land exactly on a multiple of k, and a
+results file that silently dropped the mission-end value would be a
+correctness hazard for anything reading it).
+
+Every element of the returned vectors is an element of the input vectors --
+no state is recomputed or copied element-wise -- so a retained state is
+always byte-identical to what the default (unthinned) path would have
+written for that same saved time.
+"""
+@inline function _thin_results_segment(
+    times::Vector{Float64},
+    data::Vector{SimulationModel.SaveData},
+)::Tuple{Vector{Float64}, Vector{SimulationModel.SaveData}}
+    isempty(times) && return (times, data)
+    if _results_final_only()
+        return ([times[end]], [data[end]])
+    end
+    stride = _results_thin_stride()
+    stride <= 1 && return (times, data)
+    n = length(times)
+    idxs = collect(1:stride:n)
+    idxs[end] == n || push!(idxs, n)
+    return (times[idxs], data[idxs])
+end
+
 function _save_simulation_results_if_enabled!(
     args,
     solver_mode::Symbol,
@@ -278,6 +343,10 @@ function _save_simulation_results_if_enabled!(
     else
         checkpoint_active ? checkpoint_saved_data : saved_values.saveval
     end
+    results_times, results_data = _thin_results_segment(
+        convert(Vector{Float64}, results_times),
+        convert(Vector{SimulationModel.SaveData}, results_data),
+    )
     results_df = _build_results_dataframe(results_times, results_data, save_fields_resolved, args)
     csv_path = _write_results_csv!(results_df, args)
     if _typed_save_bundle_enabled()
@@ -346,6 +415,21 @@ function run_simulation(
     solver_cache::Union{Nothing, SolverIntegratorCache}=nothing,
     visualization::Bool=(_engine_env_get("SPACEAGORA_VISUALIZATION", "0") == "1")
 )
+    for guidance in args.guidance_model.guidance_effectors
+        SimulationLifecycle.preflight_guidance(guidance, args; isolate_state=isolate_state)
+    end
+    # SolverConfig(parallel=true): re-enter under the flag's scoped environment
+    # (see `_with_parallel_flag`). Inside it the flag reads as resolved, so this
+    # branch is taken once; with the flag off nothing here runs.
+    if args.solver_config !== nothing && _parallel_flag_applies(args.solver_config.parallel)
+        return _with_parallel_flag(true) do
+            run_simulation(args; isolate_state=isolate_state, return_solution=return_solution,
+                           return_solver_metadata=return_solver_metadata, save_fields=save_fields,
+                           extra_callbacks=extra_callbacks, solver_cache=solver_cache,
+                           visualization=visualization)
+        end
+    end
+    try
     return SimulationModel.ParallelPolicy.with_policy_context() do
     # `visualization=true` (or SPACEAGORA_VISUALIZATION=1, so an unmodified
     # example script can opt in) turns the scene sidecar on for this run and
@@ -458,6 +542,7 @@ function run_simulation(
             end
             t_start = ckpt.t
             u_start = ckpt.u
+            _initialize_in_atmosphere_flags!(p, u_start)
             if args.simulation_settings.verbose
                 println("Resuming simulation from checkpoint at t=$(round(t_start, digits=6)) s")
             end
@@ -469,10 +554,20 @@ function run_simulation(
     # println("ODE parameters:")
     # println(p)
     # println("args.mission_configuration.mission_time: $(args.mission_configuration.mission_time)")
+    for guidance in args.guidance_model.guidance_effectors
+        SimulationLifecycle.initialize_guidance!(guidance, u_start, p, t_start)
+    end
     p.shared_buffers.solve_segment_end_time[] = mission_end
-    prob_debug_state = solver_mode == :gravity_backbone_split ? initial_conditions : u_start
-    prob_debug = ODEProblem(spacecraft_dynamics!, prob_debug_state, (t_start, mission_end), p, callback=callbacks)
+    # prob_debug exists only to feed the NaN-probe below, which itself only
+    # runs when SPACEAGORA_DEBUG_INITIAL_DERIVATIVE is set. Building it
+    # unconditionally meant every solve -- debug flag on or off -- paid an
+    # ODEProblem allocation whose only reader is a branch almost no run takes.
+    # Nothing outside these two debug branches reads prob_debug, so deferring
+    # its construction into the branch that needs it changes no observable
+    # behavior.
     if p.shared_buffers.debug_initial_derivative[] && solver_mode != :gravity_backbone_split
+        prob_debug_state = solver_mode == :gravity_backbone_split ? initial_conditions : u_start
+        prob_debug = ODEProblem(spacecraft_dynamics!, prob_debug_state, (t_start, mission_end), p, callback=callbacks)
         # 1. Manually evaluate the derivative at the start
         du_test = copy(prob_debug.u0)
         try
@@ -614,6 +709,11 @@ function run_simulation(
             build_rhs_width_trial(p, args.dynamics_model.dynamic_effectors)
     end
 
+    # Every pre-solve probe is done; start history-dependent density models
+    # (GRAM perturbed winds) from their seed so the solve does not inherit
+    # whatever those probes, or an earlier run on the same instance, queried.
+    _reset_density_model_histories!(p)
+
     # Skip per-step solution/dense storage when nothing reads the trajectory.
     # gravity_backbone_split backfills save data from interior solution points,
     # so it keeps full storage.  Explicit SPACEAGORA_SOLVER_SAVE_* env settings
@@ -674,12 +774,12 @@ function run_simulation(
                     solver_cache === nothing || (solver_cache.integrator = nothing)
                 end
             end
+            _initialize_in_atmosphere_flags!(p, u_cursor)
             prob = _build_typed_solver_problem(u_cursor, (t_cursor, t_next), p, callbacks, solver_mode, jac_prototype)
             seg_sol, solve_meta = try
-                # Every segment resolves the same dtmax and save options, so the
-                # cache hits from the second segment on and each one reuses the
-                # integrator instead of rebuilding its cache, jac config, W and
-                # symbolic factorization. Safe here because the segment state is
+                # Segments with the same initial phase and save options reuse
+                # the cached integrator; a phase change rebuilds it. Reuse avoids
+                # rebuilding its cache, jac config, W and symbolic factorization. Safe here because the segment state is
                 # deepcopied into u_cursor below and _save_snapshot's getters
                 # materialise values (fresh SVectors), so nothing retains a
                 # reference into the integrator's own state buffer.
@@ -831,5 +931,13 @@ function run_simulation(
     end
     return_solution && return last_sol
     return nothing
+    end
+    finally
+        # A GRAM model this run realigned or deep-copied owns a native
+        # atmosphere that only the collector's finalizer frees, and the
+        # collector cannot see its size. Collect once enough of them have been
+        # discarded (see collect_unreferenced_gram_atmospheres!). Changes when
+        # native memory is released, not what the run computed.
+        SimulationModel.EnvironmentModels.collect_unreferenced_gram_atmospheres!()
     end
 end

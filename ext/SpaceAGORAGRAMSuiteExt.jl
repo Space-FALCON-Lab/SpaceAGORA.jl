@@ -14,6 +14,7 @@ const GRAM_LOCK = SpaceAGORA.RuntimeServices.GRAM_LOCK
 const RS = SpaceAGORA.RuntimeServices
 
 include("gram_grid_atmosphere.jl")
+include("gram_near_surface_atmosphere.jl")
 
 # Attributed views of the one shared native lock. Same critical section, same
 # mutual exclusion; the site only decides which occupancy counter the time lands
@@ -55,6 +56,81 @@ function __init__()
     # serialize against the same process-wide lock as every other CSPICE-
     # touching call, not just against other GRAM construction calls.
     GRAMSuite._GRAM_DEFAULT_LOCK_HOOK[] = GRAM_LOCK
+    EM._COLLECT_UNREFERENCED_GRAM_ATMOSPHERES_FN[] = _collect_unreferenced_native_atmospheres!
+end
+
+# ---------------------------------------------------------------------------
+# Native atmosphere accounting
+#
+# Every native GRAM atmosphere is freed by the wrapper's finalizer
+# (GRAM Suite 2.0/Julia/types.jl, `Atmosphere`), i.e. only once the Julia
+# collector has found it unreferenced -- and the collector decides when to run
+# from the Julia heap alone, which a native atmosphere barely touches (its
+# wrapper is two words; for Earth the native side is about 106 MB resident,
+# measured). A process that builds one per run therefore holds every
+# atmosphere it has discarded until the Julia heap happens to grow enough to
+# trigger a collection. On a one-spacecraft-per-sample process-pool worker that
+# was about 106 MB of resident memory per sample, with no collection at all in
+# 147 samples under a 7.4 GB --heap-size-hint (docs/architecture/
+# gram_thread_scaling.md, "Pool-worker memory growth").
+#
+# The counts below are exact: one per native atmosphere constructed through
+# this extension, one per such atmosphere finalized. `run_simulation` calls
+# `_collect_unreferenced_native_atmospheres!` after each run, which runs a full
+# collection once `limit` more atmospheres are alive than were alive right after
+# the previous collection it ran. Atmospheres still referenced survive it and
+# move the baseline up, so a process that legitimately keeps many alive pays at
+# most one collection per `limit` new ones. Collecting only changes when the
+# native memory is released, never what any run computes.
+# ---------------------------------------------------------------------------
+
+const _NATIVE_ATMOSPHERES_CREATED = Threads.Atomic{Int}(0)
+const _NATIVE_ATMOSPHERES_FINALIZED = Threads.Atomic{Int}(0)
+const _NATIVE_ATMOSPHERES_BASELINE = Threads.Atomic{Int}(0)
+const _NATIVE_COLLECT_IN_PROGRESS = Threads.Atomic{Bool}(false)
+
+# DERIVED default: at the measured ~106 MB resident per Earth atmosphere, 8
+# unreferenced atmospheres bound the excess at under 1 GB per process. The
+# budget itself (about 1 GB) is ASSUMED; SPACEAGORA_GRAM_NATIVE_COLLECT_LIMIT
+# overrides it, and 0 or "off" disables the collection.
+const _NATIVE_COLLECT_LIMIT_DEFAULT = 8
+
+function _native_collect_limit()::Int
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_GRAM_NATIVE_COLLECT_LIMIT", "")))
+    isempty(raw) && return _NATIVE_COLLECT_LIMIT_DEFAULT
+    raw == "off" && return 0
+    parsed = tryparse(Int, raw)
+    return parsed === nothing || parsed < 0 ? _NATIVE_COLLECT_LIMIT_DEFAULT : parsed
+end
+
+_native_atmospheres_live()::Int = _NATIVE_ATMOSPHERES_CREATED[] - _NATIVE_ATMOSPHERES_FINALIZED[]
+
+function _track_native_atmosphere!(core)
+    # A raw-core wrapper may hold a core that owns no native atmosphere (a
+    # stand-in core, or one from an older GRAMSuite); there is nothing to count.
+    hasfield(typeof(core), :gram_atmosphere) || return nothing
+    atmosphere = getfield(core, :gram_atmosphere)
+    ismutable(atmosphere) || return nothing
+    Threads.atomic_add!(_NATIVE_ATMOSPHERES_CREATED, 1)
+    # Counts only; the wrapper's own finalizer still frees the native object.
+    finalizer(_ -> Threads.atomic_add!(_NATIVE_ATMOSPHERES_FINALIZED, 1), atmosphere)
+    return nothing
+end
+
+function _collect_unreferenced_native_atmospheres!()::Bool
+    limit = _native_collect_limit()
+    limit > 0 || return false
+    _native_atmospheres_live() - _NATIVE_ATMOSPHERES_BASELINE[] >= limit || return false
+    # One collection at a time; a caller that finds one running skips it.
+    Threads.atomic_cas!(_NATIVE_COLLECT_IN_PROGRESS, false, true) && return false
+    try
+        _native_atmospheres_live() - _NATIVE_ATMOSPHERES_BASELINE[] >= limit || return false
+        GC.gc(true)
+        _NATIVE_ATMOSPHERES_BASELINE[] = _native_atmospheres_live()
+        return true
+    finally
+        _NATIVE_COLLECT_IN_PROGRESS[] = false
+    end
 end
 
 # ---------------------------------------------------------------------------
@@ -252,6 +328,115 @@ end
 # Constructors
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Process-wide native static tables
+#
+# Native Earth-GRAM keeps the MAP (middle-atmosphere) tables in class statics
+# that are loaded on first use, and one reader does not load them before it
+# reads them: EarthModel::getStandardDeviations calls
+# MAP::getWindStandardDeviations (Earth/source/MAP.cpp:262, no
+# initializeData() call) before MAP::getStandardDeviations, which is the first
+# call that runs MAP::initializeData(). That order runs inside
+# EarthAtmosphere::initializePerturbations, i.e. on the first update() of every
+# atmosphere. So the first atmosphere in a process to be updated at a height
+# above the lower-atmosphere fairing initializes its perturbation model from
+# all-zero wind standard deviations: its perturbed winds start at the mean
+# winds, and the north/south component is NaN (0/0 in the large-scale wind
+# correlation). Every later atmosphere in the process reads the loaded tables.
+# Density and temperature, which come from the mean state, are unaffected.
+#
+# The effect was that the first run in a process got different perturbed winds
+# from every later run with identical inputs. Updating one throwaway atmosphere
+# per process before any model is used loads the tables.
+#
+# The pinned dev GRAMSuite now carries the upstream fix (initializeData() at the
+# top of MAP::getWindStandardDeviations), and the warm-up is kept anyway:
+# - native GRAM built from sources without that fix (the public wrapper, or a
+#   native tree built before the pin moved) still has the defect;
+# - GRAM's lazy statics are guarded by an unsynchronized `initialized` flag, so
+#   loading them once, under the setup lock, keeps concurrent first updates on
+#   separate instances (isolated-pool workers, SPACEAGORA_GRAM_LOCK_SCOPE=model)
+#   from racing on them.
+#
+# Only Earth is warmed: it is the only body where this read-before-load was
+# found (Mars and Venus first-instance values match later instances).
+# ---------------------------------------------------------------------------
+
+const _NATIVE_STATIC_WARM_PLANETS = ("earth",)
+const _NATIVE_STATIC_WARMED = Set{String}()
+# Above Earth-GRAM's lower-atmosphere fairing, so initializePerturbations takes
+# the MAP branch that loads the tables. The value is otherwise arbitrary.
+const _NATIVE_STATIC_WARM_HEIGHT_M = 150.0e3
+
+function _ensure_native_static_tables!(core)::Nothing
+    hasfield(typeof(core), :planet_name) || return nothing
+    planet = lowercase(String(getfield(core, :planet_name)))
+    planet in _NATIVE_STATIC_WARM_PLANETS || return nothing
+    lock(_tl(:gram_setup)) do
+        planet in _NATIVE_STATIC_WARMED && return nothing
+        try
+            throwaway = GRAMSuite.GRAMAtmosphereModel(;
+                gram_root_directory=String(core.gram_root),
+                gram_data_directory=String(core.gram_data_root),
+                spice_directory=String(core.spice_root),
+                planet_name=planet,
+                initial_time=deepcopy(core.initial_time),
+            )
+            GRAMSuite.point_density_state(
+                throwaway, _NATIVE_STATIC_WARM_HEIGHT_M, 0.0, 0.0, 0.0, true;
+                lock_obj=_tl(:gram_setup))
+            push!(_NATIVE_STATIC_WARMED, planet)
+        catch err
+            err isa InterruptException && rethrow()
+            # Typically SpaceAGORA's SPICE kernels are not loaded yet (the
+            # ephemeris hook needs them; a planet built with SPICE loads them).
+            # Not marked, so the next construction or the pre-solve reset in
+            # run_simulation retries once they are.
+            @debug "Native GRAM static-table warm-up deferred." planet exception=err
+        end
+        return nothing
+    end
+    return nothing
+end
+
+@inline function _gram_core_seed(model::EM.GRAMAtmosphereModel)::Union{Nothing, Int}
+    recipe = model.constructor_kwargs
+    if recipe === nothing
+        core = model.core
+        hasfield(typeof(core), :_constructor_kwargs) || return nothing
+        recipe = getfield(core, :_constructor_kwargs)
+        recipe === nothing && return nothing
+    end
+    # The GRAMSuite keyword constructor's default seed.
+    return Int(get(recipe, :seed, 1001))
+end
+
+"""
+Reset the native perturbation model of `model` to its post-construction state
+by reseeding it with its configured seed. GRAM's `setSeed` reseeds the random
+number generator and marks the next update as the first of a trajectory, which
+re-initializes every perturbation (Earth) or the correlated random walk and its
+previous-position state (the common `PerturbedAtmosphere`). Measured: a used
+Earth or Mars atmosphere reseeded this way returns bit-identical values to a
+freshly constructed one along the same query sequence.
+
+A raw-core wrapper with no recorded recipe has an unknown seed and is left
+alone (returns `false`).
+"""
+function EM.reset_density_model_history!(model::EM.GRAMAtmosphereModel)::Bool
+    seed = _gram_core_seed(model)
+    seed === nothing && return false
+    core = model.core
+    hasfield(typeof(core), :gram) && hasfield(typeof(core), :gram_atmosphere) || return false
+    gram = core.gram
+    isdefined(gram, :set_seed!) || return false
+    _ensure_native_static_tables!(core)
+    lock(_gram_call_lock(model)) do
+        Base.invokelatest(getfield(gram, :set_seed!), core.gram_atmosphere, seed)
+    end
+    return true
+end
+
 function EM._rebuild_gram_epoch_model(recipe::Dict{Symbol, Any})
     return lock(_tl(:gram_setup)) do
         EM.GRAMAtmosphereModel(; recipe...)
@@ -263,6 +448,8 @@ function EM.GRAMAtmosphereModel(; kwargs...)
     # In particular, mutable option values must not alias either one.
     recipe = deepcopy(Dict{Symbol, Any}(kwargs))
     core = GRAMSuite.GRAMAtmosphereModel(; deepcopy(recipe)...)
+    _track_native_atmosphere!(core)
+    _ensure_native_static_tables!(core)
     # Preserve what construction resolved, even if the working directory or
     # path-discovery environment changes before copying or process transfer.
     recipe[:gram_root_directory] = String(core.gram_root)
@@ -323,8 +510,14 @@ function Base.deepcopy_internal(model::EM.GRAMAtmosphereModel, stackdict::IdDict
         recipe = model.constructor_kwargs
         # Raw-core wrappers retain their previous fallback; no recipe is
         # inferred from the subset of settings exposed by the core.
-        recipe === nothing ? EM.GRAMAtmosphereModel(deepcopy(model.core)) :
+        if recipe === nothing
+            core = deepcopy(model.core)
+            _track_native_atmosphere!(core)
+            _ensure_native_static_tables!(core)
+            EM.GRAMAtmosphereModel(core)
+        else
             EM.GRAMAtmosphereModel(; recipe...)
+        end
     end
     stackdict[model] = copied
     return copied
@@ -394,6 +587,9 @@ end
 # ---------------------------------------------------------------------------
 # _gram_core_density_state — used by the isolated-pool callback path
 # ---------------------------------------------------------------------------
+
+@inline EM._gram_core_wind_is_history_dependent(::GRAMSuite.GRAMAtmosphereModel)::Bool =
+    GRAMSuite._gram_wind_mode() !== :nominal
 
 function EM._gram_core_density_state(
     core::GRAMSuite.GRAMAtmosphereModel,

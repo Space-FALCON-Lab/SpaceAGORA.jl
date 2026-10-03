@@ -72,6 +72,8 @@ const RETIRED_PATHS = (
     joinpath("test", "telemetry_odyssey_tuner.jl"),
     joinpath("test", "telemetry_orbit_accuracy_study.jl"),
     joinpath("test", "telemetry_orbit_accuracy_plots.jl"),
+    # completed one-time migrations
+    joinpath("scripts", "dev", "test_reorg_b1.sh"),
 )
 
 # Canonical owner paths that must exist.

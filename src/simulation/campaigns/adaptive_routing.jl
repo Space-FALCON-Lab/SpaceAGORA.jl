@@ -1115,28 +1115,67 @@ end
 
 # Measurement hook, off by default: SPACEAGORA_PREDICTIVE_FORCE_PLAN set to a
 # `predictive_plan_key` (e.g. "process@w32+l4", "threads@w8+l0+b4",
-# "none@w1+l0+b32") runs that plan instead of the chosen one, so a plan the
-# margin rule never picks can be timed. An enumerated candidate is taken as the
-# planner priced it; any other plan is priced by the same `_predictive_plan`,
-# with S(b) = 1 when there is no inner-speedup curve. Unset, this returns
-# `nothing` and the campaign is planned exactly as before.
+# "none@w1+l0+b32") runs that plan as the campaign's initial plan instead of the
+# chosen one, so a plan the margin rule never picks can be timed. A plan with
+# local slots still runs under the guard, which may close slots. The key is
+# matched to the enumerated candidates after parsing, so "threads@w32+l0+b1"
+# is the enumerated "threads@w32+l0"; a match is taken as the planner priced
+# it. Any other plan must fit what the host can run (see
+# `_predictive_forced_plan_check`) and is priced by the same `_predictive_plan`
+# from the curve the planner would use for its route: the unsplit curve for
+# `:none`, the split curve otherwise, S(b) = 1 when that curve is absent.
+# Unset, this returns `nothing` and the campaign is planned exactly as before.
 function _predictive_forced_plan(planning::PredictivePlanning, n::Int,
                                  config::PredictivePlannerConfig, constants,
                                  terms::PredictiveCostTerms,
-                                 inner_curve::Union{Nothing, InnerSpeedupCurve})
+                                 inner_curve::Union{Nothing, InnerSpeedupCurve},
+                                 inner_curve_unsplit::Union{Nothing, InnerSpeedupCurve};
+                                 threads::Int, pool_workers::Int, local_cap::Int)
     raw = String(strip(get(ENV, "SPACEAGORA_PREDICTIVE_FORCE_PLAN", "")))
     isempty(raw) && return nothing
     key = _predictive_parse_plan_key(raw)
     key === nothing && throw(ArgumentError(
         "SPACEAGORA_PREDICTIVE_FORCE_PLAN must look like \"process@w32+l4\" or \"threads@w8+l0+b4\"; got \"$(raw)\"."))
-    i = findfirst(p -> predictive_plan_key(p) == raw, planning.plans)
+    i = findfirst(p -> _predictive_parse_plan_key(predictive_plan_key(p)) == key, planning.plans)
     i === nothing || return planning.plans[i]
+    _predictive_forced_plan_check(raw, key, n, config; threads=threads,
+                                  pool_workers=pool_workers, local_cap=local_cap)
     route, workers, local_slots, b = key
     contention = route === :none ? nothing :
         _predictive_contention_constants(config, constants, route, terms.local_heap_slope)
-    inner_time = (b > 1 && inner_curve !== nothing) ? 1.0 / inner_speedup(inner_curve, b) : 1.0
+    curve = route === :none ? inner_curve_unsplit : inner_curve
+    inner_time = (b > 1 && curve !== nothing) ? 1.0 / inner_speedup(curve, b) : 1.0
     return _predictive_plan(route, workers, local_slots, n, false, contention, config.remote_overhead;
                             terms = terms, inner_budget = b > 1 ? b : 0, inner_time = inner_time)
+end
+
+# What the host can run, with the planner's own bounds: a forced plan that is
+# not enumerated must still fit them, or it would run oversubscribed (e.g. the
+# X phases' w32 keys on a host whose paper budget is not 32).
+function _predictive_forced_plan_check(raw::AbstractString, key, n::Int,
+                                       config::PredictivePlannerConfig;
+                                       threads::Int, pool_workers::Int, local_cap::Int)::Nothing
+    route, workers, local_slots, b = key
+    bad(what) = throw(ArgumentError("SPACEAGORA_PREDICTIVE_FORCE_PLAN=\"$(raw)\" cannot run here: $(what)."))
+    workers >= 1 || bad("workers must be >= 1, got $(workers)")
+    1 <= b <= threads || bad("threads per sample b=$(b) must be in 1..T=$(threads)")
+    if route === :process
+        workers <= pool_workers ||
+            bad("workers $(workers) exceed the affordable pool of $(pool_workers)")
+        lmax = max(0, min(config.local_slots_max, n - workers, local_cap,
+                          b > 1 ? fld(threads - 1, b) : typemax(Int)))
+        local_slots <= lmax ||
+            bad("local slots $(local_slots) exceed the planner's bound of $(lmax) " *
+                "(SPACEAGORA_PREDICTIVE_LOCAL_SLOTS_MAX=$(config.local_slots_max), " *
+                "n - workers=$(n - workers), mixed-slot cap=$(local_cap)" *
+                (b > 1 ? ", fld(T - 1, b)=$(fld(threads - 1, b))" : "") * ")")
+    else
+        local_slots == 0 || bad("local slots $(local_slots) on the $(route) route, whose bound is 0")
+        route === :none && workers != 1 && bad("the none route runs 1 worker, got $(workers)")
+        route === :threads && workers * b > threads &&
+            bad("threads route needs workers * b = $(workers * b) <= T=$(threads)")
+    end
+    return nothing
 end
 
 function _run_campaign_predictive(
@@ -1182,8 +1221,15 @@ function _run_campaign_predictive(
         inner_curve_unsplit=inner_curve_unsplit)
     plan, leash = corrections === nothing ? (planning.chosen, :off) :
         predictive_leash(planning, get(corrections.last_plan, shape_key, nothing))
-    forced = _predictive_forced_plan(planning, n, config, constants, terms, inner_curve)
+    forced = _predictive_forced_plan(planning, n, config, constants, terms, inner_curve,
+                                     inner_curve_unsplit; threads=threads,
+                                     pool_workers=pool_workers, local_cap=local_cap)
     forced === nothing || (plan = forced)
+    # A forced plan is a measurement, not a decision: folding it would record it
+    # as this shape's last plan (which the leash then walks from) and fit the
+    # corrections to a plan the planner did not choose, so later unforced
+    # campaigns of the same shape would be planned from it. Skip fold and save.
+    fold = corrections !== nothing && forced === nothing
     trace = _dispatch_trace_enabled()
     if trace
         println("[predictive] shape n=$(n) threads=$(threads) pool=$(pool_workers) " *
@@ -1227,7 +1273,7 @@ function _run_campaign_predictive(
                          "n=$(length(result.samples)) failures=$(length(result.failed)) unguarded")
         on_pool = plan.route === :process
         on_pool && _predictive_mark_pool_warm!()
-        if corrections !== nothing
+        if fold
             worker_s = on_pool ? _predictive_mean_work(result.samples) : NaN
             tail = (on_pool && !pool_cold && isempty(result.failed)) ?
                 predictive_round_tail_observation(result.elapsed_s, worker_s, n,
@@ -1307,7 +1353,7 @@ function _run_campaign_predictive(
     final_consumers = max(1, open_workers + open_locals)
     final_slots = open_workers > 0 ? open_locals : 0
     _predictive_mark_pool_warm!()
-    if corrections !== nothing
+    if fold
         verdict = guard.verdict
         # The heap scale that would have predicted what the guard saw. Only a
         # plan whose heap model charged a term says anything about the term.

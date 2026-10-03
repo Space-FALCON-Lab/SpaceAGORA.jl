@@ -50,6 +50,7 @@ const PUBLIC_API_SECTIONS = [
         title = "Runtime Configuration",
         items = [
             (owner = :SpaceAGORA, symbol = :SimulationSettings, rendered = "SpaceAGORA.SimulationSettings"),
+            (owner = :SpaceAGORA, symbol = :PROCESS_WARMUP, rendered = "SpaceAGORA.PROCESS_WARMUP"),
             (owner = :SimulationEngine, symbol = :ParallelConfig, rendered = "SpaceAGORA.ParallelConfig"),
             (owner = :SimulationEngine, symbol = :SolverConfig, rendered = "SpaceAGORA.SolverConfig"),
             (owner = :SimulationEngine, symbol = :RuntimePolicyConfig, rendered = "SpaceAGORA.RuntimePolicyConfig"),

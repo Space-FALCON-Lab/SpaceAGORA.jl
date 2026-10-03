@@ -333,6 +333,11 @@ a zero-argument function warms with that call instead (a short representative
 run is much cheaper than a full sample of a long campaign); `false` skips the
 warm-up, leaving each worker's first-call compilation inside its first sample.
 
+The override applies when an adaptive campaign grows its process pool. Existing
+workers are not warmed again. New workers execute warm-up concurrently, so the
+call must not write conflicting files or depend on an ordering between workers.
+A failed warm-up emits a warning and leaves compilation to the real dispatch.
+
     using Base.ScopedValues: with
     with(SpaceAGORA.PROCESS_WARMUP => () -> short_run(seed)) do
         run_monte_carlo(f; seeds, threads=:auto)

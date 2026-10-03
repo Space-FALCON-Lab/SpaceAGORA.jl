@@ -121,8 +121,10 @@ end
     @test Base.invokelatest(S._ppb_split_modes, p5f) ==
         ["serial", "outer_threads", "outer_process", "outer_inner_static"]
     @test Base.invokelatest(S._ppb_split_modes, p5f) == filter(m -> m != "policy_v2" && m != "predictive", p5.modes)
-    # Every other phase runs every mode per split, as before.
-    @test all(p -> isempty(p.full_budget_modes), filter(p -> p.id != "P5f", S.PAPER_BENCHMARK_PHASES))
+    # Every other phase runs every mode per split, as before, except the route
+    # exploration phases X5a and X5b, which are P5f with pinned plans added.
+    @test all(p -> isempty(p.full_budget_modes),
+              filter(p -> !(p.id in ("P5f", "X5a", "X5b")), S.PAPER_BENCHMARK_PHASES))
     points = Base.invokelatest(S.ppb_workload_points)
     have = Set((p.case, p.mode) for p in points)
     @test all(((c, m),) -> (c, m) in have, [(c, m) for c in p5f.cases for m in p5f.modes])

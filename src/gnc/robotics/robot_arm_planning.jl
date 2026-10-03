@@ -67,6 +67,7 @@ function _reference_times(dt_s::Float64, duration_s::Float64)
 end
 
 include(joinpath(@__DIR__, "robot_arm_hypr.jl"))
+include(joinpath(@__DIR__, "..", "shared", "robot_arm_geometry.jl"))
 
 """Plan a quintic joint-space motion from an initial state to a target surface point."""
 function plan_robot_arm_motion(

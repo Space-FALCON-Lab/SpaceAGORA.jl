@@ -134,12 +134,21 @@ surface rather than a full mission case:
 
 ### RPO and robotics
 
+Prepare the optional HYPR companion environment once from the repository root:
+
+```text
+julia --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
+```
+
+These HYPR examples load `SpaceAGORAHYPR` before their common helper activates
+the root project. Baseline examples continue to use `--project=.`.
+
 The RPO examples need the SPICE kernels from the `data/GRAMSuite.jl` submodule
 ([GRAMSuite Setup](gramsuite_setup.md)); they do not need the native GRAM
 library. Start with one RPO case:
 
 ```text
-julia --project=. examples/Earth_RPO_CubeSat_MPC.jl
+julia --project=examples/rpo_planner_env examples/Earth_RPO_CubeSat_MPC.jl
 ```
 
 By default that script builds the Gateway-core scenario. Its
@@ -193,13 +202,13 @@ an exact checkpoint of an optimization already in progress.
 For a planner-comparison smoke run:
 
 ```text
-SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=. examples/Earth_RPO_CubeSat_MPC_PlannerComparison.jl --runs 1
+SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=examples/rpo_planner_env examples/Earth_RPO_CubeSat_MPC_PlannerComparison.jl --runs 1
 ```
 
 For the robot-arm and Cloth dynamics batch:
 
 ```text
-SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=. examples/Robot_Arm_Planner_Cloth_Demo.jl
+SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=examples/rpo_planner_env examples/Robot_Arm_Planner_Cloth_Demo.jl
 ```
 
 For the solar-panel cloth deployment demo:

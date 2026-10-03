@@ -1,5 +1,6 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const SRC_ROOT = joinpath(REPO_ROOT, "src")
+const SOURCE_ROOTS = (SRC_ROOT, joinpath(REPO_ROOT, "packages", "SpaceAGORAHYPR", "src"))
 
 const CANONICAL_AGGREGATOR_FILES = Set([
     joinpath("src", "gnc", "guidance", "rpo", "rpo_planner_module.jl"),
@@ -48,7 +49,7 @@ function _aggregator_has_behavior(src::String)::Bool
 end
 
 violations = String[]
-for (root, _, files) in walkdir(SRC_ROOT)
+for source_root in SOURCE_ROOTS, (root, _, files) in walkdir(source_root)
     for file in files
         endswith(file, ".jl") || continue
         path = joinpath(root, file)

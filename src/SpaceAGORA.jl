@@ -27,6 +27,10 @@ include(joinpath(@__DIR__, "cli", "spaceagora_cli.jl"))
 using .RPOPlannerInterfaces: AbstractRPOPlanner, RPOPlanningConstraints, RPOValidationSettings, RPOPlanningRequest, RPOReference, RPOPlanningResult, RPOPlannerCapabilities, RPOValidationResult, RPOPlanningHeadroom, planner_capabilities, initialize_planner, plan_rpo!, retime_rpo!, validate_rpo_result, validate_rpo_capabilities, rpo_reference_is_current
 using .DirectRPOPlanning: DirectRPOPlanner
 using .HYPRRPOPlanning: HYPRRPOPlanner
+using .SimulationModel.HYPRSupport: HYPRUnavailableError, hypr_available
+export HYPRUnavailableError, hypr_available
+@doc (@doc SimulationModel.HYPRSupport.hypr_available) hypr_available
+@doc (@doc SimulationModel.HYPRSupport.HYPRUnavailableError) HYPRUnavailableError
 using .SimulationModel: RPOPSOConfig, rpo_pso_config, SimulationSettings
 export SimulationSettings
 @doc "Output and checkpoint settings for a simulation. The opt-in RPO pilot refuses checkpoint writing and resume." SimulationSettings

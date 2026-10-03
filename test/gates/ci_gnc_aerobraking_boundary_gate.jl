@@ -30,6 +30,7 @@ for (root, _, files) in walkdir(guidance_root)
 end
 
 for root_rel in (
+    joinpath("packages", "SpaceAGORAHYPR", "src"),
     joinpath("src", "gnc", "guidance"),
     joinpath("src", "gnc", "shared"),
     joinpath("src", "gnc", "hypr"),

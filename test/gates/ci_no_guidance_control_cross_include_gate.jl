@@ -1,6 +1,6 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
-const GUIDANCE_ROOTS = Tuple(joinpath(REPO_ROOT, "src", "gnc", owner)
-    for owner in ("guidance", "shared", "hypr", "rrt"))
+const GUIDANCE_ROOTS = (joinpath(REPO_ROOT, "packages", "SpaceAGORAHYPR", "src"),
+    (joinpath(REPO_ROOT, "src", "gnc", owner) for owner in ("guidance", "shared", "hypr", "rrt"))...)
 
 violations = String[]
 for owner_root in GUIDANCE_ROOTS, (root, _, files) in walkdir(owner_root)

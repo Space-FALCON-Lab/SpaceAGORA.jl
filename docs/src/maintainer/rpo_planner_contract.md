@@ -279,7 +279,7 @@ check that flag before accepting a path. Direct safe paths bypass refinement,
 as before. A runtime budget is best-effort wall-clock termination, so seeded
 numerical comparisons use an infinite budget and fixed iteration counts.
 
-`src/gnc/hypr/rrt_adapters.jl` retains the existing four-argument configuration
+`packages/SpaceAGORAHYPR/src/rpo/rrt_adapters.jl` retains the existing four-argument configuration
 methods and result fields, including `config`. HYPR owns its search-box policy,
 objective, optional refinement, Bezier fitting, and the decision to request an
 RRT warm start. Existing public access and comparison callers remain intact.
@@ -334,3 +334,49 @@ shared-module tests exercise retiming without HYPR definitions. Configured-call
 comparisons and existing lifecycle/consumer tests cover compatibility. This
 boundary alone does not prove an optional HYPR installation: the package load
 chain and dependency declarations still need their separate acceptance work.
+
+
+## Optional HYPR package boundary
+
+`packages/SpaceAGORAHYPR` owns HYPR search, objective/refinement policy,
+configured RRT/retiming adapters and robot-arm HYPR execution. It depends on
+SpaceAGORA; core has no dependency on the companion. OSQP remains a core dependency
+because LQ-MPC uses it independently of HYPR.
+
+Core retains configuration/result types, historical compatibility function
+bindings and shared mathematical implementations in their original modules.
+The companion imports these explicitly and supplies their configured methods.
+The public `HYPRRPOPlanner` type remains in `HYPRRPOPlanning`; its execution delegates
+to a companion-provided internal method after checking availability. This is a
+coordinated extension of the package family's own contracts. No source is late
+included or evaluated inside another package's module.
+
+The companion registers availability in `__init__`, so precompilation alone does
+not activate HYPR. `require_planner_support` is a baseline no-op that the built-in
+HYPR adapter specializes. The public configuration builder and execution preflight
+call it, keeping missing-support errors ahead of run output creation. Third-party
+planners retain their existing behavior. Do not add a silent fallback planner.
+
+Pure robot-arm path sampling, length, smoothness, segment distance and clearance
+remain core-owned in `gnc/shared/robot_arm_geometry.jl`. The companion's cloth-wrench
+bridge explicitly addresses `SpaceAGORA.SimulationModel`, preserving the dynamics
+owner that the historical parent-module lookup reached. The mixed replanning file
+stays in its original location. The seven general retiming helpers stay shared.
+
+The configured comparison APIs intentionally still use HYPR policies. They require
+the companion; the underlying explicit-policy RRT and shared scalar functions do
+not. Configuration types can be constructed and inspected without loading execution.
+Private compatibility bindings remain for existing qualified research consumers;
+they are not a new general plugin API or a promise that every internal helper is
+stable forever.
+
+`test/optional_hypr/setup.jl <scratch-directory>` creates separate installation
+projects. `core.jl` verifies the dependency graph, absence of the companion, baseline
+simulation, shared planners and robot-arm use. `optional.jl core-first` and
+`optional.jl hypr-first` run in fresh processes with `JULIA_LOAD_PATH=@:@stdlib`.
+The full-feature test harness opts into the local companion explicitly; this
+bootstrap is never used by the independent installation proof.
+
+Architecture and source-completeness checks scan the companion sources. Coverage
+collection and the existing quality thresholds include the moved implementation.
+The required `tests` check also waits for the independent installation job.

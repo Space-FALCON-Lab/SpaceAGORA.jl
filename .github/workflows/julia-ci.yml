@@ -179,7 +179,7 @@ jobs:
 
   tests:
     if: always()
-    needs: [plan, test-shards]
+    needs: [plan, test-shards, optional-hypr-installation]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -205,7 +205,7 @@ jobs:
       - name: Enforce test shard success
         run: |
           echo "test-shards result=${{ needs.test-shards.result }}"
-          if [ "${{ needs.test-shards.result }}" != "success" ]; then
+          if [ "${{ needs.test-shards.result }}" != "success" ] || [ "${{ needs.optional-hypr-installation.result }}" != "success" ]; then
             echo "Test shards failed or were cancelled."
             exit 1
           fi
@@ -268,12 +268,12 @@ jobs:
         if: always()
         run: |
           shard_no=$(printf '%02d' "${SHARD##*-}")
-          find src -name '*.cov' -print0 | while IFS= read -r -d '' f; do
+          find src packages/SpaceAGORAHYPR/src -name '*.cov' -print0 | while IFS= read -r -d '' f; do
             mv "$f" "$(printf '%s' "$f" | sed -E "s/\.([0-9]+)\.cov\$/.9${shard_no}\1.cov/")"
           done
-          echo "coverage files: $(find src -name '*.cov' | wc -l)"
+          echo "coverage files: $(find src packages/SpaceAGORAHYPR/src -name '*.cov' | wc -l)"
           mkdir -p "$SPACEAGORA_CI_SHARD_REPORT_DIR"
-          find src -name '*.cov' -print0 | tar --null -czf "$SPACEAGORA_CI_SHARD_REPORT_DIR/coverage.tgz" -T -
+          find src packages/SpaceAGORAHYPR/src -name '*.cov' -print0 | tar --null -czf "$SPACEAGORA_CI_SHARD_REPORT_DIR/coverage.tgz" -T -
         env:
           SHARD: ${{ matrix.shard }}
 
@@ -288,7 +288,7 @@ jobs:
 
   coverage-quality-gate:
     if: always()
-    needs: [plan, coverage-shards]
+    needs: [plan, coverage-shards, optional-hypr-installation]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -321,10 +321,16 @@ jobs:
           SHARD_MATRIX: ${{ needs.plan.outputs.coverage_matrix }}
         run: python3 .github/scripts/ci_shard_verify.py tests shard-reports
 
+      - name: Download optional installation coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: hypr-installation-coverage
+          path: hypr-installation-coverage
+
       - name: Enforce coverage shard success
         run: |
           echo "coverage-shards result=${{ needs.coverage-shards.result }}"
-          if [ "${{ needs.coverage-shards.result }}" != "success" ]; then
+          if [ "${{ needs.coverage-shards.result }}" != "success" ] || [ "${{ needs.optional-hypr-installation.result }}" != "success" ]; then
             echo "Coverage shards failed or were cancelled."
             exit 1
           fi
@@ -338,7 +344,8 @@ jobs:
           for archive in shard-reports/*/coverage.tgz; do
             tar -xzmf "$archive"
           done
-          echo "coverage files: $(find src -name '*.cov' | wc -l)"
+          tar -xzmf hypr-installation-coverage/coverage.tgz
+          echo "coverage files: $(find src packages/SpaceAGORAHYPR/src -name '*.cov' | wc -l)"
 
       - name: Setup Julia
         if: always()
@@ -377,6 +384,9 @@ jobs:
         with:
           gram: native
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+
+      - name: Prepare documented HYPR example environment
+        run: julia --startup-file=no --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
 
       - name: Example suite smoke shard
         run: julia --startup-file=no --project=. .github/scripts/ci_example_shard.jl
@@ -770,3 +780,50 @@ jobs:
           SPACEAGORA_PR_NUMBER: ${{ github.event.pull_request.number }}
           SPACEAGORA_BASE_REF: ${{ github.base_ref }}
         run: julia --startup-file=no --project=. test/gates/ci_ai_review_artifact_gate.jl
+
+  optional-hypr-installation:
+    needs: depot
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          gram: none
+          gramsuite-smoke: "false"
+          token: ${{ github.token }}
+      - name: Prepare independent core and companion projects
+        env:
+          JULIA_PKG_PRECOMPILE_AUTO: "0"
+        run: julia --startup-file=no --project=. test/optional_hypr/setup.jl "$RUNNER_TEMP/hypr-installations"
+      - name: Example environment isolation
+        env:
+          JULIA_LOAD_PATH: "@:@stdlib"
+        run: julia --startup-file=no --project=. test/optional_hypr/example_routing.jl
+      - name: Core without HYPR installed
+        env:
+          JULIA_LOAD_PATH: "@:@stdlib"
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/hypr-installations/core" test/optional_hypr/core.jl
+      - name: Both companion load orders
+        env:
+          JULIA_LOAD_PATH: "@:@stdlib"
+        run: |
+          julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/hypr-installations/hypr" test/optional_hypr/optional.jl core-first
+          julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/hypr-installations/hypr" test/optional_hypr/optional.jl hypr-first
+      - name: Retain installation coverage
+        if: always()
+        run: |
+          find src packages/SpaceAGORAHYPR/src -name '*.cov' -print0 | while IFS= read -r -d '' f; do
+            mv "$f" "$(printf '%s' "$f" | sed -E 's/\.([0-9]+)\.cov$/.88\1.cov/')"
+          done
+          mkdir -p hypr-installation-coverage
+          find src packages/SpaceAGORAHYPR/src -name '*.cov' -print0 | tar --null -czf hypr-installation-coverage/coverage.tgz -T -
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hypr-installation-coverage
+          path: hypr-installation-coverage/coverage.tgz
+          retention-days: 3
+          if-no-files-found: error

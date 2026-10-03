@@ -14,7 +14,7 @@ report.planners[1].records
 report.commands[1].log
 ```
 
-Use `HYPRRPOPlanner(RPOPSOConfig(...))` as the `planner` to choose HYPR. The separate
+Load `SpaceAGORAHYPR` in your project, then use `HYPRRPOPlanner(RPOPSOConfig(...))` as the `planner` to choose HYPR. The separate
 `examples/rpo_planner_env` project provides exact, deterministic settings and runs
 both choices through this interface. Its README documents setup and offline
 execution. The default two-second case is a partial maneuver; the planners need
@@ -119,8 +119,9 @@ running. Reference acceptance is distinct from physical tracking acceptance.
 
 Checkpoint writing/resume and `isolate_state=false` are refused before propagation
 or output creation. Faithful restart needs a future contract for planner/RNG,
-controller, active-reference and trigger state. General restart and a core-only
-installation with HYPR absent remain open work.
+controller, active-reference and trigger state. General restart remains open work.
+A core-only installation can run the direct planner without HYPR; see the optional
+installation instructions below.
 
 ## Add your own planner or force
 
@@ -142,3 +143,52 @@ The separate-project smoke defines a tiny test planner using only these public
 methods, including an explicit failed result. Its force example uses the existing
 `AbstractForceTorqueModel` and `wrench` interface, passed through
 `extra_effectors=(model,)`. No internal package module or source include is needed.
+
+## Installing optional HYPR
+
+`using SpaceAGORA` loads the direct planner, simulation lifecycle, shared geometry,
+sampling, metrics, RRT, retiming and quintic robot-arm planner. It preserves HYPR
+configuration and result types so saved configurations and qualified names retain
+their defining modules. It does not load the HYPR optimizer or configured execution.
+
+Use a separate project for a checkout-based installation. Set `root` to your
+SpaceAGORA checkout, then choose the packages that project needs:
+
+```julia
+using Pkg
+Pkg.activate("my-rpo-project")
+Pkg.develop(path=root)                       # core only
+# Add this only for a project that uses HYPR:
+Pkg.develop(path=joinpath(root, "packages", "SpaceAGORAHYPR"))
+```
+
+The companion is currently supplied with this repository, not as a registered
+package. Keep the core and companion from the same reviewed checkout. Run with
+`--project=my-rpo-project` and explicitly load the companion before selecting it:
+
+```julia
+using SpaceAGORA, SpaceAGORAHYPR
+@assert hypr_available()
+planner = HYPRRPOPlanner(RPOPSOConfig())
+```
+
+Either package may be loaded first. Without the companion, HYPR selection raises
+`HYPRUnavailableError` with installation instructions. Public RPO assembly and
+simulation preflight perform this check before creating run outputs. A legacy
+`RPOGuidanceModel` needs the companion when it must plan or replan; tracking an
+already supplied reference with replanning disabled remains available in core.
+Robot-arm `planner=:hypr` also requires explicit loading; `:cloth_quintic` does not.
+
+Comparison planners that request HYPR-configured objectives, refinement, sampling
+or retiming need the companion even when their search algorithm is RRT, CHOMP or
+STOMP. Shared RRT with explicit policies and shared scalar APIs remain independent.
+The baseline LQ-MPC controller still needs OSQP; optional HYPR does not remove that
+controller dependency. Package separation changes installation, not the validated
+physical limits, planning reserve or numerical policies.
+
+The `examples/rpo_planner_env/setup.jl` command above installs both components
+explicitly for the two-planner demonstration. The RPO/Cloth HYPR examples and ISS viewer demo also run from that project and
+load the companion before their common helper activates the root project. See
+[Examples Catalog](examples_catalog.md) for the exact commands. Baseline examples
+keep `--project=.` and do not preload HYPR. Do not add the companion as a required
+dependency of SpaceAGORA itself.

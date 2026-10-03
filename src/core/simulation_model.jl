@@ -33,6 +33,7 @@ include(joinpath(@__DIR__, "..", "core", "types", "effector_sampling.jl"))
 include(joinpath(@__DIR__, "..", "gnc", "command_types.jl"))
 @reexport using .CommandTypes
 
+include(joinpath(@__DIR__, "..", "gnc", "hypr", "support.jl"))
 include(joinpath(@__DIR__, "..", "gnc", "hypr", "hypr_utils.jl"))
 
 include(joinpath(@__DIR__, "..", "vehicle", "robotics", "robotics.jl"))

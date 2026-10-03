@@ -394,6 +394,7 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc ParallelProcess.ensure_process_workers!) ensure_process_workers!
 @doc (@doc ParallelProcess.shutdown_process_pool!) shutdown_process_pool!
 @doc (@doc ParallelProcess.adopt_process_workers!) adopt_process_workers!
+@doc (@doc ParallelProcess.PROCESS_WARMUP) PROCESS_WARMUP
 
 # 3.7. Telemetry Verification
 @doc (@doc TelemetryVerification.VerificationRequest) VerificationRequest

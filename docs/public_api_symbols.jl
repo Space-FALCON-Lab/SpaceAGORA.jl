@@ -50,7 +50,6 @@ const PUBLIC_API_SECTIONS = [
         title = "Runtime Configuration",
         items = [
             (owner = :SpaceAGORA, symbol = :SimulationSettings, rendered = "SpaceAGORA.SimulationSettings"),
-            (owner = :SpaceAGORA, symbol = :PROCESS_WARMUP, rendered = "SpaceAGORA.PROCESS_WARMUP"),
             (owner = :SimulationEngine, symbol = :ParallelConfig, rendered = "SpaceAGORA.ParallelConfig"),
             (owner = :SimulationEngine, symbol = :SolverConfig, rendered = "SpaceAGORA.SolverConfig"),
             (owner = :SimulationEngine, symbol = :RuntimePolicyConfig, rendered = "SpaceAGORA.RuntimePolicyConfig"),
@@ -312,6 +311,7 @@ const PUBLIC_API_SECTIONS = [
         title = "Process Workers",
         items = [
             (owner = :ParallelProcess, symbol = :ProcessPool, rendered = "SpaceAGORA.ProcessPool"),
+            (owner = :ParallelProcess, symbol = :PROCESS_WARMUP, rendered = "SpaceAGORA.PROCESS_WARMUP"),
             (owner = :ParallelProcess, symbol = :campaign_process_pool, rendered = "SpaceAGORA.campaign_process_pool"),
             (owner = :ParallelProcess, symbol = :ensure_process_workers!, rendered = "SpaceAGORA.ensure_process_workers!"),
             (owner = :ParallelProcess, symbol = :shutdown_process_pool!, rendered = "SpaceAGORA.shutdown_process_pool!"),

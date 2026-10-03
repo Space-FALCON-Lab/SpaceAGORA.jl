@@ -853,9 +853,20 @@ Every number the planner uses, and what kind of number it is.
 | Inner-speedup curve applied to the whole sample | -- | ASSUMED | The sweep times the RHS alone; the solver's own work does not speed up with the inner budget. An upper bound, carried by the margin. |
 | Curve measured without `W` samples beside it | -- | ASSUMED | A row's timings come from one solve's sweep; `W` concurrent samples at `b` threads share memory bandwidth the sweep did not. |
 | `SPACEAGORA_PREDICTIVE_INNER_CURVE` | `1` | -- | `0` plans without an inner-speedup curve. |
+| `SPACEAGORA_PREDICTIVE_FORCE_PLAN` | unset | -- | A measurement tool, not a planner setting: a `predictive_plan_key` (e.g. `process@w32+l4`, `threads@w8+l0+b4`, `none@w1+l0+b32`) that the campaign runs as its initial plan in place of the chosen one, so plans the margin rule never picks can be timed. Every key must use a route allowed for the workload (native GRAM excludes threads) and fit the host: process plans require at least two workers and at most the affordable pool, local slots stay within the planner's bound, and `b <= T`. Invalid keys throw an `ArgumentError`. The key is then matched to the enumerated candidates after parsing (`threads@w32+l0+b1` is `threads@w32+l0`); other feasible plans are priced from the curve the planner uses for their route. An explicit serial inner budget narrows the inherited ceiling and is restored after dispatch. A plan with local slots still runs under the guard. A forced campaign skips the corrections fold and save, so it never becomes a shape's last plan or moves a correction. Unset or blank, planning is unchanged. |
 | `local_heap_slope` (`[campaign]` table) | absent: the USL term | SOURCED (fit), form DERIVED | 0.006011, least squares of `s - 1` on `k (k - 1)` over the four first-round per-class work ratios of `trx50_targeted_cold_20260923_140152` (k = 4, 7, 15, 31; see The local-slot heap term). The pairwise form is chosen because the linear one fails P3 at 32. Ranks P3 at 32 and P4 at 8 as measured, not P4 at 16. |
 
 ## The measurements the unit tests encode
+
+The paper harness's X1, X3, X4, X5a and X5b exploration phases are explicit
+`--phases` selections. Their historical plan keys require
+`SPACEAGORA_PPB_PAPER_BUDGET=32`, without `--preview`; X1 also requires
+`--threads=32`, and X3/X4/X5a/X5b require `--process-workers` to allow 32
+workers. Selection rejects incompatible settings before starting a phase.
+Default and preview runs omit these experiments. P6ps speedups use the serial
+measurement from each matching thread/worker sub-run; X5a/X5b split rows share
+their phase's single full-budget serial measurement. Ambiguous baselines stay
+missing instead of duplicating measured rows.
 
 `test/unit/parallel/predictive_planner_tests.jl` checks the planner's decision
 at seven points from the TRX50 cold-11 run. They are used as the expected

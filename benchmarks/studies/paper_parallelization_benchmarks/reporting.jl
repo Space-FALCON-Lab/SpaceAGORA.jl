@@ -355,6 +355,36 @@ end
 
 # ── Aggregation ───────────────────────────────────────────────────────────────
 
+# A controller runs serial only at its lowest thread count. Most phases thus
+# share that baseline across a thread ladder, but P6ps has two separate
+# controller runs with the same worker count. Prefer an exact thread match
+# before sharing a unique baseline. X5a/b explicitly run serial once at the
+# full budget, so their split rows share that phase's sole serial measurement.
+# Assign in place: an ambiguous baseline must never multiply measured rows.
+function _ppb_add_serial_baseline!(agg::DataFrame)
+    agg[!, :serial_median_s] = Vector{Union{Missing, Float64}}(missing, nrow(agg))
+    keys = [k for k in [:phase_id, :case, :mc_samples, :budget_condition] if string(k) in names(agg)]
+    has_workers = "process_workers" in names(agg)
+    has_threads = "thread_count" in names(agg)
+    for sub in groupby(agg, keys)
+        serial = findall(==("serial"), sub.mode)
+        for i in 1:nrow(sub)
+            candidates = has_workers ?
+                filter(j -> isequal(sub.process_workers[j], sub.process_workers[i]), serial) : serial
+            if has_threads
+                exact = filter(j -> isequal(sub.thread_count[j], sub.thread_count[i]), candidates)
+                isempty(exact) || (candidates = exact)
+            end
+            if isempty(candidates) && sub.phase_id[i] in ("X5a", "X5b")
+                candidates = serial
+            end
+            length(candidates) == 1 || continue
+            sub.serial_median_s[i] = sub.wall_time_median_s[only(candidates)]
+        end
+    end
+    return agg
+end
+
 function _ppb_aggregate(raw::DataFrame)::DataFrame
     nrow(raw) == 0 && return DataFrame()
     raw = ppc_with_budget_columns(raw)
@@ -394,12 +424,7 @@ function _ppb_aggregate(raw::DataFrame)::DataFrame
     end
     _ppb_add_effective_cores!(agg)
 
-    # Serial baseline: join within (phase_id, case, mc_samples, process_workers) so
-    # each parallel row is compared against the serial run from the same sub-run.
-    serial_key = [k for k in [:phase_id, :case, :mc_samples, :process_workers, :budget_condition] if k in Symbol.(names(agg))]
-    serial_df  = agg[agg.mode .== "serial", [serial_key..., :wall_time_median_s]]
-    rename!(serial_df, :wall_time_median_s => :serial_median_s)
-    agg = leftjoin(agg, serial_df; on=serial_key)
+    _ppb_add_serial_baseline!(agg)
 
     agg[!, :speedup] = [
         (ismissing(s) || t <= 0.0) ? missing : s / t

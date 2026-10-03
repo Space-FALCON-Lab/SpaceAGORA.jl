@@ -722,16 +722,6 @@ function ppc_policy_columns(snap)
 end
 
 function ppc_run_worker_performance(cfg::PPCConfig)
-    # The topology snapshot is computed during precompilation and serialized
-    # into the pkgimage, so SPACEAGORA_CORE_BUDGET set on this process is never
-    # read. Apply it to the cached snapshot, changing only the core budget (a
-    # full refresh would also re-read memory under this run's cgroup).
-    budget = strip(get(ENV, "SPACEAGORA_CORE_BUDGET", ""))
-    if !isempty(budget)
-        PP = SpaceAGORA.ParallelProfiles
-        PP._TOPOLOGY_CACHE[] = merge(PP.machine_topology(), (usable_cores=parse(Int, budget), source=:override))
-        println("[equal-core-budget] usable_core_budget=$(PP.usable_core_budget()) class=$(PP._machine_parallel_class()) topology=$(PP.machine_topology())")
-    end
     catalog = ppc_case_catalog()
     case = catalog[cfg.worker_case]
     mode = ppc_mode_specs()[cfg.worker_mode]

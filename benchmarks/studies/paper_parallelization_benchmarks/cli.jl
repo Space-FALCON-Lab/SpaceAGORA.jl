@@ -1232,6 +1232,23 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         budget_grid_fixed = true,
     ),
     PPBPhase(
+        id    = "P4g",
+        label = "Paper — Dispersed MarsGRAM Aerobraking Samples at the Full Budget",
+        # P4's samples flown through MarsGRAM, each with its own seed and the
+        # per-pass perturbed density: the campaign the paper's question names. A
+        # native GRAM campaign is offered only the pool and serial by the policy;
+        # outer threads are pinned anyway to show what the shared GRAM lock costs.
+        # One rung, the full budget.
+        cases        = ["montecarlo_heavy_aerobraking_gram"],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "outer_process", "predictive"],
+        mc_samples   = [32],
+        repeats      = 5,
+        warmup       = 1,
+        budget_grid  = [(PPB_PAPER_BUDGET, PPB_PAPER_BUDGET)],
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
         id    = "P5",
         label = "Paper — Monte Carlo over Constellations, Worker/Thread Split at a Fixed Budget",
         # Two aspect ratios of the same 128 spacecraft-hour total, so the rungs

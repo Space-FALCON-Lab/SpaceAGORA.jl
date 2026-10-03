@@ -2352,6 +2352,175 @@ end
     return maximum(abs.(qnorm .- 1.0))
 end
 
+function _plot_cygnss_drag_force_timeseries(
+    t_s::Vector{Float64},
+    Fx::Vector{Float64},
+    Fy::Vector{Float64},
+    Fz::Vector{Float64},
+    F_mag::Vector{Float64},
+    inlier_mask::BitVector,
+    outpath::String
+)::String
+    t_hr    = t_s ./ 3600.0
+    Fx_mN   = Fx .* 1000.0
+    Fy_mN   = Fy .* 1000.0
+    Fz_mN   = Fz .* 1000.0
+    Fmag_mN = F_mag .* 1000.0
+
+    outlier_mask = .!inlier_mask
+
+    # Panel 1: per-axis force components (inliers only for clarity)
+    p_axes = plot(
+        t_hr[inlier_mask], Fx_mN[inlier_mask];
+        label="Fx", xlabel="Time (hr)", ylabel="Force (mN)",
+        title="Inferred Drag Force — Components (IQR inliers)",
+        lw=1.0, alpha=0.8, legend=:topright
+    )
+    plot!(p_axes, t_hr[inlier_mask], Fy_mN[inlier_mask]; label="Fy", lw=1.0, alpha=0.8)
+    plot!(p_axes, t_hr[inlier_mask], Fz_mN[inlier_mask]; label="Fz", lw=1.0, alpha=0.8)
+
+    # Panel 2: force magnitude with inlier/outlier split and statistics
+    mean_mN = mean(Fmag_mN[inlier_mask])
+    q1_mN   = quantile(Fmag_mN, 0.25)
+    q3_mN   = quantile(Fmag_mN, 0.75)
+    iqr_mN  = q3_mN - q1_mN
+    lo_mN   = q1_mN - 1.5 * iqr_mN
+    hi_mN   = q3_mN + 1.5 * iqr_mN
+
+    p_mag = plot(
+        t_hr[inlier_mask], Fmag_mN[inlier_mask];
+        label="|F| inliers ($(sum(inlier_mask)))",
+        xlabel="Time (hr)", ylabel="|Force| (mN)",
+        title="Inferred Drag Force Magnitude",
+        lw=0.8, alpha=0.7, color=:steelblue, legend=:topright
+    )
+    if any(outlier_mask)
+        scatter!(
+            p_mag, t_hr[outlier_mask], Fmag_mN[outlier_mask];
+            label="outliers ($(sum(outlier_mask)))",
+            markersize=3, alpha=0.5, color=:red, markerstrokewidth=0
+        )
+    end
+    hline!(p_mag, [mean_mN]; label="mean $(round(mean_mN, digits=2)) mN",
+           linestyle=:dash, color=:black, lw=1.5)
+    hline!(p_mag, [lo_mN, hi_mN]; label="IQR ±1.5 bounds",
+           linestyle=:dot, color=:orange, lw=1.2)
+
+    fig = plot(p_axes, p_mag; layout=(2, 1), size=(1000, 700))
+    mkpath(dirname(outpath))
+    savefig(fig, outpath)
+    return outpath
+end
+
+function _plot_cygnss_drag_tangential_timeseries(
+    t_s::Vector{Float64},
+    F_tang::Vector{Float64},
+    inlier_mask::BitVector,
+    outpath::String
+)::String
+    t_hr         = t_s ./ 3600.0
+    Ftang_mN     = F_tang .* 1000.0
+    outlier_mask = .!inlier_mask
+
+    mean_mN = mean(Ftang_mN[inlier_mask])
+    q1_mN   = quantile(Ftang_mN, 0.25)
+    q3_mN   = quantile(Ftang_mN, 0.75)
+    iqr_mN  = q3_mN - q1_mN
+    lo_mN   = q1_mN - 1.5 * iqr_mN
+    hi_mN   = q3_mN + 1.5 * iqr_mN
+
+    p = plot(
+        t_hr[inlier_mask], Ftang_mN[inlier_mask];
+        label="F_tang inliers ($(sum(inlier_mask)))",
+        xlabel="Time (hr)", ylabel="Tangential Force (mN)",
+        title="Inferred Tangential Drag Force (along-track)\nnegative = opposing motion",
+        lw=0.8, alpha=0.7, color=:steelblue, legend=:topright
+    )
+    if any(outlier_mask)
+        scatter!(
+            p, t_hr[outlier_mask], Ftang_mN[outlier_mask];
+            label="outliers ($(sum(outlier_mask)))",
+            markersize=3, alpha=0.5, color=:red, markerstrokewidth=0
+        )
+    end
+    hline!(p, [mean_mN]; label="mean $(round(mean_mN, digits=2)) mN",
+           linestyle=:dash, color=:black, lw=1.5)
+    hline!(p, [lo_mN, hi_mN]; label="IQR ±1.5 bounds",
+           linestyle=:dot, color=:orange, lw=1.2)
+    hline!(p, [0.0]; label="zero", linestyle=:solid, color=:gray, lw=0.8, alpha=0.5)
+
+    fig = plot(p; size=(1000, 450))
+    mkpath(dirname(outpath))
+    savefig(fig, outpath)
+    return outpath
+end
+
+function _export_spaceagora_examples(result::TV.VerificationResult, outdir::String)
+    mkpath(outdir)
+
+    for scenario_name in sort!(collect(_active_basilisk_expected_scenario_names()))
+        errors = result.errors
+
+        # Filter to x/y/z position events for this scenario, sorted by idx
+        rows = errors[(errors.scenario .== scenario_name) .& in.(errors.event, Ref(["state_x_time", "state_y_time", "state_z_time"])), :]
+        xrows = sort(rows[rows.event .== "state_x_time", :], :idx)
+        yrows = sort(rows[rows.event .== "state_y_time", :], :idx)
+        zrows = sort(rows[rows.event .== "state_z_time", :], :idx)
+
+        n = min(nrow(xrows), nrow(yrows), nrow(zrows))
+        n >= 2 || continue
+
+        t_s  = Float64.(xrows.telemetry_axis[1:n])
+        x_km = Float64.(xrows.sim_interp_value_km[1:n])
+        y_km = Float64.(yrows.sim_interp_value_km[1:n])
+        z_km = Float64.(zrows.sim_interp_value_km[1:n])
+
+        vx_km_s = _differentiate_position_series(x_km, t_s)
+        vy_km_s = _differentiate_position_series(y_km, t_s)
+        vz_km_s = _differentiate_position_series(z_km, t_s)
+
+        planet = TV._planet_from_name(_scenario_planet_name(scenario_name))
+
+        sma_km = Vector{Float64}(undef, n)
+        ecc    = Vector{Float64}(undef, n)
+        inc_deg = Vector{Float64}(undef, n)
+
+        for i in 1:n
+            r = SVector{3, Float64}(x_km[i], y_km[i], z_km[i]) .* 1.0e3
+            v = SVector{3, Float64}(vx_km_s[i], vy_km_s[i], vz_km_s[i]) .* 1.0e3
+            try
+                oe = TV.rvtoorbitalelement(r, v, planet)
+                sma_km[i]  = oe[1] * 1.0e-3
+                ecc[i]     = oe[2]
+                inc_deg[i] = rad2deg(oe[3])
+            catch
+                sma_km[i]  = NaN
+                ecc[i]     = NaN
+                inc_deg[i] = NaN
+            end
+        end
+
+        df = DataFrame(
+            ElapsedSecs = t_s,
+            SMA         = sma_km,
+            ECC         = ecc,
+            INC         = inc_deg,
+            X           = x_km,
+            Y           = y_km,
+            Z           = z_km,
+            VX          = vx_km_s,
+            VY          = vy_km_s,
+            VZ          = vz_km_s,
+        )
+
+        fname = _scenario_basilisk_file_name(scenario_name)
+        Arrow.write(joinpath(outdir, fname), df)
+    end
+end
+
+# Direct inclusion retains the historical test/plot/export behavior. Debug tools
+# load these definitions in their own module and opt out of this single runner.
+function _run_scenario_matrix_testsets()
 if !_parse_bool_env("SPACEAGORA_SKIP_GMAT_MATRIX", false)
 
 if !_basilisk_reference_available()
@@ -2686,109 +2855,6 @@ end
 
 end # GMAT comparison propagation present
 
-function _plot_cygnss_drag_force_timeseries(
-    t_s::Vector{Float64},
-    Fx::Vector{Float64},
-    Fy::Vector{Float64},
-    Fz::Vector{Float64},
-    F_mag::Vector{Float64},
-    inlier_mask::BitVector,
-    outpath::String
-)::String
-    t_hr    = t_s ./ 3600.0
-    Fx_mN   = Fx .* 1000.0
-    Fy_mN   = Fy .* 1000.0
-    Fz_mN   = Fz .* 1000.0
-    Fmag_mN = F_mag .* 1000.0
-
-    outlier_mask = .!inlier_mask
-
-    # Panel 1: per-axis force components (inliers only for clarity)
-    p_axes = plot(
-        t_hr[inlier_mask], Fx_mN[inlier_mask];
-        label="Fx", xlabel="Time (hr)", ylabel="Force (mN)",
-        title="Inferred Drag Force — Components (IQR inliers)",
-        lw=1.0, alpha=0.8, legend=:topright
-    )
-    plot!(p_axes, t_hr[inlier_mask], Fy_mN[inlier_mask]; label="Fy", lw=1.0, alpha=0.8)
-    plot!(p_axes, t_hr[inlier_mask], Fz_mN[inlier_mask]; label="Fz", lw=1.0, alpha=0.8)
-
-    # Panel 2: force magnitude with inlier/outlier split and statistics
-    mean_mN = mean(Fmag_mN[inlier_mask])
-    q1_mN   = quantile(Fmag_mN, 0.25)
-    q3_mN   = quantile(Fmag_mN, 0.75)
-    iqr_mN  = q3_mN - q1_mN
-    lo_mN   = q1_mN - 1.5 * iqr_mN
-    hi_mN   = q3_mN + 1.5 * iqr_mN
-
-    p_mag = plot(
-        t_hr[inlier_mask], Fmag_mN[inlier_mask];
-        label="|F| inliers ($(sum(inlier_mask)))",
-        xlabel="Time (hr)", ylabel="|Force| (mN)",
-        title="Inferred Drag Force Magnitude",
-        lw=0.8, alpha=0.7, color=:steelblue, legend=:topright
-    )
-    if any(outlier_mask)
-        scatter!(
-            p_mag, t_hr[outlier_mask], Fmag_mN[outlier_mask];
-            label="outliers ($(sum(outlier_mask)))",
-            markersize=3, alpha=0.5, color=:red, markerstrokewidth=0
-        )
-    end
-    hline!(p_mag, [mean_mN]; label="mean $(round(mean_mN, digits=2)) mN",
-           linestyle=:dash, color=:black, lw=1.5)
-    hline!(p_mag, [lo_mN, hi_mN]; label="IQR ±1.5 bounds",
-           linestyle=:dot, color=:orange, lw=1.2)
-
-    fig = plot(p_axes, p_mag; layout=(2, 1), size=(1000, 700))
-    mkpath(dirname(outpath))
-    savefig(fig, outpath)
-    return outpath
-end
-
-function _plot_cygnss_drag_tangential_timeseries(
-    t_s::Vector{Float64},
-    F_tang::Vector{Float64},
-    inlier_mask::BitVector,
-    outpath::String
-)::String
-    t_hr         = t_s ./ 3600.0
-    Ftang_mN     = F_tang .* 1000.0
-    outlier_mask = .!inlier_mask
-
-    mean_mN = mean(Ftang_mN[inlier_mask])
-    q1_mN   = quantile(Ftang_mN, 0.25)
-    q3_mN   = quantile(Ftang_mN, 0.75)
-    iqr_mN  = q3_mN - q1_mN
-    lo_mN   = q1_mN - 1.5 * iqr_mN
-    hi_mN   = q3_mN + 1.5 * iqr_mN
-
-    p = plot(
-        t_hr[inlier_mask], Ftang_mN[inlier_mask];
-        label="F_tang inliers ($(sum(inlier_mask)))",
-        xlabel="Time (hr)", ylabel="Tangential Force (mN)",
-        title="Inferred Tangential Drag Force (along-track)\nnegative = opposing motion",
-        lw=0.8, alpha=0.7, color=:steelblue, legend=:topright
-    )
-    if any(outlier_mask)
-        scatter!(
-            p, t_hr[outlier_mask], Ftang_mN[outlier_mask];
-            label="outliers ($(sum(outlier_mask)))",
-            markersize=3, alpha=0.5, color=:red, markerstrokewidth=0
-        )
-    end
-    hline!(p, [mean_mN]; label="mean $(round(mean_mN, digits=2)) mN",
-           linestyle=:dash, color=:black, lw=1.5)
-    hline!(p, [lo_mN, hi_mN]; label="IQR ±1.5 bounds",
-           linestyle=:dot, color=:orange, lw=1.2)
-    hline!(p, [0.0]; label="zero", linestyle=:solid, color=:gray, lw=0.8, alpha=0.5)
-
-    fig = plot(p; size=(1000, 450))
-    mkpath(dirname(outpath))
-    savefig(fig, outpath)
-    return outpath
-end
-
 @testset "CYGNSS Drag Force Estimation" begin
     @test isfile(_CYGNSS_48HR_TELEMETRY_FEATHER)
 
@@ -2975,69 +3041,6 @@ end # !_cygnss_private_data_available() guard around the CYGNSS testsets
 # SpaceAGORA Examples Export
 # ---------------------------------------------------------------------------
 
-function _export_spaceagora_examples(result::TV.VerificationResult, outdir::String)
-    mkpath(outdir)
-
-    for scenario_name in sort!(collect(_active_basilisk_expected_scenario_names()))
-        errors = result.errors
-
-        # Filter to x/y/z position events for this scenario, sorted by idx
-        rows = errors[(errors.scenario .== scenario_name) .& in.(errors.event, Ref(["state_x_time", "state_y_time", "state_z_time"])), :]
-        xrows = sort(rows[rows.event .== "state_x_time", :], :idx)
-        yrows = sort(rows[rows.event .== "state_y_time", :], :idx)
-        zrows = sort(rows[rows.event .== "state_z_time", :], :idx)
-
-        n = min(nrow(xrows), nrow(yrows), nrow(zrows))
-        n >= 2 || continue
-
-        t_s  = Float64.(xrows.telemetry_axis[1:n])
-        x_km = Float64.(xrows.sim_interp_value_km[1:n])
-        y_km = Float64.(yrows.sim_interp_value_km[1:n])
-        z_km = Float64.(zrows.sim_interp_value_km[1:n])
-
-        vx_km_s = _differentiate_position_series(x_km, t_s)
-        vy_km_s = _differentiate_position_series(y_km, t_s)
-        vz_km_s = _differentiate_position_series(z_km, t_s)
-
-        planet = TV._planet_from_name(_scenario_planet_name(scenario_name))
-
-        sma_km = Vector{Float64}(undef, n)
-        ecc    = Vector{Float64}(undef, n)
-        inc_deg = Vector{Float64}(undef, n)
-
-        for i in 1:n
-            r = SVector{3, Float64}(x_km[i], y_km[i], z_km[i]) .* 1.0e3
-            v = SVector{3, Float64}(vx_km_s[i], vy_km_s[i], vz_km_s[i]) .* 1.0e3
-            try
-                oe = TV.rvtoorbitalelement(r, v, planet)
-                sma_km[i]  = oe[1] * 1.0e-3
-                ecc[i]     = oe[2]
-                inc_deg[i] = rad2deg(oe[3])
-            catch
-                sma_km[i]  = NaN
-                ecc[i]     = NaN
-                inc_deg[i] = NaN
-            end
-        end
-
-        df = DataFrame(
-            ElapsedSecs = t_s,
-            SMA         = sma_km,
-            ECC         = ecc,
-            INC         = inc_deg,
-            X           = x_km,
-            Y           = y_km,
-            Z           = z_km,
-            VX          = vx_km_s,
-            VY          = vy_km_s,
-            VZ          = vz_km_s,
-        )
-
-        fname = _scenario_basilisk_file_name(scenario_name)
-        Arrow.write(joinpath(outdir, fname), df)
-    end
-end
-
 if !_parse_bool_env("SPACEAGORA_SKIP_GMAT_MATRIX", false)
 
 if !_basilisk_reference_available()
@@ -3061,3 +3064,8 @@ end
 end # Basilisk parity references present (SpaceAGORA Examples Export)
 
 end # SPACEAGORA_SKIP_GMAT_MATRIX (SpaceAGORA Examples Export)
+end # _run_scenario_matrix_testsets
+
+if !isdefined(@__MODULE__, :SCENARIO_MATRIX_DEFINITIONS_ONLY) || !SCENARIO_MATRIX_DEFINITIONS_ONLY
+    _run_scenario_matrix_testsets()
+end

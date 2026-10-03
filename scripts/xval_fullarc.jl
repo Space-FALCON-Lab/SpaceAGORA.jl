@@ -34,15 +34,10 @@ import SPICE
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
-# Load only the definitions of the harness (everything before its first
-# top-level testset guard), not the testsets themselves.
-let
-    path = joinpath(REPO_ROOT, "test", "gmat_scenario_matrix.jl")
-    src = readlines(path)
-    boundary = findfirst(l -> occursin("SPACEAGORA_SKIP_GMAT_MATRIX", l), src)
-    boundary === nothing && error("boundary marker not found in $path")
-    include_string(Main, join(src[1:boundary-1], "\n"), path)
-end
+# Use the maintained definitions-only boundary. Text-prefix extraction would
+# leave an incomplete function after the matrix runner was encapsulated.
+const SCENARIO_MATRIX_DEFINITIONS_ONLY = true
+include(joinpath(REPO_ROOT, "test", "gmat_scenario_matrix.jl"))
 
 const ALL_SCENARIOS = [
     "$(b)_$(g)_$(tb)" for b in ("earth", "mars", "venus", "moon")

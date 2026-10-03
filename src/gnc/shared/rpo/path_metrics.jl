@@ -1,30 +1,32 @@
 # RPO path metrics shared by HYPR, comparison objectives and reference checks.
-# Existing RPOPSOConfig arguments remain compatibility contracts.
+# Mathematical inputs are explicit; HYPR owns configuration-based forwarding.
 """Compute path-length and distance references used to normalize RPO cost terms."""
-function rpo_path_cost_normalization_refs(points, cfg::RPOPSOConfig)
+function rpo_path_cost_normalization_refs(points;
+    cost_ref_distance_m, sample_ds_m, tf_s, mass_kg, isp_s, g0_mps2)
     pts = Matrix{Float64}(points)
     dx = pts[1, end] - pts[1, 1]
     dy = pts[2, end] - pts[2, 1]
     dz = pts[3, end] - pts[3, 1]
     straight_len = sqrt(dx * dx + dy * dy + dz * dz)
-    len_ref = cfg.cost_ref_distance_m > 0.0 ? cfg.cost_ref_distance_m : straight_len
-    len_ref = max(len_ref, cfg.sample_ds_m, 1.0e-6)
-    v_ref = len_ref / max(cfg.tf_s, 1.0e-6)
-    fuel_ref = cfg.mass_kg * v_ref / max(cfg.isp_s * cfg.g0_mps2, 1.0e-9)
+    len_ref = cost_ref_distance_m > 0.0 ? cost_ref_distance_m : straight_len
+    len_ref = max(len_ref, sample_ds_m, 1.0e-6)
+    v_ref = len_ref / max(tf_s, 1.0e-6)
+    fuel_ref = mass_kg * v_ref / max(isp_s * g0_mps2, 1.0e-9)
     return (straight_len=straight_len, len_ref=len_ref, fuel_ref=max(fuel_ref, 1.0e-12))
 end
 
 """Approximate fuel demand from sampled path increments."""
-function rpo_fuel_proxy_from_samples(samples, cfg::RPOPSOConfig)
+function rpo_fuel_proxy_from_samples(samples; tf_s, mass_kg, isp_s, g0_mps2)
     pts = Matrix{Float64}(samples)
     size(pts, 2) < 3 && return 0.0
-    dt = max(cfg.tf_s / max(size(pts, 2) - 1, 1), 1.0e-6)
+    size(pts, 1) >= 3 || throw(DimensionMismatch("fuel samples need at least three coordinate rows"))
+    dt = max(tf_s / max(size(pts, 2) - 1, 1), 1.0e-6)
     fuel = 0.0
     @inbounds for j in 1:(size(pts, 2) - 2)
         ax = (pts[1, j + 2] - 2.0 * pts[1, j + 1] + pts[1, j]) / (dt * dt)
         ay = (pts[2, j + 2] - 2.0 * pts[2, j + 1] + pts[2, j]) / (dt * dt)
         az = (pts[3, j + 2] - 2.0 * pts[3, j + 1] + pts[3, j]) / (dt * dt)
-        fuel += cfg.mass_kg * sqrt(ax * ax + ay * ay + az * az) / max(cfg.isp_s * cfg.g0_mps2, 1.0e-9) * dt
+        fuel += mass_kg * sqrt(ax * ax + ay * ay + az * az) / max(isp_s * g0_mps2, 1.0e-9) * dt
     end
     return fuel
 end

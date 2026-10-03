@@ -235,3 +235,102 @@ and source-completeness gates enforce this separation. `planner_lifecycle.jl`
 owns run state, trusted validation/installation, events, failures and expiry;
 `planner_configuration.jl` owns the pilot assembly. The engine and controller call
 the neutral `SimulationLifecycle` hooks; neither dispatches on a HYPR type.
+
+## Shared metric inputs
+
+The shared path-normalization and finite-difference fuel kernels take required
+numeric keyword inputs. Distances are metres, times and specific impulse are
+seconds, mass is kilograms, and reference gravity is m/s². They do not own HYPR
+defaults or require its configuration type. The existing configuration-based
+methods remain in the same defining module through HYPR-owned forwarding in
+metric_adapters.jl, preserving current callers and calculations.
+
+Only these two kernels are independently exercised in the minimal shared-module
+test. Other metrics retain their geometry/profile dependencies. Comparison
+planners, RRT policy and configured retiming still need further separation before
+a HYPR-free installation is demonstrated. This internal change adds no root
+public API and makes no new physical fuel-model or numeric-type support claim.
+
+
+### RRT search and HYPR policy ownership
+
+RRT-Connect and RRT* have three-argument internal entry points in
+`GuidanceHooks` that accept explicit `bounds`, `evaluate_components` and
+`evaluate_cost` keywords. `evaluate_components(path)` must return a named result
+with `total`. `refine_path` is optional and returns `(path, cost, improved)`;
+`nothing` skips refinement. `edge_is_safe(a, b)` supplies the collision contract
+for direct paths, extensions, connections, rewiring and shortcuts. It must be
+symmetric because RRT-Connect reverses the goal-tree path when joining. The
+legacy default uses the existing shared RPO geometry, clearance and sampling
+settings. Adaptive samples depend on traversal direction, so the default is not
+guaranteed to give the same answer in reverse. This pre-existing limitation is
+preserved here; `path_found` alone does not certify collision clearance in
+traversal order. Consumers needing that guarantee must supply a symmetric
+predicate and validate the returned path against their collision policy. A
+change to the default sampling or goal-tree validation requires separate numerical
+review.
+
+The search still uses geometric edge length for tree costs and RRT* rewiring.
+The objective callback scores output paths and RRT* history. Callbacks must
+agree on constraints and objective, preserve caller-owned input, and avoid
+hidden random draws. Explicit `rng` controls search randomness. Failed search
+retains the legacy direct-path diagnostic with `path_found=false`; callers must
+check that flag before accepting a path. Direct safe paths bypass refinement,
+as before. A runtime budget is best-effort wall-clock termination, so seeded
+numerical comparisons use an infinite budget and fixed iteration counts.
+
+`src/gnc/hypr/rrt_adapters.jl` retains the existing four-argument configuration
+methods and result fields, including `config`. HYPR owns its search-box policy,
+objective, optional refinement, Bezier fitting, and the decision to request an
+RRT warm start. Existing public access and comparison callers remain intact.
+The three-argument core omits `config`. Standalone tests load shared geometry,
+sampling and tree operations plus RRT, without loading HYPR. The historical
+`hypr_` names on shared helpers remain for compatibility with robot-arm users.
+This separation does not establish optional HYPR package installation; that
+also requires the configured retiming and package-loading work.
+
+
+### Configured retiming ownership
+
+`src/gnc/shared/rpo/path_retiming.jl` owns two internal calculations in the
+existing `GuidanceHooks` module. `rpo_retime_samples(raw_samples, geometry; ...)`
+advances along an already sampled path. The five-argument
+`rpo_retime_profile(curve, samples, params, clearances, geometry; ...)` builds
+the acceleration-limited profile. They require explicit numeric inputs and two
+policies: `available_distance(clearance, distance, safe_distance)` and
+`pointwise_speed(available_distance, curvature)`. Distances are metres, speed
+is m/s, curvature is 1/m, time is seconds and acceleration is m/s². Production geometry is
+`RPOReferenceGeometry`. `NavigationHooks` owns the clearance queries, whose
+production methods require this type. The sampled-path kernel passes the signed
+surface clearance and nearest-station-point distance to `available_distance`.
+The profile kernel passes clearance and clearance plus the body margin, computed
+from `geometry.station.keepout_radius_m` plus the maximum component of
+`geometry.chaser.half_extents_body`. These are the same geometric distance in
+exact arithmetic, with different floating-point constructions. The third argument
+is the supplied safe distance. `pointwise_speed` receives the resulting available
+distance and the sample curvature.
+
+HYPR retains the legacy/manuscript policy distinction, reaction-time and speed
+scaling rules, collision-sampling selection, and the choice between the two
+retiming routes. Its existing configured methods forward those values and
+policies to the shared calculations. The configured reference builder and the
+sampling calls remain with HYPR. Existing qualified access, return fields and
+module identities are preserved; these internal overloads add no root public API.
+
+A supplied pointwise policy owns the physical speed cap and its order relative
+to scaling. `max_speed_mps` in the shared calculation preserves the existing
+fallback-speed handling; it does not impose an additional cap on policy output.
+The shared calculation preserves minimum-speed floors, near-duplicate handling,
+endpoint splitting, Bezier quadrature, forward/backward acceleration passes,
+terminal rest and the legacy step-count limit. Warning levels, messages and
+values are preserved. The step-cap and invalid-step warnings have different
+source-derived tuple-field labels (`max_steps` and `dt_s` now name explicit
+inputs instead of configuration expressions). Callbacks must agree with the caller's limits, preserve inputs and avoid hidden random draws.
+Existing fallback paths are not a collision-free or feasibility certificate.
+
+The shared geometry and profile-evaluation helpers remain shared and unchanged,
+including the general helpers whose present consumers are HYPR-only. Independent
+shared-module tests exercise retiming without HYPR definitions. Configured-call
+comparisons and existing lifecycle/consumer tests cover compatibility. This
+boundary alone does not prove an optional HYPR installation: the package load
+chain and dependency declarations still need their separate acceptance work.

@@ -894,11 +894,17 @@ function _predictive_dispatch(f, batch::Vector, plan::PredictivePlan, tuning::Ou
                      gc_first=tuning.gc_before_dispatch,
                      local_slots=slots, local_slots_at=(w -> slots))
     spec = MonteCarloSpec(seeds=batch, threads=width, fail_fast=fail_fast)
-    plan.consumers <= 1 &&
+    # A serial plan with no declared budget retains the caller's environment.
+    # An explicit budget (including an off-list forced serial plan) is still a
+    # ceiling, even though the serial dispatcher returns before route setup.
+    plan.consumers <= 1 && plan.inner_thread_budget <= 0 &&
         return _run_campaign_with_route_env(f, spec, dispatch_plan; class_sink=class_sink,
                                             take_sink=take_sink, admission=admission,
                                             on_complete=on_complete)
-    return withenv("SPACEAGORA_INNER_THREAD_BUDGET" => string(_predictive_declared_budget(plan))) do
+    budget = _predictive_declared_budget(plan)
+    # A serial ceiling may narrow an inherited budget, never widen it.
+    plan.consumers <= 1 && (budget = min(budget, ParallelPolicy.effective_inner_thread_budget()))
+    return withenv("SPACEAGORA_INNER_THREAD_BUDGET" => string(budget)) do
         _run_campaign_with_route_env(f, spec, dispatch_plan; class_sink=class_sink,
                                      take_sink=take_sink, admission=admission,
                                      on_complete=on_complete)
@@ -1130,16 +1136,18 @@ function _predictive_forced_plan(planning::PredictivePlanning, n::Int,
                                  terms::PredictiveCostTerms,
                                  inner_curve::Union{Nothing, InnerSpeedupCurve},
                                  inner_curve_unsplit::Union{Nothing, InnerSpeedupCurve};
-                                 threads::Int, pool_workers::Int, local_cap::Int)
+                                 threads::Int, pool_workers::Int, local_cap::Int,
+                                 allowed_routes::AbstractVector{Symbol})
     raw = String(strip(get(ENV, "SPACEAGORA_PREDICTIVE_FORCE_PLAN", "")))
     isempty(raw) && return nothing
     key = _predictive_parse_plan_key(raw)
     key === nothing && throw(ArgumentError(
         "SPACEAGORA_PREDICTIVE_FORCE_PLAN must look like \"process@w32+l4\" or \"threads@w8+l0+b4\"; got \"$(raw)\"."))
+    _predictive_forced_plan_check(raw, key, n, config; threads=threads,
+                                  pool_workers=pool_workers, local_cap=local_cap,
+                                  allowed_routes=allowed_routes)
     i = findfirst(p -> _predictive_parse_plan_key(predictive_plan_key(p)) == key, planning.plans)
     i === nothing || return planning.plans[i]
-    _predictive_forced_plan_check(raw, key, n, config; threads=threads,
-                                  pool_workers=pool_workers, local_cap=local_cap)
     route, workers, local_slots, b = key
     contention = route === :none ? nothing :
         _predictive_contention_constants(config, constants, route, terms.local_heap_slope)
@@ -1149,17 +1157,20 @@ function _predictive_forced_plan(planning::PredictivePlanning, n::Int,
                             terms = terms, inner_budget = b > 1 ? b : 0, inner_time = inner_time)
 end
 
-# What the host can run, with the planner's own bounds: a forced plan that is
-# not enumerated must still fit them, or it would run oversubscribed (e.g. the
-# X phases' w32 keys on a host whose paper budget is not 32).
+# What this workload and host can run, with the planner's own bounds. Every
+# forced plan must fit them, including one found in the enumerated list (e.g.
+# the X phases' w32 keys cannot run on a host whose paper budget is not 32).
 function _predictive_forced_plan_check(raw::AbstractString, key, n::Int,
                                        config::PredictivePlannerConfig;
-                                       threads::Int, pool_workers::Int, local_cap::Int)::Nothing
+                                       threads::Int, pool_workers::Int, local_cap::Int,
+                                       allowed_routes::AbstractVector{Symbol})::Nothing
     route, workers, local_slots, b = key
     bad(what) = throw(ArgumentError("SPACEAGORA_PREDICTIVE_FORCE_PLAN=\"$(raw)\" cannot run here: $(what)."))
+    route in allowed_routes || bad("route $(route) is not allowed for this workload; allowed routes: $(join(allowed_routes, ", "))")
     workers >= 1 || bad("workers must be >= 1, got $(workers)")
     1 <= b <= threads || bad("threads per sample b=$(b) must be in 1..T=$(threads)")
     if route === :process
+        workers >= 2 || bad("the process route requires at least 2 workers, got $(workers)")
         workers <= pool_workers ||
             bad("workers $(workers) exceed the affordable pool of $(pool_workers)")
         lmax = max(0, min(config.local_slots_max, n - workers, local_cap,
@@ -1223,7 +1234,8 @@ function _run_campaign_predictive(
         predictive_leash(planning, get(corrections.last_plan, shape_key, nothing))
     forced = _predictive_forced_plan(planning, n, config, constants, terms, inner_curve,
                                      inner_curve_unsplit; threads=threads,
-                                     pool_workers=pool_workers, local_cap=local_cap)
+                                     pool_workers=pool_workers, local_cap=local_cap,
+                                     allowed_routes=candidates)
     forced === nothing || (plan = forced)
     # A forced plan is a measurement, not a decision: folding it would record it
     # as this shape's last plan (which the leash then walks from) and fit the

@@ -18,10 +18,12 @@ fp_planning(; split = nothing, unsplit = split) = FPCamp.predictive_plan(
     n_samples = 64, threads = 8, process_workers = 8, threads_candidate = true,
     local_slots_cap = 7, constants = nothing, config = fp_cfg(),
     inner_curve = split, inner_curve_unsplit = unsplit)
-fp_force(value, planning = fp_planning(); split = nothing, unsplit = nothing) =
+fp_force(value, planning = fp_planning(); split = nothing, unsplit = nothing,
+         allowed_routes = [:none, :threads, :process]) =
     withenv(FP_VAR => value) do
         FPCamp._predictive_forced_plan(planning, 64, fp_cfg(), nothing, FPCamp.PredictiveCostTerms(),
-                                       split, unsplit; threads = 8, pool_workers = 8, local_cap = 7)
+                                       split, unsplit; threads = 8, pool_workers = 8, local_cap = 7,
+                                       allowed_routes = allowed_routes)
     end
 fp_message(value) = try
     fp_force(value); ""
@@ -44,11 +46,47 @@ end
     @test occursin("affordable pool of 8", fp_message("process@w9+l0"))
     @test occursin(FP_VAR, fp_message("process@w9+l0"))
     @test occursin("workers must be >= 1", fp_message("process@w0+l0"))
+    @test occursin("at least 2 workers", fp_message("process@w1+l0"))
+    @test occursin("at least 2 workers", fp_message("process@w1+l1"))
     @test occursin("planner's bound of 7", fp_message("process@w8+l8"))
     @test occursin("b=16", fp_message("threads@w1+l0+b16"))
     @test occursin("whose bound is 0", fp_message("none@w1+l3"))
     @test occursin("runs 1 worker", fp_message("none@w5+l0"))
     @test occursin("workers * b = 16", fp_message("threads@w8+l0+b2"))
+end
+
+@testset "forced plans preserve workload route restrictions" begin
+    features = FPCamp.campaign_route_features(samples = 64, density_family = "gram")
+    tuning = FPPP.OuterRouteTuning(process_max_workers = 8, memory_aware = false)
+    routes = FPPP.outer_route_candidates(features; tuning, threads_available = true)
+    @test routes == [:none, :process]
+    planning = FPCamp.predictive_plan(n_samples = 64, threads = 8, process_workers = 8,
+        threads_candidate = false, local_slots_cap = 7, constants = nothing, config = fp_cfg())
+    @test_throws ArgumentError fp_force("threads@w2+l0", planning; allowed_routes = routes)
+    # Also enforce restrictions before returning a previously enumerated plan.
+    @test_throws ArgumentError fp_force("threads@w8+l0"; allowed_routes = routes)
+    @test fp_force("none@w1+l0", planning; allowed_routes = routes).route == :none
+end
+
+@testset "serial dispatch applies its inner ceiling and restores the environment" begin
+    seeds = collect(1:8)
+    budget = min(2, Threads.nthreads())
+    plan = FPCamp._predictive_plan(:none, 1, 0, length(seeds), false, nothing, 0.0;
+                                  inner_budget = budget)
+    no_ceiling = FPCamp._predictive_plan(:none, 1, 0, length(seeds), false, nothing, 0.0)
+    tuning = FPPP.OuterRouteTuning(memory_aware = false)
+    measure(p) = FPCamp._predictive_dispatch(
+        _ -> FPCamp.ParallelPolicy.effective_inner_thread_budget(), seeds, p, tuning; fail_fast = true)
+    withenv("SPACEAGORA_INNER_THREAD_BUDGET" => nothing) do
+        @test all(s -> s.value == budget, measure(plan).samples)
+        @test !haskey(ENV, "SPACEAGORA_INNER_THREAD_BUDGET")
+        @test all(s -> s.value == Threads.nthreads(), measure(no_ceiling).samples)
+    end
+    withenv("SPACEAGORA_INNER_THREAD_BUDGET" => "1") do
+        @test all(s -> s.value == 1, measure(plan).samples)
+        @test all(s -> s.value == 1, measure(no_ceiling).samples)
+        @test ENV["SPACEAGORA_INNER_THREAD_BUDGET"] == "1"
+    end
 end
 
 @testset "a valid key returns the forced plan" begin

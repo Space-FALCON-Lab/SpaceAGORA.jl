@@ -101,6 +101,13 @@ Required scalar method:
 SpaceAGORA.getDensity(model, h, lat, lon, el_time, wind[, p]) -> (rho, temperature, wind_vec)
 ```
 
+`h` is height in metres, `lat` and `lon` are in radians, and `el_time` is elapsed
+seconds from the scenario epoch. `wind` is a `Bool` saying whether the caller
+needs the wind vector: the force and heating paths pass `true`, and density-only
+callers such as the visualization pass `false`. A model may return a zero
+`wind_vec` when `wind` is `false`. `wind_vec` holds the east, north and up wind
+components in m/s.
+
 Optional batch method:
 
 ```julia

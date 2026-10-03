@@ -6,6 +6,9 @@ end
 """Apply the RPO MPC controller at the current simulation time and cache the actuator command."""
 function calcControlEffect!(model::RPOMPCControlModel, u, p::ODEParams, t::Float64, sat_idx::Int)
     sat_idx == model.chaser_idx || return nothing
+    for guidance in p.args.guidance_model.guidance_effectors
+        SimulationLifecycle.before_reference_control!(guidance, model, u, p, t)
+    end
     model.plan_buffer.valid || return nothing
     model.controller === nothing && return nothing
 
@@ -32,6 +35,17 @@ function calcControlEffect!(model::RPOMPCControlModel, u, p::ODEParams, t::Float
         thruster_forces_n=thruster_forces,
         rw_torque_body=rw_torque_body,
     )
+    log = model.command_log
+    if log !== nothing
+        push!(log.t_s, t)
+        push!(log.x_rel_rtn, SVector{6, Float64}(x_rel))
+        push!(log.accel_cmd_rtn, a_rtn)
+        push!(log.qp_status, model.controller.qp_results.info.status)
+        push!(log.force_body_desired_n, force_body_des)
+        push!(log.thruster_forces_n, thruster_forces)
+        push!(log.mass_kg, mass)
+        push!(log.q_chaser, q)
+    end
     return nothing
 end
 

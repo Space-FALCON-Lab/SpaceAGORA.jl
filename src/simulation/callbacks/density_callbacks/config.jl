@@ -17,8 +17,42 @@ end
 end
 
 # See CallbackEnvConfig.density_freeze_per_step docstring for the rationale.
+#
+# Per-stage sampling is the default. Freezing is an explicit numerical-policy
+# choice: `auto` freezes only history-dependent models (native GRAM with
+# perturbed winds), while `on` freezes every model. Frozen, ordered samples
+# avoid thread-scheduling dependence in the dynamics' native queries, but
+# their accuracy must be checked against the application's requirements.
+@inline function _density_freeze_per_step_mode()::Symbol
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_DENSITY_FREEZE_PER_STEP", "off")))
+    isempty(raw) && return :off
+    raw == "auto" && return :auto
+    return _parse_bool_env("SPACEAGORA_DENSITY_FREEZE_PER_STEP", false) ? :on : :off
+end
+
+# Resolution without a run to inspect: `auto` means off.
 @inline function _density_freeze_per_step_enabled()::Bool
-    return _parse_bool_env("SPACEAGORA_DENSITY_FREEZE_PER_STEP", false)
+    return _density_freeze_per_step_mode() === :on
+end
+
+@inline function _density_freeze_per_step_enabled(history_dependent::Bool)::Bool
+    mode = _density_freeze_per_step_mode()
+    return mode === :on || (mode === :auto && history_dependent)
+end
+
+"""
+    _run_density_history_dependent(args) -> Bool
+
+Whether this run's native density queries carry query-history state that feeds
+the dynamics: a history-dependent density model
+(`EnvironmentModels.density_model_history_dependent`) with winds enabled. Per-
+satellite GRAM instances are deep copies of the configured model, so the
+configured model decides for them too.
+"""
+@inline function _run_density_history_dependent(args)::Bool
+    env = args.environment_model
+    env.wind || return false
+    return EnvironmentModels.density_model_history_dependent(env.density_model)
 end
 
 @inline function _gram_entry_target_mode()::Symbol
@@ -80,11 +114,16 @@ Whether the density callback's batch route spreads native GRAM across per-worker
 instances instead of evaluating it serially behind the process-wide lock.
 
 Default `auto`, which means on above [`_gram_isolated_pool_threshold`](@ref)
-native-GRAM items. It was `off` until the pool was measured
-(`docs/architecture/gram_thread_scaling.md`, and
-`benchmarks/studies/gram_thread_scaling/results/`): the pool is bit-identical to
-the locked path, and at 1024 spacecraft it is 1.90x faster at 8 threads and
-1.65x at 4. Below the threshold it loses, which is why `auto` and not `on`.
+native-GRAM items, except when requested winds depend on instance query history.
+The batch evaluator then retains the locked route. The pinned wrapper's default
+wind mode is perturbed; nominal winds must be selected explicitly for wind
+queries to use the automatic pool. Calls with `wind=false` remain eligible.
+
+The nominal-wind measurements in `docs/architecture/gram_thread_scaling.md` and
+`benchmarks/studies/gram_thread_scaling/results/` found bit identity and speedups
+of 1.90x at 8 threads and 1.65x at 4 for 1024 spacecraft. These claims do not
+cover perturbed winds. Explicit `on` permits independent stochastic histories;
+its wind results can depend on pool width and thread count.
 """
 @inline function _gram_isolated_pool_mode()::Symbol
     return ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_GRAM_ISOLATED_POOL"; default="auto")
@@ -232,8 +271,8 @@ end
 @inline density_model_threadsafe(::EnvironmentModels.ExponentialAtmosphereModel)::Bool = true
 @inline density_model_threadsafe(::EnvironmentModels.PiecewiseExponentialAtmosphereModel)::Bool = true
 @inline density_model_threadsafe(::EnvironmentModels.PolynomialFitAtmosphereModel)::Bool = true
-# The owned grid snapshot is shared read-only during evaluation.
-@inline density_model_threadsafe(::EnvironmentModels.GRAMGridAtmosphereModel)::Bool = true
+# Owned native-free snapshots (grid and near-surface) are shared read-only during evaluation.
+@inline density_model_threadsafe(::EnvironmentModels._NativeFreeSnapshotModel)::Bool = true
 # GRAM C-wrapper calls are serialized inside getDensity via RuntimeServices.GRAM_LOCK.
 @inline density_model_threadsafe(::EnvironmentModels.GRAMAtmosphereModel)::Bool = true
 @inline density_model_threadsafe(::EnvironmentModels.GRAMAtmosphereModelSurrogate)::Bool = true
@@ -269,13 +308,13 @@ RHS-side atmosphere sample) into a typed snapshot.  Built once at
 run_simulation setup; hot paths read plain struct fields via
 `_callback_env_config(p)` instead of re-parsing ENV.
 """
-function _snapshot_callback_env_config()::CallbackEnvConfig
+function _snapshot_callback_env_config(; history_dependent::Bool=false)::CallbackEnvConfig
     return CallbackEnvConfig(
         _gram_track_cache_config(),
         _gram_runtime_stats_enabled(),
         _gram_track_cache_ignore_time_window(),
         _gram_track_cache_target_use_j2(),
-        _density_freeze_per_step_enabled(),
+        _density_freeze_per_step_enabled(history_dependent),
         _vacuum_gram_cache_enabled(),
         _vacuum_gram_cache_npoints(),
         _vacuum_gram_cache_horizon_s(),
@@ -296,7 +335,14 @@ function _snapshot_callback_env_config()::CallbackEnvConfig
         _thermal_callback_parallel_mode(),
         _thermal_callback_thread_threshold(),
         _thermal_callback_allow_with_outer(),
+        history_dependent,
     )
+end
+
+# Run-scoped snapshot: resolves the model-dependent knobs from the run's
+# configuration as well as ENV.
+function _snapshot_callback_env_config(args)::CallbackEnvConfig
+    return _snapshot_callback_env_config(; history_dependent=_run_density_history_dependent(args))
 end
 
 # Run-scoped snapshot accessor.  Falls back to live ENV parsing when the
@@ -379,6 +425,14 @@ end
     env = _callback_env_config(p)
     penv = _policy_env_config(p)
     mode = env.density_parallel_mode
+    # History-dependent winds: every native query advances the instance's
+    # random walk, so the per-satellite loop must issue them in index order.
+    # Ahead of the pinned width and of an explicit `on`, which would otherwise
+    # make the winds follow thread scheduling. The lock-free caller is the
+    # isolated pool, which owns its own instances and declines such winds.
+    if env.density_history_dependent && !lock_free
+        return (use_threads=false, allotment=1, mode=mode, policy_applied=false)
+    end
     # A width pinned by the pre-solve sweep (V2) short-circuits the per-call
     # decision. It is only ever set after the static decision below said
     # "thread this", so the thread-safety check has already passed for it.

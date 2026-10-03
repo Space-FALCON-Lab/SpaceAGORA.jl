@@ -1,3 +1,4 @@
+Base.include(@__MODULE__, joinpath(@__DIR__, "..", "helpers", "load_hypr.jl"))
 using Test
 using CSV
 using DataFrames
@@ -10,6 +11,9 @@ using ComponentArrays
 using DiffEqBase
 using DiffEqCallbacks
 using OrdinaryDiffEq
+using OrdinaryDiffEqHighOrderRK: DP8
+using OrdinaryDiffEqSDIRK: KenCarp4, KenCarp47, KenCarp58
+using OrdinaryDiffEqSymplecticRK: KahanLi8
 # Suite 01 reaches SatelliteToolboxAtmosphericModels directly; it used to arrive here as a
 # leaked import of the raw-included reference_system.jl.
 using SatelliteToolboxAtmosphericModels
@@ -726,7 +730,8 @@ function build_config_multi(;
     tolerances::IntegrationTolerances=IntegrationTolerances(),
     initial_time::SimulationModel.InitialTime=SimulationModel.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
     ephemerides_model=SpiceEphemeridesModel(),
-    planet=EARTH
+    planet=EARTH,
+    wind::Bool=false
 )
     environment_model = EnvironmentModel(
         planet=planet,
@@ -735,7 +740,7 @@ function build_config_multi(;
         ephemerides_model=ephemerides_model,
         thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
         topography=false,
-        wind=false
+        wind=wind
     )
 
     return SimulationConfiguration(
@@ -870,13 +875,27 @@ end
 const GUIDANCE_SANDBOX = GuidanceSandbox
 
 
-include(joinpath(REPO_ROOT, "test", "suites", "01_contract_and_api_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "02_callbacks_parallel_and_smoke_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "03_persistence_units_and_rotational_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "04_solver_env_and_regression_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "05_thruster_control_and_quality_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "06_monolith_split_runtime_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "07_no_gram_onboarding_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "08_cli_and_assets_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "09_probe_drivers.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "10_parallel_unit_tests.jl"))
+const _ALL_SUITES = [
+    "01_contract_and_api_tests.jl",
+    "02_callbacks_parallel_and_smoke_tests.jl",
+    "03_persistence_units_and_rotational_tests.jl",
+    "04_solver_env_and_regression_tests.jl",
+    "05_thruster_control_and_quality_tests.jl",
+    "06_monolith_split_runtime_tests.jl",
+    "07_no_gram_onboarding_tests.jl",
+    "08_cli_and_assets_tests.jl",
+    "09_probe_drivers.jl",
+    "10_parallel_unit_tests.jl",
+]
+
+# Julia CI shards this entrypoint across parallel jobs: SPACEAGORA_CI_SHARD_ITEMS
+# names the suites, probes and unit files one job runs (see
+# .github/scripts/ci_shard_hooks.jl). Unset, every suite runs here in order.
+if haskey(ENV, "SPACEAGORA_CI_SHARD_ITEMS")
+    include(joinpath(REPO_ROOT, ".github", "scripts", "ci_shard_hooks.jl"))
+    CIShard.run_integration(_ALL_SUITES)
+else
+    for _suite in _ALL_SUITES
+        include(joinpath(REPO_ROOT, "test", "suites", _suite))
+    end
+end

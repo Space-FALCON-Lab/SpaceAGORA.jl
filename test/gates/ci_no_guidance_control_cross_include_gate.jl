@@ -1,8 +1,9 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
-const GUIDANCE_ROOT = joinpath(REPO_ROOT, "src", "gnc", "guidance")
+const GUIDANCE_ROOTS = (joinpath(REPO_ROOT, "packages", "SpaceAGORAHYPR", "src"),
+    (joinpath(REPO_ROOT, "src", "gnc", owner) for owner in ("guidance", "shared", "hypr", "rrt"))...)
 
 violations = String[]
-for (root, _, files) in walkdir(GUIDANCE_ROOT)
+for owner_root in GUIDANCE_ROOTS, (root, _, files) in walkdir(owner_root)
     for file in files
         endswith(file, ".jl") || continue
         path = joinpath(root, file)

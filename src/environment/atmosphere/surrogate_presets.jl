@@ -9,6 +9,10 @@ const _SURROGATE_ARTIFACTS = normpath(joinpath(@__DIR__, "..", "..", "..", "Arti
 const _SURROGATE_PACKAGE_UUID = Base.UUID("afbfb69f-5c0b-4832-b760-43725dff8540")
 const _PRESET_METADATA_KEY = "spaceagora_named_surrogate"
 _preset_error(message) = throw(ArgumentError(message))
+# A preset's kind selects its model: a fixed grid (the default when absent) or a near-surface payload.
+const _PRESET_KINDS = ("gram_grid", "gram_near_surface_scalars")
+const _NEAR_SURFACE_FORMAT = "spaceagora_mars_near_surface_scalars_v1"
+_preset_kind(entry) = get(entry, "kind", "gram_grid")
 _preset_digest(file) = open(io -> bytes2hex(SHA.sha256(io)), file)
 
 function _preset_planet(planet::AbstractString)
@@ -17,6 +21,24 @@ function _preset_planet(planet::AbstractString)
         _preset_error("Unknown surrogate planet '$planet'. Choose an explicit catalog preset and supported planet.")
     return key
 end
+# A catalog axis is uniform (start, step, count) or an explicit, strictly increasing
+# node list (nodes), in km or degrees. Longitude stays uniform so its periodic seam
+# check keeps its meaning.
+function _preset_axis_nodes(spec)
+    if haskey(spec, "nodes")
+        !any(key -> haskey(spec, key), ("start", "step", "count")) ||
+            _preset_error("A preset axis gives either explicit nodes or start/step/count, not both.")
+        nodes = spec["nodes"]
+        nodes isa Vector && length(nodes) >= 2 && all(x -> x isa Real && !(x isa Bool) && isfinite(x), nodes) &&
+            all(>(0), diff(Float64.(nodes))) || _preset_error("Invalid preset axis nodes: they must be at least two finite, strictly increasing values.")
+        return Float64.(nodes)
+    end
+    spec["count"] isa Integer && !(spec["count"] isa Bool) && spec["count"] >= 2 || _preset_error("Invalid preset axis count.")
+    all(x -> x isa Real && !(x isa Bool) && isfinite(x), (spec["start"], spec["step"])) && spec["step"] > 0 || _preset_error("Invalid preset axis spacing.")
+    return collect(range(Float64(spec["start"]); step=Float64(spec["step"]), length=spec["count"]))
+end
+_preset_axis_bounds(spec) = haskey(spec, "nodes") ? [first(spec["nodes"]), last(spec["nodes"])] :
+    [spec["start"], spec["start"] + (spec["count"]-1)*spec["step"]]
 function _preset_catalog(path)
     isfile(path) || _preset_error("Surrogate preset catalog is missing: $path")
     bytes = read(path)
@@ -32,6 +54,8 @@ function _preset_catalog(path)
         key = (id, version)
         key ∉ seen || _preset_error("Duplicate preset/version '$id@$version' in catalog.")
         push!(seen, key)
+        kind = _preset_kind(entry)
+        kind in _PRESET_KINDS || _preset_error("Preset '$id' has an unsupported kind '$kind'.")
         _preset_planet(entry["planet"])
         payload = entry["payload"]
         occursin(r"^[0-9a-f]{64}$", payload["sha256"]) || _preset_error("Invalid preset payload SHA256.")
@@ -42,34 +66,62 @@ function _preset_catalog(path)
         get(entry, "release_enabled", nothing) isa Bool || _preset_error("Preset release_enabled must be explicit.")
         get(entry["atmosphere"], "query_elapsed_time_applied", nothing) === false ||
             _preset_error("Only explicitly frozen atmospheric presets are supported.")
-        atmosphere = entry["atmosphere"]; domain = entry["domain"]; axes = entry["axes"]
+        atmosphere = entry["atmosphere"]; domain = entry["domain"]
         required = entry["required_metadata"]; generation = required["generation_config"]
         _preset_planet(required["planet"]) == _preset_planet(entry["planet"]) || _preset_error("Preset metadata planet is inconsistent.")
         payload["format"] == required["format"] || _preset_error("Preset payload format is inconsistent.")
-        for axis in ("altitude", "latitude", "longitude")
-            spec = axes[axis]
-            spec["count"] isa Integer && !(spec["count"] isa Bool) && spec["count"] >= 2 || _preset_error("Invalid preset axis count.")
-            all(x -> x isa Real && !(x isa Bool) && isfinite(x), (spec["start"], spec["step"])) && spec["step"] > 0 || _preset_error("Invalid preset axis spacing.")
-        end
-        bounds(axis, scale) = [axes[axis]["start"], axes[axis]["start"] + (axes[axis]["count"]-1)*axes[axis]["step"]] .* scale
-        bounds("altitude",1000) == domain["height_m"] || _preset_error("Preset altitude domain differs from its axis.")
-        bounds("latitude",1) == domain["latitude_deg"] || _preset_error("Preset latitude domain differs from its axis.")
-        axes["longitude"]["start"] == 0 && axes["longitude"]["count"]*axes["longitude"]["step"] == 360 && domain["longitude_period_deg"] == 360 || _preset_error("Preset longitude must cover one periodic revolution without a duplicate seam.")
-        domain["outside_height"] == domain["outside_latitude"] == "error" && domain["above_grid_vacuum"] === false || _preset_error("Named presets require errors outside their stored altitude and latitude domain.")
+        kind == "gram_grid" ? _preset_grid_domain(entry) : _preset_near_surface_domain(entry)
         atmosphere["latitude"] == "geodetic" && generation["is_planetocentric"] === false && atmosphere["height"] == "ellipsoidal" || _preset_error("Preset coordinate datum is inconsistent or unsupported.")
         for (public_name, native_name) in (("equatorial_radius_m","equatorial_radius_km"),("polar_radius_m","polar_radius_km"))
             atmosphere[public_name] == 1000*generation[native_name] || _preset_error("Preset radii are inconsistent.")
         end
-        initial = required["initial_time"]
-        initial == generation["initial_time"] || _preset_error("Preset epoch metadata is inconsistent.")
         epoch = match(r"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)Z$", atmosphere["epoch_utc"])
-        epoch !== nothing && all(parse(Float64,epoch.captures[i]) == initial[k] for (i,k) in enumerate(("year","month","day","hour","minute","second"))) || _preset_error("Preset frozen epoch differs from its generation metadata.")
+        if kind == "gram_grid"
+            initial = required["initial_time"]
+            initial == generation["initial_time"] || _preset_error("Preset epoch metadata is inconsistent.")
+            epoch !== nothing && all(parse(Float64,epoch.captures[i]) == initial[k] for (i,k) in enumerate(("year","month","day","hour","minute","second"))) || _preset_error("Preset frozen epoch differs from its generation metadata.")
+        else
+            epoch !== nothing && atmosphere["epoch_utc"] == required["epoch_utc"] || _preset_error("Preset frozen epoch differs from its payload metadata.")
+        end
         if entry["release_enabled"]
             distribution = entry["distribution"]
             occursin(r"^[0-9a-f]{40}$", distribution["git_tree_sha1"]) && occursin(r"^[0-9a-f]{64}$", distribution["archive_sha256"]) && !isempty(distribution["urls"]) || _preset_error("Released presets require complete artifact publication identities.")
         end
     end
     return catalog, bytes2hex(SHA.sha256(bytes))
+end
+
+function _preset_grid_domain(entry)
+    domain = entry["domain"]; axes = entry["axes"]
+    foreach(axis -> _preset_axis_nodes(axes[axis]), ("altitude", "latitude", "longitude"))
+    haskey(axes["longitude"], "nodes") && _preset_error("Preset longitude must use start/step/count so the periodic seam is explicit.")
+    bounds(axis, scale) = _preset_axis_bounds(axes[axis]) .* scale
+    bounds("altitude",1000) == domain["height_m"] || _preset_error("Preset altitude domain differs from its axis.")
+    bounds("latitude",1) == domain["latitude_deg"] || _preset_error("Preset latitude domain differs from its axis.")
+    axes["longitude"]["start"] == 0 && axes["longitude"]["count"]*axes["longitude"]["step"] == 360 && domain["longitude_period_deg"] == 360 || _preset_error("Preset longitude must cover one periodic revolution without a duplicate seam.")
+    domain["outside_height"] == domain["outside_latitude"] == "error" && domain["above_grid_vacuum"] === false || _preset_error("Named presets require errors outside their stored altitude and latitude domain.")
+    return nothing
+end
+# A near-surface preset has no grid axes. Its domain is terrain-following: a planetocentric latitude limit, a
+# minimum clearance above the local surface, an areoid-height top and a volcano-flank refusal, all errors outside.
+function _preset_near_surface_domain(entry)
+    domain = entry["domain"]; atmosphere = entry["atmosphere"]; required = entry["required_metadata"]
+    required["format"] == _NEAR_SURFACE_FORMAT || _preset_error("Near-surface presets require payload format $_NEAR_SURFACE_FORMAT.")
+    haskey(entry, "axes") && _preset_error("A near-surface preset declares a terrain-following domain, not grid axes.")
+    limits = ("planetocentric_latitude_max_deg", "minimum_clearance_m", "top_areoid_height_m", "surface_height_refused_at_or_above_m")
+    all(key -> domain[key] isa Real && !(domain[key] isa Bool) && isfinite(domain[key]), limits) ||
+        _preset_error("Near-surface preset domain limits must be finite numbers.")
+    0 < domain["planetocentric_latitude_max_deg"] <= 90 && domain["minimum_clearance_m"] > 0 && domain["top_areoid_height_m"] > 0 ||
+        _preset_error("Near-surface preset domain limits are out of range.")
+    support = required["support"]
+    support["phic_max_deg"] == domain["planetocentric_latitude_max_deg"] && 1000*support["min_clearance_km"] == domain["minimum_clearance_m"] &&
+        1000*support["top_areoid_km"] == domain["top_areoid_height_m"] && 1000*support["zs_refuse_km"] == domain["surface_height_refused_at_or_above_m"] ||
+        _preset_error("Near-surface preset domain differs from its payload support limits.")
+    domain["longitude_period_deg"] == 360 || _preset_error("Near-surface preset longitude must be periodic over 360 degrees.")
+    domain["outside"] == "error" || _preset_error("Named presets require errors outside their supported domain.")
+    atmosphere["winds_available"] === false && atmosphere["wind_returned"] == "zero_vector" ||
+        _preset_error("A near-surface preset must declare that it stores no winds and returns a zero wind vector.")
+    return nothing
 end
 
 """
@@ -99,7 +151,7 @@ function _verify_preset_file(file, payload)
     filesize(file) > 0 || _preset_error("Preset payload is empty: '$file'. Retrieve the complete artifact.")
     header = open(io -> read(io, min(256, filesize(file))), file)
     startswith(String(header), "version https://git-lfs.github.com/spec/v1") &&
-        _preset_error("Preset payload is an undownloaded Git LFS pointer: '$file'. Retrieve the actual grid bytes.")
+        _preset_error("Preset payload is an undownloaded Git LFS pointer: '$file'. Retrieve the actual payload bytes.")
     filesize(file) == payload["bytes"] || _preset_error("Preset payload size mismatch at '$file'. Expected $(payload["bytes"]) bytes; do not substitute a different grid.")
     digest = _preset_digest(file)
     digest == payload["sha256"] || _preset_error("Preset payload SHA256 mismatch at '$file'. Expected $(payload["sha256"]), got $digest. Remove a corrupt managed artifact or correct the explicit file/override; no fallback is attempted.")
@@ -120,17 +172,33 @@ function _preset_artifact(entry, artifacts_file; offline)
         get(d, "url", "") in entry["distribution"]["urls"], downloads) ||
         _preset_error("Artifact download identities differ from the catalog for '$name'.")
     hash = Base.SHA1(tree)
+    installed = false
     if !Artifacts.artifact_exists(hash)
         offline && _preset_error("Preset $(entry["id"])@$(entry["version"]) is not installed and offline=true. Fetch this exact preset on a connected machine with assets fetch --preset $(entry["id"]) --version $(entry["version"]), then retry offline.")
+        label = "$(entry["id"])@$(entry["version"])"
+        @info "Installing atmosphere preset $label ($(round(entry["payload"]["bytes"] / 1e6; digits=1)) MB payload) into the Julia artifact store from $(join((d["url"] for d in downloads), ", "))"
+        # Pkg first asks its package server, which does not host this artifact, and
+        # then uses the Artifacts.toml URL. Its "Downloading"/"Failure" status lines
+        # go to this buffer instead of the terminal and are reported only on failure.
+        pkg_output = IOBuffer()
         try
-            Pkg.Artifacts.ensure_artifact_installed(name, String(artifacts_file); pkg_uuid=_SURROGATE_PACKAGE_UUID)
+            Pkg.Artifacts.ensure_artifact_installed(name, String(artifacts_file); pkg_uuid=_SURROGATE_PACKAGE_UUID, io=pkg_output)
         catch err
             err isa InterruptException && rethrow()
-            _preset_error("Could not install preset $(entry["id"])@$(entry["version"]): $(sprint(showerror, err)). No native fallback is available.")
+            _preset_error("Could not install preset $label. No native fallback is available.\n$(_pkg_failure_detail(err, pkg_output))")
         end
+        installed = true
     end
-    return Artifacts.artifact_path(hash), tree
+    return Artifacts.artifact_path(hash), tree, installed
 end
+function _pkg_failure_detail(err, pkg_output)
+    detail = rstrip(sprint(showerror, err))
+    output = rstrip(String(take!(pkg_output)))
+    return isempty(output) ? detail : "$detail\nPkg output:\n$output"
+end
+
+# The keywords of resolve_surrogate_preset, which surrogate_preset_model forwards.
+const _PRESET_RESOLUTION_KEYWORDS = (:version, :planet, :file, :offline, :allow_unreleased, :catalog_file, :artifacts_file)
 
 """
     resolve_surrogate_preset(id; version, planet="Mars", file="", offline=false,
@@ -143,6 +211,7 @@ An unreleased preset is available only with both an explicit file and
 `allow_unreleased=true`; this marks local development, not public acceptance.
 `catalog_file` and `artifacts_file` are advanced trusted-catalog overrides.
 Resolution performs no native GRAM initialization and never selects native fallback.
+A first installation logs its source and, once verified, its location.
 """
 function resolve_surrogate_preset(id::AbstractString; version::AbstractString,
     planet::AbstractString="Mars", file::AbstractString="", offline::Bool=false,
@@ -156,17 +225,19 @@ function resolve_surrogate_preset(id::AbstractString; version::AbstractString,
     explicit = !isempty(strip(file))
     released = entry["release_enabled"]
     released || (allow_unreleased && explicit) || _preset_error("Preset '$id@$version' is not published. Public retrieval is disabled until its distribution identities are recorded; local development requires an explicit file and allow_unreleased=true.")
-    source = "explicit_file"; tree = ""
+    source = "explicit_file"; tree = ""; installed = false
     resolved = if explicit
         abspath(expanduser(file))
     else
-        directory, tree = _preset_artifact(entry, artifacts_file; offline)
+        directory, tree, installed = _preset_artifact(entry, artifacts_file; offline)
         source = "julia_artifact"
         joinpath(directory, entry["payload"]["file"])
     end
     _verify_preset_file(resolved, entry["payload"])
+    installed && @info "Installed atmosphere preset $id@$version in $(dirname(resolved)); the archive and payload SHA256 checksums match the catalog."
     provenance = Dict{String,Any}(
-        "backend" => "gram_grid_surrogate", "preset_id" => String(id), "preset_version" => String(version),
+        "backend" => _preset_kind(entry) == "gram_grid" ? "gram_grid_surrogate" : "gram_near_surface_surrogate",
+        "preset_kind" => _preset_kind(entry), "preset_id" => String(id), "preset_version" => String(version),
         "planet" => key, "source_sha256" => entry["payload"]["sha256"], "payload_bytes" => entry["payload"]["bytes"],
         "catalog_sha256" => catalog_sha, "catalog_revision" => catalog["catalog_revision"],
         "resolution" => source, "artifact_git_tree_sha1" => tree, "resolved_file" => resolved,
@@ -198,28 +269,74 @@ function _validate_preset_model(model, resolution)
     grid = core.surrogate; axes = entry["axes"]
     grid.planet_name == resolution.planet || _preset_error("Grid planet differs from the requested preset.")
     for (name, actual, scale) in (("altitude",grid.alt_nodes_m,1000.0), ("latitude",grid.lat_nodes_rad,pi/180), ("longitude",grid.lon_nodes_rad,pi/180))
-        spec = axes[name]
-        expected = collect(range(Float64(spec["start"]); step=Float64(spec["step"]), length=spec["count"])) .* scale
+        expected = _preset_axis_nodes(axes[name]) .* scale
         length(actual)==length(expected) && all(isapprox.(actual,expected;rtol=8eps(Float64),atol=0.0)) ||
             _preset_error("Preset $name grid axis differs from its declared domain and spacing.")
     end
     return model
 end
 
+function _validate_near_surface_preset_model(model, resolution)
+    core = model.core; entry = resolution.contract
+    core.source_sha256 == resolution.expected_sha256 || _preset_error("Constructed payload identity differs from the selected preset.")
+    _preset_metadata_subset(core.metadata, entry["required_metadata"])
+    evaluator = core.core; domain = entry["domain"]; atmosphere = entry["atmosphere"]
+    evaluator.phic_max_deg == domain["planetocentric_latitude_max_deg"] && 1000*evaluator.min_clearance_km == domain["minimum_clearance_m"] &&
+        1000*evaluator.top_km == domain["top_areoid_height_m"] && 1000*evaluator.zs_refuse_km == domain["surface_height_refused_at_or_above_m"] ||
+        _preset_error("Near-surface payload support limits differ from the preset's declared domain.")
+    1000*evaluator.a_km == atmosphere["equatorial_radius_m"] && 1000*evaluator.b_km == atmosphere["polar_radius_m"] ||
+        _preset_error("Near-surface payload radii differ from the preset's declared datum.")
+    return model
+end
+
+# The kind a request selects, read before any download so a missing model API fails first. An unknown
+# id or version falls through to resolve_surrogate_preset, which reports it.
+function _preset_requested_kind(id, kwargs)
+    catalog, _ = _preset_catalog(get(kwargs, :catalog_file, _SURROGATE_CATALOG))
+    version = get(kwargs, :version, nothing)
+    for entry in catalog["presets"]
+        entry["id"] == id && (version === nothing || entry["version"] == version) && return _preset_kind(entry)
+    end
+    return "gram_grid"
+end
+
 """
     surrogate_preset_model(id; version, planet="Mars", file="", offline=false, ...)
 
-Build the existing `GRAMGridAtmosphereModel` from a verified named preset. Load
+Build the model a verified named preset declares: the existing `GRAMGridAtmosphereModel`
+for a grid preset, or `GRAMNearSurfaceAtmosphereModel` for a near-surface preset. Load
 `GRAMSuite` first. Validates the retained generation settings, datum and all grid
-axes before use. Stored winds and the frozen-time behavior are unchanged. Queries
-outside the declared altitude/latitude domain fail; the longitude axis is periodic.
+axes (or the near-surface domain limits) before use. Stored winds and the frozen-time
+behavior are unchanged; a near-surface preset stores no winds and returns a zero wind
+vector. Queries outside the declared domain fail; longitude is periodic.
 Use `atmosphere_provenance(model)` to retain the selected contract in run outputs.
+Without `GRAMSuite` loaded it raises an `ArgumentError` before resolving anything.
+Accepts the keywords of `resolve_surrogate_preset` only. A named preset fixes its
+domain policy, so grid options such as `above_grid` raise an `ArgumentError`;
+construct the generic `GRAMGridAtmosphereModel` directly for another policy.
 """
 function surrogate_preset_model(id::AbstractString; kwargs...)
+    unsupported = [key for key in keys(kwargs) if key ∉ _PRESET_RESOLUTION_KEYWORDS]
+    isempty(unsupported) || _preset_error("surrogate_preset_model does not accept the keyword(s) $(join(unsupported, ", ")). " *
+        "A named preset fixes its domain policy: queries outside its stored altitude and latitude domain fail. " *
+        "For another policy, such as above_grid=:vacuum, construct the generic GRAMGridAtmosphereModel directly, " *
+        "for example with surrogate_file=resolve_surrogate_preset(id; version).file; that model carries no named preset contract. " *
+        "Accepted keywords: $(join(_PRESET_RESOLUTION_KEYWORDS, ", ")).")
+    # The keyword constructors come from the GRAMSuite extension; without it the
+    # call below fails with a MethodError naming keywords the user never passed.
+    near_surface = _preset_requested_kind(id, kwargs) == "gram_near_surface_scalars"
+    hasmethod(near_surface ? GRAMNearSurfaceAtmosphereModel : GRAMGridAtmosphereModel, Tuple{}) ||
+        _preset_error("surrogate_preset_model needs the public GRAMSuite " *
+        "Julia package, which provides the $(near_surface ? "near-surface" : "grid") atmosphere: run `import GRAMSuite` first (the Odyssey example " *
+        "environment installs it). No native GRAM installation is used.")
     resolved = resolve_surrogate_preset(id; kwargs...)
-    model = GRAMGridAtmosphereModel(; planet=resolved.planet, surrogate_file=resolved.file,
-        expected_sha256=resolved.expected_sha256, above_grid=:error)
-    _validate_preset_model(model, resolved)
+    model = if near_surface
+        _validate_near_surface_preset_model(GRAMNearSurfaceAtmosphereModel(; planet=resolved.planet,
+            surrogate_file=resolved.file, expected_sha256=resolved.expected_sha256), resolved)
+    else
+        _validate_preset_model(GRAMGridAtmosphereModel(; planet=resolved.planet, surrogate_file=resolved.file,
+            expected_sha256=resolved.expected_sha256, above_grid=:error), resolved)
+    end
     model.core.metadata[_PRESET_METADATA_KEY] = deepcopy(resolved.provenance)
     return model
 end
@@ -234,9 +351,21 @@ identified by their actual type without inventing a preset or native-free claim.
 """
 atmosphere_provenance(model::AbstractDensityModel) = Dict{String,Any}(
     "backend" => "configured_density_model", "model_type" => string(typeof(model)))
+function atmosphere_provenance(model::GRAMNearSurfaceAtmosphereModel)
+    metadata = model.core.metadata
+    haskey(metadata, _PRESET_METADATA_KEY) && return deepcopy(metadata[_PRESET_METADATA_KEY])
+    return Dict{String,Any}("backend" => "gram_near_surface_surrogate", "source_sha256" => model.core.source_sha256,
+        "preset_status" => "user_supplied_payload_without_named_preset_contract")
+end
 function atmosphere_provenance(model::GRAMGridAtmosphereModel)
     metadata = model.core.metadata
     haskey(metadata, _PRESET_METADATA_KEY) && return deepcopy(metadata[_PRESET_METADATA_KEY])
     return Dict{String,Any}("backend" => "gram_grid_surrogate", "source_sha256" => model.core.source_sha256,
         "preset_status" => "user_supplied_grid_without_named_preset_contract", "above_grid" => string(model.core.above_grid))
+end
+function atmosphere_provenance(model::CombinedAtmosphereModel)
+    return Dict{String,Any}("backend" => "combined_native_free_snapshot",
+        "handover_height_m" => model.handover_height_m, "handover_reference" => "height above the reference ellipsoid",
+        "rule" => "lower component below the handover height, upper component at or above it; each keeps its own domain errors and winds",
+        "lower" => atmosphere_provenance(model.lower), "upper" => atmosphere_provenance(model.upper))
 end

@@ -669,6 +669,20 @@ export RhsEffectorDecision, RhsExecutionPlan
         thermal_parallel_mode::Symbol
         thermal_thread_threshold::Int
         thermal_allow_with_outer::Bool
+        # True when the run's density model returns values that depend on the
+        # order of earlier queries on the same instance (native GRAM with
+        # perturbed winds; see EnvironmentModels.density_model_history_dependent).
+        # The density callback then evaluates its satellites serially in index
+        # order. Explicit SPACEAGORA_DENSITY_FREEZE_PER_STEP=auto
+        # resolves `density_freeze_per_step` to true, so that the dynamics'
+        # native queries are the ordered once-per-step ones. Without an explicit
+        # opt-in, per-stage sampling remains enabled and native query order
+        # may depend on thread scheduling. The control
+        # callback has no such guard: a control model that queries the density
+        # model itself (E-EDG) stays ordered because it is not declared
+        # thread-safe, and SPACEAGORA_CONTROL_ASSUME_THREADSAFE would lift
+        # that. False in a snapshot taken without a run (no model to inspect).
+        density_history_dependent::Bool
     end
 
     # Knobs consulted by the per-RHS-call execution-plan routing chain in

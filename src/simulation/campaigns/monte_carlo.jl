@@ -835,16 +835,30 @@ function capped_inner_thread_budget(share::Int)::Union{Nothing, Int}
 end
 
 """
-    run_monte_carlo(f, seeds; threads=1, fail_fast=false,
-                    route_features=nothing, route_state=nothing,
-                    route_tuning=nothing) -> MonteCarloResult
+    run_monte_carlo(f, seeds; parallel=false, threads=1, fail_fast=false) -> MonteCarloResult
     run_monte_carlo(f, spec::MonteCarloSpec) -> MonteCarloResult
 
 Run `f(seed)` for each Monte Carlo seed and return ordered sample results.
 
-`threads` controls the number of outer Monte Carlo worker tasks, not the number
-of Julia threads created at runtime. Start Julia with enough threads before
-calling this function:
+Pass `parallel=true` to let SpaceAGORA choose how to run the campaign: the
+predictive planner prices serial, threaded and process-worker execution for
+this campaign's shape against the machine's calibrated cost constants and
+dispatches the cheapest before the first sample runs. It is the same flag as
+`SolverConfig(parallel=true)`, applied to the whole campaign and undone when
+it returns. Start Julia with threads (`julia --threads=auto`):
+
+```julia
+result = run_monte_carlo(1:100; parallel=true) do seed
+    run_simulation(make_config_for_seed(seed); return_solution=true)
+end
+```
+
+`parallel=true` chooses the worker count itself, so combining it with an
+integer `threads` throws an `ArgumentError`.
+
+Without the flag the campaign is serial unless `threads` gives a fixed number
+of outer worker tasks. `threads` does not create Julia threads at runtime;
+start Julia with at least that many:
 
 ```julia
 result = run_monte_carlo(1:100; threads=8) do seed
@@ -857,29 +871,16 @@ The runner records per-sample exceptions instead of throwing by default, so a
 long campaign can finish and report all failures. Set `fail_fast=true` to throw
 on the first failed sample.
 
-# Adaptive mode
+While more than one threaded worker is active the runner sets
+`SPACEAGORA_OUTER_PARALLEL_ACTIVE=1` and an `SPACEAGORA_INNER_THREAD_BUDGET` of
+at most `nthreads() ÷ workers`, so inner and outer parallelism split the thread
+pool instead of oversubscribing it. A campaign started inside another
+campaign's worker yields to the enclosing split and runs serially.
 
-Pass `threads=:auto` to let the outer-route bandit pick serial or threaded
-execution from empirical runtime history instead of a fixed worker count. The
-runner builds [`OuterRouteFeatures`](@ref) from the campaign shape (pass
-`route_features` from [`campaign_route_features`](@ref) to describe per-sample
-satellite count, density-model family, and mission length; the sample count is
-always filled in from `seeds`), consults [`select_outer_route!`](@ref), and
-after the campaign records per-sample success and amortized wall-clock feedback
-via [`record_outer_route_feedback!`](@ref), so repeated campaigns with the same
-shape converge to the fastest allocation. History lives in
-[`campaign_outer_route_state`](@ref) unless an isolated
-[`OuterRouteState`](@ref) is passed as `route_state`; `route_tuning` overrides
-the [`OuterRouteTuning`](@ref).
-
-While adaptive threaded workers are active the runner sets
-`SPACEAGORA_OUTER_PARALLEL_ACTIVE=1` and, unless one is already set, an
-`SPACEAGORA_INNER_THREAD_BUDGET` of `nthreads() ÷ workers` so inner and outer
-parallelism split the thread pool instead of oversubscribing it. Conversely,
-when `SPACEAGORA_OUTER_PARALLEL_ACTIVE` is already set — a nested adaptive
-campaign inside another campaign's worker — the runner yields to the enclosing
-split: it executes serially and records no feedback, so contended timings never
-poison the shared route statistics.
+`threads=:auto`, `route_features`, `route_state` and `route_tuning` drive the
+internal routing machinery the benchmark harness measures (the outer-route
+bandit, `SpaceAGORA.ParallelProfiles`); they are not the supported way to
+parallelize a campaign.
 """
 function run_monte_carlo(f, spec::MonteCarloSpec)
     seeds = collect(spec.seeds)
@@ -907,12 +908,85 @@ end
 function run_monte_carlo(
     f,
     seeds;
-    threads::Union{Integer, Symbol}=1,
+    threads::Union{Nothing, Integer, Symbol}=nothing,
     fail_fast::Bool=false,
     route_features::Union{Nothing, OuterRouteFeatures}=nothing,
     route_state::Union{Nothing, OuterRouteState}=nothing,
-    route_tuning::Union{Nothing, OuterRouteTuning}=nothing
+    route_tuning::Union{Nothing, OuterRouteTuning}=nothing,
+    parallel::Bool=false
 )
+    threads = _campaign_threads(threads, parallel, "run_monte_carlo")
+    parallel && return SimulationEngine._with_parallel_flag(true) do
+        tuning = _monte_carlo_flag_tuning(route_features, route_tuning)
+        _run_monte_carlo_keyword(f, seeds, threads, fail_fast, route_features, route_state, tuning)
+    end
+    return _run_monte_carlo_keyword(f, seeds, threads, fail_fast, route_features, route_state, route_tuning)
+end
+
+"""
+    _monte_carlo_flag_tuning(route_features, route_tuning) -> Union{Nothing, OuterRouteTuning}
+
+The route tuning `run_monte_carlo(...; parallel=true)` plans with. Without
+`route_features` the planner knows nothing about the sample function: not its
+density model (so the native-GRAM routing guards cannot apply), not its
+spacecraft count (so the memory cap cannot charge it), and not whether it can
+run in a worker process at all. A sample function defined in a script's `Main`,
+helpers and state it reaches there, and SPICE kernels the script furnished
+exist only in this process, and a process-route sample that needs them fails.
+So without features the process route is withheld (the tuning's
+`process_max_workers` is 1) and the planner chooses among the in-process
+routes; a caller that describes the workload with `route_features` (and has
+prepared the workers) gets the process route back as a candidate.
+"""
+function _monte_carlo_flag_tuning(route_features::Union{Nothing, OuterRouteFeatures},
+                                  route_tuning::Union{Nothing, OuterRouteTuning})::Union{Nothing, OuterRouteTuning}
+    route_features === nothing || return route_tuning
+    base = route_tuning === nothing ? _campaign_route_tuning() : route_tuning
+    fields = NamedTuple{fieldnames(OuterRouteTuning)}(
+        ntuple(i -> getfield(base, i), fieldcount(OuterRouteTuning))
+    )
+    return OuterRouteTuning(; fields..., process_max_workers=1)
+end
+
+"""
+    _campaign_threads(threads, parallel, caller) -> Union{Int, Symbol}
+
+The worker-count argument a campaign runs with. Without the parallel flag an
+omitted `threads` is `1`, as it always was. With it the count is the planner's
+to choose (`:auto`), and an explicit integer is a contradiction the caller
+must resolve rather than one of the two silently winning.
+"""
+function _campaign_threads(threads, parallel::Bool, caller::AbstractString)
+    if parallel
+        threads isa Integer && throw(ArgumentError(
+            "$(caller): parallel=true chooses how many workers to use, so it cannot be " *
+            "combined with an explicit threads=$(threads). Remove `threads`, or set " *
+            "parallel=false to run with a fixed worker count."
+        ))
+        return threads === nothing ? :auto : threads
+    end
+    return threads === nothing ? 1 : threads
+end
+
+"""
+    _campaign_parallel_flag(configs) -> Bool
+
+The parallel flag of a campaign whose members are `SimulationConfiguration`s:
+their common `solver_config.parallel` (a member without a `solver_config` counts
+as `false`). Members that disagree are an error, since a campaign runs under one
+routing decision.
+"""
+function _campaign_parallel_flag(configs)::Bool
+    flags = Bool[c.solver_config === nothing ? false : c.solver_config.parallel for c in configs]
+    isempty(flags) && return false
+    all(==(first(flags)), flags) || throw(ArgumentError(
+        "Campaign members disagree on SolverConfig.parallel ($(count(flags)) of $(length(flags)) " *
+        "set it). A campaign runs under one routing decision; give every member the same value."
+    ))
+    return first(flags)
+end
+
+function _run_monte_carlo_keyword(f, seeds, threads, fail_fast, route_features, route_state, route_tuning)
     if threads isa Symbol
         threads === :auto || throw(ArgumentError(
             "run_monte_carlo threads must be a positive integer or :auto; got :$(threads)."

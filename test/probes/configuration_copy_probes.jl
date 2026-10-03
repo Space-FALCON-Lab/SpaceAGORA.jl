@@ -22,6 +22,19 @@ function copy_probe_config(; solver_config=SM.SolverConfig(solver_mode=:rodas5p,
     )
 end
 
+@testset "Configuration identities survive source reorganization" begin
+    for name in (:SimulationConfiguration, :InitialTime, :IntegrationTolerances,
+                 :FilePaths, :SimulationSettings, :MissionConfiguration,
+                 :EnvironmentModel, :SolverConfig)
+        @test parentmodule(getfield(SM, name)) === SC
+    end
+    @test parentmodule(SM.DynamicsModel) === SM.SpacecraftModels
+    @test SpaceAGORA.SimulationEngine.SolverConfig === SM.SolverConfig
+    args = copy_probe_config()
+    members = args.dynamics_model.spacecraft
+    @test SM.DynamicsModel(members, ()).spacecraft === members
+end
+
 @testset "Configuration updates preserve fields and model ownership" begin
     args = copy_probe_config()
     unchanged = SC._with_configuration(args)

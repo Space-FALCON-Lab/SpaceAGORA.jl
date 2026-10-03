@@ -249,7 +249,7 @@ function _gram_track_cache_refresh!(
                 cache.lats,
                 cache.lons,
                 cache.times,
-                true,
+                EnvironmentModels._environment_wind_enabled(p),
                 p
             )
                 getDensityBatch!(
@@ -261,7 +261,7 @@ function _gram_track_cache_refresh!(
                     cache.lats,
                     cache.lons,
                     cache.times,
-                    true,
+                    EnvironmentModels._environment_wind_enabled(p),
                     p
                 )
             end
@@ -288,6 +288,6 @@ function _gram_track_cache_refresh!(
             _gram_track_cache_warning_emitted[] = true
             @warn "GRAM track cache refresh failed; falling back to direct GRAM sampling." exception=err
         end
-        return getDensity(density_model, alt, lat, lon, t, true, p)
+        return getDensity(density_model, alt, lat, lon, t, EnvironmentModels._environment_wind_enabled(p), p)
     end
 end

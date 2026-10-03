@@ -22,9 +22,20 @@ const PP = SM.ParallelPolicy
 
 const POOL_REPO = normpath(joinpath(@__DIR__, "..", "..", ".."))
 const POOL_GRAM_ROOT = joinpath(POOL_REPO, "data", "GRAMSuite.jl")
-const POOL_SPICE_PATH = joinpath(POOL_GRAM_ROOT, "GRAM Suite 2.0", "SPICE")
-const POOL_GRAM_LIB = joinpath(POOL_GRAM_ROOT, "GRAM Suite 2.0", "Build", "lib", "libGRAM.so")
+const POOL_NATIVE_ROOT = get(ENV, "GRAM_ROOT", joinpath(POOL_GRAM_ROOT, "GRAM Suite 2.0"))
+const POOL_SPICE_PATH = joinpath(POOL_NATIVE_ROOT, "SPICE")
+const POOL_GRAM_LIB = joinpath(POOL_NATIVE_ROOT, "Build", "lib",
+    Sys.isapple() ? "libGRAM.dylib" : (Sys.iswindows() ? "libGRAM.dll" : "libGRAM.so"))
 const POOL_GRAM_READY = isfile(POOL_GRAM_LIB) && isdir(POOL_SPICE_PATH)
+
+# Load the extension before the native-free cases create persistent workers.
+# Existing worker tasks cannot see methods introduced at a later world age.
+if POOL_GRAM_READY
+    if Base.find_package("GRAMSuite") === nothing
+        pushfirst!(LOAD_PATH, POOL_GRAM_ROOT)
+    end
+    @eval import GRAMSuite
+end
 
 @testset "isolated pool gate" begin
     # :off and :on are unconditional; the default (:auto) additionally needs
@@ -61,6 +72,79 @@ const POOL_GRAM_READY = isfile(POOL_GRAM_LIB) && isdir(POOL_SPICE_PATH)
     end
 end
 
+# A history-bearing raw core exercises the real pool dispatcher without native
+# GRAM. Pool clones own distinct counters, exactly the distinction under test.
+mutable struct PoolWindCore
+    history_dependent::Bool
+    calls::Int
+end
+EM._gram_core_wind_is_history_dependent(core::PoolWindCore) = core.history_dependent
+function EM._gram_core_density_state(core::PoolWindCore, h::Float64, lat::Float64,
+        lon::Float64, t::Float64, wind::Bool, lk, temperature::Float64)
+    lock(lk) do
+        core.calls += 1
+        w = wind && core.history_dependent ? Float64(core.calls) : 7.0
+        return 1.0e-8, 200.0, SVector{3,Float64}(w, 0.0, 0.0)
+    end
+end
+function wind_guard_params()
+    return (args=(environment_model=(EI=600.0, planet=(T_ref=200.0,)),
+                  mission_configuration=(keplerian=true,)),
+            shared_buffers=(gram_isolated_pool_models=EM.GRAMAtmosphereModel[],
+                            gram_isolated_pool_locks=ReentrantLock[],
+                            callback_env_config=Ref(CB._snapshot_callback_env_config())))
+end
+
+@testset "automatic pool preserves requested wind histories" begin
+    @test EM._gram_core_wind_is_history_dependent(Ref(:unknown))
+    n = 8
+    hs, lats, lons = fill(150_000.0, n), zeros(n), zeros(n)
+    alloc() = (fill(-1.0, n), fill(-2.0, n), fill(SVector{3,Float64}(-3, -4, -5), n))
+    withenv("SPACEAGORA_GRAM_ISOLATED_POOL" => "auto",
+            "SPACEAGORA_GRAM_ISOLATED_POOL_THRESHOLD" => "1",
+            "SPACEAGORA_GRAM_ISOLATED_POOL_MAX_WORKERS" => "2") do
+        model = EM.GRAMAtmosphereModel(PoolWindCore(true, 0))
+        p = wind_guard_params()
+        for ts in (0.0, collect(1.0:n))
+            rhos, temps, winds = alloc()
+            @test !CB._gram_isolated_pool_batch_eval!(rhos, temps, winds, model,
+                hs, lats, lons, ts, true, p; allotment_hint=2)
+            @test rhos == fill(-1.0, n)
+            @test temps == fill(-2.0, n)
+            @test winds == fill(SVector{3,Float64}(-3, -4, -5), n)
+            @test model.core.calls == 0
+            @test isempty(p.shared_buffers.gram_isolated_pool_models)
+            @test isempty(p.shared_buffers.gram_isolated_pool_locks)
+        end
+        # Nominal wind queries and wind=false keep their previous eligibility.
+        for (history, wind) in ((false, true), (true, false))
+            model = EM.GRAMAtmosphereModel(PoolWindCore(history, 0))
+            p = wind_guard_params()
+            rhos, temps, winds = alloc()
+            pooled = CB._gram_isolated_pool_batch_eval!(rhos, temps, winds, model,
+                hs, lats, lons, 0.0, wind, p; allotment_hint=2)
+            @test pooled == (Threads.nthreads() > 1)
+            if pooled
+                @test rhos == fill(1.0e-8, n)
+                @test temps == fill(200.0, n)
+                @test winds == fill(SVector{3,Float64}(7, 0, 0), n)
+                @test length(p.shared_buffers.gram_isolated_pool_models) == 2
+                @test model.core.calls == 0
+            end
+        end
+    end
+    # Explicit on remains an opt-in to separate stochastic histories.
+    withenv("SPACEAGORA_GRAM_ISOLATED_POOL" => "on",
+            "SPACEAGORA_GRAM_ISOLATED_POOL_MAX_WORKERS" => "2") do
+        model = EM.GRAMAtmosphereModel(PoolWindCore(true, 0))
+        p = wind_guard_params()
+        rhos, temps, winds = alloc()
+        @test CB._gram_isolated_pool_batch_eval!(rhos, temps, winds, model,
+            hs, lats, lons, 0.0, true, p; allotment_hint=2) == (Threads.nthreads() > 1)
+        @test model.core.calls == 0
+    end
+end
+
 @testset "isolated pool width is gated by the density callback's minimum budget" begin
     # A regression guard on an interlock that is easy to trip over and silent
     # when tripped. `_gram_isolated_pool_batch_eval!` takes its width from
@@ -91,14 +175,6 @@ end
 if !POOL_GRAM_READY
     @info "Skipping native GRAM isolated-pool tests: no libGRAM on this host." lib = POOL_GRAM_LIB
 else
-    # Loaded the way examples/common.jl and the benchmark harness load it: the
-    # vendored GRAMSuite is a separate project, not a dependency of the root
-    # environment, and the package extension wires itself in on import.
-    if Base.find_package("GRAMSuite") === nothing
-        pushfirst!(LOAD_PATH, POOL_GRAM_ROOT)
-    end
-    @eval import GRAMSuite
-
     const POOL_MODEL = EM.GRAMAtmosphereModel(planet_name="earth")
 
     function pool_params(n::Int)
@@ -164,95 +240,147 @@ else
         @test length(kept) == 5
     end
 
-    @testset "isolated pool is bit-identical to the locked path" begin
-        n = 64
-        _, p = pool_params(n)
-        hs = Vector{Float64}(undef, n)
-        lats = Vector{Float64}(undef, n)
-        lons = Vector{Float64}(undef, n)
-        ts = Vector{Float64}(undef, n)
-        for i in 1:n
-            x = (i - 1) / (n - 1)
-            hs[i] = 150.0e3 + x * 550.0e3
-            lats[i] = -0.5pi + pi * mod(x * sqrt(2.0), 1.0)
-            lons[i] = -pi + 2pi * mod(x * sqrt(3.0), 1.0)
-            ts[i] = x * 100.0
-        end
-
-        alloc() = (zeros(Float64, n), zeros(Float64, n),
-                   [SVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n])
-        rho_ref, T_ref, w_ref = alloc()
-        EM.getDensityBatch!(rho_ref, T_ref, w_ref, POOL_MODEL, hs, lats, lons, ts, true, p)
-        @test count(!iszero, rho_ref) == n
-
-        # `==` on Float64 calls -0.0 equal to 0.0 and every NaN unequal to
-        # itself, so the comparison is on the bits.
-        bits(v) = reinterpret.(UInt64, v)
-        wbits(v) = vcat((reinterpret.(UInt64, collect(x)) for x in v)...)
-
-        workers = max(2, min(4, Threads.nthreads()))
-        models, locks = CB._ensure_gram_isolated_pool!(p, POOL_MODEL, workers)
-        for k in eachindex(models)
-            rho_k, T_k, w_k = alloc()
-            for i in 1:n
-                rho_k[i], T_k[i], w_k[i] = CB._gram_isolated_pool_density_state(
-                    models[k], hs[i], lats[i], lons[i], ts[i], true, p, locks[k]
-                )
+    @testset "native wind policy and automatic callback fallback" begin
+        for mode in (nothing, "auto", "perturbed", "pert", "stochastic",
+                     "nominal", "mean", "deterministic", "base", " NOMINAL ")
+            withenv("SPACEAGORA_GRAM_WIND_MODE" => mode) do
+                @test EM._gram_core_wind_is_history_dependent(POOL_MODEL.core) ==
+                      (GRAMSuite._gram_wind_mode() !== :nominal)
             end
-            @test bits(rho_k) == bits(rho_ref)
-            @test bits(T_k) == bits(T_ref)
-            @test wbits(w_k) == wbits(w_ref)
         end
+        withenv("SPACEAGORA_GRAM_WIND_MODE" => "invalid") do
+            @test_throws ArgumentError EM._gram_core_wind_is_history_dependent(POOL_MODEL.core)
+        end
+        function callback_samples(pool_mode)
+            withenv("SPACEAGORA_GRAM_ISOLATED_POOL" => pool_mode,
+                    "SPACEAGORA_GRAM_ISOLATED_POOL_THRESHOLD" => "1",
+                    "SPACEAGORA_DENSITY_BATCH_PARALLEL" => "on",
+                    "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "off",
+                    "SPACEAGORA_GRAM_WIND_MODE" => "perturbed") do
+                original, _ = pool_params(4)
+                env = SM.EnvironmentModel(planet=original.environment_model.planet,
+                    EI=600.0, density_model=deepcopy(POOL_MODEL), wind=true,
+                    thermal_model=original.environment_model.thermal_model,
+                    ephemerides_model=SM.SimpleEphemeridesModel())
+                args = SM.SimConfig._with_configuration(original; environment_model=env)
+                p = SM.ODEParams(n_sats=4, args=args)
+                p.shared_buffers.et_start[] = SM.ephemerides_time_seconds(args.initial_time, env.ephemerides_model)
+                p.shared_buffers.callback_env_config[] = CB._snapshot_callback_env_config()
+                u = SpaceAGORA.SimulationEngine.build_initial_conditions(args)
+                cb = CB.get_density_callback(4, args.dynamics_model.dynamic_effectors, args)
+                samples = []
+                for t in (0.0, 1.0, 2.0)
+                    cb.affect!((p=p, u=u, t=t))
+                    push!(samples, (copy(p.shared_buffers.densities),
+                        copy(p.shared_buffers.temperatures), copy(p.shared_buffers.winds)))
+                end
+                @test isempty(p.shared_buffers.gram_isolated_pool_models)
+                @test isempty(p.shared_buffers.gram_isolated_pool_locks)
+                return samples
+            end
+        end
+        # Real callback execution must fall through to the same locked instance
+        # history, rather than only returning the expected eligibility flag.
+        @test isequal(callback_samples("auto"), callback_samples("off"))
+    end
 
-        if Threads.nthreads() > 1
-            rho_p, T_p, w_p = alloc()
-            pooled = withenv(
+    @testset "isolated pool is bit-identical to the locked path with nominal winds" begin
+        # Bit identity is a property of deterministic winds only. GRAM's
+        # perturbed winds are a random walk over each instance's own call
+        # history, so two instances -- or one instance queried twice -- need
+        # not agree, and the GRAMSuite revision CI pins defaults to them. The
+        # comparison is made with nominal winds, as gram_density_service_probes.jl
+        # does for the same reason.
+        withenv("SPACEAGORA_GRAM_WIND_MODE" => "nominal") do
+            n = 64
+            _, p = pool_params(n)
+            hs = Vector{Float64}(undef, n)
+            lats = Vector{Float64}(undef, n)
+            lons = Vector{Float64}(undef, n)
+            ts = Vector{Float64}(undef, n)
+            for i in 1:n
+                x = (i - 1) / (n - 1)
+                hs[i] = 150.0e3 + x * 550.0e3
+                lats[i] = -0.5pi + pi * mod(x * sqrt(2.0), 1.0)
+                lons[i] = -pi + 2pi * mod(x * sqrt(3.0), 1.0)
+                ts[i] = x * 100.0
+            end
+
+            alloc() = (zeros(Float64, n), zeros(Float64, n),
+                       [SVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n])
+            rho_ref, T_ref, w_ref = alloc()
+            EM.getDensityBatch!(rho_ref, T_ref, w_ref, POOL_MODEL, hs, lats, lons, ts, true, p)
+            @test count(!iszero, rho_ref) == n
+
+            # `==` on Float64 calls -0.0 equal to 0.0 and every NaN unequal to
+            # itself, so the comparison is on the bits.
+            bits(v) = reinterpret.(UInt64, v)
+            wbits(v) = vcat((reinterpret.(UInt64, collect(x)) for x in v)...)
+
+            workers = max(2, min(4, Threads.nthreads()))
+            models, locks = CB._ensure_gram_isolated_pool!(p, POOL_MODEL, workers)
+            for k in eachindex(models)
+                rho_k, T_k, w_k = alloc()
+                for i in 1:n
+                    rho_k[i], T_k[i], w_k[i] = CB._gram_isolated_pool_density_state(
+                        models[k], hs[i], lats[i], lons[i], ts[i], true, p, locks[k]
+                    )
+                end
+                @test bits(rho_k) == bits(rho_ref)
+                @test bits(T_k) == bits(T_ref)
+                @test wbits(w_k) == wbits(w_ref)
+            end
+
+            if Threads.nthreads() > 1
+                rho_p, T_p, w_p = alloc()
+                pooled = withenv(
+                    "SPACEAGORA_GRAM_ISOLATED_POOL" => "on",
+                    "SPACEAGORA_GRAM_ISOLATED_POOL_MAX_WORKERS" => string(workers),
+                    "SPACEAGORA_GRAM_ISOLATED_POOL_THRESHOLD" => "1"
+                ) do
+                    CB._gram_isolated_pool_batch_eval!(
+                        rho_p, T_p, w_p, POOL_MODEL, hs, lats, lons, ts, true, p;
+                        allotment_hint=workers
+                    )
+                end
+                @test pooled
+                @test bits(rho_p) == bits(rho_ref)
+                @test bits(T_p) == bits(T_ref)
+                @test wbits(w_p) == wbits(w_ref)
+            end
+
+            # The guard that keeps the pool from building instances nothing will
+            # use. Every item above 2000 km is answered as vacuum and never reaches
+            # GRAM, so a batch made entirely of those must be declined -- measured,
+            # the speculative build costs 1.83x on a 1024-spacecraft run that never
+            # enters the atmosphere.
+            @test CB._gram_isolated_pool_native_count(hs, p) == n
+            vacuum_hs = fill(2_500_000.0, n)
+            @test CB._gram_isolated_pool_native_count(vacuum_hs, p) == 0
+            mixed_hs = copy(hs)
+            mixed_hs[2:end] .= 2_500_000.0
+            @test CB._gram_isolated_pool_native_count(mixed_hs, p) == 1
+            rho_v, T_v, w_v = alloc()
+            @test !withenv(
                 "SPACEAGORA_GRAM_ISOLATED_POOL" => "on",
                 "SPACEAGORA_GRAM_ISOLATED_POOL_MAX_WORKERS" => string(workers),
                 "SPACEAGORA_GRAM_ISOLATED_POOL_THRESHOLD" => "1"
             ) do
                 CB._gram_isolated_pool_batch_eval!(
-                    rho_p, T_p, w_p, POOL_MODEL, hs, lats, lons, ts, true, p;
+                    rho_v, T_v, w_v, POOL_MODEL, vacuum_hs, lats, lons, ts, true, p;
                     allotment_hint=workers
                 )
             end
-            @test pooled
-            @test bits(rho_p) == bits(rho_ref)
-            @test bits(T_p) == bits(T_ref)
-            @test wbits(w_p) == wbits(w_ref)
-        end
 
-        # The guard that keeps the pool from building instances nothing will
-        # use. Every item above 2000 km is answered as vacuum and never reaches
-        # GRAM, so a batch made entirely of those must be declined -- measured,
-        # the speculative build costs 1.83x on a 1024-spacecraft run that never
-        # enters the atmosphere.
-        @test CB._gram_isolated_pool_native_count(hs, p) == n
-        vacuum_hs = fill(2_500_000.0, n)
-        @test CB._gram_isolated_pool_native_count(vacuum_hs, p) == 0
-        mixed_hs = copy(hs)
-        mixed_hs[2:end] .= 2_500_000.0
-        @test CB._gram_isolated_pool_native_count(mixed_hs, p) == 1
-        rho_v, T_v, w_v = alloc()
-        @test !withenv(
-            "SPACEAGORA_GRAM_ISOLATED_POOL" => "on",
-            "SPACEAGORA_GRAM_ISOLATED_POOL_MAX_WORKERS" => string(workers),
-            "SPACEAGORA_GRAM_ISOLATED_POOL_THRESHOLD" => "1"
-        ) do
-            CB._gram_isolated_pool_batch_eval!(
-                rho_v, T_v, w_v, POOL_MODEL, vacuum_hs, lats, lons, ts, true, p;
-                allotment_hint=workers
-            )
-        end
-
-        # The pooled batch call declines rather than silently running at width
-        # one, which is what lets the caller fall through to the locked path.
-        rho_d, T_d, w_d = alloc()
-        @test !withenv("SPACEAGORA_GRAM_ISOLATED_POOL" => "off") do
-            CB._gram_isolated_pool_batch_eval!(
-                rho_d, T_d, w_d, POOL_MODEL, hs, lats, lons, ts, true, p;
-                allotment_hint=workers
-            )
+            # The pooled batch call declines rather than silently running at width
+            # one, which is what lets the caller fall through to the locked path.
+            rho_d, T_d, w_d = alloc()
+            @test !withenv("SPACEAGORA_GRAM_ISOLATED_POOL" => "off") do
+                CB._gram_isolated_pool_batch_eval!(
+                    rho_d, T_d, w_d, POOL_MODEL, hs, lats, lons, ts, true, p;
+                    allotment_hint=workers
+                )
+            end
         end
     end
 end

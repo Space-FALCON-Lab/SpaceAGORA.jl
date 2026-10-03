@@ -1,11 +1,15 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
 const SCAN_ROOTS = (
+    joinpath(REPO_ROOT, "packages", "SpaceAGORAHYPR", "src"),
     joinpath(REPO_ROOT, "src", "analysis", "reports"),
     joinpath(REPO_ROOT, "src", "core"),
     joinpath(REPO_ROOT, "src", "environment"),
     joinpath(REPO_ROOT, "src", "gnc", "control"),
     joinpath(REPO_ROOT, "src", "gnc", "guidance"),
+    joinpath(REPO_ROOT, "src", "gnc", "shared"),
+    joinpath(REPO_ROOT, "src", "gnc", "hypr"),
+    joinpath(REPO_ROOT, "src", "gnc", "rrt"),
     joinpath(REPO_ROOT, "src", "simulation", "engine"),
     joinpath(REPO_ROOT, "src", "simulation", "callbacks"),
     joinpath(REPO_ROOT, "src", "parallel")
@@ -20,6 +24,8 @@ const FORBIDDEN_REGEXES = (
 )
 
 const ALLOWED_RAW_INCLUDE_FILES = Set([
+    joinpath("packages", "SpaceAGORAHYPR", "src", "SpaceAGORAHYPR.jl"),
+    joinpath("src", "gnc", "guidance", "rpo", "rpo_planner_module.jl"),
     joinpath("src", "core", "simulation_model.jl"),
     joinpath("src", "environment", "physical_models.jl"),
     joinpath("src", "environment", "ephemerides", "ephemerides_models.jl"),
@@ -28,6 +34,8 @@ const ALLOWED_RAW_INCLUDE_FILES = Set([
     joinpath("src", "gnc", "control", "propulsive_maneuvers.jl"),
     joinpath("src", "gnc", "guidance", "guidance_models.jl"),
     joinpath("src", "gnc", "guidance", "guidance_hooks.jl"),
+    # Existing helper module now loads its shared and RRT source owners.
+    joinpath("src", "gnc", "hypr", "hypr_utils.jl"),
     joinpath("src", "gnc", "navigation", "navigation_hooks.jl"),
     joinpath("src", "simulation", "engine", "simulation_engine.jl"),
     joinpath("src", "simulation", "engine", "setup.jl"),

@@ -167,6 +167,22 @@ else
         end
     end
 
+    # A raw-core wrapper may hold a core that owns no native atmosphere (tests
+    # and stand-ins build `GRAMAtmosphereModel(Ref{Any}(nothing))`). Copying it
+    # must still work and must not count anything.
+    @testset "copying a raw core without a native atmosphere counts nothing" begin
+        created0 = EXT._NATIVE_ATMOSPHERES_CREATED[]
+        stand_in = EM.GRAMAtmosphereModel(Ref{Any}(:core_payload))
+        copied = deepcopy(stand_in)
+        @test copied isa EM.GRAMAtmosphereModel
+        @test copied !== stand_in
+        @test copied.core !== stand_in.core
+        @test copied.core[] === :core_payload
+        @test EXT._NATIVE_ATMOSPHERES_CREATED[] == created0
+        @test EXT._track_native_atmosphere!((; other=1)) === nothing
+        @test EXT._NATIVE_ATMOSPHERES_CREATED[] == created0
+    end
+
     # The parallelization_performance harness builds its cached GRAM model at
     # the epoch its cases fly, so a run's epoch alignment keeps that model
     # instead of rebuilding a native atmosphere for every sample.

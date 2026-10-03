@@ -1,5 +1,31 @@
 const IMPACT_ALTITUDE_M = 50_000.0
 
+# DiffEqBase 7.21+ delivers all simultaneous events in one signed mask:
+# +1 is an upcrossing, -1 is a downcrossing, and 0 did not trigger. Keep the
+# per-spacecraft effects and their direction filters in one shared adapter.
+function _directional_vector_callback(condition!, up!, down!, num_sats::Int; kwargs...)
+    function affect_events!(integrator, events)
+        handled = false
+        for idx in eachindex(events)
+            direction = events[idx]
+            if direction > 0 && up! !== nothing
+                up!(integrator, idx)
+                handled = true
+            elseif direction < 0 && down! !== nothing
+                down!(integrator, idx)
+                handled = true
+            end
+        end
+        # The new vector API locates either direction. An ignored crossing
+        # does not change state or require rebuilding derivatives/caches.
+        if !handled && applicable(DiffEqBase.derivative_discontinuity!, integrator, false)
+            DiffEqBase.derivative_discontinuity!(integrator, false)
+        end
+        return nothing
+    end
+    return VectorContinuousCallback(condition!, affect_events!, num_sats; kwargs...)
+end
+
 function get_impact_callback(num_sats::Int; excluded_spacecraft=nothing)
     function condition!(out, u, t, integrator)
         p = integrator.p
@@ -17,6 +43,7 @@ function get_impact_callback(num_sats::Int; excluded_spacecraft=nothing)
                 println("Impact detected for satellite $idx at time $(integrator.t) seconds at altitude <= $(IMPACT_ALTITUDE_M * 1e-3) km!")
             end
             p.is_active[idx] = false
+            _apply_active_phase_solver_settings!(integrator)
             if _simulation_engine_module()._is_gravity_backbone_state(integrator.u)
                 integrator.u.x[1].sc[idx].vel .= 0.0
             end
@@ -32,7 +59,7 @@ function get_impact_callback(num_sats::Int; excluded_spacecraft=nothing)
         end
     end
 
-    return VectorContinuousCallback(condition!, nothing, affect_downcrossing!, num_sats)
+    return _directional_vector_callback(condition!, nothing, affect_downcrossing!, num_sats)
 end
 
 # Terrain coordinates are planetocentric; geodetic latitude would sample a
@@ -103,6 +130,7 @@ function get_touchdown_callback(specs)
         r_p, v_p = _touchdown_fixed_state(integrator.u, integrator.t, p, idx)
         spec.on_touchdown(Float64(integrator.t), r_p, v_p, idx)
         p.is_active[idx] = false
+        _apply_active_phase_solver_settings!(integrator)
         if _simulation_engine_module()._is_gravity_backbone_state(integrator.u)
             integrator.u.x[1].sc[idx].vel .= 0.0
         end
@@ -122,7 +150,7 @@ function get_touchdown_callback(specs)
         end
         return nothing
     end
-    return VectorContinuousCallback(condition!, nothing, affect_downcrossing!, num_sats;
+    return _directional_vector_callback(condition!, nothing, affect_downcrossing!, num_sats;
                                     initialize=initialize!)
 end
 
@@ -170,7 +198,7 @@ function get_orbit_end_callback(num_sats::Int)
         end
     end
 
-    return VectorContinuousCallback(condition!, affect!, nothing, num_sats)
+    return _directional_vector_callback(condition!, affect!, nothing, num_sats)
 end
 
 function get_entry_end_callback(num_sats::Int, args::SimulationConfiguration)
@@ -224,7 +252,37 @@ function get_entry_end_callback(num_sats::Int, args::SimulationConfiguration)
         return nothing
     end
 
-    return VectorContinuousCallback(condition!, nothing, affect_downcrossing!, num_sats)
+    return _directional_vector_callback(condition!, nothing, affect_downcrossing!, num_sats)
+end
+
+# Reconcile the whole simultaneous-event mask once. Delivered directions are
+# authoritative even when large elapsed times put a root outside the geometric
+# roundoff band. Undelivered members retain the geometric/radial convention.
+function _refresh_crossing_atmosphere_flags!(integrator, events)
+    p = integrator.p
+    engine = _simulation_engine_module()
+    boundary = p.args.environment_model.planet.Rp_e + p.args.environment_model.EI * 1e3
+    boundary_roundoff = 64 * eps(boundary)
+    for i in eachindex(p.is_active)
+        position = engine._state_position_ii(integrator.u, i)
+        height = norm(position) - boundary
+        now_inside = if abs(height) <= boundary_roundoff
+            dot(position, engine._state_velocity_ii(integrator.u, i)) <= 0.0
+        else
+            height < 0.0
+        end
+        events[i] != 0 && (now_inside = events[i] < 0)
+        # An exit invalidates a vacuum prediction even if this member's own
+        # callback was omitted from a simultaneous event by the solver library.
+        if !now_inside && (events[i] > 0 || p.shared_buffers.in_atmosphere[i]) &&
+           i <= length(p.shared_buffers.vacuum_gram_caches)
+            cache = p.shared_buffers.vacuum_gram_caches[i]
+            cache === nothing || (cache.valid = false)
+        end
+        p.shared_buffers.in_atmosphere[i] = now_inside
+        p.shared_buffers.in_atmosphere_sample_t[i] = Float64(integrator.t)
+    end
+    return nothing
 end
 
 function get_drag_state_callback(num_sats::Int)
@@ -234,52 +292,30 @@ function get_drag_state_callback(num_sats::Int)
             out[i] = alt - integrator.p.args.environment_model.EI*1e3 # Positive when above the atmosphere, negative when in the atmosphere
         end
     end
-    function affect_upcrossing!(integrator, idx::Int64)
-        p = integrator.p
-        if callback_verbose(integrator)
-            println("Switching to space integration at time $(integrator.t) seconds!")
+    function affect_events!(integrator, events)
+        if all(iszero, events)
+            if applicable(DiffEqBase.derivative_discontinuity!, integrator, false)
+                DiffEqBase.derivative_discontinuity!(integrator, false)
+            end
+            return nothing
         end
-        p.shared_buffers.in_atmosphere[idx] = false
-        p.shared_buffers.in_atmosphere_sample_t[idx] = Float64(integrator.t)
-        # Invalidate the vacuum-predicted GRAM cache so the next atmospheric entry
-        # rebuilds it from the correct state rather than interpolating stale data.
-        if idx <= length(p.shared_buffers.vacuum_gram_caches)
-            cache = p.shared_buffers.vacuum_gram_caches[idx]
-            if cache !== nothing
-                cache.valid = false
+        _refresh_crossing_atmosphere_flags!(integrator, events)
+        _apply_active_phase_solver_settings!(integrator)
+        for idx in eachindex(events)
+            direction = events[idx]
+            if direction > 0
+                if callback_verbose(integrator)
+                    println("Switching to space integration at time $(integrator.t) seconds!")
+                end
+                schedule_event_driven_thruster_controls!(integrator, idx)
+            elseif direction < 0 && callback_verbose(integrator)
+                println("Switching to atmosphere integration at time $(integrator.t) seconds!")
             end
         end
-        integrator.opts.dtmax = p.args.integration_tolerances.dt_max_orbit # Increase the maximum timestep when exiting the atmosphere
-        reltol_new, abstol_new = _callback_tolerances_for_phase(
-            integrator.opts.reltol,
-            integrator.opts.abstol,
-            p.args,
-            false
-        )
-        integrator.opts.reltol = reltol_new # Adjust tolerances when exiting the atmosphere
-        integrator.opts.abstol = abstol_new
-        schedule_event_driven_thruster_controls!(integrator, idx)
+        return nothing
     end
 
-    function affect_downcrossing!(integrator, idx::Int64)
-        p = integrator.p
-        if callback_verbose(integrator)
-            println("Switching to atmosphere integration at time $(integrator.t) seconds!")
-        end
-        p.shared_buffers.in_atmosphere[idx] = true
-        p.shared_buffers.in_atmosphere_sample_t[idx] = Float64(integrator.t)
-        integrator.opts.dtmax = p.args.integration_tolerances.dt_max_atmosphere # Decrease the maximum timestep when entering the atmosphere
-        reltol_new, abstol_new = _callback_tolerances_for_phase(
-            integrator.opts.reltol,
-            integrator.opts.abstol,
-            p.args,
-            true
-        )
-        integrator.opts.reltol = reltol_new # Adjust tolerances when entering the atmosphere
-        integrator.opts.abstol = abstol_new
-    end
-
-    return VectorContinuousCallback(condition!, affect_upcrossing!, affect_downcrossing!, num_sats)
+    return VectorContinuousCallback(condition!, affect_events!, num_sats)
 end
 
 function get_quaternion_projection_callback(num_sats::Int, args::SimulationConfiguration)

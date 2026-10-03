@@ -620,9 +620,24 @@ end
 # positions per RHS call would corrupt its trajectory-continuity assumptions. This costs
 # one extra raw density-model call per non-root link per wrench evaluation.
 @inline function _aero_link_atmosphere_query(p, sat_idx::Int, t::Float64, pos_pp_link::SVector{3, Float64}, planet)
+    # A history-dependent model (GRAM perturbed winds) under freeze-per-step:
+    # a per-link native query from inside a (possibly threaded) RHS would
+    # advance the shared random walk in scheduling order. Use the satellite's
+    # once-per-step sample instead, as every other RHS-side atmosphere read
+    # does in that mode.
+    cb_env = SimulationModel.SimulationCallbacks._callback_env_config(p)
+    if cb_env.density_history_dependent && cb_env.density_freeze_per_step
+        sb = p.shared_buffers
+        if sat_idx <= length(sb.density_sample_t) && isfinite(sb.density_sample_t[sat_idx])
+            return sb.densities[sat_idx], sb.temperatures[sat_idx], sb.winds[sat_idx]
+        end
+    end
     alt, lat, lon = rtolatlong(pos_pp_link, planet)
     density_model = SimulationModel.SimulationCallbacks._density_model_for_sat(p, sat_idx)
-    return SimulationModel.getDensity(density_model, alt, lat, lon, t, true, p)
+    EM = SimulationModel.EnvironmentModels
+    wind_requested = EM._environment_wind_enabled(p)
+    rho, T, wind_vec = SimulationModel.getDensity(density_model, alt, lat, lon, t, wind_requested, p)
+    return rho, T, EM._environment_wind(wind_requested, wind_vec)
 end
 
 @inline function wrench(

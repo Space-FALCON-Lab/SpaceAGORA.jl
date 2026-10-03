@@ -6,8 +6,9 @@ by default, on one lock (`RuntimeServices.GRAM_LOCK`, which is the same object a
 as SpaceAGORA's own SPICE bindings, so the two cannot be separated). A threaded
 constellation therefore does not scale on a GRAM atmosphere: the threads queue.
 
-`SPACEAGORA_GRAM_ISOLATED_POOL` is the alternative that has been in the tree,
-default off, since its SPICE-corruption crash was root-caused and fixed. It
+`SPACEAGORA_GRAM_ISOLATED_POOL` is the alternative introduced after its
+SPICE-corruption crash was root-caused and fixed. It now defaults to `auto`
+with the wind-history guard described below. It
 replaces the one shared `GRAMAtmosphereModel` with `workers` independent
 `deepcopy`ed models, each behind its own `ReentrantLock`, and evaluates a batch
 of satellites across them. Nothing had measured it, and nothing had checked that
@@ -19,17 +20,25 @@ This page records what the measurement found. The scripts are in
 
 ## Is the pool bit-identical to the locked path?
 
-Yes, and it has to be, because the alternative is that native GRAM's returned
-density depends on the sequence of calls an instance has seen — which would make
-*any* concurrency change to this path a dynamics change.
+The retained identity comparisons cover nominal winds. They do not establish
+identity under perturbed winds. Native density and temperature read the mean
+field, but perturbed winds follow a random walk over each instance's query
+history. The pinned GRAMSuite wrapper resolves its default `auto` wind mode to
+`perturbed`, not `nominal`.
 
-It does not. `GRAMSuite._gram_density_state_native` reads `atmos.density`, the
-mean field, not `perturbedDensity`, and `_gram_wind_mode()` resolves to
-`:nominal` by default, so the returned state is a function of position, time and
-epoch alone. GRAM's per-call perturbation random walk advances, but nothing in
-the returned tuple reads it.
+Automatic pooling declines any wind-requesting batch whose core reports
+history-dependent winds, before constructing or warming worker models. Both the
+density callback and look-ahead cache then fall back to the locked batch route.
+This also preserves stored wind diagnostics when a caller requests winds that
+the force model does not use. Nominal winds and queries with `wind=false` retain
+the existing pool eligibility. Unknown raw cores are treated conservatively.
 
-Three pieces of evidence, all exact comparisons on the `reinterpret`ed bits,
+Explicit `SPACEAGORA_GRAM_ISOLATED_POOL=on` bypasses this wind-history guard:
+it opts into separate instance histories and can change winds and trajectories
+with pool width or thread count. It is not a reproducibility-preserving speed
+switch under perturbed winds. No atmosphere mode or seed is changed by routing.
+
+Three retained nominal-wind comparisons use exact `reinterpret`ed bits,
 never a tolerance:
 
 | Check | What it compares | Result |
@@ -49,8 +58,8 @@ component of every spacecraft, raw `Float64`, `cmp`ed byte for byte):
 | 64 spacecraft, look-ahead, locked vs pool width 8, 8 threads | 98 496 | identical |
 | the WS11 reference case (`ppc_constellation`, EI 120 km), locked vs pool width 4 | 98 496 | identical |
 
-The locked dump is also identical between the 4-thread and the 8-thread run, so
-the thread count is not moving the trajectory either.
+The retained locked dump also matches between 4 and 8 threads for those
+nominal-wind cases. This does not establish perturbed-wind identity.
 
 One real difference was found and fixed, and it was not a rounding difference.
 The locked scalar path floors altitude at `-30.0` m before calling GRAM
@@ -64,11 +73,10 @@ the same floor. `src/simulation/callbacks/density_callbacks/gram_process_batch.j
 sends unclamped altitudes to the process-backed density service the same way and
 has not been changed here.
 
-The fix cannot move any shipped trajectory, for a reason stronger than the
-dumps: the pool is off by default, and with it off `_gram_isolated_pool_batch_eval!`
-returns before it reaches the clamped line at all. The dumps above were taken
-before and after the change and compared byte for byte anyway, with the pool
-both off and on.
+At the time of the clamp correction the pool default was off. The retained
+dumps above were compared before and after that correction with the pool both
+off and on. The current automatic default additionally obeys the wind-history
+guard described above.
 
 ## Is the pool faster?
 
@@ -158,7 +166,8 @@ threaded fan-out has a fixed per-invocation cost, and at 256 spacecraft the
 ### What ships
 
 `SPACEAGORA_GRAM_ISOLATED_POOL` now defaults to `auto` rather than `off`, at a
-threshold of 1024 and a width capped at 4. Each of those three numbers is
+threshold of 1024 and a width capped at 4, subject to the wind-history guard.
+Each of those three numbers is
 SOURCED from the table above and argued where it is defined, in
 `density_callbacks/config.jl`: 1024 because 256 loses in every cell measured and
 1024 wins at 4 and 8 threads in both density paths; 4 because it is the fastest
@@ -186,8 +195,7 @@ to that rather than to the spacecraft count. With the guard that case is 0.96x,
 within the run-to-run spread, and the 1024-spacecraft in-atmosphere win is
 unchanged at 1.77x and 1.19x.
 
-The defaults are bit-identical to the old ones where they change behavior, which
-is the only claim that matters here: a 1024-spacecraft freeze-per-step run and a
+The retained nominal-wind default comparisons were bit-identical: a 1024-spacecraft freeze-per-step run and a
 1024-spacecraft look-ahead run, each dumped with the pool explicitly off and then
 with nothing set at all, are byte for byte the same (1 573 056 bytes each), and
 so is the 64-spacecraft reference case, which the new threshold leaves on the

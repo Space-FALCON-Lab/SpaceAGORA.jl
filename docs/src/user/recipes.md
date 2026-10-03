@@ -60,14 +60,23 @@ end
 
 ## Run an RPO planner-comparison smoke case
 
+Prepare the optional HYPR companion environment once from the repository root:
+
 ```text
-SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=. examples/Earth_RPO_CubeSat_MPC_PlannerComparison.jl --runs 1
+julia --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
+```
+
+These HYPR examples load `SpaceAGORAHYPR` before their common helper activates
+the root project. Baseline examples continue to use `--project=.`.
+
+```text
+SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=examples/rpo_planner_env examples/Earth_RPO_CubeSat_MPC_PlannerComparison.jl --runs 1
 ```
 
 ## Run the robot-arm and Cloth dynamics smoke batch
 
 ```text
-SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=. examples/Robot_Arm_Planner_Cloth_Demo.jl
+SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=examples/rpo_planner_env examples/Robot_Arm_Planner_Cloth_Demo.jl
 ```
 
 ## Inspect local assets

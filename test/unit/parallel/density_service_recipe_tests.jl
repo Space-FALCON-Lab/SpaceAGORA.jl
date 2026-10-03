@@ -45,6 +45,7 @@ function with_fixture(f)
     builds = Dict{Symbol, Any}[]
     active, peak = Ref(0), Ref(0)
     events = Tuple{Int, Float64}[]
+    wind_flags = Bool[] # wind argument of every non-warm-up query
     before_eval = Ref{Function}((_model, _h) -> nothing)
     warmup_fail = Ref(false) # fail the warm-up of ANY recipe while set: a setup fault, not a recipe key
     builder = function (kwargs)
@@ -65,7 +66,7 @@ function with_fixture(f)
             before_eval[](model, h)
             yield() # Exercise task interleaving even on a one-thread test runner.
             get(model.recipe, :fail_query, false) && h == 12.0 && error("fixture query failure")
-            h == 1.0e5 || push!(events, (model.id, h))
+            h == 1.0e5 || (push!(events, (model.id, h)); push!(wind_flags, wind))
             return (Float64(get(model.recipe, :seed, 0)), vacuum_temperature + h,
                     (Float64(lat), Float64(lon), Float64(elapsed)))
         finally
@@ -80,7 +81,7 @@ function with_fixture(f)
     end
     PP.clear_density_service_failures!()
     try
-        f((; builds, peak, events, before_eval, warmup_fail))
+        f((; builds, peak, events, wind_flags, before_eval, warmup_fail))
     finally
         PP.clear_density_service_failures!()
         lock(PP._WORKER_DENSITY_LOCK) do
@@ -405,6 +406,270 @@ batch(kwargs; hs=[11.0, 12.0, 13.0]) = PP.density_batch_remote(
             @test procs() == processes
             @test rho == [-1.0] && temp == [-2.0]
             @test winds == [SVector(-3.0, -3.0, -3.0)]
+        end
+    end
+end
+
+# ---------------------------------------------------------------------------
+# RHS prefill through the density service (`_rhs_density_service_fill!`) and
+# the service's wind-history rule, driven through the same test-owned pool
+# entry (the current process) and fixture builder/evaluator as above.
+# ---------------------------------------------------------------------------
+const SM = SpaceAGORA.SimulationModel
+
+# A GRAM core whose winds do not depend on native call history (nominal winds).
+# An unknown core, including `nothing`, is treated as history dependent.
+struct NominalWindCore end
+EM._gram_core_wind_is_history_dependent(::NominalWindCore) = false
+
+const FILL_EI_KM = 600.0
+
+function fill_config(density_model; wind::Bool, keplerian::Bool, n_sats::Int)
+    planet = SM.Earth()
+    spacecraft = SM.SpacecraftModel[]
+    for i in 1:n_sats
+        root = SM.Link(root=true, m=500.0, ref_area=12.0)
+        ic = SM.InitialCondition(ra=planet.Rp_e + 400.0e3, rp=planet.Rp_e + 170.0e3,
+            i=53.0, ω=0.0, Ω=10.0 * i, ν=0.0)
+        push!(spacecraft, SM.SpacecraftModel(SM.Joint[], [root], root, true, 500.0, 0.0,
+            root.inertia, 0, 0, ic, i))
+    end
+    return SM.SimulationConfiguration(
+        simulation_settings=SM.SimulationSettings(results=false, verbose=false,
+            generate_plots=false, normalize=false, save_csv=false),
+        mission_configuration=SM.MissionConfiguration(SM.MissionTime, keplerian, 1, 20.0, false, 20, 2.0),
+        environment_model=SM.EnvironmentModel(
+            planet=planet, EI=FILL_EI_KM, density_model=density_model,
+            thermal_model=SM.MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
+            topography=false, wind=wind, ephemerides_model=SM.SimpleEphemeridesModel(),
+        ),
+        dynamics_model=SM.DynamicsModel(spacecraft,
+            (SM.InverseSquaredGravityModel(), SM.AerodynamicCoefficientfM())),
+        guidance_model=SM.GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
+        navigation_model=SM.NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
+        control_model=SM.ControlModel(control_effectors=(), control_rates=Float64[]),
+        initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+    )
+end
+
+# The current process stands in for the one pool worker, as in the dispatch
+# testset above: the real coordinator, partition and dispatch code runs, with
+# no spawned process and no native GRAM.
+function with_local_density_pool(f, mode::String)
+    pool = PP.density_process_pool()
+    old_workers = copy(pool.workers)
+    old_atexit = PP._DENSITY_ATEXIT_REGISTERED[]
+    lock(pool.lock) do
+        empty!(pool.workers)
+        push!(pool.workers, myid())
+    end
+    PP._DENSITY_ATEXIT_REGISTERED[] = true
+    try
+        withenv("SPACEAGORA_GRAM_PROCESS_POOL" => mode,
+                "SPACEAGORA_GRAM_PROCESS_POOL_WORKERS" => "1",
+                "SPACEAGORA_GRAM_PROCESS_POOL_THRESHOLD" => "1",
+                "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => nothing) do
+            f()
+        end
+    finally
+        lock(pool.lock) do
+            empty!(pool.workers)
+            append!(pool.workers, old_workers)
+        end
+        PP._DENSITY_ATEXIT_REGISTERED[] = old_atexit
+    end
+end
+
+const FILL_T = 42.0
+const FILL_SENTINEL_RHO = -1.0
+const FILL_SENTINEL_T = -2.0
+const FILL_SENTINEL_WIND = SVector(-3.0, -3.0, -3.0)
+const FILL_ZERO_WIND = SVector(0.0, 0.0, 0.0)
+
+# Six satellites, one per branch of the prefill's per-satellite gate:
+# 1 and 4 below the entry interface (native query), 2 above 2000 km (vacuum),
+# 3 between the entry interface and 2000 km (analytic polyfit when the run is
+# not keplerian, native query when it is), 5 below the entry interface, and
+# 6 inactive with a stale non-finite altitude that must not be looked at.
+const FILL_ALTS = [150.0e3, 2500.0e3, 900.0e3, 180.0e3, 160.0e3, NaN]
+const FILL_LATS = [0.1, 0.2, 0.3, -0.4, 0.5, 0.6]
+const FILL_LONS = [1.1, 1.2, 1.3, 1.4, -1.5, 1.6]
+
+function fill_params(model; wind::Bool, keplerian::Bool=false)
+    n = length(FILL_ALTS)
+    p = SM.ODEParams(n_sats=n, args=fill_config(model; wind=wind, keplerian=keplerian, n_sats=n))
+    p.is_active[n] = false
+    fill!(p.shared_buffers.densities, FILL_SENTINEL_RHO)
+    fill!(p.shared_buffers.temperatures, FILL_SENTINEL_T)
+    fill!(p.shared_buffers.winds, FILL_SENTINEL_WIND)
+    fill!(p.shared_buffers.density_sample_t, -9.0)
+    return p
+end
+
+run_fill!(p; alts=FILL_ALTS) = CB._rhs_density_service_fill!(
+    p, FILL_T, length(alts), copy(alts), copy(FILL_LATS), copy(FILL_LONS))
+
+buffer(p, i) = (p.shared_buffers.densities[i], p.shared_buffers.temperatures[i],
+    p.shared_buffers.winds[i])
+untouched(p, i) = buffer(p, i) == (FILL_SENTINEL_RHO, FILL_SENTINEL_T, FILL_SENTINEL_WIND) &&
+    p.shared_buffers.density_sample_t[i] == -9.0
+
+# The fixture evaluator answers rho = seed, T = vacuum temperature + h and
+# wind = (lat, lon, elapsed), so each served slot shows which query filled it.
+served_value(p, i, seed; wind::Bool) = (Float64(seed),
+    p.args.environment_model.planet.T_ref + FILL_ALTS[i],
+    wind ? SVector(FILL_LATS[i], FILL_LONS[i], FILL_T) : FILL_ZERO_WIND)
+
+# Vacuum and analytic slots are written locally whether or not the service
+# answers the rest.
+function local_slots_ok(p)
+    T_ref = p.args.environment_model.planet.T_ref
+    rho3, T3, w3 = EM.density_polyfit(FILL_ALTS[3], p)
+    return buffer(p, 2) == (0.0, T_ref, FILL_ZERO_WIND) &&
+        buffer(p, 3) == (rho3, T3, EM._environment_wind(p, w3)) &&
+        p.shared_buffers.density_sample_t[2] == FILL_T &&
+        p.shared_buffers.density_sample_t[3] == FILL_T
+end
+
+@testset "RHS prefill through the density service" begin
+    @testset "gate: only native-query satellites are dispatched" begin
+        with_fixture() do ctx
+            model = EM.GRAMAtmosphereModel(nothing, ReentrantLock(), recipe(seed=41))
+            with_local_density_pool("on") do
+                p = fill_params(model; wind=true)
+                @test run_fill!(p)
+                # One batch with exactly satellites 1, 4 and 5, in index order.
+                @test last.(ctx.events) == FILL_ALTS[[1, 4, 5]]
+                @test all(ctx.wind_flags)
+                for i in (1, 4, 5)
+                    @test buffer(p, i) == served_value(p, i, 41; wind=true)
+                    @test p.shared_buffers.density_sample_t[i] == FILL_T
+                end
+                @test local_slots_ok(p)
+                @test p.shared_buffers.densities[3] > 0.0
+                @test untouched(p, 6)
+
+                # Keplerian runs skip the analytic branch: satellite 3 is sent too.
+                empty!(ctx.events)
+                pk = fill_params(model; wind=true, keplerian=true)
+                @test run_fill!(pk)
+                @test last.(ctx.events) == FILL_ALTS[[1, 3, 4, 5]]
+                @test buffer(pk, 3) == served_value(pk, 3, 41; wind=true)
+                @test buffer(pk, 2) == (0.0, pk.args.environment_model.planet.T_ref, FILL_ZERO_WIND)
+                @test untouched(pk, 6)
+            end
+        end
+    end
+
+    @testset "no native query needed: served locally without a batch" begin
+        with_fixture() do ctx
+            model = EM.GRAMAtmosphereModel(nothing, ReentrantLock(), recipe(seed=41))
+            with_local_density_pool("on") do
+                p = fill_params(model; wind=true)
+                alts = [3000.0e3, 2500.0e3, 900.0e3, 1500.0e3, 2100.0e3, NaN]
+                @test run_fill!(p; alts=alts)
+                @test isempty(ctx.builds)
+                @test isempty(ctx.events)
+                @test p.shared_buffers.densities[1:5] == [0.0, 0.0,
+                    EM.density_polyfit(900.0e3, p)[1], EM.density_polyfit(1500.0e3, p)[1], 0.0]
+                @test untouched(p, 6)
+            end
+        end
+    end
+
+    @testset "non-finite active altitude declines before dispatch" begin
+        with_fixture() do ctx
+            model = EM.GRAMAtmosphereModel(nothing, ReentrantLock(), recipe(seed=41))
+            with_local_density_pool("on") do
+                p = fill_params(model; wind=true)
+                alts = copy(FILL_ALTS)
+                alts[4] = NaN
+                @test !run_fill!(p; alts=alts)
+                @test isempty(ctx.builds)
+                @test isempty(ctx.events)
+                @test all(i -> untouched(p, i), (1, 4, 5, 6))
+                @test !PP.density_service_failed(model.constructor_kwargs)
+            end
+        end
+    end
+
+    @testset "a failed batch leaves native-query slots untouched" begin
+        with_fixture() do ctx
+            bad = merge(recipe(seed=43), Dict{Symbol, Any}(:fail_query => true))
+            model = EM.GRAMAtmosphereModel(nothing, ReentrantLock(), bad)
+            with_local_density_pool("on") do
+                p = fill_params(model; wind=true)
+                # h == 12.0 is the fixture's failing query.
+                alts = copy(FILL_ALTS)
+                alts[4] = 12.0
+                @test_logs (:warn, r"Density service worker failed on a batch") begin
+                    @test !run_fill!(p; alts=alts)
+                end
+                @test all(i -> untouched(p, i), (1, 4, 5, 6))
+                @test local_slots_ok(p)
+                @test PP.density_service_failed(bad)
+            end
+        end
+    end
+
+    # The fill passes the run's `EnvironmentModel.wind`, not a constant `true`,
+    # and the batch evaluator applies the wind-history rule to it per mode.
+    @testset "wind flag and wind-history rule per mode" begin
+        cases = (
+            # mode    core               wind   served
+            ("on",   nothing,           true,  true),
+            ("on",   nothing,           false, true),
+            ("auto", nothing,           true,  false), # history-dependent winds stay in process
+            ("auto", nothing,           false, true),  # density-only run stays eligible
+            ("auto", NominalWindCore(), true,  true),  # nominal winds stay eligible
+            ("auto", NominalWindCore(), false, true),
+            ("off",  NominalWindCore(), false, false),
+        )
+        for (mode, core, wind, served) in cases
+            with_fixture() do ctx
+                model = EM.GRAMAtmosphereModel(core, ReentrantLock(), recipe(seed=47))
+                with_local_density_pool(mode) do
+                    p = fill_params(model; wind=wind)
+                    @test run_fill!(p) == served
+                    @test local_slots_ok(p)
+                    @test untouched(p, 6)
+                    if served
+                        @test ctx.wind_flags == fill(wind, 3)
+                        for i in (1, 4, 5)
+                            @test buffer(p, i) == served_value(p, i, 47; wind=wind)
+                        end
+                    else
+                        # Declined before any worker was asked to build a model
+                        # and before any output was written; not remembered as
+                        # a service failure.
+                        @test isempty(ctx.builds)
+                        @test isempty(ctx.events)
+                        @test all(i -> untouched(p, i), (1, 4, 5))
+                        @test !PP.density_service_failed(model.constructor_kwargs)
+                    end
+                end
+            end
+        end
+    end
+
+    @testset "batch evaluator passes the requested wind flag through" begin
+        with_fixture() do ctx
+            model = EM.GRAMAtmosphereModel(NominalWindCore(), ReentrantLock(), recipe(seed=53))
+            p = (args=(environment_model=(planet=(T_ref=200.0,),),),)
+            with_local_density_pool("auto") do
+                for wind in (true, false)
+                    empty!(ctx.wind_flags)
+                    rho, temp = fill(-1.0, 2), fill(-2.0, 2)
+                    winds = fill(FILL_SENTINEL_WIND, 2)
+                    @test CB._gram_process_pool_batch_eval!(rho, temp, winds, model,
+                        [11.0, 13.0], [0.5, 0.6], [0.7, 0.8], [5.0, 6.0], wind, p)
+                    @test ctx.wind_flags == [wind, wind]
+                    @test rho == [53.0, 53.0]
+                    @test temp == [211.0, 213.0]
+                    # Per-query elapsed times are forwarded, not the first one.
+                    @test winds == [SVector(0.5, 0.7, 5.0), SVector(0.6, 0.8, 6.0)]
+                end
+            end
         end
     end
 end

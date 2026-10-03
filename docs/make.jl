@@ -10,6 +10,7 @@ const DOCS_SRC = joinpath(@__DIR__, "src")
 const GENERATED_SRC = joinpath(DOCS_SRC, "generated")
 const GENERATED_API_PAGE = joinpath(GENERATED_SRC, "public_api.md")
 const API_REFERENCE_PAGES = (
+    (section="RPO planner pilot", title="RPO Planner API", file="rpo_planner_api.md"),
     (section="Terrain Queries", title="Terrain API", file="terrain_api.md"),
     (section="Mesh Aerodynamics", title="Mesh Aerodynamics API", file="mesh_aerodynamics_api.md"),
     (section="Visualization Scene", title="Visualization API", file="visualization_api.md"),
@@ -148,6 +149,7 @@ makedocs(
         "User Guide" => Any[
             "Start Here" => "getting_started.md",
             "Quickstart" => "user/quickstart.md",
+            "RPO Planner Pilot" => "user/rpo_planner_pilot.md",
             "Installation & Environment" => "user/installation_environment.md",
             "GRAMSuite Setup" => "user/gramsuite_setup.md",
             "Assets & Modes" => "assets.md",
@@ -175,6 +177,7 @@ makedocs(
         "Reference" => Any[
             "CLI" => "cli.md",
             "Public API" => "generated/public_api.md",
+            "RPO Planner API" => "generated/rpo_planner_api.md",
             "Terrain API" => "generated/terrain_api.md",
             "Mesh Aerodynamics API" => "generated/mesh_aerodynamics_api.md",
             "Visualization API" => "generated/visualization_api.md",
@@ -185,6 +188,7 @@ makedocs(
         ],
         "Maintainer Guide" => Any[
             "Maintainer Overview" => "maintainer/index.md",
+            "RPO Planner Contract" => "maintainer/rpo_planner_contract.md",
             "Documentation Policy" => "documentation_policy.md",
             "API Policy" => "public_api_policy.md",
             "Contracts" => "contracts.md",
@@ -219,9 +223,12 @@ if !isempty(missing_public_api)
     error("Public API documentation is incomplete. See $(PUBLIC_API_REPORT) for the missing exports report.")
 end
 
-deploydocs(
-    repo = "github.com/Space-FALCON-Lab/SpaceAGORA.jl.git",
-    devbranch = "main",
-    versions = nothing,
-    push_preview = false,
-)
+# CI's strict build needs a GitHub token for link checks, but must not publish.
+if !("--no-deploy" in ARGS)
+    deploydocs(
+        repo = "github.com/Space-FALCON-Lab/SpaceAGORA.jl.git",
+        devbranch = "main",
+        versions = nothing,
+        push_preview = false,
+    )
+end

@@ -1090,12 +1090,21 @@ end
 # The workload's inner-speedup curve from the RHS calibration store, or
 # `nothing` when no configuration registered a stem for it, when the store has
 # no timings for that stem, or when `SPACEAGORA_PREDICTIVE_INNER_CURVE=0`.
-function _predictive_inner_curve(features::OuterRouteFeatures)::Union{Nothing, InnerSpeedupCurve}
+#
+# `outer` selects the rows: `true` for the plans whose samples run under an
+# outer split (threads@W, mixed local slots), `false` for the serial plan on the
+# whole pool. Pooling them priced a threads@W+b plan at a single-simulation
+# speedup its samples cannot reach: under the split the RHS heuristic clamps
+# the flat routes to one thread and effector threading is off, so only a plan
+# a sweep pinned under the split uses the `b` threads -- and that is exactly
+# what the `outer=1` rows record.
+function _predictive_inner_curve(features::OuterRouteFeatures;
+                                 outer::Bool)::Union{Nothing, InnerSpeedupCurve}
     _predictive_env_bool("SPACEAGORA_PREDICTIVE_INNER_CURVE", true) || return nothing
     stem = _campaign_rhs_stem(features)
     stem === nothing && return nothing
     speedup = try
-        SimulationEngine.rhs_inner_speedup_curve(stem)
+        SimulationEngine.rhs_inner_speedup_curve(stem; outer = outer)
     catch err
         @debug "Inner-speedup curve could not be read; planning without one." exception = err
         nothing
@@ -1164,11 +1173,13 @@ function _run_campaign_predictive(
     priced = predictive_cost_terms(corrections, campaign_constants, rules;
                                    signature=signature, pool_cold=pool_cold)
     terms = priced.terms
-    inner_curve = _predictive_inner_curve(features)
+    inner_curve = _predictive_inner_curve(features; outer=true)
+    inner_curve_unsplit = _predictive_inner_curve(features; outer=false)
     planning = predictive_plan(
         n_samples=n, threads=threads, process_workers=pool_workers,
         threads_candidate=(:threads in candidates), local_slots_cap=local_cap,
-        constants=constants, config=config, terms=terms, inner_curve=inner_curve)
+        constants=constants, config=config, terms=terms, inner_curve=inner_curve,
+        inner_curve_unsplit=inner_curve_unsplit)
     plan, leash = corrections === nothing ? (planning.chosen, :off) :
         predictive_leash(planning, get(corrections.last_plan, shape_key, nothing))
     forced = _predictive_forced_plan(planning, n, config, constants, terms, inner_curve)
@@ -1187,7 +1198,8 @@ function _run_campaign_predictive(
                 "sample_time_s=$(priced.sample_time_s === nothing ? "unknown" : round(priced.sample_time_s; digits=4)) " *
                 "corrections=$(corrections === nothing ? "none" : campaign_corrections_mode()) " *
                 "campaigns=$(corrections === nothing ? 0 : corrections.campaigns) " *
-                "inner_curve=$(inner_curve === nothing ? "none" : join(round.(inner_curve.speedup; digits=2), ","))")
+                "inner_curve=$(inner_curve === nothing ? "none" : join(round.(inner_curve.speedup; digits=2), ",")) " *
+                "inner_curve_unsplit=$(inner_curve_unsplit === nothing ? "none" : join(round.(inner_curve_unsplit.speedup; digits=2), ","))")
         for p in planning.plans
             println("[predictive]   candidate $(_predictive_plan_line(p))")
         end

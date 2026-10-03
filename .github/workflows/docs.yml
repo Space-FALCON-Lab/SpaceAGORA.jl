@@ -7,6 +7,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+# All deployments write gh-pages; PR builds keep their own concurrency groups.
+concurrency:
+  group: documentation-${{ github.event_name == 'pull_request' && github.ref || 'gh-pages' }}
+  cancel-in-progress: false
+  queue: max
+
 permissions:
   contents: write
   pull-requests: read

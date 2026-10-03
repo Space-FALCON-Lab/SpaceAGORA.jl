@@ -4,7 +4,7 @@
 # Usage (from the repository root):
 #   julia --startup-file=no --project=. scripts/xval_fullarc.jl <target> <outdir> [variant]
 #
-#   target   gmat      data/telemetry/GMAT_Examples (real GMAT R2025a runs)
+#   target   gmat      data/telemetry/GMAT_Examples (reported GMAT R2025a runs)
 #            stk       data/telemetry/stk_results   (STK HPOP runs)
 #            basilisk  Basilisk_Examples_Full; directory taken from XVAL_BASILISK_DIR
 #   variant  committed (default): the force-model overrides in test/gmat_scenario_matrix.jl
@@ -13,9 +13,6 @@
 #            moon_file_c20: stk reference, Moon J2 with the unmodified LP165P.csv C(2,0)
 #
 # Optional: XVAL_SCENARIOS=earth_j0_tbfalse,... restricts the case list.
-# Primary exports require complete, clean, override-free committed runs. Give any
-# sensitivity run an explicit non-committed variant; legacy run directories lack
-# the required completion/provenance record and must be rerun before primary export.
 #
 # Every reference sample is compared (max_points raised past the file length), so
 # the RMS covers the whole arc the reference file holds. Per-case output:
@@ -34,10 +31,10 @@ using Statistics
 using TOML
 using StaticArrays
 import SPICE
+include(joinpath(@__DIR__, "xval_provenance.jl"))
+using .XvalProvenance
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
-include(joinpath(@__DIR__, "xval_fullarc_provenance.jl"))
-const XFP = XvalFullarcProvenance
 
 # Use the maintained definitions-only boundary. Text-prefix extraction would
 # leave an incomplete function after the matrix runner was encapsulated.
@@ -137,10 +134,12 @@ function _axis_rows(errors::DataFrame, name::String, event::String)
 end
 
 const _EPH = parentmodule(first(methods(SpaceAGORA.SimulationModel.planet_frame_lpi)))
+const _FRAME_DIRECTORY = get(ENV, "XVAL_FRAME_TABLE_DIR", "")
 const _FRAME_TABLE = Ref{Any}(nothing)   # (et::Vector, E::Vector{SMatrix}) for the current case
 
 function _install_frame_table!(name::String)
     dir = get(ENV, "XVAL_FRAME_TABLE_DIR", "")
+    dir == _FRAME_DIRECTORY || error("Frame-table mode changed; use a fresh process for each mode")
     if isempty(dir)
         _FRAME_TABLE[] = nothing
         return
@@ -161,9 +160,9 @@ function _frame_correction(et::Float64)
     return tab.E[i] + w * (tab.E[i + 1] - tab.E[i])
 end
 
-# Replace the SPICE body-fixed rotation with an identical copy of the committed
-# implementation (simple_ephemerides.jl) that post-multiplies by the GMAT table when
-# one is installed; with no table it returns exactly what the committed code returns.
+# An explicit diagnostic mode only. Ordinary runs keep the package method intact.
+# Use a separate process for each mode; this substitution is never primary evidence.
+if !isempty(_FRAME_DIRECTORY)
 Base.eval(_EPH, quote
     function _spice_planet_frame_lpi(planet, et::Float64)::SMatrix{3, 3, Float64}
         R = lock(tracked_lock(:spice_frame)) do
@@ -182,9 +181,15 @@ Base.eval(_EPH, quote
         return R * Main._frame_correction(et)
     end
 end)
+end
 
-function run_case(name::String, target::String, variant::String, ref_path::String, casedir::String)
+function run_case(name::String, target::String, variant::String, ref_path::String, casedir::String, record::Dict)
     mkpath(casedir)
+    inputs = [XvalProvenance.file_identity(ref_path)]
+    if !isempty(_FRAME_DIRECTORY)
+        body = first(split(name, "_")) == "moon" ? "Luna" : uppercasefirst(first(split(name, "_")))
+        push!(inputs, XvalProvenance.file_identity(joinpath(_FRAME_DIRECTORY, "$(body)_E_spice_to_gmat.csv")))
+    end
     _install_frame_table!(name)
     ic = _matrix_initial_conditions(name)
     traj = _build_time_aligned_reference(
@@ -194,6 +199,10 @@ function run_case(name::String, target::String, variant::String, ref_path::Strin
     )
     scenario = _base_scenario_dict(name, traj.telemetry_path)
     merge!(scenario, _overrides(name, target, variant))
+    field = String(scenario["gravity_harmonics_file"])
+    if !isempty(field)
+        push!(inputs, XvalProvenance.file_identity(isabspath(field) ? field : joinpath(REPO_ROOT, field)))
+    end
     # Compare every reference sample: no truncation to the first N rows.
     scenario["max_points_quick"] = 1_000_000_000
     scenario["max_points_full"] = 1_000_000_000
@@ -215,6 +224,8 @@ function run_case(name::String, target::String, variant::String, ref_path::Strin
         "SPACEAGORA_SPICE_PLANETARY_KERNEL_RELPATH" => get(ENV, "XVAL_PLANETARY_KERNEL", _gmat_planetary_kernel_relpath()),
         pairs(_telemetry_solver_env_overrides())...
     ]
+    planetary_kernel = XvalProvenance.file_identity(abspath(joinpath(TV.SPICE_PATH, first(env).second)))
+    push!(inputs, planetary_kernel)
     t_wall = @elapsed result = withenv(env...) do
         TV.run_verification(req)
     end
@@ -249,6 +260,14 @@ function run_case(name::String, target::String, variant::String, ref_path::Strin
     n10k = min(10_000, length(dr))
     retcode = "solver_retcode" in names(s) ? String(string(s[s.scenario .== name, :solver_retcode][1])) : ""
     ov = TOML.parsefile(manifest_path)["scenarios"][1]
+    XvalProvenance.verify_inputs(inputs)
+    kernels = [XvalProvenance.file_identity(String(SPICE.kdata(i, "ALL")[1])) for i in 1:SPICE.ktotal("ALL")]
+    record["cases"][name] = Dict(
+        "inputs" => inputs, "kernels" => kernels, "planetary_kernel" => planetary_kernel,
+        "solver_environment" => Dict(env),
+        "model" => scenario, "solver_retcode" => retcode,
+        "manifest_sha256" => XvalProvenance.file_identity(manifest_path)["sha256"],
+        "series_sha256" => XvalProvenance.file_identity(joinpath(casedir, "series.arrow"))["sha256"])
     return (
         scenario=name,
         target=target,
@@ -268,62 +287,56 @@ function run_case(name::String, target::String, variant::String, ref_path::Strin
         nbody_bodies=join(String.(ov["nbody_bodies"]), "+"),
         solver_retcode=retcode,
         wall_s=t_wall,
-        reference_path=ref_path,
-        reference_sha256=XFP.file_digest(ref_path),
-        gravity_file_sha256=XFP.file_digest(joinpath(REPO_ROOT, String(ov["gravity_harmonics_file"])))
+        reference_path=ref_path
     )
 end
 
 function main()
     length(ARGS) >= 2 || error("usage: scripts/xval_fullarc.jl <gmat|stk|basilisk> <outdir> [variant]")
+    realpath(pkgdir(SpaceAGORA)) == realpath(REPO_ROOT) ||
+        error("Full-arc runner must load SpaceAGORA from this checkout; use --project=$REPO_ROOT")
     target = ARGS[1]
     outdir = abspath(ARGS[2])
     variant = length(ARGS) >= 3 ? ARGS[3] : "committed"
     selected = strip(get(ENV, "XVAL_SCENARIOS", ""))
     scenarios = isempty(selected) ? ALL_SCENARIOS : String.(strip.(split(selected, ",")))
-    info = XFP.run_info(target, variant, scenarios)
     resolver = _resolver(target)
     rundir = joinpath(outdir, "$(target)_$(variant)")
-    mkpath(rundir)
+    occursin(r"^[A-Za-z0-9_-]+$", variant) || error("Invalid variant label")
+    all(in(ALL_SCENARIOS), scenarios) && length(unique(scenarios)) == length(scenarios) ||
+        error("Scenarios must be unique members of ALL_SCENARIOS")
+    record = XvalProvenance.start_record(REPO_ROOT, rundir, target, variant, scenarios)
     commit = try readchomp(`git -C $REPO_ROOT rev-parse HEAD`) catch; "unknown" end
-    dirty = try !isempty(readchomp(`git -C $REPO_ROOT status --porcelain --untracked-files=no -- src test scripts data/Gravity_harmonics_data`)) catch; true end
-    println("xval_fullarc target=$target variant=$variant commit=$commit src/test/scripts dirty=$dirty")
+    dirty = record["source"]["dirty"]
+    println("xval_fullarc target=$target variant=$variant commit=$commit source dirty=$dirty")
     println("started $(now())  julia $(VERSION)  threads=$(Threads.nthreads())")
-    merge!(info, Dict(
-        "commit" => commit, "src_test_scripts_dirty" => dirty,
-        "julia" => string(VERSION), "hostname" => gethostname(),
-        "cpu" => Sys.cpu_info()[1].model))
-    # Invalidate a previous completed run before the first case can overwrite it.
-    XFP.write_info(joinpath(rundir, "run_info.toml"), info)
-    kernel = get(ENV, "XVAL_PLANETARY_KERNEL", _gmat_planetary_kernel_relpath())
-    kernel_path = abspath(joinpath(TV.SPICE_PATH, kernel))
-    info["model_inputs"] = Dict(
-        "planetary_kernel" => kernel_path,
-        "planetary_kernel_sha256" => XFP.file_digest(kernel_path),
-        "solver_environment" => _telemetry_solver_env_overrides())
-    XFP.write_info(joinpath(rundir, "run_info.toml"), info)
     rows = NamedTuple[]
     t_total = @elapsed for name in scenarios
-        ref_path = resolver(name)
+        ref_path = abspath(resolver(name))
         isfile(ref_path) || error("missing reference for $name: $ref_path")
-        row = run_case(name, target, variant, ref_path, joinpath(rundir, name))
+        row = run_case(name, target, variant, ref_path, joinpath(rundir, name), record)
         push!(rows, row)
         @printf("%-18s rms=%14.6f m  max=%14.6f m  n=%7d  arc_end=%11.3f s  wall=%7.1f s\n",
             name, row.rms_m, row.max_m, row.n_points, row.arc_end_s, row.wall_s)
         CSV.write(joinpath(rundir, "results.csv"), DataFrame(rows))
+        XvalProvenance.write_record(rundir, record)
     end
-    # Keep the actual loaded kernel identities and precedence, including default
-    # orientation kernels and any explicitly labelled sensitivity PCKs.
-    kernels = [SPICE.kdata(i, "ALL") for i in 1:SPICE.ktotal("ALL")]
-    info["spice_kernels"] = [Dict(
-        "path" => abspath(String(kernel[1])), "kind" => String(kernel[2]),
-        "sha256" => XFP.file_digest(String(kernel[1]))) for kernel in kernels]
-    info["finished"] = string(now())
-    info["total_wall_s"] = t_total
-    XFP.finish_run!(rundir, info)
-    println("SPICE kernels loaded, in load order (last has priority): ",
-            join([basename(String(kernel[1])) for kernel in kernels], ", "))
+    record["finished"] = string(now())
+    record["total_wall_s"] = t_total
+    record["julia"] = string(VERSION)
+    record["threads"] = Threads.nthreads()
+    record["hostname"] = gethostname()
+    record["cpu"] = Sys.cpu_info()[1].model
+    XvalProvenance.finish_record!(record, REPO_ROOT, rundir)
+    spk = try
+        [basename(string(SPICE.kdata(i, "ALL")[1])) for i in 1:SPICE.ktotal("ALL")]
+    catch err
+        ["unavailable: $err"]
+    end
+    println("SPICE kernels loaded, in load order (binary PCK precedes text PCK): ", join(spk, ", "))
     @printf("done: %d cases in %.1f s\n", length(rows), t_total)
 end
 
-main()
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
+end

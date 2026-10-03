@@ -1,4 +1,4 @@
-"""Primary-export identity checks; no pandas, pyarrow, telemetry, or campaign."""
+"""Fail-closed export tests require only Python's standard library in PR CI."""
 import csv
 import importlib.util
 import json
@@ -6,176 +6,175 @@ from pathlib import Path
 import tempfile
 import unittest
 
-SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "xval_fullarc_export.py"
-spec = importlib.util.spec_from_file_location("fullarc_export", SCRIPT)
+SCRIPT = Path(__file__).resolve().parents[2] / 'scripts' / 'xval_fullarc_export.py'
+spec = importlib.util.spec_from_file_location('xval_export', SCRIPT)
 export = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(export)
 
 
-def write_toml(path, data):
-    lines = []
-    def table(values, parents=()):
-        for key, value in values.items():
-            if not isinstance(value, dict):
-                if isinstance(value, list) and value and isinstance(value[0], dict):
-                    encoded = "[" + ", ".join("{" + ", ".join(f"{json.dumps(k)} = {json.dumps(v)}"
-                                            for k, v in item.items()) + "}" for item in value) + "]"
-                else:
-                    encoded = json.dumps(value)
-                lines.append(f"{json.dumps(key)} = {encoded}")
-        for key, value in values.items():
-            if isinstance(value, dict):
-                parts = (*parents, key)
-                lines.append("[" + ".".join(json.dumps(p) for p in parts) + "]")
-                table(value, parts)
-    table(data)
-    path.write_text("\n".join(lines) + "\n")
-
-
-class PrimaryProvenanceTests(unittest.TestCase):
+class ExportProvenanceTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.run = Path(self.tmp.name) / "gmat_committed"
-        self.run.mkdir()
-        self.scenarios = [f"{b}_{g}_{tb}" for b in export.BODY_ORDER for g in export.GRAV_ORDER
-                          for tb in ("tbfalse", "tbtrue")]
-        self.rows = [dict(scenario=s, target="gmat", variant="committed",
-                          reference_sha256="a" * 64, gravity_file_sha256="b" * 64)
-                     for s in self.scenarios]
-        self.info = dict(provenance_schema=1, status="complete", target="gmat", variant="committed",
-                         primary_eligible=True, input_overrides={}, src_test_scripts_dirty=False,
-                         commit="c" * 40, scenarios=self.scenarios.copy(),
-                         model_inputs=dict(planetary_kernel="fixture.bsp", planetary_kernel_sha256="d" * 64,
-                                           solver_environment={"SPACEAGORA_TELEMETRY_SOLVER_MODE": "dp8"}),
-                         spice_kernels=[dict(path="fixture.bsp", kind="SPK", sha256="d" * 64)],
-                         artifacts_sha256={})
-        for scenario in self.scenarios:
-            (self.run / scenario).mkdir()
-            for name in ("manifest.toml", "series.arrow"):
-                path = self.run / scenario / name
-                path.write_text("synthetic " + scenario)
-                self.info["artifacts_sha256"][f"{scenario}/{name}"] = export.file_digest(path)
-        self.save_rows()
-        self.save_info()
+        self.root = Path(self.tmp.name)
+        self.paths = []
+        for target in ('gmat', 'stk'):
+            run = self.root / f'{target}_committed'
+            run.mkdir()
+            self.paths.append(run)
+            rows, cases = [], {}
+            for name in sorted(export.SCENARIOS):
+                case = run / name
+                case.mkdir()
+                (case / 'manifest.toml').write_text('fixture = true\n')
+                (case / 'series.arrow').write_bytes(b'output identity fixture')
+                ref = {'path': f'/retained/{target}/{name}.csv', 'sha256': 'a'*64}
+                cases[name] = {'inputs': [ref], 'kernels': [ref], 'planetary_kernel': ref,
+                               'solver_environment': {'mode': 'dp8'}, 'model': {'fixture': True},
+                               'solver_retcode': 'Success',
+                               'manifest_sha256': export.digest(case / 'manifest.toml'),
+                               'series_sha256': export.digest(case / 'series.arrow')}
+                rows.append({'scenario': name, 'target': target, 'variant': 'committed',
+                             'reference_path': ref['path'], 'solver_retcode': 'Success',
+                             'rms_m': 1.0, 'max_m': 2.0, 'n_points': 3, 'arc_end_s': 2.0,
+                             'rms_first10k_m': 1.0, 'gravity_degree': 0, 'gravity_order': 0,
+                             'gravity_file': 'fixture.csv', 'gm_override_m3s2': '', 'nbody_bodies': ''})
+            with (run / 'results.csv').open('w', newline='') as stream:
+                writer = csv.DictWriter(stream, rows[0].keys())
+                writer.writeheader()
+                writer.writerows(rows)
+            source = {'commit': 'b'*40, 'tree': 'c'*40, 'dirty': False}
+            self.save(run, {'schema_version': 1, 'status': 'complete', 'target': target,
+                            'variant': 'committed', 'source': source, 'source_end': source,
+                            'controls': {}, 'scenarios': sorted(cases), 'cases': cases,
+                            'reference_provenance': 'unverified_generation_settings',
+                            'results_sha256': export.digest(run / 'results.csv')})
 
-    def save_rows(self):
-        path = self.run / "results.csv"
-        with path.open("w", newline="") as stream:
-            writer = csv.DictWriter(stream, fieldnames=list(self.rows[0]))
-            writer.writeheader()
-            writer.writerows(self.rows)
-        self.info["artifacts_sha256"]["results.csv"] = export.file_digest(path)
+    def save(self, run, info):
+        (run / 'run_info.json').write_text(json.dumps(info))
 
-    def save_info(self):
-        write_toml(self.run / "run_info.toml", self.info)
+    def mutate(self, fn):
+        run = self.paths[0]
+        info = json.loads((run / 'run_info.json').read_text())
+        fn(info)
+        self.save(run, info)
 
-    def validate(self):
-        return export.validate_primary_run(self.run, "gmat")
+    def rejected(self):
+        with self.assertRaises((ValueError, KeyError, FileNotFoundError)):
+            export.validate_campaign(self.root)
 
-    def test_complete_committed_identity_is_accepted(self):
-        result = self.validate()
-        self.assertEqual(result["commit"], "c" * 40)
-        self.assertEqual(result["run_info_sha256"], export.file_digest(self.run / "run_info.toml"))
+    def test_clean_exact_matrix(self):
+        self.assertEqual(len(export.validate_campaign(self.root)), 2)
 
-    def test_legacy_metadata_cannot_bless_primary(self):
-        del self.info["provenance_schema"]
-        self.save_info()
-        with self.assertRaisesRegex(ValueError, "legacy provenance"):
-            self.validate()
-        (self.run / "run_info.toml").unlink()
-        with self.assertRaisesRegex(ValueError, "missing versioned"):
-            self.validate()
-
-    def test_sensitive_or_unknown_inputs_are_not_primary(self):
-        for key in ("XVAL_FRAME_TABLE_DIR", "XVAL_PLANETARY_KERNEL", "SPACEAGORA_SPICE_PCK_OVERRIDES",
-                    "XVAL_BASE", "XVAL_FUTURE_MODEL_OVERRIDE", "SPACEAGORA_TELEMETRY_J2_SOURCE_DEFAULT",
-                    "SPACEAGORA_TELEMETRY_HARMONICS_NORMALIZED_DEFAULT", "SPACEAGORA_GMAT_PARITY_SOLVER"):
+    def test_every_scientific_override_is_rejected(self):
+        for key in ('XVAL_BASE', 'XVAL_GMAT_DIR', 'XVAL_J0_GM', 'XVAL_EARTH_FIELD_FILE', 'XVAL_MOON_FIELD_FILE',
+                    'XVAL_MOON_FIELD_GM', 'XVAL_PLANETARY_KERNEL', 'XVAL_FRAME_TABLE_DIR',
+                    'SPACEAGORA_SPICE_PCK_OVERRIDES', 'SPACEAGORA_GMAT_PARITY_SOLVER',
+                    'SPACEAGORA_SPICE_PLANETARY_KERNEL_RELPATH', 'XVAL_FUTURE_MODEL_OVERRIDE',
+                    'SPACEAGORA_TELEMETRY_J2_SOURCE_DEFAULT',
+                    'SPACEAGORA_TELEMETRY_HARMONICS_NORMALIZED_DEFAULT',
+                    'SPACEAGORA_TELEMETRY_SOLVER_MAXITERS', 'SPACEAGORA_SOLVER_SAVE_EVERYSTEP',
+                    'SPACEAGORA_NEW_UNKNOWN_CONTROL'):
             with self.subTest(key=key):
-                self.info["input_overrides"] = {key: "diagnostic"}
-                self.save_info()
-                with self.assertRaisesRegex(ValueError, "overrides"):
-                    self.validate()
+                self.mutate(lambda i: i.update(controls={key: 'diagnostic'}))
+                self.rejected()
 
-    def test_renamed_sensitivity_directory_is_rejected(self):
-        self.info["variant"] = "frame_diagnostic"
-        self.save_info()
-        with self.assertRaisesRegex(ValueError, "identity"):
-            self.validate()
+    def test_renamed_variant(self):
+        self.mutate(lambda i: i.update(variant='as_basilisk'))
+        self.rejected()
 
-    def test_dirty_or_unidentified_sources_are_rejected(self):
-        self.info["src_test_scripts_dirty"] = True
-        self.save_info()
-        with self.assertRaisesRegex(ValueError, "not clean"):
-            self.validate()
-        self.info["src_test_scripts_dirty"] = False
-        self.info["commit"] = "unknown"
-        self.save_info()
-        with self.assertRaisesRegex(ValueError, "source commit"):
-            self.validate()
+    def test_dirty_source_even_with_committed_label(self):
+        self.mutate(lambda i: (i['source'].update(dirty=True), i['source_end'].update(dirty=True)))
+        self.rejected()
 
-    def test_interrupted_rerun_is_rejected_before_any_export(self):
-        self.info["status"] = "running"
-        self.save_info()
-        paper = Path(self.tmp.name) / "paper"
-        with self.assertRaisesRegex(ValueError, "not complete"):
-            export.main(self.tmp.name, paper)
-        self.assertFalse(paper.exists())
+    def test_mixed_source_revisions(self):
+        self.mutate(lambda i: (i['source'].update(commit='d'*40), i['source_end'].update(commit='d'*40)))
+        self.rejected()
 
-    def test_modified_results_or_series_are_rejected(self):
-        for relative in ("results.csv", self.scenarios[0] + "/series.arrow"):
-            with self.subTest(artifact=relative):
-                path = self.run / relative
-                original = path.read_bytes()
-                path.write_bytes(original + b"changed")
-                with self.assertRaisesRegex(ValueError, "artifact differs"):
-                    self.validate()
-                path.write_bytes(original)
+    def test_failed_incomplete_missing_and_old_metadata(self):
+        original = json.loads((self.paths[0] / 'run_info.json').read_text())
+        for status in ('running', 'failed', ''):
+            self.save(self.paths[0], dict(original, status=status))
+            self.rejected()
+        self.save(self.paths[0], dict(original, schema_version=0))
+        self.rejected()
+        (self.paths[0] / 'run_info.json').unlink()
+        (self.paths[0] / 'run_info.toml').write_text('variant = "committed"')
+        self.rejected()
 
-    def test_subset_or_duplicate_selection_is_not_full_matrix(self):
-        for selected in (self.scenarios[:-1], self.scenarios[:-1] + [self.scenarios[0]]):
-            self.info["scenarios"] = selected
-            self.save_info()
-            with self.assertRaisesRegex(ValueError, "24 scenarios exactly once"):
-                self.validate()
+    def test_stale_series_and_manifest(self):
+        case = self.paths[0] / sorted(export.SCENARIOS)[0]
+        for filename in ('series.arrow', 'manifest.toml'):
+            path = case / filename
+            before = path.read_bytes()
+            path.write_bytes(b'changed')
+            self.rejected()
+            path.write_bytes(before)
 
-    def test_rehashed_duplicate_rows_are_still_rejected(self):
-        self.rows[-1] = self.rows[0].copy()
-        self.save_rows()
-        self.save_info()
-        with self.assertRaisesRegex(ValueError, "complete unique"):
-            self.validate()
+    def test_changed_results_and_duplicate_coverage(self):
+        path = self.paths[0] / 'results.csv'
+        lines = path.read_text().splitlines(True)
+        lines[-1] = lines[1]  # Still 24 rows; one scenario missing, another duplicated.
+        path.write_text(''.join(lines))
+        self.rejected()
+        self.mutate(lambda i: i.update(results_sha256=export.digest(path)))
+        self.rejected()
 
-    def test_row_target_and_input_identity_are_checked(self):
-        self.rows[0]["target"] = "stk"
-        self.save_rows()
-        self.save_info()
-        with self.assertRaisesRegex(ValueError, "different target"):
-            self.validate()
-        self.rows[0]["target"] = "gmat"
-        self.rows[0]["reference_sha256"] = ""
-        self.save_rows()
-        self.save_info()
-        with self.assertRaisesRegex(ValueError, "reference or gravity"):
-            self.validate()
+    def test_missing_input_and_unsuccessful_solver(self):
+        name = sorted(export.SCENARIOS)[0]
+        self.mutate(lambda i: i['cases'][name].update(inputs=[]))
+        self.rejected()
 
-    def test_loaded_kernel_identity_is_required(self):
-        self.info["spice_kernels"][0]["sha256"] = "e" * 64
-        self.save_info()
-        with self.assertRaisesRegex(ValueError, "planetary-kernel mismatch"):
-            self.validate()
+    def test_loaded_planetary_kernel_identity_is_required(self):
+        name = sorted(export.SCENARIOS)[0]
+        self.mutate(lambda i: i["cases"][name].update(planetary_kernel={"path": "other.bsp", "sha256": "d"*64}))
+        self.rejected()
 
-    def test_missing_effective_inputs_or_artifact_map_fails_closed(self):
-        inputs = self.info.pop("model_inputs")
-        self.save_info()
-        with self.assertRaisesRegex(ValueError, "effective kernel"):
-            self.validate()
-        self.info["model_inputs"] = inputs
-        self.info["artifacts_sha256"].pop("results.csv")
-        self.save_info()
-        with self.assertRaisesRegex(ValueError, "artifact identity"):
-            self.validate()
+    def test_failed_solver_even_if_record_and_rows_agree(self):
+        path = self.paths[0] / 'results.csv'
+        path.write_text(path.read_text().replace('Success', 'MaxIters'))
+        def fail(info):
+            info['results_sha256'] = export.digest(path)
+            for case in info['cases'].values():
+                case['solver_retcode'] = 'MaxIters'
+        self.mutate(fail)
+        self.rejected()
+
+    def test_complete_export_preserves_configuration_and_provenance(self):
+        try:
+            import pandas
+            import pyarrow as pa
+            import pyarrow.feather as feather
+        except ImportError:
+            self.skipTest('Optional Arrow round trip; standard-library rejection tests still run')
+        for run in self.paths:
+            info = json.loads((run / 'run_info.json').read_text())
+            for name, case in info['cases'].items():
+                path = run / name / 'series.arrow'
+                feather.write_feather(pa.table({'t_s': [0., 1., 2.], 'err_m': [0., 1., 2.]}), path)
+                case['series_sha256'] = export.digest(path)
+            self.save(run, info)
+        paper = self.root / 'paper'
+        (paper / 'data').mkdir(parents=True)
+        (paper / 'figures' / 'validation_results').mkdir(parents=True)
+        export.main(self.root, paper)
+        with (paper / 'data' / 'cross_validation_rmse_fullarc_source.csv').open() as stream:
+            rows = list(csv.DictReader(stream))
+        self.assertEqual(len(rows), 48)
+        self.assertEqual(len({(r['body'], r['gravity'], r['third_body'], r['reference']) for r in rows}), 48)
+        for row in rows:
+            self.assertEqual(row['gravity_file'], 'fixture.csv')
+            self.assertEqual(row['source_commit'], 'b'*40)
+            self.assertEqual(row['reference_provenance'], 'unverified_generation_settings')
+            self.assertEqual(len(row['run_record_sha256']), 64)
+
+    def test_refusal_before_any_output(self):
+        self.mutate(lambda i: i.update(status='running'))
+        destination = self.root / 'paper'
+        with self.assertRaises(ValueError):
+            export.main(self.root, destination)
+        self.assertFalse(destination.exists())
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main()

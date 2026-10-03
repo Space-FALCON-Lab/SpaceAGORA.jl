@@ -6,7 +6,8 @@ using Test
 module PCKOrderFixture
     const _SPICE_BODY_LOCK = ReentrantLock()
     const _FURNISHED_KERNELS = Set{String}()
-    const _PCK_OVERRIDE_STATE = Ref((String[], -1))
+    const _PCK_OVERRIDE_PATHS = Ref{Union{Nothing, Vector{String}}}(nothing)
+    const _PCK_APPLIED_KERNEL_COUNT = Ref(-1)
     const loaded = String[]
     const calls = String[]
     const _EARTH_CACHE = Dict{Tuple{String, String}, Any}()
@@ -33,10 +34,11 @@ module PCKOrderFixture
             filter!(!=(path), parentmodule(@__MODULE__).loaded)
         end
     end
+    unload(path) = SPICE.unload(path)
     source = Meta.parse(read(joinpath(@__DIR__, "..", "..", "..", "src",
                                      "environment", "ephemerides", "planets.jl"), String))
     wanted = Set([:_furnsh_once, :_furnsh_required, :_furnsh_first_existing_if_available,
-                  :_furnsh_first_existing, :_furnsh_pck_overrides, :Earth, :Moon, :Mars, :Venus, :Titan])
+                  :_furnsh_first_existing, :_check_pck_override_policy!, :_furnsh_pck_overrides, :Earth, :Moon, :Mars, :Venus, :Titan])
     found = Set{Symbol}()
     for expr in source.args[3].args
         unwrapped = expr
@@ -57,7 +59,8 @@ module PCKOrderFixture
     found == wanted || error("constructor fixture missed production functions: $(setdiff(wanted, found))")
     function reset!()
         empty!(_FURNISHED_KERNELS)
-        _PCK_OVERRIDE_STATE[] = (String[], -1)
+        _PCK_OVERRIDE_PATHS[] = nothing
+        _PCK_APPLIED_KERNEL_COUNT[] = -1
         for cache in (_EARTH_CACHE, _MOON_CACHE, _MARS_CACHE, _VENUS_CACHE, _TITAN_CACHE)
             empty!(cache)
         end

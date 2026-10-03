@@ -24,7 +24,8 @@ module Planets
     # Track furnished paths here so repeat construction is a cheap no-op instead of
     # a repeat furnsh call.
     const _FURNISHED_KERNELS = Set{String}()
-    const _PCK_OVERRIDE_STATE = Ref((String[], -1))
+    const _PCK_OVERRIDE_PATHS = Ref{Union{Nothing, Vector{String}}}(nothing)
+    const _PCK_APPLIED_KERNEL_COUNT = Ref(-1)
 
     # Two things can desynchronise this cache from CSPICE's actual pool.
     #
@@ -47,7 +48,8 @@ module Planets
     @inline function _reset_furnished_kernels!()
         lock(_SPICE_BODY_LOCK) do
             empty!(_FURNISHED_KERNELS)
-            _PCK_OVERRIDE_STATE[] = (String[], -1)
+            _PCK_OVERRIDE_PATHS[] = nothing
+            _PCK_APPLIED_KERNEL_COUNT[] = -1
             empty!(_EARTH_CACHE)
             empty!(_MARS_CACHE)
             empty!(_VENUS_CACHE)
@@ -308,35 +310,45 @@ module Planets
         return strip(get(ENV, "SPACEAGORA_SPICE_PLANETARY_KERNEL_RELPATH", ""))
     end
 
-    # Opt-in: extra text/binary PCKs loaded after each constructor's standard PCK, so
-    # their values take precedence in the kernel pool. Comma-separated; relative paths
-    # resolve against `spice_path`. Unset (the default) changes nothing. Used, e.g., to
-    # run Mars with the IAU 2009 orientation another tool uses.
-    function _furnsh_pck_overrides(spice_path::String)
+    # Overrides are a process/kernel-pool policy. Freeze their ordered paths at
+    # the first constructor, including the empty default, before cache lookup.
+    # Changing policy requires a fresh process or kclear() plus cache reset.
+    function _check_pck_override_policy!(spice_path::String)
         raw = strip(get(ENV, "SPACEAGORA_SPICE_PCK_OVERRIDES", ""))
-        isempty(raw) && return nothing
         paths = String[]
         for tok in split(raw, ',')
-            relpath = String(strip(tok))
-            isempty(relpath) && continue
-            path = abspath(isabspath(relpath) ? relpath : joinpath(spice_path, relpath))
+            value = String(strip(tok))
+            isempty(value) && continue
+            path = abspath(isabspath(value) ? value : joinpath(spice_path, value))
             isfile(path) || throw(ArgumentError("SPACEAGORA_SPICE_PCK_OVERRIDES: kernel not found: $path"))
-            push!(paths, path)
+            path in paths || push!(paths, path)
         end
-        lock(_SPICE_BODY_LOCK) do
-            _PCK_OVERRIDE_STATE[] == (paths, length(_FURNISHED_KERNELS)) && return nothing
-            # Another constructor may have loaded its default binary PCK since
-            # these overrides were applied. Reapply in order, without retaining
-            # duplicate SPICE entries, so the last override keeps precedence.
-            for path in paths
-                if path in _FURNISHED_KERNELS
-                    SPICE.unload(path)
-                    delete!(_FURNISHED_KERNELS, path)
-                end
-                _furnsh_once(path)
+        previous = _PCK_OVERRIDE_PATHS[]
+        previous === nothing || previous == paths || throw(ArgumentError(
+            "SPACEAGORA_SPICE_PCK_OVERRIDES changed after planet construction; " *
+            "use a fresh process, or SPICE.kclear() followed by _reset_furnished_kernels!()."))
+        _PCK_OVERRIDE_PATHS[] = paths
+        return paths
+    end
+
+    # Call after ALL standard kernels. Another body's constructor can load new
+    # PCK/frame constants, so reapply the ordered overrides after that happens.
+    # Unload first to keep repeated construction from growing CSPICE's table.
+    # Binary PCK data still precede text PCK data, irrespective of load order.
+    function _furnsh_pck_overrides(spice_path::String)
+        paths = _check_pck_override_policy!(spice_path)
+        isempty(paths) && return nothing
+        _PCK_APPLIED_KERNEL_COUNT[] == length(_FURNISHED_KERNELS) && return nothing
+        for path in reverse(paths)
+            if path in _FURNISHED_KERNELS
+                unload(path)
+                delete!(_FURNISHED_KERNELS, path)
             end
-            _PCK_OVERRIDE_STATE[] = (paths, length(_FURNISHED_KERNELS))
         end
+        for path in paths
+            _furnsh_once(path)
+        end
+        _PCK_APPLIED_KERNEL_COUNT[] = length(_FURNISHED_KERNELS)
         return nothing
     end
 
@@ -421,7 +433,11 @@ module Planets
     function Earth(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
         key = (topo_harmonics_file, spice_path)
         return lock(_SPICE_BODY_LOCK) do
-            haskey(_EARTH_CACHE, key) && return _EARTH_CACHE[key]
+            _check_pck_override_policy!(spice_path)
+            if haskey(_EARTH_CACHE, key)
+                _furnsh_pck_overrides(spice_path)
+                return _EARTH_CACHE[key]
+            end
             _furnsh_required(spice_path, "pck/pck00011.tpc")
             _furnsh_required(spice_path, "lsk/naif0012.tls")
             _furnsh_planetary_kernel(spice_path)
@@ -452,7 +468,11 @@ module Planets
     function Mars(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
         key = (topo_harmonics_file, spice_path)
         return lock(_SPICE_BODY_LOCK) do
-            haskey(_MARS_CACHE, key) && return _MARS_CACHE[key]
+            _check_pck_override_policy!(spice_path)
+            if haskey(_MARS_CACHE, key)
+                _furnsh_pck_overrides(spice_path)
+                return _MARS_CACHE[key]
+            end
             _furnsh_mars_pck(spice_path)
             _furnsh_required(spice_path, "lsk/naif0012.tls")
             _furnsh_planetary_kernel(spice_path)
@@ -469,7 +489,11 @@ module Planets
     function Venus(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
         key = (topo_harmonics_file, spice_path)
         return lock(_SPICE_BODY_LOCK) do
-            haskey(_VENUS_CACHE, key) && return _VENUS_CACHE[key]
+            _check_pck_override_policy!(spice_path)
+            if haskey(_VENUS_CACHE, key)
+                _furnsh_pck_overrides(spice_path)
+                return _VENUS_CACHE[key]
+            end
             _furnsh_required(spice_path, "pck/pck00011.tpc")
             _furnsh_required(spice_path, "lsk/naif0012.tls")
             _furnsh_planetary_kernel(spice_path)
@@ -485,7 +509,11 @@ module Planets
     function Titan(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
         key = (topo_harmonics_file, spice_path)
         return lock(_SPICE_BODY_LOCK) do
-            haskey(_TITAN_CACHE, key) && return _TITAN_CACHE[key]
+            _check_pck_override_policy!(spice_path)
+            if haskey(_TITAN_CACHE, key)
+                _furnsh_pck_overrides(spice_path)
+                return _TITAN_CACHE[key]
+            end
             # Share the modern PCK used by the other planet constructors. Loading
             # 00010 after 00011 partially overwrites Mars's nutation/precession
             # constants and can invalidate IAU_MARS in the shared SPICE pool.
@@ -505,7 +533,11 @@ module Planets
     function Moon(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
         key = (topo_harmonics_file, spice_path)
         return lock(_SPICE_BODY_LOCK) do
-            haskey(_MOON_CACHE, key) && return _MOON_CACHE[key]
+            _check_pck_override_policy!(spice_path)
+            if haskey(_MOON_CACHE, key)
+                _furnsh_pck_overrides(spice_path)
+                return _MOON_CACHE[key]
+            end
             _furnsh_required(spice_path, "pck/pck00011.tpc")
             _furnsh_required(spice_path, "lsk/naif0012.tls")
             _furnsh_planetary_kernel(spice_path)

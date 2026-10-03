@@ -1,12 +1,9 @@
-using Test
-using TOML
-
-module FullarcProvenanceFixture
-    include(joinpath(@__DIR__, "..", "..", "scripts", "xval_fullarc_provenance.jl"))
+using Test, JSON
+module FullarcPreflightFixture
+    include(joinpath(@__DIR__, "..", "..", "scripts", "xval_provenance.jl"))
 end
-const XVAL_PROVENANCE_TEST = FullarcProvenanceFixture.XvalFullarcProvenance
-
-@testset "committed full-arc runs reject sensitivity inputs" begin
+const XVAL_PREFLIGHT = FullarcPreflightFixture.XvalProvenance
+@testset "Full-arc preflight preserves published rejection cases" begin
     keys = ["XVAL_BASE", "XVAL_J0_GM", "XVAL_GMAT_DIR", "XVAL_EARTH_FIELD_FILE",
             "XVAL_MOON_FIELD_FILE", "XVAL_MOON_FIELD_GM", "XVAL_PLANETARY_KERNEL",
             "XVAL_FRAME_TABLE_DIR", "SPACEAGORA_SPICE_PCK_OVERRIDES",
@@ -16,37 +13,19 @@ const XVAL_PROVENANCE_TEST = FullarcProvenanceFixture.XvalFullarcProvenance
             "SPACEAGORA_SOLVER_SAVE_EVERYSTEP"]
     for key in keys
         env = Dict(key => "diagnostic-input")
-        @test_throws ArgumentError XVAL_PROVENANCE_TEST.run_info("gmat", "committed", ["earth_j0_tbfalse"]; env)
-        info = XVAL_PROVENANCE_TEST.run_info("gmat", "frame_diagnostic", ["earth_j0_tbfalse"]; env)
-        @test !info["primary_eligible"]
-        @test info["input_overrides"][key] == "diagnostic-input"
+        @test_throws ArgumentError XVAL_PREFLIGHT.check_primary_controls("gmat", "committed"; env)
+        @test XVAL_PREFLIGHT.check_primary_controls("gmat", "frame_diagnostic"; env) === nothing
+        @test XVAL_PREFLIGHT.controls(env)[key] == "diagnostic-input"
     end
-    info = XVAL_PROVENANCE_TEST.run_info("stk", "committed", ["earth_j0_tbfalse"];
-        env=Dict("XVAL_SCENARIOS" => "earth_j0_tbfalse", "XVAL_FRAME_TABLE_DIR" => ""))
-    @test_throws ArgumentError XVAL_PROVENANCE_TEST.run_info("gmat", "committed", String[];
+    @test XVAL_PREFLIGHT.check_primary_controls("stk", "committed";
+        env=Dict("XVAL_SCENARIOS" => "earth_j0_tbfalse", "XVAL_FRAME_TABLE_DIR" => "")) === nothing
+    @test_throws ArgumentError XVAL_PREFLIGHT.check_primary_controls("gmat", "committed";
         env=Dict("XVAL_FRAME_TABLE_DIR" => " "))
-    @test isempty(info["input_overrides"])
-    @test info["scenarios"] == ["earth_j0_tbfalse"]
-end
-
-@testset "completion binds artifacts and a rerun invalidates it first" begin
-    mktempdir() do dir
-        info = XVAL_PROVENANCE_TEST.run_info("gmat", "committed", ["earth_j0_tbfalse"]; env=Dict())
-        path = joinpath(dir, "run_info.toml")
-        XVAL_PROVENANCE_TEST.write_info(path, info)
-        @test TOML.parsefile(path)["status"] == "running"
-        mkpath(joinpath(dir, "earth_j0_tbfalse"))
-        for relative in ("results.csv", "earth_j0_tbfalse/manifest.toml", "earth_j0_tbfalse/series.arrow")
-            write(joinpath(dir, relative), "synthetic fixture")
+    mktempdir() do root
+        run = joinpath(root, "gmat_committed")
+        withenv("XVAL_GMAT_DIR" => "diagnostic") do
+            @test_throws ArgumentError XVAL_PREFLIGHT.start_record(root, run, "gmat", "committed", [])
+            @test !ispath(run)
         end
-        XVAL_PROVENANCE_TEST.finish_run!(dir, info)
-        complete = TOML.parsefile(path)
-        @test complete["status"] == "complete"
-        @test length(complete["artifacts_sha256"]) == 3
-        @test complete["artifacts_sha256"]["results.csv"] == XVAL_PROVENANCE_TEST.file_digest(joinpath(dir, "results.csv"))
-        fresh = XVAL_PROVENANCE_TEST.run_info("gmat", "committed", ["moon_j0_tbfalse"]; env=Dict())
-        XVAL_PROVENANCE_TEST.write_info(path, fresh)
-        @test TOML.parsefile(path)["status"] == "running"
-        @test !haskey(TOML.parsefile(path), "artifacts_sha256")
     end
 end

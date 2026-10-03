@@ -87,20 +87,63 @@ reporting and CSV output without a numerical campaign. The launcher runner and
 input-check keyword arguments support those fixtures. These checks do not
 establish trajectory equivalence, scientific acceptance or performance gains.
 
-## Full-arc primary exports
+## Full-arc runs and export provenance
 
-`scripts/xval_fullarc.jl` records the effective planetary kernel and solver settings,
-requested model/reference overrides, reference and gravity-file digests, and a
-versioned completion record bound to its result, manifest, and series files.
-The record includes loaded SPICE kernel digests in precedence order. Export
-requires Python 3.11 or later, plus the existing pandas/pyarrow dependencies.
-GMAT/STK `committed` runs reject nonempty `XVAL_*`, `SPACEAGORA_SPICE_*`,
-`SPACEAGORA_TELEMETRY_*`, `SPACEAGORA_SOLVER_*`, and
-`SPACEAGORA_GMAT_PARITY_SOLVER` overrides. `XVAL_SCENARIOS` may select a diagnostic subset;
-primary export still requires all 24 unique cases for each reference target.
-Use an explicit sensitivity variant name for frame, PCK, kernel, GM, field, or
-reference-directory experiments. The exporter rejects legacy, interrupted,
-modified, dirty-source, or sensitivity output as primary, and retains model/input
-identity in the primary CSV. Legacy primary runs need to be rerun; a directory
-name is not sufficient evidence. These records identify execution inputs and do
-not independently validate the scientific provenance of the reference data.
+`scripts/xval_fullarc.jl <target> <outdir> [variant]` compares every retained
+reference epoch. Each run must use a new output directory. `run_info.json`
+starts as `running` and becomes `complete` only after all selected cases finish
+and their inputs, source identity and environment controls have been checked.
+It records the source commit and tree, dirty state, selected scenarios, effective
+solver settings, scenario models, input SHA-256 identities, loaded kernels in
+order, and manifest, series and results checksums. Keep this record with the
+run outputs. A failed or partial run cannot replace a completed run in place.
+
+The Python exporter validates those records before writing any deliverable.
+Primary export requires both the exact 24-case GMAT and STK matrices, the same
+clean source revision, successful solves, matching output hashes and committed
+configuration. Renaming a sensitivity directory or labelling it `committed`
+does not qualify it. Any nonempty scientific `XVAL_*` or `SPACEAGORA_*` control
+makes the run diagnostic, including frame tables, GM, gravity files, planetary
+kernels, PCK overrides, reference-directory relocation and parity solver mode.
+Selection and the two normalization/deprecation warning controls are recorded
+but permitted. Committed runs refuse scientific overrides before creating output.
+New controls are rejected for primary export until reviewed.
+The primary CSV preserves configuration and reference identities with the run
+record hash; keep the record to recover the full effective settings.
+
+Historical runs without this metadata are refused by the new exporter. Do not
+construct a retrospective clean record from a directory name. Preserve those
+runs as historical evidence and reconcile their actual inputs separately.
+No existing trajectory acceptance threshold is changed by this gate.
+
+Here, *primary* means a comparison under the committed configuration. The
+reference trajectories' generation settings remain unverified: the available
+older GMAT generator selects JGM2 for Earth and has no Luna central-body case,
+while this matrix selects EGM96 and LP165P. STK tide conventions were inferred
+from reduced residuals, and the cited rerun record has not been recovered.
+Every export therefore carries `unverified_generation_settings`. Neither these
+comparisons nor the reported millimetre residuals with substituted rotations
+establish default simulator accuracy or that all residuals are frame errors.
+
+### Diagnostic rotations and PCK policy
+
+Normal full-arc runs use the package's rotation method unchanged. Only an
+explicit `XVAL_FRAME_TABLE_DIR` at script load enables the diagnostic replacement.
+Use a fresh process for each mode; changing the directory afterwards is refused.
+
+`SPACEAGORA_SPICE_PCK_OVERRIDES` is an ordered, comma-separated list, with relative
+paths resolved under the SPICE directory. Constructors load these after all
+standard kernels and reapply them if another body's construction loads more
+kernels. Repeated cached construction does not grow the kernel table. The
+ordered path list is fixed at first construction, including an empty list.
+Changing or removing it requires a fresh process, or `SPICE.kclear()` followed
+by `SpaceAGORA.SimulationModel.Planets._reset_furnished_kernels!()`. Do not modify
+kernel files or manually mutate the pool during a run.
+
+Later binary PCKs take precedence over earlier binary PCKs; binary orientation
+data take precedence over text PCK orientation regardless of loading order.
+See the [NAIF PCK documentation](https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/req/pck.html).
+
+The scenario utility, run-record and synthetic CSPICE precedence probes run in
+the normal probe-driver suite. The export rejection tests run in the CI planning
+job and require no private telemetry or propagation campaign.

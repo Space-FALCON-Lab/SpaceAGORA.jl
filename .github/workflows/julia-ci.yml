@@ -44,6 +44,9 @@ jobs:
       - name: Sparse GRAMSuite retrieval regression
         run: python3 -B .github/scripts/test_gramsuite_sparse.py
 
+      - name: Full-arc export provenance regression
+        run: python3 -B test/scripts/test_xval_fullarc_export.py
+
       - name: Plan shards
         id: plan
         run: python3 .github/scripts/ci_shard_plan.py
@@ -502,8 +505,6 @@ jobs:
         run: node test/unit/visualization/viewer_channels_models_tests.mjs
       - name: Viewer external-host page builder tests
         run: python3 -m unittest discover -s test/scripts -p 'test_build_cdn_page.py' -v
-      - name: Full-arc primary provenance tests
-        run: python3 -m unittest discover -s test/scripts -p 'test_xval_fullarc_export.py' -v
 
       # Its Instantiate step is the README's `Pkg.instantiate()` command.
       - name: Setup (README instantiate command)

@@ -303,18 +303,19 @@ end
 end
 
 @testset "Full-arc entrypoint uses the maintained definition boundary" begin
-    # A separate process contains the script's diagnostic frame override. Empty
-    # arguments must reach its usage check before any campaign or output write.
+    # A separate process checks the command entrypoint. Empty arguments must
+    # reach its usage check before any campaign or output write.
     script = joinpath(_DEBUG_PROBE_SCRIPTS, "xval_fullarc.jl")
     code = """
         using Test
         err = try
             include($(repr(script)))
+            main()
             nothing
         catch e
             e
         end
-        @test err isa LoadError
+        @test err isa ErrorException
         @test occursin("usage: scripts/xval_fullarc.jl", sprint(showerror, err))
         @test isempty(_BASILISK_MATRIX_CACHE_KEY[])
         @test _BASILISK_MATRIX_RESULT_CACHE[] === nothing

@@ -77,6 +77,7 @@ module GuidanceHooks
     include(joinpath(@__DIR__, "..", "hypr", "pso_parameters.jl"))
     include(joinpath(@__DIR__, "..", "shared", "rpo", "path_geometry.jl"))
     include(joinpath(@__DIR__, "..", "shared", "rpo", "profile_evaluation.jl"))
+    include(joinpath(@__DIR__, "..", "shared", "rpo", "path_retiming.jl"))
     include(joinpath(@__DIR__, "..", "hypr", "path_retiming.jl"))
     include(joinpath(@__DIR__, "..", "shared", "rpo", "path_sampling.jl"))
     include(joinpath(@__DIR__, "..", "hypr", "sampling_adapters.jl"))

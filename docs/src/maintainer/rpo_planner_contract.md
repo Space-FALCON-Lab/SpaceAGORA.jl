@@ -288,3 +288,49 @@ sampling and tree operations plus RRT, without loading HYPR. The historical
 `hypr_` names on shared helpers remain for compatibility with robot-arm users.
 This separation does not establish optional HYPR package installation; that
 also requires the configured retiming and package-loading work.
+
+
+### Configured retiming ownership
+
+`src/gnc/shared/rpo/path_retiming.jl` owns two internal calculations in the
+existing `GuidanceHooks` module. `rpo_retime_samples(raw_samples, geometry; ...)`
+advances along an already sampled path. The five-argument
+`rpo_retime_profile(curve, samples, params, clearances, geometry; ...)` builds
+the acceleration-limited profile. They require explicit numeric inputs and two
+policies: `available_distance(clearance, distance, safe_distance)` and
+`pointwise_speed(available_distance, curvature)`. Distances are metres, speed
+is m/s, curvature is 1/m, time is seconds and acceleration is m/s². Production geometry is
+`RPOReferenceGeometry`. `NavigationHooks` owns the clearance queries, whose
+production methods require this type. The sampled-path kernel passes the signed
+surface clearance and nearest-station-point distance to `available_distance`.
+The profile kernel passes clearance and clearance plus the body margin, computed
+from `geometry.station.keepout_radius_m` plus the maximum component of
+`geometry.chaser.half_extents_body`. These are the same geometric distance in
+exact arithmetic, with different floating-point constructions. The third argument
+is the supplied safe distance. `pointwise_speed` receives the resulting available
+distance and the sample curvature.
+
+HYPR retains the legacy/manuscript policy distinction, reaction-time and speed
+scaling rules, collision-sampling selection, and the choice between the two
+retiming routes. Its existing configured methods forward those values and
+policies to the shared calculations. The configured reference builder and the
+sampling calls remain with HYPR. Existing qualified access, return fields and
+module identities are preserved; these internal overloads add no root public API.
+
+A supplied pointwise policy owns the physical speed cap and its order relative
+to scaling. `max_speed_mps` in the shared calculation preserves the existing
+fallback-speed handling; it does not impose an additional cap on policy output.
+The shared calculation preserves minimum-speed floors, near-duplicate handling,
+endpoint splitting, Bezier quadrature, forward/backward acceleration passes,
+terminal rest and the legacy step-count limit. Warning levels, messages and
+values are preserved. The step-cap and invalid-step warnings have different
+source-derived tuple-field labels (`max_steps` and `dt_s` now name explicit
+inputs instead of configuration expressions). Callbacks must agree with the caller's limits, preserve inputs and avoid hidden random draws.
+Existing fallback paths are not a collision-free or feasibility certificate.
+
+The shared geometry and profile-evaluation helpers remain shared and unchanged,
+including the general helpers whose present consumers are HYPR-only. Independent
+shared-module tests exercise retiming without HYPR definitions. Configured-call
+comparisons and existing lifecycle/consumer tests cover compatibility. This
+boundary alone does not prove an optional HYPR installation: the package load
+chain and dependency declarations still need their separate acceptance work.

@@ -143,6 +143,8 @@ with 1.0), otherwise `rho * r` at or below the entry interface.
 @inline function _apply_gram_density_perturbation(p, sat_idx::Int, t::Float64, alt::Float64,
                                                   rho::Float64, T::Float64,
                                                   wind::SVector{3, Float64})::Tuple{Float64, Float64, SVector{3, Float64}}
+    # Custom and grid-adapter contexts need no optional native perturbation slot.
+    hasproperty(p.shared_buffers, :gram_density_perturbation) || return rho, T, wind
     st = p.shared_buffers.gram_density_perturbation[]
     st === nothing && return rho, T, wind
     alt > st.ei_m && return rho, T, wind

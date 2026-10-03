@@ -1,5 +1,6 @@
 # The paper harness's precompile workload must cover every (case, mode) the
-# paper phases (P1-P7, including P5f and P6p) run, at the size each case names.
+# paper phases (P1-P7, including P5f, P6p, P6s and P6ps) run, at the size each case
+# names.
 #
 # The workload's point list (benchmarks/studies/paper_parallelization_benchmarks/
 # workload/SpaceAGORAPaperWorkload/src/points.jl) is derived from
@@ -64,9 +65,10 @@ end
         @test p.samples == (catalog[p.case].montecarlo ? 2 : 1)
     end
 
-    # The only exclusions are the native-GRAM cases, and they are all P6 traces.
+    # The only exclusions are the native-GRAM cases, and they are all P6 traces:
+    # P6 and P6p, and their full-budget static-route rows P6s and P6ps.
     skipped = Base.invokelatest(S.ppb_workload_skipped)
-    @test all(((ph, case),) -> ph in ("P6", "P6p") && occursin("gram", case), skipped)
+    @test all(((ph, case),) -> ph in ("P6", "P6p", "P6s", "P6ps") && occursin("gram", case), skipped)
 
     # Every constellation size the P phases name appears among the points.
     size_of(case) = (m = match(r"_([0-9]+)sat_", case); m === nothing ? 1 : parse(Int, m.captures[1]))

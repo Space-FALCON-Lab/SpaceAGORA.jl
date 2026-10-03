@@ -1357,7 +1357,8 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         # P6's five traces at the top rung only, with every thread route pinned,
         # so the adaptive policy can be scored against the best static route
         # there. P6 pins inner_only alone, which is not a best static route.
-        # P1's modes and thread axis, as P7 takes them.
+        # P1's thread axis and P1's modes except policy_v2, which P1 and P7 run
+        # and P6s does not.
         cases = [
             _ppb_p6_l20_case(),
             _ppb_paper_size_case(PPB_P6_N_SAT),

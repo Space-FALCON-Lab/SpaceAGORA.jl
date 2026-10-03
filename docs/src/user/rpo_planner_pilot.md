@@ -119,8 +119,9 @@ running. Reference acceptance is distinct from physical tracking acceptance.
 
 Checkpoint writing/resume and `isolate_state=false` are refused before propagation
 or output creation. Faithful restart needs a future contract for planner/RNG,
-controller, active-reference and trigger state. General restart and a core-only
-installation with HYPR absent remain open work.
+controller, active-reference and trigger state. General restart remains open work.
+A core-only installation can run the direct planner without HYPR; see the optional
+installation instructions below.
 
 ## Add your own planner or force
 
@@ -186,6 +187,8 @@ controller dependency. Package separation changes installation, not the validate
 physical limits, planning reserve or numerical policies.
 
 The `examples/rpo_planner_env/setup.jl` command above installs both components
-explicitly for the two-planner demonstration. Existing research scripts can run
-from that project after `using SpaceAGORAHYPR`; do not add the companion as a
-required dependency of SpaceAGORA itself.
+explicitly for the two-planner demonstration. The RPO/Cloth HYPR examples and ISS viewer demo also run from that project and
+load the companion before their common helper activates the root project. See
+[Examples Catalog](examples_catalog.md) for the exact commands. Baseline examples
+keep `--project=.` and do not preload HYPR. Do not add the companion as a required
+dependency of SpaceAGORA itself.

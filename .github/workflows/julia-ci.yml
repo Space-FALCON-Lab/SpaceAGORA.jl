@@ -385,6 +385,9 @@ jobs:
           gram: native
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
+      - name: Prepare documented HYPR example environment
+        run: julia --startup-file=no --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
+
       - name: Example suite smoke shard
         run: julia --startup-file=no --project=. .github/scripts/ci_example_shard.jl
 
@@ -795,6 +798,10 @@ jobs:
         env:
           JULIA_PKG_PRECOMPILE_AUTO: "0"
         run: julia --startup-file=no --project=. test/optional_hypr/setup.jl "$RUNNER_TEMP/hypr-installations"
+      - name: Example environment isolation
+        env:
+          JULIA_LOAD_PATH: "@:@stdlib"
+        run: julia --startup-file=no --project=. test/optional_hypr/example_routing.jl
       - name: Core without HYPR installed
         env:
           JULIA_LOAD_PATH: "@:@stdlib"

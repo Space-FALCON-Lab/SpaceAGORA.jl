@@ -65,9 +65,27 @@ function _robot_arm_rrt_steer end
 function _robot_arm_rrt_warmstart_fields end
 """HYPR compatibility entry point; load `SpaceAGORAHYPR` for execution."""
 function _robot_arm_seed_control_points end
-"""HYPR compatibility entry point; load `SpaceAGORAHYPR` for execution."""
+"""
+    plan_robot_arm_motion_hypr(model, base_pose, q_start, target;
+        planner_config=RobotArmPlannerConfig(), hypr_config=RobotArmHYPRConfig(),
+        obstacles=RobotArmSphereObstacle[], rng=Random.default_rng())
+
+Plan a robot-arm trajectory with HYPR sampling, PSO search, optional RRT warm
+start, and retiming. `q_start` is the initial joint configuration; `target` is the
+end-effector target passed to inverse kinematics. Load `SpaceAGORAHYPR` before
+calling this function. The returned `RobotArmHYPRResult` holds the joint reference
+and end-effector trajectory in its `plan` field, together with planning metrics.
+"""
 function plan_robot_arm_motion_hypr end
 plan_robot_arm_motion_hypr(args...; kwargs...) = HYPRSupport.unavailable(plan_robot_arm_motion_hypr, args)
-"""HYPR compatibility entry point; load `SpaceAGORAHYPR` for execution."""
+"""
+    robot_arm_hypr_path_cost_components(points, model, base_pose, obstacles, cfg;
+        cost_cutoff=Inf)
+
+Evaluate HYPR objective components for a candidate robot-arm joint path. Columns
+of `points` are joint-space control points; `cfg` is a `RobotArmHYPRConfig`.
+Returns the sampled path's cost and feasibility components. Load
+`SpaceAGORAHYPR` before calling this function.
+"""
 function robot_arm_hypr_path_cost_components end
 robot_arm_hypr_path_cost_components(args...; kwargs...) = HYPRSupport.unavailable(robot_arm_hypr_path_cost_components, args)

@@ -27,6 +27,7 @@ function rpo_manuscript_path_cost_components end
 function rpo_normalized_path_cost_components end
 """HYPR compatibility entry point; load `SpaceAGORAHYPR` for execution."""
 function rpo_path_cost end
+rpo_path_cost(args...; kwargs...) = HYPRSupport.unavailable(rpo_path_cost, args)
 """HYPR compatibility entry point; load `SpaceAGORAHYPR` for execution."""
 function rpo_path_cost_normalization_refs end
 """HYPR compatibility entry point; load `SpaceAGORAHYPR` for execution."""
@@ -97,6 +98,7 @@ function rpo_refinement_shortcut_samples end
 function rpo_retime_available_distance end
 """HYPR compatibility entry point; load `SpaceAGORAHYPR` for execution."""
 function rpo_retime_path end
+rpo_retime_path(args...; kwargs...) = HYPRSupport.unavailable(rpo_retime_path, args)
 """HYPR compatibility entry point; load `SpaceAGORAHYPR` for execution."""
 function rpo_retime_pointwise_speed end
 """HYPR compatibility entry point; load `SpaceAGORAHYPR` for execution."""
@@ -105,21 +107,30 @@ function rpo_retime_profile end
 function rpo_retime_sampling_ds_m end
 """HYPR compatibility entry point; load `SpaceAGORAHYPR` for execution."""
 function rpo_retimed_reference end
+rpo_retimed_reference(args...; kwargs...) = HYPRSupport.unavailable(rpo_retimed_reference, args)
 """HYPR compatibility entry point; load `SpaceAGORAHYPR` for execution."""
 function rpo_rrt_connect_bezier_plan_path end
+rpo_rrt_connect_bezier_plan_path(args...; kwargs...) = HYPRSupport.unavailable(rpo_rrt_connect_bezier_plan_path, args)
 """HYPR compatibility entry point; load `SpaceAGORAHYPR` for execution."""
 function rpo_rrt_connect_plan_path end
+rpo_rrt_connect_plan_path(args...; kwargs...) = HYPRSupport.unavailable(rpo_rrt_connect_plan_path, args)
 """HYPR compatibility entry point; load `SpaceAGORAHYPR` for execution."""
 function rpo_rrt_star_plan_path end
+rpo_rrt_star_plan_path(args...; kwargs...) = HYPRSupport.unavailable(rpo_rrt_star_plan_path, args)
 """HYPR compatibility entry point; load `SpaceAGORAHYPR` for execution."""
 function rpo_sample_path end
+rpo_sample_path(args...; kwargs...) = HYPRSupport.unavailable(rpo_sample_path, args)
 """HYPR compatibility entry point; load `SpaceAGORAHYPR` for execution."""
 function rpo_sample_path_bezier_adaptive end
+rpo_sample_path_bezier_adaptive(args...; kwargs...) = HYPRSupport.unavailable(rpo_sample_path_bezier_adaptive, args)
 """HYPR compatibility entry point; load `SpaceAGORAHYPR` for execution."""
 function rpo_sample_path_bezier_adaptive_with_params end
+rpo_sample_path_bezier_adaptive_with_params(args...; kwargs...) = HYPRSupport.unavailable(rpo_sample_path_bezier_adaptive_with_params, args)
 """HYPR compatibility entry point; load `SpaceAGORAHYPR` for execution."""
 function rpo_sample_path_polyline_adaptive end
+rpo_sample_path_polyline_adaptive(args...; kwargs...) = HYPRSupport.unavailable(rpo_sample_path_polyline_adaptive, args)
 """HYPR compatibility entry point; load `SpaceAGORAHYPR` for execution."""
 function rpo_sample_path_with_params end
+rpo_sample_path_with_params(args...; kwargs...) = HYPRSupport.unavailable(rpo_sample_path_with_params, args)
 """HYPR compatibility entry point; load `SpaceAGORAHYPR` for execution."""
 function rpo_try_accept_refinement end

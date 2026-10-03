@@ -33,6 +33,35 @@ const P = SpaceAGORA.RPOPlannerInterfaces
         @test owner.runtime===nothing
     end
 end
+@testset "Configured comparison boundaries explain missing HYPR" begin
+    a=SVector(-2.,0.,0.); b=SVector(2.,0.,0.); path=hcat(a,b)
+    cfg=RPOPSOConfig(n_particles=4,n_iters=1)
+    comparison=G.RPOPlannerComparisonConfig(pso_config=cfg)
+    rng=MersenneTwister(20261003); untouched=copy(rng)
+    for planner in (:hypr,:pso_unrefined,:rrt_connect,:rrt_connect_bezier,:rrt_star,:chomp,:stomp)
+        @test_throws HYPRUnavailableError G.rpo_plan_comparison_path(planner,a,b,nothing,comparison;rng)
+    end
+    @test rand(rng,4)==rand(untouched,4)
+    # Guard before collecting cases, consuming an iterator, or creating a controller.
+    @test_throws HYPRUnavailableError G.rpo_run_planner_comparison_batch(
+        (error("cases must not be consumed") for _ in 1:1),nothing,comparison)
+    @test_throws HYPRUnavailableError G.rpo_track_retimed_path_lqmpc(path,b,nothing,cfg,G.RPOLQMPCTrackingSettings())
+    for f in (G.rpo_retime_path,G.rpo_retimed_reference,G.rpo_path_cost)
+        @test_throws HYPRUnavailableError f(path,nothing,cfg)
+    end
+    for f in (G.rpo_rrt_connect_plan_path,G.rpo_rrt_connect_bezier_plan_path,G.rpo_rrt_star_plan_path)
+        @test_throws HYPRUnavailableError f(a,b,nothing,cfg)
+    end
+    for f in (G.rpo_sample_path,G.rpo_sample_path_with_params)
+        @test_throws HYPRUnavailableError f(path,cfg,nothing)
+    end
+    for f in (G.rpo_sample_path_polyline_adaptive,G.rpo_sample_path_bezier_adaptive,G.rpo_sample_path_bezier_adaptive_with_params)
+        @test_throws HYPRUnavailableError f(path,nothing,cfg)
+    end
+    # Those broad compatibility fallbacks must not hide the shared scalar overload.
+    @test G.rpo_sample_path(path,.1;curve_type=:polyline)==G.rpo_sample_path_polyline(path,.1)
+    @test !hypr_available()
+end
 @testset "Shared search, metrics and retiming stay usable" begin
     a=SVector(-2.,0.,0.); b=SVector(2.,0.,0.)
     for (planner,settings) in ((G.rpo_rrt_connect_plan_path,G.RPORRTConnectSettings(n_iters=5)),

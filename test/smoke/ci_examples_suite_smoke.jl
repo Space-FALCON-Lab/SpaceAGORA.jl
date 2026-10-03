@@ -24,7 +24,7 @@ function run_example(example_path::String)
 
     # Isolate each example's transient outputs so smoke runs do not share cwd state.
     mktempdir() do tmp
-        cmd = `$(Base.julia_cmd()) --startup-file=no --compiled-modules=existing --depwarn=error --project=$(PROJECT_PATH) $(example_path)`
+        cmd = `$(Base.julia_cmd()) --startup-file=no -L $(joinpath(PROJECT_PATH, "test", "helpers", "load_hypr.jl")) --compiled-modules=existing --depwarn=error --project=$(PROJECT_PATH) $(example_path)`
         cmd = Cmd(cmd; dir=tmp)
         cmd = addenv(
             cmd,

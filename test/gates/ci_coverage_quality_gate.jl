@@ -1,5 +1,6 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const SRC_ROOT = joinpath(REPO_ROOT, "src")
+const SOURCE_ROOTS = (SRC_ROOT, joinpath(REPO_ROOT, "packages", "SpaceAGORAHYPR", "src"))
 
 using Printf
 
@@ -62,7 +63,7 @@ end
 function list_active_cov_files()
     cov_files = String[]
     mtimes = Float64[]
-    for (root, _, files) in walkdir(SRC_ROOT)
+    for source_root in SOURCE_ROOTS, (root, _, files) in walkdir(source_root)
         for file in files
             if endswith(file, ".cov")
                 path = joinpath(root, file)

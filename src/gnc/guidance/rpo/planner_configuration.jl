@@ -41,6 +41,7 @@ function make_rpo_configuration(; planner::P.AbstractRPOPlanner, seed::Integer=7
         replan_interval_s=Inf, tracking_error_limit_m=Inf, extra_effectors=(),
         simulation_settings=S.SimulationSettings(results=false,verbose=false,generate_plots=false),
         solver_config=S.SolverConfig(solver_mode=:tsit5))
+    P.require_planner_support(planner)
     dt=P._positive(control_dt_s,"control_dt_s")
     mission=P._positive(mission_time_s,"mission_time_s")
     validity=P._positive(plan_validity_s,"plan_validity_s")

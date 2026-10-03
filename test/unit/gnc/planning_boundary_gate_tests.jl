@@ -3,7 +3,9 @@ using Test
 @testset "Planning owners retain architecture enforcement" begin
     repo = normpath(joinpath(@__DIR__, "..", "..", ".."))
     # Include a nested owner so the fixtures also enforce recursive scanning.
-    owner_paths = ("shared", "hypr", "rrt", joinpath("shared", "rpo"))
+    owner_paths = (joinpath("src", "gnc", "shared"), joinpath("src", "gnc", "hypr"),
+        joinpath("src", "gnc", "rrt"), joinpath("src", "gnc", "shared", "rpo"),
+        joinpath("packages", "SpaceAGORAHYPR", "src"), joinpath("packages", "SpaceAGORAHYPR", "src", "rpo"))
     gates = (
         "ci_no_legacy_include_chains_gate.jl" => "__legacy_probe = nothing\n",
         "ci_no_guidance_control_cross_include_gate.jl" => "include(\"control/probe.jl\")\n",
@@ -34,7 +36,7 @@ using Test
             cp(joinpath(repo, rel), target)
         end
         for owner in owner_paths
-            mkpath(joinpath(fixture, "src", "gnc", owner))
+            mkpath(joinpath(fixture, owner))
         end
         for (gate, forbidden) in gates
             path = joinpath(repo, "test", "gates", gate)
@@ -48,7 +50,7 @@ using Test
             # Establish that unrelated required-file checks do not cause the failure.
             @test isnothing(run_gate())
             for owner in owner_paths
-                probe = joinpath(fixture, "src", "gnc", owner, "boundary_probe.jl")
+                probe = joinpath(fixture, owner, "boundary_probe.jl")
                 write(probe, forbidden)
                 @test_throws LoadError run_gate()
                 rm(probe)

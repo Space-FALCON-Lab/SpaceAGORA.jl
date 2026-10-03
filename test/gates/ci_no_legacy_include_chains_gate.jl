@@ -1,6 +1,7 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
 const SCAN_ROOTS = (
+    joinpath(REPO_ROOT, "packages", "SpaceAGORAHYPR", "src"),
     joinpath(REPO_ROOT, "src", "analysis", "reports"),
     joinpath(REPO_ROOT, "src", "core"),
     joinpath(REPO_ROOT, "src", "environment"),
@@ -23,6 +24,7 @@ const FORBIDDEN_REGEXES = (
 )
 
 const ALLOWED_RAW_INCLUDE_FILES = Set([
+    joinpath("packages", "SpaceAGORAHYPR", "src", "SpaceAGORAHYPR.jl"),
     joinpath("src", "gnc", "guidance", "rpo", "rpo_planner_module.jl"),
     joinpath("src", "core", "simulation_model.jl"),
     joinpath("src", "environment", "physical_models.jl"),

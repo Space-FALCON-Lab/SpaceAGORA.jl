@@ -1,13 +1,3 @@
-"""RRT-Connect tree storage for robot-arm joint-space warm starts."""
-struct RobotArmRRTConnectTree
-    nodes::Vector{Vector{Float64}}
-    parents::Vector{Int}
-    costs::Vector{Float64}
-end
-
-"""RRT-Connect tree storage for robot-arm joint-space warm starts."""
-RobotArmRRTConnectTree(root) = RobotArmRRTConnectTree([Float64.(collect(root))], [0], [0.0])
-
 """Return the nearest robot-arm RRT node to a joint-space query."""
 function _robot_arm_rrt_nearest_index(tree::RobotArmRRTConnectTree, q::AbstractVector{<:Real})
     return hypr_rrt_nearest_index(tree, Float64.(collect(q)))

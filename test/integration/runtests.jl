@@ -1,3 +1,4 @@
+Base.include(@__MODULE__, joinpath(@__DIR__, "..", "helpers", "load_hypr.jl"))
 using Test
 using CSV
 using DataFrames

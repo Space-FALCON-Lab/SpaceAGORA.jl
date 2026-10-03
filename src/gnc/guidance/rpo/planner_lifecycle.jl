@@ -96,6 +96,7 @@ function fail!(g, reason; cause=nothing, backtrace=nothing, details=NamedTuple()
 end
 
 function L.preflight_guidance(g::PlannerGuidance, args; isolate_state)
+    P.require_planner_support(g.planner)
     isolate_state || throw(ArgumentError("The RPO planner lifecycle requires isolate_state=true."))
     ss = args.simulation_settings
     (ss.checkpoint_enabled || ss.resume_from_checkpoint) &&

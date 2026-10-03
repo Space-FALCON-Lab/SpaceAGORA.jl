@@ -24,6 +24,7 @@ module Planets
     # Track furnished paths here so repeat construction is a cheap no-op instead of
     # a repeat furnsh call.
     const _FURNISHED_KERNELS = Set{String}()
+    const _PCK_OVERRIDE_STATE = Ref((String[], -1))
 
     # Two things can desynchronise this cache from CSPICE's actual pool.
     #
@@ -46,6 +47,7 @@ module Planets
     @inline function _reset_furnished_kernels!()
         lock(_SPICE_BODY_LOCK) do
             empty!(_FURNISHED_KERNELS)
+            _PCK_OVERRIDE_STATE[] = (String[], -1)
             empty!(_EARTH_CACHE)
             empty!(_MARS_CACHE)
             empty!(_VENUS_CACHE)
@@ -313,12 +315,27 @@ module Planets
     function _furnsh_pck_overrides(spice_path::String)
         raw = strip(get(ENV, "SPACEAGORA_SPICE_PCK_OVERRIDES", ""))
         isempty(raw) && return nothing
+        paths = String[]
         for tok in split(raw, ',')
             relpath = String(strip(tok))
             isempty(relpath) && continue
-            path = isabspath(relpath) ? relpath : joinpath(spice_path, relpath)
+            path = abspath(isabspath(relpath) ? relpath : joinpath(spice_path, relpath))
             isfile(path) || throw(ArgumentError("SPACEAGORA_SPICE_PCK_OVERRIDES: kernel not found: $path"))
-            _furnsh_once(path)
+            push!(paths, path)
+        end
+        lock(_SPICE_BODY_LOCK) do
+            _PCK_OVERRIDE_STATE[] == (paths, length(_FURNISHED_KERNELS)) && return nothing
+            # Another constructor may have loaded its default binary PCK since
+            # these overrides were applied. Reapply in order, without retaining
+            # duplicate SPICE entries, so the last override keeps precedence.
+            for path in paths
+                if path in _FURNISHED_KERNELS
+                    SPICE.unload(path)
+                    delete!(_FURNISHED_KERNELS, path)
+                end
+                _furnsh_once(path)
+            end
+            _PCK_OVERRIDE_STATE[] = (paths, length(_FURNISHED_KERNELS))
         end
         return nothing
     end
@@ -408,7 +425,6 @@ module Planets
             _furnsh_required(spice_path, "pck/pck00011.tpc")
             _furnsh_required(spice_path, "lsk/naif0012.tls")
             _furnsh_planetary_kernel(spice_path)
-            _furnsh_pck_overrides(spice_path)
             _gravity_constants_kernel_if_available(spice_path)
             # The starter-pack SPICE bundle shipped in-repo may omit the high-precision
             # Earth orientation kernels. When they are absent, runtime frame transforms
@@ -425,6 +441,7 @@ module Planets
                     # "fk/planets/earth_fixed.tf"
                 )
             )
+            _furnsh_pck_overrides(spice_path)
             earth = Earth()
             # TopographyHarmonicsWorkspace!(topo_harmonics_file, earth)
             _EARTH_CACHE[key] = earth
@@ -439,9 +456,9 @@ module Planets
             _furnsh_mars_pck(spice_path)
             _furnsh_required(spice_path, "lsk/naif0012.tls")
             _furnsh_planetary_kernel(spice_path)
-            _furnsh_pck_overrides(spice_path)
             _furnsh_mars_system_kernel(spice_path)
             _gravity_constants_kernel_if_available(spice_path)
+            _furnsh_pck_overrides(spice_path)
             mars = Mars(; _spice_backed_planet_kwargs("Mars")...)
             # TopographyHarmonicsWorkspace!(topo_harmonics_file, mars)
             _MARS_CACHE[key] = mars
@@ -456,8 +473,8 @@ module Planets
             _furnsh_required(spice_path, "pck/pck00011.tpc")
             _furnsh_required(spice_path, "lsk/naif0012.tls")
             _furnsh_planetary_kernel(spice_path)
-            _furnsh_pck_overrides(spice_path)
             _gravity_constants_kernel_if_available(spice_path)
+            _furnsh_pck_overrides(spice_path)
             venus = Venus(; _spice_backed_planet_kwargs("Venus")...)
             # TopographyHarmonicsWorkspace!(topo_harmonics_file, venus)
             _VENUS_CACHE[key] = venus
@@ -475,9 +492,9 @@ module Planets
             _furnsh_required(spice_path, "pck/pck00011.tpc")
             _furnsh_required(spice_path, "lsk/naif0012.tls")
             _furnsh_planetary_kernel(spice_path)
-            _furnsh_pck_overrides(spice_path)
             _gravity_constants_kernel_if_available(spice_path)
             _furnsh_first_existing(spice_path, ("spk/satellites/sat441.bsp", "spk/satellites/sat441_GRAM.bsp"))
+            _furnsh_pck_overrides(spice_path)
             titan = Titan(; _spice_backed_planet_kwargs("Titan")...)
             # TopographyHarmonicsWorkspace!(topo_harmonics_file, titan)
             _TITAN_CACHE[key] = titan
@@ -492,10 +509,10 @@ module Planets
             _furnsh_required(spice_path, "pck/pck00011.tpc")
             _furnsh_required(spice_path, "lsk/naif0012.tls")
             _furnsh_planetary_kernel(spice_path)
-            _furnsh_pck_overrides(spice_path)
             _gravity_constants_kernel_if_available(spice_path)
             _furnsh_required(spice_path, "spk/satellites/SPICELunaCurrentKernel.bpc")
             _furnsh_required(spice_path, "tf/SPICELunaFrameKernel.tf")
+            _furnsh_pck_overrides(spice_path)
             moon = Moon(; _spice_backed_planet_kwargs("Moon")...)
             _MOON_CACHE[key] = moon
             return moon

@@ -13,6 +13,9 @@
 #            moon_file_c20: stk reference, Moon J2 with the unmodified LP165P.csv C(2,0)
 #
 # Optional: XVAL_SCENARIOS=earth_j0_tbfalse,... restricts the case list.
+# Primary exports require complete, clean, override-free committed runs. Give any
+# sensitivity run an explicit non-committed variant; legacy run directories lack
+# the required completion/provenance record and must be rerun before primary export.
 #
 # Every reference sample is compared (max_points raised past the file length), so
 # the RMS covers the whole arc the reference file holds. Per-case output:
@@ -33,6 +36,8 @@ using StaticArrays
 import SPICE
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
+include(joinpath(@__DIR__, "xval_fullarc_provenance.jl"))
+const XFP = XvalFullarcProvenance
 
 # Use the maintained definitions-only boundary. Text-prefix extraction would
 # leave an incomplete function after the matrix runner was encapsulated.
@@ -64,7 +69,7 @@ function _resolver(target::String)
     error("unknown target $target")
 end
 
-# Optional, for any variant label (the label only names the output directory):
+# Optional sensitivity inputs, requiring a non-committed variant label:
 #   XVAL_BASE=committed|as_basilisk|earth_egm96|moon_file_c20  override set to start from
 #     (defaults to the variant label when it is one of these, else committed)
 #   XVAL_J0_GM=<m3/s2>           point-mass (j0) cases use this central-body GM
@@ -263,7 +268,9 @@ function run_case(name::String, target::String, variant::String, ref_path::Strin
         nbody_bodies=join(String.(ov["nbody_bodies"]), "+"),
         solver_retcode=retcode,
         wall_s=t_wall,
-        reference_path=ref_path
+        reference_path=ref_path,
+        reference_sha256=XFP.file_digest(ref_path),
+        gravity_file_sha256=XFP.file_digest(joinpath(REPO_ROOT, String(ov["gravity_harmonics_file"])))
     )
 end
 
@@ -274,6 +281,7 @@ function main()
     variant = length(ARGS) >= 3 ? ARGS[3] : "committed"
     selected = strip(get(ENV, "XVAL_SCENARIOS", ""))
     scenarios = isempty(selected) ? ALL_SCENARIOS : String.(strip.(split(selected, ",")))
+    info = XFP.run_info(target, variant, scenarios)
     resolver = _resolver(target)
     rundir = joinpath(outdir, "$(target)_$(variant)")
     mkpath(rundir)
@@ -281,6 +289,19 @@ function main()
     dirty = try !isempty(readchomp(`git -C $REPO_ROOT status --porcelain --untracked-files=no -- src test scripts data/Gravity_harmonics_data`)) catch; true end
     println("xval_fullarc target=$target variant=$variant commit=$commit src/test/scripts dirty=$dirty")
     println("started $(now())  julia $(VERSION)  threads=$(Threads.nthreads())")
+    merge!(info, Dict(
+        "commit" => commit, "src_test_scripts_dirty" => dirty,
+        "julia" => string(VERSION), "hostname" => gethostname(),
+        "cpu" => Sys.cpu_info()[1].model))
+    # Invalidate a previous completed run before the first case can overwrite it.
+    XFP.write_info(joinpath(rundir, "run_info.toml"), info)
+    kernel = get(ENV, "XVAL_PLANETARY_KERNEL", _gmat_planetary_kernel_relpath())
+    kernel_path = abspath(joinpath(TV.SPICE_PATH, kernel))
+    info["model_inputs"] = Dict(
+        "planetary_kernel" => kernel_path,
+        "planetary_kernel_sha256" => XFP.file_digest(kernel_path),
+        "solver_environment" => _telemetry_solver_env_overrides())
+    XFP.write_info(joinpath(rundir, "run_info.toml"), info)
     rows = NamedTuple[]
     t_total = @elapsed for name in scenarios
         ref_path = resolver(name)
@@ -291,20 +312,17 @@ function main()
             name, row.rms_m, row.max_m, row.n_points, row.arc_end_s, row.wall_s)
         CSV.write(joinpath(rundir, "results.csv"), DataFrame(rows))
     end
-    open(joinpath(rundir, "run_info.toml"), "w") do io
-        TOML.print(io, Dict(
-            "target" => target, "variant" => variant, "commit" => commit,
-            "src_test_scripts_dirty" => dirty, "finished" => string(now()),
-            "total_wall_s" => t_total, "julia" => string(VERSION),
-            "hostname" => gethostname(), "cpu" => Sys.cpu_info()[1].model
-        ))
-    end
-    spk = try
-        [basename(string(SPICE.kdata(i, "ALL")[1])) for i in 1:SPICE.ktotal("ALL")]
-    catch err
-        ["unavailable: $err"]
-    end
-    println("SPICE kernels loaded, in load order (last has priority): ", join(spk, ", "))
+    # Keep the actual loaded kernel identities and precedence, including default
+    # orientation kernels and any explicitly labelled sensitivity PCKs.
+    kernels = [SPICE.kdata(i, "ALL") for i in 1:SPICE.ktotal("ALL")]
+    info["spice_kernels"] = [Dict(
+        "path" => abspath(String(kernel[1])), "kind" => String(kernel[2]),
+        "sha256" => XFP.file_digest(String(kernel[1]))) for kernel in kernels]
+    info["finished"] = string(now())
+    info["total_wall_s"] = t_total
+    XFP.finish_run!(rundir, info)
+    println("SPICE kernels loaded, in load order (last has priority): ",
+            join([basename(String(kernel[1])) for kernel in kernels], ", "))
     @printf("done: %d cases in %.1f s\n", length(rows), t_total)
 end
 

@@ -86,3 +86,21 @@ The probe uses deterministic summaries and stub dispatch to check loading,
 reporting and CSV output without a numerical campaign. The launcher runner and
 input-check keyword arguments support those fixtures. These checks do not
 establish trajectory equivalence, scientific acceptance or performance gains.
+
+## Full-arc primary exports
+
+`scripts/xval_fullarc.jl` records the effective planetary kernel and solver settings,
+requested model/reference overrides, reference and gravity-file digests, and a
+versioned completion record bound to its result, manifest, and series files.
+The record includes loaded SPICE kernel digests in precedence order. Export
+requires Python 3.11 or later, plus the existing pandas/pyarrow dependencies.
+GMAT/STK `committed` runs reject nonempty `XVAL_*`, `SPACEAGORA_SPICE_*`,
+`SPACEAGORA_TELEMETRY_*`, `SPACEAGORA_SOLVER_*`, and
+`SPACEAGORA_GMAT_PARITY_SOLVER` overrides. `XVAL_SCENARIOS` may select a diagnostic subset;
+primary export still requires all 24 unique cases for each reference target.
+Use an explicit sensitivity variant name for frame, PCK, kernel, GM, field, or
+reference-directory experiments. The exporter rejects legacy, interrupted,
+modified, dirty-source, or sensitivity output as primary, and retains model/input
+identity in the primary CSV. Legacy primary runs need to be rerun; a directory
+name is not sufficient evidence. These records identify execution inputs and do
+not independently validate the scientific provenance of the reference data.

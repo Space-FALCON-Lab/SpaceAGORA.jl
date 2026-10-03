@@ -502,6 +502,8 @@ jobs:
         run: node test/unit/visualization/viewer_channels_models_tests.mjs
       - name: Viewer external-host page builder tests
         run: python3 -m unittest discover -s test/scripts -p 'test_build_cdn_page.py' -v
+      - name: Full-arc primary provenance tests
+        run: python3 -m unittest discover -s test/scripts -p 'test_xval_fullarc_export.py' -v
 
       # Its Instantiate step is the README's `Pkg.instantiate()` command.
       - name: Setup (README instantiate command)

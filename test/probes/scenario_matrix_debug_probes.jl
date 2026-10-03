@@ -325,6 +325,8 @@ end
     support = DebugProbeDefinitions.ScenarioMatrixDebugSupport
     @test !isdefined(support, :_LUNA_STK_ADJUSTED_HARMONICS_FILE)
     @test support._matrix_scenario_overrides("moon_j2_tbfalse", :stk)["gravity_harmonics_file"] ==
+          support._STK_HARMONICS_MOON_FILE
+    @test support._matrix_scenario_overrides("moon_j2_tbfalse", :gmat)["gravity_harmonics_file"] ==
           support._GMAT_HARMONICS_MOON_FILE
     @test support._matrix_scenario_overrides("mars_j2_tbfalse", :gmat)["gravity_harmonics_order"] == 0
     @test support._matrix_scenario_overrides("mars_j2_tbfalse", :basilisk)["gravity_harmonics_order"] == 2

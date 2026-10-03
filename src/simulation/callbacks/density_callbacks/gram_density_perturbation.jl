@@ -242,6 +242,17 @@ evaluation after an update reuses a density computed with the old factor.
 function get_gram_density_perturbation_callback(num_sats::Int, args::SimulationConfiguration)
     mode = _gram_density_perturbation_mode()
     mode === :off && return nothing
+    # A checkpoint holds only (t, u). Resuming would restart the pass counter
+    # and the walk instance, so every later pass would draw a different
+    # realization, and a resume inside a pass would rebuild it from the wrong
+    # state. Refuse it rather than silently change the sample.
+    # ponytail: refuse, not persist; persist pass_count and the pass's start
+    # state in the checkpoint if long dispersed runs need to resume.
+    args.simulation_settings.resume_from_checkpoint && throw(ArgumentError(
+        "SPACEAGORA_GRAM_DENSITY_PERTURBATION=$(mode) does not support resume_from_checkpoint: " *
+        "the checkpoint does not carry the perturbation walk's state, so a resumed run would " *
+        "draw a different density realization. Rerun from the initial conditions."
+    ))
     pass_dt = _gram_density_perturbation_pass_dt_s()
     pass_max = _gram_density_perturbation_pass_max_s()
     log_path = String(strip(get(ENV, "SPACEAGORA_GRAM_DENSITY_PERTURBATION_LOG", "")))

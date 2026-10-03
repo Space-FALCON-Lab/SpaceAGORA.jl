@@ -38,12 +38,13 @@ end
 
 # EI = 1000 km puts both ~500 km spacecraft inside the atmosphere; tests move
 # them out by lowering the state's ei_m.
-function perturbation_config(results_directory::String)
+function perturbation_config(results_directory::String; resume::Bool=false)
     planet = Earth()
     return SimulationConfiguration(
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false,
                                                normalize=false, save_csv=false,
-                                               results_directory=results_directory),
+                                               results_directory=results_directory,
+                                               resume_from_checkpoint=resume),
         mission_configuration=MissionConfiguration(mission_type=MissionTime, keplerian=true,
                                                    number_of_orbits=1, mission_time=600.0,
                                                    orientation_sim=false, num_steps_to_save=10,
@@ -177,6 +178,12 @@ end
         u = SE.build_initial_conditions(args)
         @test perturbation_callback(args, MODE_ENV => "off") === nothing
         @test_throws ArgumentError perturbation_callback(args, MODE_ENV => "pass", DT_ENV => "-1")
+        # A checkpoint does not carry the walk, so resuming with a mode on is refused.
+        resumed = perturbation_config(dir; resume=true)
+        for mode in ("step", "pass", "naive_rhs")
+            @test_throws ArgumentError perturbation_callback(resumed, MODE_ENV => mode)
+        end
+        @test perturbation_callback(resumed, MODE_ENV => "off") === nothing
 
         cb = perturbation_callback(args, MODE_ENV => "naive_rhs", LOG_ENV => "results_directory")
         p = perturbation_params(args)

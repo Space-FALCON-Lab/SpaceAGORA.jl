@@ -6,6 +6,8 @@ export PUBLIC_API_SECTIONS, public_api_specs, render_public_api_markdown, undocu
 
 const PUBLIC_API_SECTIONS = [
     (title = "RPO planner pilot", items = [
+        (owner = :SpaceAGORA, symbol = :hypr_available, rendered = "SpaceAGORA.hypr_available"),
+        (owner = :SpaceAGORA, symbol = :HYPRUnavailableError, rendered = "SpaceAGORA.HYPRUnavailableError"),
         (owner = :SpaceAGORA, symbol = :AbstractRPOPlanner, rendered = "SpaceAGORA.AbstractRPOPlanner"),
         (owner = :SpaceAGORA, symbol = :RPOPlanningConstraints, rendered = "SpaceAGORA.RPOPlanningConstraints"),
         (owner = :SpaceAGORA, symbol = :RPOValidationSettings, rendered = "SpaceAGORA.RPOValidationSettings"),

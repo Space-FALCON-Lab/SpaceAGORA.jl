@@ -1,5 +1,5 @@
 module RPOPublicPilot
-using SpaceAGORA, Test, Random, StaticArrays
+using SpaceAGORA, SpaceAGORAHYPR, Test, Random, StaticArrays
 
 # Every package symbol in this file comes from the supported root surface.
 function hypr()

@@ -37,6 +37,7 @@
         cmd = Cmd([
             Base.julia_cmd().exec...,
             "--startup-file=no",
+            "--load=$(joinpath(REPO_ROOT, "test", "helpers", "load_hypr.jl"))",
             "--depwarn=error",
             "--project=$(REPO_ROOT)",
             coverage_flags...,
@@ -77,6 +78,7 @@ end
     cmd = Cmd([
         Base.julia_cmd().exec...,
         "--startup-file=no",
+            "--load=$(joinpath(REPO_ROOT, "test", "helpers", "load_hypr.jl"))",
         "--project=$(REPO_ROOT)",
         coverage_flags...,
         "--threads=$(unit_threads)",

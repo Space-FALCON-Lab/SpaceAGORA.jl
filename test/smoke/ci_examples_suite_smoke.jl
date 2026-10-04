@@ -2,6 +2,18 @@ const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const EXAMPLES_DIR = joinpath(REPO_ROOT, "examples")
 const PROJECT_PATH = REPO_ROOT
 
+const HYPR_EXAMPLES = Set([
+    "Earth_RPO_CubeSat_MPC.jl", "Earth_RPO_CubeSat_MPC_Batch.jl",
+    "Earth_RPO_CubeSat_MPC_PlannerComparison.jl", "Earth_RPO_CubeSat_MPC_Replanning.jl",
+    "Robot_Arm_Planner_Cloth_Demo.jl",
+])
+example_project(path) = basename(path) in HYPR_EXAMPLES ?
+    joinpath(REPO_ROOT, "examples", "rpo_planner_env") : PROJECT_PATH
+function example_command(path)
+    project = example_project(path)
+    return `$(Base.julia_cmd()) --startup-file=no --compiled-modules=existing --depwarn=error --project=$(project) $(path)`
+end
+
 function list_examples()
     helper_files = Set(["common.jl", "aerobraking_mission_plot_utils.jl"])
     # Odyssey uses its pinned example environment, not this repository environment.
@@ -24,10 +36,11 @@ function run_example(example_path::String)
 
     # Isolate each example's transient outputs so smoke runs do not share cwd state.
     mktempdir() do tmp
-        cmd = `$(Base.julia_cmd()) --startup-file=no --compiled-modules=existing --depwarn=error --project=$(PROJECT_PATH) $(example_path)`
+        cmd = example_command(example_path)
         cmd = Cmd(cmd; dir=tmp)
         cmd = addenv(
             cmd,
+            "JULIA_LOAD_PATH" => "@:@stdlib",
             "SPACEAGORA_EXAMPLE_SMOKE" => "1",
             "SPACEAGORA_EXAMPLE_SMOKE_RESULTS" => "1",
             "SPACEAGORA_EXAMPLE_SMOKE_MISSION_TIME" => "120.0",

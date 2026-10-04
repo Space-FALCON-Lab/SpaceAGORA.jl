@@ -1,5 +1,6 @@
 # The paper harness's precompile workload must cover every (case, mode) the
-# paper phases (P1-P7, including P5f and P6p) run, at the size each case names.
+# paper phases (P1-P7, including P5f, P6p, P6s and P6ps) run, at the size each case
+# names.
 #
 # The workload's point list (benchmarks/studies/paper_parallelization_benchmarks/
 # workload/SpaceAGORAPaperWorkload/src/points.jl) is derived from
@@ -64,10 +65,11 @@ end
         @test p.samples == (catalog[p.case].montecarlo ? 2 : 1)
     end
 
-    # The only exclusions are the native-GRAM cases: the P6 traces and the
-    # dispersed MarsGRAM samples (P4g, and its serial spot check P4gs).
+    # The only exclusions are the native-GRAM cases: the P6 traces (P6 and P6p,
+    # and their full-budget static-route rows P6s and P6ps) and the dispersed
+    # MarsGRAM samples (P4g, and its serial spot check P4gs).
     skipped = Base.invokelatest(S.ppb_workload_skipped)
-    @test all(((ph, case),) -> ph in ("P6", "P6p", "P4g", "P4gs") && occursin("gram", case), skipped)
+    @test all(((ph, case),) -> ph in ("P6", "P6p", "P6s", "P6ps", "P4g", "P4gs") && occursin("gram", case), skipped)
 
     # Every constellation size the P phases name appears among the points.
     size_of(case) = (m = match(r"_([0-9]+)sat_", case); m === nothing ? 1 : parse(Int, m.captures[1]))
@@ -120,8 +122,10 @@ end
     @test Base.invokelatest(S._ppb_split_modes, p5f) ==
         ["serial", "outer_threads", "outer_process", "outer_inner_static"]
     @test Base.invokelatest(S._ppb_split_modes, p5f) == filter(m -> m != "policy_v2" && m != "predictive", p5.modes)
-    # Every other phase runs every mode per split, as before.
-    @test all(p -> isempty(p.full_budget_modes), filter(p -> p.id != "P5f", S.PAPER_BENCHMARK_PHASES))
+    # Every other phase runs every mode per split, as before, except the route
+    # exploration phases X5a and X5b, which are P5f with pinned plans added.
+    @test all(p -> isempty(p.full_budget_modes),
+              filter(p -> !(p.id in ("P5f", "X5a", "X5b")), S.PAPER_BENCHMARK_PHASES))
     points = Base.invokelatest(S.ppb_workload_points)
     have = Set((p.case, p.mode) for p in points)
     @test all(((c, m),) -> (c, m) in have, [(c, m) for c in p5f.cases for m in p5f.modes])

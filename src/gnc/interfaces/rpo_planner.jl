@@ -198,6 +198,8 @@ end
 
 """Declare planner capabilities without loading algorithm configuration."""
 planner_capabilities(::AbstractRPOPlanner) = RPOPlannerCapabilities()
+"""Check optional execution support before initializing a planner or creating run outputs."""
+require_planner_support(::AbstractRPOPlanner) = nothing
 """Create fresh run-owned planner state. Stateless planners use `nothing`."""
 initialize_planner(::AbstractRPOPlanner, run_context) = nothing
 """Generate a candidate with an explicitly supplied random stream."""

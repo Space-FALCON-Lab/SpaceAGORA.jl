@@ -1,3 +1,4 @@
+Base.include(@__MODULE__, joinpath(@__DIR__, "..", "helpers", "load_hypr.jl"))
 using Test
 
 @testset "Unit Test Placeholder" begin
@@ -5,6 +6,8 @@ using Test
 end
 
 include(joinpath(@__DIR__, "example_imports_tests.jl"))
+include(joinpath(@__DIR__, "xval_fullarc_provenance_tests.jl"))
+include(joinpath(@__DIR__, "environment", "pck_override_order_tests.jl"))
 include("gnc/rpo_planner_contract_tests.jl")
 include("gnc/direct_rpo_planner_tests.jl")
 include("gnc/rpo_planner_adapter_tests.jl")
@@ -16,6 +19,9 @@ include("gnc/rpo_configurable_station_tests.jl")
 include("gnc/rpo_hypr_manuscript_tests.jl")
 include("gnc/planning_boundary_gate_tests.jl")
 include("gnc/shared_sampling_tests.jl")
+include("gnc/shared_metrics_tests.jl")
+include("gnc/rrt_boundary_tests.jl")
+include("gnc/shared_retiming_tests.jl")
 include(joinpath(@__DIR__, "parallel", "machine_topology_tests.jl"))
 include(joinpath(@__DIR__, "parallel", "native_lock_stats_tests.jl"))
 include(joinpath(@__DIR__, "parallel", "contention_inputs_tests.jl"))
@@ -48,8 +54,12 @@ include(joinpath(@__DIR__, "parallel", "inner_speedup_curve_tests.jl"))
 include(joinpath(@__DIR__, "parallel", "inner_speedup_curve_outer_tests.jl"))
 include(joinpath(@__DIR__, "parallel", "predictive_corrections_tests.jl"))
 include(joinpath(@__DIR__, "parallel", "predictive_campaign_bookkeeping_tests.jl"))
+include(joinpath(@__DIR__, "parallel", "predictive_forced_plan_tests.jl"))
+include(joinpath(@__DIR__, "parallel", "ppb_serial_baseline_tests.jl"))
+include(joinpath(@__DIR__, "parallel", "ppb_exploration_selection_tests.jl"))
 include(joinpath(@__DIR__, "dynamics", "aero_batch_parity_tests.jl"))
 include(joinpath(@__DIR__, "parallel", "pool_worker_heap_hint_tests.jl"))
+include(joinpath(@__DIR__, "parallel", "benchmark_budget_condition_tests.jl"))
 include(joinpath(@__DIR__, "simulation", "third_body_route_parity_tests.jl"))
 include(joinpath(@__DIR__, "parallel", "outer_split_budget_tests.jl"))
 include(joinpath(@__DIR__, "parallel", "outer_split_budget_cap_tests.jl"))
@@ -111,3 +121,7 @@ include(joinpath(@__DIR__, "mission", "cygnss_slew_tests.jl"))
 include(joinpath(@__DIR__, "mission", "cygnss_command_replay_tests.jl"))
 
 include(joinpath(@__DIR__, "simulation", "atmospheric_phase_tests.jl"))
+
+include(joinpath(@__DIR__, "simulation", "gram_density_perturbation_tests.jl"))
+include(joinpath(@__DIR__, "simulation", "gram_density_perturbation_callback_tests.jl"))
+include(joinpath(@__DIR__, "dynamics", "facet_srp_and_thermal_models_tests.jl"))

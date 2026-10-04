@@ -64,7 +64,13 @@ class PlanTests(unittest.TestCase):
             agg = re.search(rf"^  {aggregator}:\n(.*?)(?=^  \S)", wf, re.S | re.M)
             self.assertIsNotNone(agg, aggregator)
             self.assertIn("if: always()", agg.group(1), aggregator)
-            self.assertRegex(agg.group(1), rf"needs: \[plan, {job}\]", aggregator)
+            expected_needs = ["plan", job]
+            if aggregator in ("tests", "coverage-quality-gate"):
+                expected_needs.append("optional-hypr-installation")
+                self.assertIn("needs.optional-hypr-installation.result", agg.group(1))
+            needs = re.search(r"needs: \[(.*?)\]", agg.group(1))
+            self.assertIsNotNone(needs, aggregator)
+            self.assertEqual([x.strip() for x in needs.group(1).split(",")], expected_needs)
             self.assertIn(f"SHARD_MATRIX: ${{{{ needs.plan.outputs.{output} }}}}", agg.group(1), aggregator)
 
 

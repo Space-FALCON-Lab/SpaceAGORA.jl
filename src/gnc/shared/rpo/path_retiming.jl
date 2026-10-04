@@ -1,79 +1,37 @@
-
-
-"""
-Distance available for the stopping-distance limit of the retimer.
-
-In `:manuscript` mode this is Sec. III.E's d_avail = max(0, c - d_safe), where c
-is the clearance to the keep-out surface. The legacy retimer uses the raw
-distance to the nearest station point.
-"""
-@inline function rpo_retime_available_distance(cfg::RPOPSOConfig, clearance::Real, distance::Real, safe_distance_m::Real)
-    cfg.hypr_mode === :manuscript && return max(0.0, Float64(clearance) - Float64(safe_distance_m))
-    return max(0.0, Float64(distance))
-end
+# Retiming calculations from explicit inputs; configured policy belongs to HYPR.
+# Definitions retain their GuidanceHooks identity and existing geometry contract.
 
 """
-Pointwise retiming speed limit of Sec. III.E at one sample: the clearance-limited
-speed from the stopping-distance inequality and the curvature-limited speed,
-scaled by the safety factor k_v. In `:manuscript` mode the global cap enters
-the minimum before scaling, v = k_v min(v_clear, v_curv, v_max); the legacy
-retimer applies the cap after scaling.
+    rpo_retime_samples(raw_samples, geometry; max_speed_mps, min_speed_mps,
+        dt_s, max_steps, available_distance, pointwise_speed, ...)
+
+Advance along already sampled positions using supplied speed policies. Distances
+are metres, speeds m/s and `dt_s` seconds. `available_distance(clearance, distance,
+safe_distance)` returns available metres; `pointwise_speed(distance, curvature)`
+returns m/s with curvature in 1/m. Policies must preserve inputs and avoid hidden
+random draws. Existing fallback-speed and maximum-step behavior are retained;
+fallback output is not a collision-free or dynamically feasible certificate.
+
+Production geometry is `RPOReferenceGeometry`, queried through NavigationHooks'
+`rpo_clearance_to_station`. The callback receives signed surface clearance,
+distance to the nearest station point, and the supplied safe distance, all in
+metres. The pointwise callback receives that policy's available distance and
+sample curvature. `max_speed_mps` caps fallback speed only; the pointwise policy
+owns any cap on its own output.
 """
-@inline function rpo_retime_pointwise_speed(cfg::RPOPSOConfig, d_avail::Real, curvature::Real)
-    amax = Float64(cfg.retime_a_max_mps2)
-    reaction_time = Float64(cfg.retime_reaction_time_s)
-    d = Float64(d_avail)
-    κ = Float64(curvature)
-    v_clear = if d <= 0.0 || amax <= 0.0
-        0.0
-    else
-        -amax * reaction_time + sqrt((amax * reaction_time)^2 + 2.0 * amax * d)
-    end
-    v_clear = max(0.0, v_clear)
-    v_curve = κ <= 0.0 || amax <= 0.0 ? Inf : sqrt(amax / κ)
-    if cfg.hypr_mode === :manuscript
-        return Float64(cfg.retime_speed_scale) * min(v_clear, v_curve, Float64(cfg.retime_max_speed_mps))
-    end
-    v = Float64(cfg.retime_speed_scale) * min(v_clear, v_curve)
-    max_speed = Float64(cfg.retime_max_speed_mps)
-    isfinite(max_speed) && (v = min(v, max_speed))
-    return v
-end
-
-"""Collision-sampling spacing the retimer uses: the planner's density in `:manuscript` mode, `sample_ds_m` otherwise."""
-function rpo_retime_sampling_ds_m(cfg::RPOPSOConfig, safe_distance_m::Real)
-    cfg.hypr_mode === :manuscript && return rpo_hypr_sampling_density_m(cfg, safe_distance_m)
-    return cfg.sample_ds_m
-end
-
-"""Retiming path samples into position, velocity, acceleration, and time references."""
-function rpo_retime_path(
-    points,
-    geometry,
-    cfg::RPOPSOConfig;
+function rpo_retime_samples(
+    raw_samples,
+    geometry;
+    max_speed_mps,
+    min_speed_mps,
+    dt_s,
+    max_steps,
+    available_distance,
+    pointwise_speed,
     safe_distance_m::Real=0.0,
     fallback_speed_mps::Real=1.0e-3,
     duplicate_tol_m::Real=1.0e-10,
 )
-    if cfg.retime_accel_limit_enable
-        ref = rpo_retimed_reference(
-            points,
-            geometry,
-            cfg;
-            safe_distance_m=safe_distance_m,
-            fallback_speed_mps=fallback_speed_mps,
-            duplicate_tol_m=duplicate_tol_m,
-        )
-        return ref.r_rtn, ref.s_m, ref.speed_mps
-    end
-    raw_samples = rpo_sample_path(
-        points,
-        cfg,
-        geometry;
-        safe_distance_m=safe_distance_m,
-        base_ds_m=rpo_retime_sampling_ds_m(cfg, safe_distance_m),
-        curve_type=cfg.curve_type,
-    )
     samples = rpo_remove_near_duplicate_samples(raw_samples; tol=duplicate_tol_m)
 
     s_samples = rpo_arc_length_params(samples)
@@ -90,8 +48,8 @@ function rpo_retime_path(
     v_max = zeros(n)
     geometry_distance = zeros(n)
 
-    max_speed = Float64(cfg.retime_max_speed_mps)
-    cfg_min_speed = Float64(cfg.retime_min_speed_mps)
+    max_speed = Float64(max_speed_mps)
+    cfg_min_speed = Float64(min_speed_mps)
 
     # This is the minimum speed used when the path has locally infeasible geometry distance.
     # It prevents the batch run from crashing, but it does not make the path collision-free.
@@ -109,9 +67,9 @@ function rpo_retime_path(
         station = rpo_clearance_to_station(samples[:, j], geometry)
         geometry_distance[j] = station.distance
 
-        d_avail = rpo_retime_available_distance(cfg, station.clearance, station.distance, safe_distance_m)
+        d_avail = available_distance(station.clearance, station.distance, safe_distance_m)
 
-        v = rpo_retime_pointwise_speed(cfg, d_avail, κ[j])
+        v = pointwise_speed(d_avail, κ[j])
 
         # If the geometry distance model says v = 0, warn and use a tiny fallback speed
         # instead of allowing the retimer to stall.
@@ -179,10 +137,10 @@ function rpo_retime_path(
 
         steps += 1
 
-        if steps > cfg.retime_max_steps
+        if steps > max_steps
             @warn "RPO retiming exceeded maximum step count. Forcing final endpoint into returned trajectory." (
                 steps = steps,
-                max_steps = cfg.retime_max_steps,
+                max_steps = max_steps,
                 current_s_m = s,
                 total_s_m = total,
             )
@@ -196,18 +154,18 @@ function rpo_retime_path(
             break
         end
 
-        ds = v * Float64(cfg.retime_dt_s)
+        ds = v * Float64(dt_s)
 
         if ds <= eps(Float64) || !isfinite(ds)
             @warn "RPO retiming computed invalid arc-length step. Using fallback step." (
                 s_m = s,
                 total_s_m = total,
                 v_mps = v,
-                dt_s = cfg.retime_dt_s,
+                dt_s = dt_s,
                 fallback_speed_mps = fallback_speed,
             )
 
-            ds = fallback_speed * Float64(cfg.retime_dt_s)
+            ds = fallback_speed * Float64(dt_s)
         end
 
         s = min(total, s + ds)
@@ -223,28 +181,38 @@ function rpo_retime_path(
 end
 
 """
-    rpo_retime_profile(curve, samples, params, clearances, geometry, cfg; safe_distance_m=0.0)
+    rpo_retime_profile(curve, samples, params, clearances, geometry;
+        max_speed_mps, min_speed_mps, initial_speed_mps, a_max_mps2,
+        available_distance, pointwise_speed, ...)
 
-Acceleration-limited speed profile over the samples of one path.
-
-Pointwise limits follow Sec. III.E (`rpo_retime_pointwise_speed`); forward and
-backward passes then bound the tangential acceleration by `retime_a_max_mps2`,
-starting at `retime_initial_speed_mps` and ending at rest. Within a sample
-interval v² is linear in arc length (constant acceleration), so crossing it
-takes 2Δs/(v_i + v_{i+1}). For a Bezier curve, arc length comes from
-Gauss-Legendre quadrature of |r'(u)| and curvature from the curve's
-derivatives at the samples; a polyline uses chord lengths and the three-point
-estimate. Clearances that are `NaN` are computed here. Interior samples whose
-pointwise limit is zero (inside the safety distance) get `fallback_speed_mps`,
-as in the legacy retimer, so the reference cannot stall there.
+Construct an acceleration-limited profile from supplied samples and policies.
+Units and policy callback arguments match `rpo_retime_samples`; acceleration is
+m/s². Preserve the existing duplicate removal, two-point split, curve quadrature,
+clearance queries, forward/backward limits, terminal rest and fallback behavior.
+Production geometry is `RPOReferenceGeometry`. Missing (`NaN`) clearances use
+NavigationHooks' `rpo_clearance_distance_to_station`. The kernel reads
+`geometry.station.keepout_radius_m` and `geometry.chaser.half_extents_body`;
+their radius plus maximum half extent is the body margin. The available-distance
+callback receives signed clearance, clearance plus that margin, and the supplied
+safe distance, all in metres. This second argument reconstructs the nearest-point
+distance; its floating-point construction differs from `rpo_retime_samples`.
+The pointwise callback receives the resulting available distance and curvature.
+`max_speed_mps` caps fallback speed only; the policy owns its own output cap.
+Sampling policy and configured defaults belong to the caller. This internal
+boundary makes no broader numeric-type or physical-feasibility guarantee.
 """
 function rpo_retime_profile(
     curve::RPORetimeCurve,
     samples,
     params,
     clearances,
-    geometry,
-    cfg::RPOPSOConfig;
+    geometry;
+    max_speed_mps,
+    min_speed_mps,
+    initial_speed_mps,
+    a_max_mps2,
+    available_distance,
+    pointwise_speed,
     safe_distance_m::Real=0.0,
     fallback_speed_mps::Real=1.0e-3,
     duplicate_tol_m::Real=1.0e-10,
@@ -313,21 +281,21 @@ function rpo_retime_profile(
 
     body_margin = geometry.station.keepout_radius_m + maximum(geometry.chaser.half_extents_body)
     fallback = max(Float64(fallback_speed_mps), eps(Float64))
-    isfinite(cfg.retime_max_speed_mps) && (fallback = max(min(fallback, cfg.retime_max_speed_mps), eps(Float64)))
+    isfinite(max_speed_mps) && (fallback = max(min(fallback, max_speed_mps), eps(Float64)))
     v_point = zeros(n)
     fallback_count = 0
     @inbounds for j in 1:n
         if isnan(clear[j])
             clear[j] = rpo_clearance_distance_to_station(SVector{3, Float64}(pts[1, j], pts[2, j], pts[3, j]), geometry)
         end
-        d_avail = rpo_retime_available_distance(cfg, clear[j], clear[j] + body_margin, safe_distance_m)
-        v = rpo_retime_pointwise_speed(cfg, d_avail, κ[j])
+        d_avail = available_distance(clear[j], clear[j] + body_margin, safe_distance_m)
+        v = pointwise_speed(d_avail, κ[j])
         if 1 < j < n
             if v <= 0.0
                 fallback_count += 1
                 v = fallback
             end
-            v = max(v, cfg.retime_min_speed_mps)
+            v = max(v, min_speed_mps)
         end
         v_point[j] = v
     end
@@ -335,8 +303,8 @@ function rpo_retime_profile(
         @warn "RPO retiming encountered infeasible zero-speed samples. Continuing with fallback speed. The path likely intersects the RPO geometry." count=fallback_count fallback_speed_mps=fallback
     end
 
-    v_start = Float64(cfg.retime_initial_speed_mps)
-    v = rpo_accel_limited_speeds(s, v_point, cfg.retime_a_max_mps2; v_start=v_start, v_end=0.0)
+    v_start = Float64(initial_speed_mps)
+    v = rpo_accel_limited_speeds(s, v_point, a_max_mps2; v_start=v_start, v_end=0.0)
     if warn && v[1] < v_start - 1.0e-12
         @warn "RPO retiming cannot keep the initial speed within the acceleration limit; the reference starts slower." initial_speed_mps=v_start reference_start_mps=v[1]
     end
@@ -367,42 +335,4 @@ function rpo_retime_profile(
         length_m=s[end],
         duration_s=t[end],
     )
-end
-
-"""
-    rpo_retimed_reference(points, geometry, cfg; safe_distance_m=0.0)
-
-Acceleration-limited reference for a control polygon: sample the path as the
-planner does, build `rpo_retime_profile`, and sample it at `retime_dt_s`.
-"""
-function rpo_retimed_reference(
-    points,
-    geometry,
-    cfg::RPOPSOConfig;
-    safe_distance_m::Real=0.0,
-    fallback_speed_mps::Real=1.0e-3,
-    duplicate_tol_m::Real=1.0e-10,
-    warn::Bool=true,
-)
-    samples, params, clearances = rpo_sample_path_with_params(
-        points,
-        cfg,
-        geometry;
-        safe_distance_m=safe_distance_m,
-        base_ds_m=rpo_retime_sampling_ds_m(cfg, safe_distance_m),
-        curve_type=cfg.curve_type,
-    )
-    profile = rpo_retime_profile(
-        RPORetimeCurve(points, cfg.curve_type),
-        samples,
-        params,
-        clearances,
-        geometry,
-        cfg;
-        safe_distance_m=safe_distance_m,
-        fallback_speed_mps=fallback_speed_mps,
-        duplicate_tol_m=duplicate_tol_m,
-        warn=warn,
-    )
-    return rpo_retimed_reference_from_profile(profile, cfg.retime_dt_s)
 end

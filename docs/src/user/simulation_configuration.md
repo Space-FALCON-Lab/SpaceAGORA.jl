@@ -208,6 +208,19 @@ SM.EnvironmentModel(
 )
 ```
 
+`thermal_model` is one of three heating models, each evaluated per thermal
+link (panel) and integrated into that link's heat-load state:
+
+- `SM.MaxwellianHeat(thermal_accomodation_factor, planet)`: free-molecular
+  Maxwellian heat flux, for rarefied aerobraking corridors.
+- `SM.SuttonGravesHeat(planet=planet, nose_radius_m=0.5)`: Sutton–Graves
+  stagnation-point convective heating, `q = k √(ρ/r_n) v³`, with `k` defaulting
+  to the planet's coefficient (`planet.k`).
+- `SM.TabularHeat("aerothermal.csv")`: a vehicle-level flux interpolated from an
+  aerothermal database tabulated on a velocity × density grid (CSV columns
+  `velocity_m_s`, `density_kg_m3`, `heat_rate_W_cm2`), or
+  `SM.TabularHeat(velocities, densities, heat_rates)` from arrays.
+
 `EI` (entry interface) is the altitude at which the integrator switches
 between its orbit and atmosphere step-size/tolerance regimes (see
 `IntegrationTolerances`). It is not a force gate: whenever a non-vacuum

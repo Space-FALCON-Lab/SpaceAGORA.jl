@@ -44,8 +44,13 @@ function _run_spaceagora_precompile_workload(; workspace::AbstractString=tempdir
     args = _spaceagora_precompile_args()
     # The workload propagates without aerodynamics on purpose. Silence the
     # density-without-drag diagnostic for it, or every installation prints that
-    # warning while precompiling; ordinary runs still warn.
-    withenv("SPACEAGORA_WARN_DENSITY_WITHOUT_AERO" => "0") do
+    # warning while precompiling; ordinary runs still warn. The GRAM perturbation
+    # mode is cleared too: it needs a native GRAM model and the workload flies an
+    # exponential atmosphere, so a mode inherited from the caller's environment
+    # (a process-pool worker spawned by a perturbed campaign, which precompiles
+    # when it finds no cache for its flags) would fail the whole precompilation.
+    withenv("SPACEAGORA_WARN_DENSITY_WITHOUT_AERO" => "0",
+            "SPACEAGORA_GRAM_DENSITY_PERTURBATION" => nothing) do
         mktempdir(workspace) do tmp
             cd(tmp) do
                 run_simulation(engine_config, args; return_solution=true)

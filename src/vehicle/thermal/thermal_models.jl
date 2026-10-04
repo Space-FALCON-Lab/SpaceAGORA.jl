@@ -1,3 +1,4 @@
+using CSV
 using Interpolations
 using SpecialFunctions
 using ..AbstractTypes: AbstractThermalModel, AbstractPlanet
@@ -112,4 +113,112 @@ function getHeatRate(model::MaxwellianHeat, S::Float64, T::Float64, ρ::Float64,
                 (1 + erf(S * sin(α)))) - 0.5 * exp(-(S * sin(α))^2)) * 1e-4  # W/cm^2
 
     return heat_rate
+end
+
+"""
+    SuttonGravesHeat(; planet, nose_radius_m, k=planet.k)
+
+Sutton–Graves stagnation-point convective heating (Sutton and Graves, NASA TR
+R-376, 1971),
+
+    q = k √(ρ / r_n) v³,
+
+returned in W/cm² and applied to every thermal link (panel). `k` is the
+atmosphere's Sutton–Graves coefficient in kg^0.5/m and defaults to the planet's
+(`planet.k`); `nose_radius_m` is the effective nose radius `r_n`. The free-stream
+speed ratio, temperature and incidence passed to [`getHeatRate`](@ref) do not
+enter this correlation.
+"""
+struct SuttonGravesHeat <: AbstractThermalModel
+    nose_radius_m::Float64
+    k::Float64
+    function SuttonGravesHeat(nose_radius_m::Real, k::Real)
+        r_f, k_f = Float64(nose_radius_m), Float64(k)
+        (isfinite(r_f) && r_f > 0.0) || throw(ArgumentError("SuttonGravesHeat.nose_radius_m must be > 0 m, got $r_f."))
+        (isfinite(k_f) && k_f >= 0.0) || throw(ArgumentError("SuttonGravesHeat.k must be >= 0 kg^0.5/m, got $k_f."))
+        return new(r_f, k_f)
+    end
+end
+SuttonGravesHeat(; planet::AbstractPlanet, nose_radius_m::Real, k::Real=planet.k) = SuttonGravesHeat(nose_radius_m, k)
+
+function getHeatRate(model::SuttonGravesHeat, S::Float64, T::Float64, ρ::Float64, v::Float64, α::Float64)::Float64
+    (ρ > 0.0 && v > 0.0) || return 0.0
+    return model.k * sqrt(ρ / model.nose_radius_m) * v^3 * 1e-4  # W/m^2 -> W/cm^2
+end
+
+"""
+    TabularHeat(velocities_m_s, densities_kg_m3, heat_rates_W_cm2)
+    TabularHeat(path::AbstractString)
+
+Vehicle-level heat flux from an aerothermal database tabulated on a velocity ×
+density grid. `heat_rates_W_cm2[i, j]` is the flux at `velocities_m_s[i]` and
+`densities_kg_m3[j]`; both axes must be strictly increasing, and densities
+positive. The flux is interpolated bilinearly in velocity and log density and
+held at the grid's edge in velocity and above its highest density. Below the
+lowest tabulated density it scales in proportion to density, as free-molecular
+heating does, so the rarefied limit goes to zero rather than to the edge value.
+The same flux is applied to every thermal link.
+
+The file form reads a CSV with columns `velocity_m_s`, `density_kg_m3` and
+`heat_rate_W_cm2`, one row per grid point, rows in any order, every combination
+of the listed velocities and densities present exactly once.
+"""
+struct TabularHeat <: AbstractThermalModel
+    velocities::Vector{Float64}
+    densities::Vector{Float64}
+    log_densities::Vector{Float64}
+    heat_rates::Matrix{Float64}
+    function TabularHeat(velocities::AbstractVector{<:Real}, densities::AbstractVector{<:Real},
+                         heat_rates::AbstractMatrix{<:Real})
+        v = Float64.(collect(velocities)); d = Float64.(collect(densities)); q = Float64.(collect(heat_rates))
+        (length(v) >= 2 && length(d) >= 2) || throw(ArgumentError("TabularHeat needs at least two velocities and two densities."))
+        size(q) == (length(v), length(d)) || throw(ArgumentError(
+            "TabularHeat.heat_rates must be $(length(v)) x $(length(d)) (velocities x densities), got $(size(q))."))
+        (all(isfinite, v) && issorted(v; lt=<=)) || throw(ArgumentError("TabularHeat velocities must be finite and strictly increasing."))
+        (all(x -> isfinite(x) && x > 0.0, d) && issorted(d; lt=<=)) ||
+            throw(ArgumentError("TabularHeat densities must be positive and strictly increasing."))
+        all(x -> isfinite(x) && x >= 0.0, q) || throw(ArgumentError("TabularHeat heat rates must be finite and >= 0."))
+        return new(v, d, log.(d), q)
+    end
+end
+
+function TabularHeat(path::AbstractString)
+    rows = CSV.File(path)
+    cols = propertynames(rows)
+    for c in (:velocity_m_s, :density_kg_m3, :heat_rate_W_cm2)
+        c in cols || throw(ArgumentError("TabularHeat file $(path) has no column $(c)."))
+    end
+    vs = sort(unique(Float64.(rows.velocity_m_s)))
+    ds = sort(unique(Float64.(rows.density_kg_m3)))
+    q = fill(NaN, length(vs), length(ds))
+    for r in rows
+        i = searchsortedfirst(vs, Float64(r.velocity_m_s)); j = searchsortedfirst(ds, Float64(r.density_kg_m3))
+        isnan(q[i, j]) || throw(ArgumentError("TabularHeat file $(path) repeats grid point ($(vs[i]), $(ds[j]))."))
+        q[i, j] = Float64(r.heat_rate_W_cm2)
+    end
+    any(isnan, q) && throw(ArgumentError("TabularHeat file $(path) does not cover the full velocity x density grid."))
+    return TabularHeat(vs, ds, q)
+end
+
+@inline function _tabular_bracket(axis::Vector{Float64}, x::Float64)::Tuple{Int, Float64}
+    x <= axis[1] && return 1, 0.0
+    x >= axis[end] && return length(axis) - 1, 1.0
+    i = searchsortedlast(axis, x)
+    return i, (x - axis[i]) / (axis[i + 1] - axis[i])
+end
+
+function getHeatRate(model::TabularHeat, S::Float64, T::Float64, ρ::Float64, v::Float64, α::Float64)::Float64
+    ρ > 0.0 || return 0.0
+    scale = 1.0
+    ρ_eval = ρ
+    if ρ < model.densities[1]
+        scale = ρ / model.densities[1]   # free-molecular: flux proportional to density
+        ρ_eval = model.densities[1]
+    end
+    i, fv = _tabular_bracket(model.velocities, v)
+    j, fd = _tabular_bracket(model.log_densities, log(ρ_eval))
+    q = model.heat_rates
+    @inbounds q_ij = (1 - fv) * (1 - fd) * q[i, j] + fv * (1 - fd) * q[i + 1, j] +
+                     (1 - fv) * fd * q[i, j + 1] + fv * fd * q[i + 1, j + 1]
+    return scale * q_ij
 end

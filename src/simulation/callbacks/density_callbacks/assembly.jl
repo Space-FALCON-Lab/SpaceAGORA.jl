@@ -189,6 +189,13 @@ function get_callbacks(
 
     has_touchdown && (callbacks = _append_callback(callbacks, get_touchdown_callback(touchdown_specs)))
 
+    # Opt-in GRAM perturbed density (off by default -> nothing appended). Placed
+    # before every callback that stages or reads density, so a factor updated at
+    # an accepted step is the one those callbacks see at that step.
+    if !backbone_mode
+        callbacks = _append_callback(callbacks, get_gram_density_perturbation_callback(num_sats, args))
+    end
+
     if !backbone_mode && _requires_staged_density_callback(effectors, args)
         callbacks = _append_callback(callbacks, get_density_callback(num_sats, effectors, args))
     end

@@ -8,15 +8,20 @@ const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 # - SPACEAGORA_TELEMETRY_J2_SOURCE_DEFAULT=file_c20|planet_j2
 # - SPACEAGORA_TELEMETRY_J2_SOURCE_PLANET_SCENARIOS=name1,name2
 
-include(joinpath(REPO_ROOT, "test", "gmat_scenario_matrix.jl"))
+include(joinpath(@__DIR__, "tb_matrix_debug_defs_only.jl"))
 
-function _combined_xyz_rmse(summary::DataFrame, scenario::String)::Float64
+function _j2_combined_xyz_rmse(summary::DataFrame, scenario::String)::Float64
     rows = summary[(summary.scenario .== scenario) .& in.(summary.event, Ref(["state_x_time", "state_y_time", "state_z_time"])), :]
     return sqrt(sum(Float64.(rows.rmse_km) .^ 2))
 end
 
-function run_j2_parity_debug()
-    result = Main._run_gmat_scenario_matrix_result_once()
+# See docs/quality/scenario_matrix_debug.md for references and invocation.
+function run_j2_parity_debug(;
+    runner=ScenarioMatrixDebugSupport._run_basilisk_scenario_matrix_result_once,
+    check_inputs=ScenarioMatrixDebugSupport.require_matrix_inputs
+)
+    check_inputs()
+    result = runner()
     summary = result.summary
 
     j2_rows = summary[in.(summary.event, Ref(["state_x_time", "state_y_time", "state_z_time"])) .& occursin.("_j2_", String.(summary.scenario)), :]
@@ -41,7 +46,7 @@ function run_j2_parity_debug()
         x = rows[rows.event .== "state_x_time", :].rmse_km[1]
         y = rows[rows.event .== "state_y_time", :].rmse_km[1]
         z = rows[rows.event .== "state_z_time", :].rmse_km[1]
-        push!(table, (scenario, x, y, z, _combined_xyz_rmse(summary, scenario)))
+        push!(table, (scenario, x, y, z, _j2_combined_xyz_rmse(summary, scenario)))
     end
 
     sort!(table, :rmse_xyz_norm_km, rev=true)
@@ -56,4 +61,6 @@ function run_j2_parity_debug()
     end
 end
 
-run_j2_parity_debug()
+if abspath(PROGRAM_FILE) == @__FILE__
+    run_j2_parity_debug()
+end

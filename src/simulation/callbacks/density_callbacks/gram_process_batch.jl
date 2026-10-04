@@ -246,6 +246,11 @@ native-GRAM configuration is eligible.
     # the service builds one instance per worker from one recipe and cannot
     # reproduce a heterogeneous set.
     isempty(p.shared_buffers.density_models) || return false
+    # The naive perturbation control reads the coordinator's own mean instance
+    # after its last update, which a worker-served query never makes, so that mode
+    # cannot be represented here and keeps the per-satellite path. The step and
+    # pass factors are applied to the served results (_rhs_density_service_fill!).
+    _installed_gram_perturbation_mode(p) === :naive_rhs && return false
     return true
 end
 
@@ -329,8 +334,12 @@ function _rhs_density_service_fill!(
     # them is correct, just redundant for a few.
     served || return false
 
+    # The workers return mean states; give them the same opt-in perturbation
+    # factor the per-satellite path applies (unchanged values when no mode is
+    # installed, and above the entry interface).
     @inbounds for (j, i) in enumerate(gram_idx)
-        _write_density_buffers!(p, i, rhos[j], Ts[j], winds[j], t)
+        rho_i, T_i, wind_i = _apply_gram_density_perturbation(p, i, t, alts[i], rhos[j], Ts[j], winds[j])
+        _write_density_buffers!(p, i, rho_i, T_i, wind_i, t)
     end
     return true
 end

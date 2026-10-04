@@ -16,13 +16,18 @@ const MAX_ENV = "SPACEAGORA_GRAM_DENSITY_PERTURBATION_PASS_MAX_S"
 const LOG_ENV = "SPACEAGORA_GRAM_DENSITY_PERTURBATION_LOG"
 const RESEED_ENV = "SPACEAGORA_GRAM_DENSITY_PERTURBATION_PASS_RESEED"
 
-# A walk whose k-th draw is r = 1 + 0.1 k, and which records its reseeds.
+# A walk whose k-th draw is r = 1 + 0.1 k, and which records its reseeds and
+# which of its updates were marked as first after a clone or reseed.
 mutable struct StubWalk
     seed::Int
     calls::Int
+    first_updates::Vector{Bool}
 end
-function EM._gram_walk_sample(w::StubWalk, h::Float64, lat::Float64, lon::Float64, t::Float64)
+StubWalk(seed::Int, calls::Int) = StubWalk(seed, calls, Bool[])
+function EM._gram_walk_sample(w::StubWalk, h::Float64, lat::Float64, lon::Float64, t::Float64;
+                              first_update::Bool=false)
     w.calls += 1
+    push!(w.first_updates, first_update)
     return (1.0e-9 * (1.0 + 0.1 * w.calls), 1.0e-9, 0.05, 0.25)
 end
 EM._gram_walk_reseed!(w::StubWalk, seed::Int) = (w.seed = seed; nothing)
@@ -212,14 +217,19 @@ end
     end
 end
 
-# Installs a state with stub walks where initialize would have cloned native ones.
-function install_stub_state!(cb, p, mode::Symbol, log_path::String; pass_dt=1.0, pass_max=5.0)
+# Installs a state with stub walks where initialize would have cloned native ones,
+# attached to `p` as a run's first initialization at `t0` attaches it.
+function install_stub_state!(cb, p, mode::Symbol, log_path::String; pass_dt=1.0, pass_max=5.0,
+                             reseed::Bool=true, t0::Float64=0.0)
     st = CB._new_gram_density_perturbation_state(mode, N_SATS, p.args.environment_model.EI * 1e3,
-                                                 pass_dt, pass_max, log_path, true)
+                                                 pass_dt, pass_max, log_path, reseed)
     for i in 1:N_SATS
         st.walk_models[i] = StubWalk(0, 0)
         st.base_seeds[i] = 1000 + i
     end
+    st.owner = p
+    st.t0 = t0
+    st.last_t = t0
     cb.affect!.state_ref[] = st
     p.shared_buffers.gram_density_perturbation[] = st
     return st
@@ -322,6 +332,196 @@ end
 
         cb.finalize(cb, u, t0, integrator)
         @test isfile(joinpath(dir, "pass.csv"))
+    end
+end
+
+# Drives one run through accepted steps `(t, inside the atmosphere)`. After the
+# steps listed in `boundaries` a checkpoint segment ends: its finalize, then the
+# next segment's initialize at the same time, as the engine's checkpoint loop and
+# the solver's callback reinitialization call them.
+function drive_run!(cb, p, u, schedule; boundaries=Int[])
+    for (k, (t, inside)) in enumerate(schedule)
+        integrator = (p=p, u=u, t=t)
+        p.shared_buffers.gram_density_perturbation[].ei_m = inside ? 1000e3 : 0.0
+        cb.affect!(integrator)
+        if k in boundaries
+            cb.finalize(cb, u, t, integrator)
+            cb.initialize(cb, u, t, integrator)
+        end
+    end
+    t_end = last(schedule)[1]
+    cb.finalize(cb, u, t_end, (p=p, u=u, t=t_end))
+    return p.shared_buffers.gram_density_perturbation[]
+end
+
+const CONTINUED_FIELDS = (:pass_count, :walk_calls, :held_r, :pass_active, :pass_t0, :pass_r, :pass_alt,
+                          :in_atm_prev, :base_seeds, :walk_fresh, :last_t, :log_kind, :log_sat, :log_pass,
+                          :log_t, :log_alt, :log_r, :log_sigma, :log_mean, :log_aux)
+
+@testset "checkpoint segments continue the run ($mode, reseed=$reseed)" for mode in (:step, :pass),
+                                                                             reseed in (false, true)
+    mktempdir() do dir
+        args = perturbation_config(dir)
+        u = SE.build_initial_conditions(args)
+        # Three passes; segment boundaries inside pass 2 (t = 5) and between passes (t = 7).
+        schedule = [(1.0, true), (2.0, true), (3.0, false), (4.0, true), (5.0, true), (6.0, true),
+                    (7.0, false), (8.0, true), (9.0, true)]
+        runs = map((:continuous, :segmented)) do kind
+            cb = perturbation_callback(args, MODE_ENV => string(mode))
+            p = perturbation_params(args)
+            log = joinpath(dir, "$(kind).csv")
+            st = install_stub_state!(cb, p, mode, log; reseed=reseed)
+            final = drive_run!(cb, p, u, schedule; boundaries=kind === :segmented ? [5, 7] : Int[])
+            @test final === st                                   # one state for the whole run
+            (st=st, p=p, log=log)
+        end
+        a, b = runs
+        for f in CONTINUED_FIELDS
+            @test isequal(getfield(a.st, f), getfield(b.st, f))
+        end
+        @test [(w.seed, w.calls, w.first_updates) for w in a.st.walk_models] ==
+              [(w.seed, w.calls, w.first_updates) for w in b.st.walk_models]
+        @test b.st.pass_count == [3, 3]
+        @test [w.seed for w in b.st.walk_models] ==
+              (reseed ? [CB._gram_pass_seed(1000 + i, 3) for i in 1:N_SATS] : zeros(Int, N_SATS))
+        wind = SVector(0.0, 0.0, 0.0)
+        for t in (8.0, 8.5, 9.0)
+            @test CB._apply_gram_density_perturbation(b.p, 1, t, 100e3, 1.0, 200.0, wind) ==
+                  CB._apply_gram_density_perturbation(a.p, 1, t, 100e3, 1.0, 200.0, wind)
+        end
+        # The log written at the end holds every segment's rows.
+        @test read(b.log, String) == read(a.log, String)
+        @test read(b.log * ".summary.toml", String) == read(a.log * ".summary.toml", String)
+        # Each walk's first update after its clone is marked, and with reseeding
+        # the first update of every pass; no other update is.
+        draws = mode === :step ? [2, 3, 2] : [6, 6, 6]
+        expected = reduce(vcat, [vcat(reseed || k == 1, fill(false, n - 1)) for (k, n) in enumerate(draws)])
+        @test all(w -> w.first_updates == expected, b.st.walk_models)
+    end
+end
+
+@testset "checkpoint continuation: start time, run identity and staged densities" begin
+    mktempdir() do dir
+        args = perturbation_config(dir)
+        u = SE.build_initial_conditions(args)
+        cb = perturbation_callback(args, MODE_ENV => "naive_rhs")
+        p = perturbation_params(args)
+        cb.initialize(cb, u, 0.0, (p=p, u=u, t=0.0))
+        st = p.shared_buffers.gram_density_perturbation[]
+        @test st.owner === p && st.t0 == 0.0 && st.last_t == 0.0
+        st.ei_m = 0.0
+        cb.affect!((p=p, u=u, t=2.0))                             # leave the atmosphere
+        st.ei_m = 1000e3
+        cb.affect!((p=p, u=u, t=4.0))                             # pass 2
+        @test st.pass_count == [2, 2] && st.last_t == 4.0
+
+        # The next segment starts where this one ended: the same state, nothing
+        # sampled, staged densities invalidated.
+        p.shared_buffers.density_sample_t .= 0.0
+        cb.initialize(cb, u, 4.0, (p=p, u=u, t=4.0))
+        @test p.shared_buffers.gram_density_perturbation[] === st
+        @test st.pass_count == [2, 2]
+        @test all(isnan, p.shared_buffers.density_sample_t)
+
+        # Neither the previous segment's end nor the run's start: refused, unchanged.
+        @test_throws ArgumentError cb.initialize(cb, u, 3.0, (p=p, u=u, t=3.0))
+        @test p.shared_buffers.gram_density_perturbation[] === st
+
+        # The run's start again (a solve over again from the beginning): fresh.
+        cb.initialize(cb, u, 0.0, (p=p, u=u, t=0.0))
+        fresh = p.shared_buffers.gram_density_perturbation[]
+        @test fresh !== st
+        @test fresh.pass_count == [1, 1]
+
+        # Another run's parameters never continue this run's state.
+        p2 = perturbation_params(args)
+        cb.initialize(cb, u, 0.0, (p=p2, u=u, t=0.0))
+        other = p2.shared_buffers.gram_density_perturbation[]
+        @test other !== fresh && other.owner === p2
+        @test p.shared_buffers.gram_density_perturbation[] === fresh
+    end
+end
+
+@testset "checkpoint segments through the solver continue an active pass" begin
+    mktempdir() do dir
+        args = perturbation_config(dir)
+        u0 = SE.build_initial_conditions(args)
+        stationary!(du, u, p, t) = fill!(du, 0.0)
+        # The engine's checkpoint loop: one problem per segment, the same params
+        # and callbacks; the next segment starts at the last one's final time.
+        function run_segments(spans, cached::Bool, tag::String)
+            p = perturbation_params(args)
+            cb = perturbation_callback(args, MODE_ENV => "pass")
+            st = install_stub_state!(cb, p, :pass, joinpath(dir, tag * ".csv"))
+            cache = cached ? SE.SolverIntegratorCache() : nothing
+            cfg = SE.SolverConfig(solver_mode=:tsit5)
+            u = deepcopy(u0)
+            for span in spans
+                prob = SE.ODEProblem(stationary!, u, span, p; callback=CB.CallbackSet(cb))
+                sol, _ = SE._solve_with_solver_policy(prob, cfg, args, 1e-8, 1e-8;
+                                                      solver_cache=cache, needs_full_solution=false)
+                @test SE.SciMLBase.successful_retcode(sol.retcode)
+                @test sol.t[end] == span[2]
+                u = deepcopy(sol.u[end])
+            end
+            return p, st
+        end
+        p_c, st_c = run_segments([(0.0, 2.0)], true, "continuous")
+        @test st_c.pass_count == [1, 1] && st_c.pass_active == [true, true]
+        for cached in (true, false)
+            p_s, st_s = run_segments([(0.0, 1.0), (1.0, 2.0)], cached, "segmented_$(cached)")
+            @test p_s.shared_buffers.gram_density_perturbation[] === st_s
+            @test st_s.last_t == 2.0
+            @test st_s.pass_count == st_c.pass_count
+            @test st_s.pass_t0 == st_c.pass_t0
+            @test st_s.pass_r == st_c.pass_r
+            @test st_s.walk_calls == st_c.walk_calls
+            @test [w.seed for w in st_s.walk_models] == [w.seed for w in st_c.walk_models]
+            @test CB._gram_pass_factor(st_s, 1, 2.0) == CB._gram_pass_factor(st_c, 1, 2.0)
+        end
+    end
+end
+
+@testset "multirate rejects captured perturbation modes before its first subsolve" begin
+    mktempdir() do dir
+        args = perturbation_config(dir)
+        cfg = SE.SolverConfig(solver_mode=:multirate, multirate_slow_dt_s=1.0,
+            multirate_fast_substeps=2, multirate_slow_solver=:tsit5, multirate_fast_solver=:tsit5)
+        for mode in ("step", "pass", "naive_rhs", "off"), in_set in (false, true)
+            p = perturbation_params(args)
+            u = SE.build_initial_conditions(args)
+            rhs_calls = Ref(0)
+            stationary!(du, u, p, t) = (rhs_calls[] += 1; fill!(du, 0.0))
+            # Build under one mode, then solve with ENV changed to off. The
+            # solver must validate the captured callback, not the current ENV.
+            cb = perturbation_callback(args, MODE_ENV => mode)
+            ordinary_cb = CB.DiscreteCallback((u, t, i) -> false, i -> nothing)
+            callbacks = in_set ? (cb === nothing ? CB.CallbackSet(ordinary_cb) :
+                CB.CallbackSet(ordinary_cb, cb)) : cb
+            prob = SE.SplitODEProblem(stationary!, stationary!, u, (0.0, 2.0), p;
+                                      callback=callbacks)
+            withenv(MODE_ENV => "off") do
+                if mode == "off"
+                    sol, _ = SE._solve_with_solver_policy(prob, cfg, args, 1e-8, 1e-8)
+                    @test SE.SciMLBase.successful_retcode(sol.retcode)
+                    @test sol.t[end] == 2.0
+                    @test rhs_calls[] > 0
+                else
+                    err = try
+                        SE._solve_with_solver_policy(prob, cfg, args, 1e-8, 1e-8)
+                        nothing
+                    catch caught
+                        caught
+                    end
+                    @test err isa ArgumentError
+                    @test occursin("multirate does not support", sprint(showerror, err))
+                    @test occursin("DENSITY_PERTURBATION=$(mode)", sprint(showerror, err))
+                    @test rhs_calls[] == 0
+                    @test cb.affect!.state_ref[] === nothing
+                end
+                @test p.shared_buffers.gram_density_perturbation[] === nothing
+            end
+        end
     end
 end
 end

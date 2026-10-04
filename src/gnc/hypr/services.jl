@@ -11,6 +11,8 @@ module HYPRServices
 import ..SimulationModel.HYPRSupport
 const CONTRACT_VERSION = v"1.0.0"
 const HYPR_VERSION = v"0.1.0"
+"""Compatibility error type, preserving its existing owner."""
+const CompatibilityError = HYPRSupport.HYPRCompatibilityError
 
 """Require exactly the interface version implemented by this SpaceAGORA build."""
 function require_version(expected::VersionNumber)

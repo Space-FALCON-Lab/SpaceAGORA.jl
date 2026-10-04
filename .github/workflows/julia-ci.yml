@@ -801,6 +801,8 @@ jobs:
         env:
           JULIA_PKG_PRECOMPILE_AUTO: "0"
         run: julia --startup-file=no --project=. test/optional_hypr/setup.jl "$RUNNER_TEMP/hypr-installations"
+      - name: Verify immutable installation inputs
+        run: julia --startup-file=no --project=. test/installation_contract.jl
       - name: Example environment isolation
         env:
           JULIA_LOAD_PATH: "@:@stdlib"
@@ -809,6 +811,10 @@ jobs:
         env:
           JULIA_LOAD_PATH: "@:@stdlib"
         run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/hypr-installations/core" test/optional_hypr/core.jl
+      - name: Precompile the complete optional stack
+        env:
+          JULIA_LOAD_PATH: "@:@stdlib"
+        run: julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" -e 'using Pkg; Pkg.precompile(["SpaceAGORA", "HYPR", "SpaceAGORAHYPR"]; strict=true)'
       - name: Both companion load orders
         env:
           JULIA_LOAD_PATH: "@:@stdlib"

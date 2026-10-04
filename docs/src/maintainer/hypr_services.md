@@ -5,7 +5,7 @@ SpaceAGORA.HYPRServices
 ```
 
 `SpaceAGORA.HYPRServices` is the supported boundary for HYPR's optional extension.
-Contract **1.0.0** supports the local HYPR **0.1.0** candidate and the
+SpaceAGORA **0.2.0** provides contract **1.0.0**, supporting HYPR **0.1.0** and the
 `SpaceAGORAHYPR` **0.2.0** compatibility package. These are candidate identities,
 not a published installation promise. Immutable source pairing and release-hosted
 installation tests remain release requirements.
@@ -25,10 +25,15 @@ package's initialization fails; this check does not roll them back. Availability
 and supported planning preflight fail closed after a provider conflict. Do not
 catch a loading failure and continue calling previously imported planner methods.
 
+The compatibility shim checks required extension bindings before constructing aliases
+and checks successful initialization and availability again from its `__init__`.
+The facade exposes `CompatibilityError` as an alias of the existing error type.
+
 Both core-first and HYPR-first loading are supported. Availability belongs to the
-current process; a worker must load its own supported packages. Precompiled stack
-verification is a separate release-integration requirement, not established by
-source-loading tests.
+current process; a worker must load its own supported packages. CI precompiles the core, extension and shim, then tests fresh processes with
+compiled modules required, including either load order and failed activation.
+Local package-image evidence is separate from the still-required published-source
+installation and hosted release checks.
 
 ## Ownership and version policy
 

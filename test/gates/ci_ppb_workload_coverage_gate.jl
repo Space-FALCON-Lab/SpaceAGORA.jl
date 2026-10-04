@@ -64,9 +64,10 @@ end
         @test p.samples == (catalog[p.case].montecarlo ? 2 : 1)
     end
 
-    # The only exclusions are the native-GRAM cases, and they are all P6 traces.
+    # The only exclusions are the native-GRAM cases: the P6 traces and the
+    # dispersed MarsGRAM samples (P4g, and its serial spot check P4gs).
     skipped = Base.invokelatest(S.ppb_workload_skipped)
-    @test all(((ph, case),) -> ph in ("P6", "P6p") && occursin("gram", case), skipped)
+    @test all(((ph, case),) -> ph in ("P6", "P6p", "P4g", "P4gs") && occursin("gram", case), skipped)
 
     # Every constellation size the P phases name appears among the points.
     size_of(case) = (m = match(r"_([0-9]+)sat_", case); m === nothing ? 1 : parse(Int, m.captures[1]))

@@ -373,7 +373,6 @@ dispatch. Everything `warmup_fn` references must already be resolvable on the
 worker (ordinary Distributed closure-shipping rule -- see the campaign
 dispatch closures this same pool already ships for real work).
 """
-
 function ensure_process_workers!(pool::ProcessPool, n::Int; warmup_fn=nothing)::Vector{Int}
     desired = max(1, n)
     lock(pool.lock) do

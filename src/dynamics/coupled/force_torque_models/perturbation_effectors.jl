@@ -16,7 +16,7 @@ module PerturbationEffectors
     import ...EffectorSampling: gravity_backbone_structure, gravity_backbone_acceleration_ii
     import ...EffectorSampling: gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 
-    export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
+    export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel, FacetSolarRadiationPressureModel
     export srp, srp_cannonball_accel, planetary_albedo_accel, planetary_ir_accel
     export MagneticTorqueRodModel, get_magnetic_field_dipole, calculate_magnetic_torque
     export EddyCurrentDampingModel, eddy_damping_torque

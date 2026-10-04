@@ -1573,6 +1573,87 @@ end
     return _srp_total_acceleration_ii(model, env.planet, x.pos_ii, pos_primary_sun, x.mass_kg)
 end
 
+"""
+    FacetSolarRadiationPressureModel(; AU_m=149_597_870_700.0, p_srp_1au=4.56e-6)
+
+Per-facet solar radiation pressure on the flat plates attached to each link with
+[`add_facet!`](@ref) (`link.SRP_facets`). For an illuminated facet of area `A`,
+unit normal `n̂`, specular coefficient `δ` and diffuse coefficient `ρ`,
+
+    F = -P A cosθ [(1 - δ) ŝ + 2 (ρ/3 + δ cosθ) n̂] · ν,    cosθ = n̂ · ŝ > 0,
+
+where `ŝ` points from the spacecraft to the Sun, `P` is `p_srp_1au` scaled to the
+spacecraft's distance from the Sun, and `ν` is the shadow fraction from
+`eclipse_area_calc` (Montenbruck and Gill, *Satellite Orbits*, Sec. 3.4). This is
+the facet model of the former `srp!`, now evaluated through the `wrench` hook.
+
+Each facet's force acts at its centre of pressure (`facet.cp`, link frame), so the
+model also returns the torque about the root body's centre of mass in the root
+body frame. Facets are oriented by the propagated attitude; without one
+(`orientation_sim = false`) the body axes are taken as J2000 and no torque is
+returned. A spacecraft with no facets feels no force from this model.
+"""
+struct FacetSolarRadiationPressureModel <: AbstractForceTorqueModel
+    AU_m::Float64
+    p_srp_1au::Float64
+    function FacetSolarRadiationPressureModel(AU_m::Real, p_srp_1au::Real)
+        AU_f, p_f = Float64(AU_m), Float64(p_srp_1au)
+        (isfinite(AU_f) && AU_f > 0.0) || throw(ArgumentError("FacetSolarRadiationPressureModel.AU_m must be > 0 m, got $AU_f."))
+        (isfinite(p_f) && p_f >= 0.0) || throw(ArgumentError("FacetSolarRadiationPressureModel.p_srp_1au must be >= 0 N/m^2, got $p_f."))
+        return new(AU_f, p_f)
+    end
+end
+FacetSolarRadiationPressureModel(; AU_m::Real=149_597_870_700.0, p_srp_1au::Real=4.56e-6) =
+    FacetSolarRadiationPressureModel(AU_m, p_srp_1au)
+
+@inline environment_requirements(::FacetSolarRadiationPressureModel) = EffectorEnvironmentRequirements(solar=true)
+
+@inline function wrench(
+    model::FacetSolarRadiationPressureModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64,
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    zero3 = SVector{3, Float64}(0.0, 0.0, 0.0)
+    spacecraft = x.spacecraft
+    spacecraft === nothing && return zero3, zero3
+    solar = env.solar
+    solar === nothing && throw(ArgumentError("FacetSolarRadiationPressureModel wrench requires env.solar."))
+    sun_pos_ii = solar.sun_pos_ii
+    r_sc_sun = sun_pos_ii - x.pos_ii
+    d_sun = norm(r_sc_sun)
+    (isfinite(d_sun) && d_sun > 0.0) || return zero3, zero3
+    shadow = eclipse_area_calc(x.pos_ii, sun_pos_ii, env.planet.Rp_e)
+    shadow == 0.0 && return zero3, zero3
+    s_hat = r_sc_sun / d_sun
+    P = model.p_srp_1au * (model.AU_m / d_sun)^2 * shadow
+    has_attitude = x.q_ib !== nothing
+    R_ib = has_attitude ? rot(x.q_ib) : SMatrix{3, 3, Float64}(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+
+    force_ii = zero3
+    torque_body = zero3
+    @inbounds for link in spacecraft.links
+        isempty(link.SRP_facets) && continue
+        # Link frame -> root body frame (the aero wrench's convention).
+        R_root_link = link.root ? SMatrix{3, 3, Float64}(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0) :
+            rot(SVector{4, Float64}(link.q...))'
+        for facet in link.SRP_facets
+            n_link = rot(SVector{4, Float64}(facet.attitude))' * SVector{3, Float64}(facet.normal_vector)
+            n_ii = normalize(R_ib' * (R_root_link * n_link))
+            cosθ = dot(n_ii, s_hat)
+            cosθ > 0.0 || continue
+            F_ii = -P * facet.area * cosθ * ((1.0 - facet.δ) * s_hat + 2.0 * (facet.ρ / 3.0 + facet.δ * cosθ) * n_ii)
+            force_ii += F_ii
+            if has_attitude
+                cp = SVector{3, Float64}(facet.cp)
+                lever_root = link.root ? cp : SVector{3, Float64}(link.r) + R_root_link * cp
+                torque_body += cross(lever_root, R_ib * F_ii)
+            end
+        end
+    end
+    return force_ii, torque_body
+end
+
 @inline function _srp_sun_position_from_spice_j2000_m(
     et::Float64,
     primary_body_name::String,

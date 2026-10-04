@@ -124,3 +124,4 @@ include(joinpath(@__DIR__, "simulation", "atmospheric_phase_tests.jl"))
 
 include(joinpath(@__DIR__, "simulation", "gram_density_perturbation_tests.jl"))
 include(joinpath(@__DIR__, "simulation", "gram_density_perturbation_callback_tests.jl"))
+include(joinpath(@__DIR__, "dynamics", "facet_srp_and_thermal_models_tests.jl"))

@@ -607,6 +607,40 @@ function _gram_core_density_state(
     _gram_not_loaded_error("GRAMAtmosphereModel density evaluation")
 end
 
+# GRAM perturbed-density access for the opt-in perturbation modes
+# (SimulationCallbacks gram_density_perturbation.jl). Methods live in
+# ext/SpaceAGORAGRAMSuiteExt.jl; these fallbacks only fire without it.
+#
+#   _gram_walk_clone(model) -> a NEW native instance built from the same
+#       constructor recipe (same seed, scales, map year, ...), whose walk no
+#       other code path touches.
+#   _gram_walk_sample(model, h, lat, lon, el_time; first_update=false) ->
+#       (perturbed_density, mean_density, density_sigma_fraction, relative_step_size)
+#       after advancing that instance's walk to the given point (h in m,
+#       lat/lon in rad, el_time in s since the run epoch). `first_update` marks
+#       the instance's first update after it was cloned or reseeded, which takes
+#       native GRAM's one-time initialization branch (on Earth, through CSPICE)
+#       and so runs under the process-wide native lock.
+#   _gram_last_density_state(model) -> the same 4-tuple for the instance's most
+#       recent update, WITHOUT a new query (negative-control mode only).
+function _gram_walk_clone(model)
+    _gram_not_loaded_error("GRAM perturbation walk instance")
+end
+function _gram_walk_sample(model, h::Float64, lat::Float64, lon::Float64, el_time::Float64; first_update::Bool=false)
+    _gram_not_loaded_error("GRAM perturbation walk sample")
+end
+function _gram_last_density_state(model)
+    _gram_not_loaded_error("GRAM density state read")
+end
+#   _gram_walk_reseed!(model, seed) -> reseed the instance's random generator.
+#   _gram_recipe_seed(model) -> the seed the instance was constructed with.
+function _gram_walk_reseed!(model, seed::Int)
+    _gram_not_loaded_error("GRAM perturbation walk reseed")
+end
+function _gram_recipe_seed(model)
+    _gram_not_loaded_error("GRAM recipe seed")
+end
+
 @inline function _exponential_density(ρ_ref::Float64, h_ref::Float64, H::Float64, h::Float64)::Float64
     return ρ_ref * exp((h_ref - h) / H)
 end

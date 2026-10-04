@@ -44,6 +44,20 @@ jobs:
       - name: Sparse GRAMSuite retrieval regression
         run: python3 -B .github/scripts/test_gramsuite_sparse.py
 
+      - name: Full-arc export provenance regression
+        run: python3 -B test/scripts/test_xval_fullarc_export.py
+
+      - name: Perturbed-density analyzer regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          analysis_python_dir="$(mktemp -d "$RUNNER_TEMP/spaceagora-analysis-python.XXXXXX")"
+          trap 'rm -rf "$analysis_python_dir"' EXIT
+          python3 -m venv "$analysis_python_dir"
+          "$analysis_python_dir/bin/python" -m pip install numpy pandas pyarrow tomli
+          "$analysis_python_dir/bin/python" -m unittest discover -s test/scripts -p test_analyze_campaign.py -v
+          "$analysis_python_dir/bin/python" -m unittest discover -s test/scripts -p test_perturbed_modes_analyze.py -v
+
       - name: Plan shards
         id: plan
         run: python3 .github/scripts/ci_shard_plan.py
@@ -798,6 +812,10 @@ jobs:
         env:
           JULIA_PKG_PRECOMPILE_AUTO: "0"
         run: julia --startup-file=no --project=. test/optional_hypr/setup.jl "$RUNNER_TEMP/hypr-installations"
+      - name: Verify immutable installation inputs
+        run: julia --startup-file=no --project=. test/installation_contract.jl
+      - name: Verify repeatable example setup without tracked changes
+        run: julia --startup-file=no --project=. test/optional_hypr/example_setup.jl
       - name: Example environment isolation
         env:
           JULIA_LOAD_PATH: "@:@stdlib"
@@ -806,6 +824,10 @@ jobs:
         env:
           JULIA_LOAD_PATH: "@:@stdlib"
         run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/hypr-installations/core" test/optional_hypr/core.jl
+      - name: Precompile the complete optional stack
+        env:
+          JULIA_LOAD_PATH: "@:@stdlib"
+        run: julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" -e 'using Pkg; Pkg.precompile(["SpaceAGORA", "HYPR", "SpaceAGORAHYPR"]; strict=true)'
       - name: Both companion load orders
         env:
           JULIA_LOAD_PATH: "@:@stdlib"

@@ -7,13 +7,15 @@ operation, and where your own code belongs.
 This page is for students and new contributors who can already run an example
 and now need to find their way around the repository. It describes the code as
 it is at commit
-[`9be384a2`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/commit/9be384a20dfe28594a35341eed18e6fe945f1049)
+[`5e9a9df9`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/commit/5e9a9df97efbbb69fb2a730b085b75cc5fd83a64)
 of `main` (browse that tree at
-[github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/9be384a2](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/9be384a20dfe28594a35341eed18e6fe945f1049));
+[github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/5e9a9df9](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/5e9a9df97efbbb69fb2a730b085b75cc5fd83a64));
 every path below is relative to the repository root at that commit. This is a
 map of existing code, not an approved target layout. Suggested cleanup is
 labelled separately. One-run configuration now lives under `src/simulation/config/`,
-and HYPR execution is available through an explicitly loaded companion package.
+and HYPR is maintained in its own repository with an optional SpaceAGORA adapter.
+The compatibility package in this tree loads that adapter; it contains no search
+implementation.
 
 Shortest successful command:
 
@@ -78,9 +80,11 @@ The source-owner table below distinguishes vehicle construction from dynamics.
 Robot hardware, compliant equations, planning and control are currently spread
 across `src/vehicle/robotics/`, `src/dynamics/multibody_cloth/`,
 `src/gnc/robotics/` and `src/gnc/control/robot_arm_control.jl`. HYPR robot-arm
-search is implemented in `packages/SpaceAGORAHYPR/src/robot/`; configuration
-and compatibility entry points remain in core. Other robotics folder boundaries
-remain under review.
+search is implemented in the separate [HYPR.jl repository](https://github.com/Space-FALCON-Lab/HYPR.jl),
+under its `ext/robot/` adapter files. SpaceAGORA retains configuration types,
+shared kinematics and dynamics, and compatibility entry points. The
+[versioned HYPR service contract](../maintainer/hypr_services.md) defines the
+services this adapter may use. Other robotics folder boundaries remain under review.
 
 Use a joint simulation when spacecraft interact. The independent
 `run_constellation_ensemble` route in
@@ -150,8 +154,9 @@ the file that performs each step.
    Planner contracts live under `src/gnc/interfaces/` and their RPO lifecycle
    under `src/gnc/guidance/rpo/`. Shared geometry, timing and metrics live under
    `src/gnc/shared/`, and RRT kernels under `src/gnc/rrt/`. Concrete implementations also remain in the guidance and
-   control subfolders. Configured HYPR execution lives in the optional
-   `packages/SpaceAGORAHYPR/` companion described below, and the
+   control subfolders. Configured HYPR execution is provided by the external
+   HYPR package through `SpaceAGORA.HYPRServices`; the local
+   `packages/SpaceAGORAHYPR/` compatibility package loads its adapter. The
    aerobraking strategy selector lives in
    `src/mission/operations/aerobraking_policy/`.
    Navigation and guidance hooks run as periodic callbacks between integrator
@@ -183,11 +188,13 @@ the file that performs each step.
 
 ## Map of the repository
 
-Core package implementation lives in `src/` and `ext/`; the optional HYPR
-companion has its own source and project under `packages/SpaceAGORAHYPR/`.
-The GRAMSuite extension activates when both packages are loaded; installation
-alone does not load it. HYPR execution is enabled by explicitly loading
-`SpaceAGORAHYPR`, rather than by the GRAMSuite extension.
+Core package implementation lives in `src/` and `ext/`. The separate HYPR
+repository owns its optimizer and SpaceAGORA adapter. The small compatibility
+package under `packages/SpaceAGORAHYPR/` loads and checks that adapter. The
+GRAMSuite extension activates when both SpaceAGORA and GRAMSuite are loaded;
+installation alone does not load it. For HYPR, the supported setup installs the
+pinned external package and compatibility package, then the user explicitly
+loads `SpaceAGORAHYPR`. The two integrations are independent.
 The other folders hold tooling, data, examples and documentation. "Owner" below is the
 file or module that defines the behaviour; other code should call it rather
 than copy it.
@@ -207,7 +214,7 @@ than copy it.
 | `src/analysis/` | Telemetry verification studies and example helpers, visualization scene and RPO plots | example helper builders: `analysis/verification/telemetry_verification/example_support.jl` |
 | `src/assets/`, `src/cli/` | Asset lookup for RPO stations and the Odyssey surrogate; the `spaceagora` command | [CLI](../cli.md), [Assets & Modes](../assets.md) |
 | `ext/` | The `GRAMSuite` extension: native GRAM density, SPICE-backed ephemerides, native-free fixed-grid adapter methods | activates when both packages are loaded; see [GRAMSuite Setup](gramsuite_setup.md) |
-| `packages/SpaceAGORAHYPR/` | Optional configured HYPR and robot-arm search | companion execution: `src/SpaceAGORAHYPR.jl`, `src/rpo/` and `src/robot/` within this package; install and load explicitly as described in the [RPO planner guide](rpo_planner_pilot.md#Installing-optional-HYPR) |
+| `packages/SpaceAGORAHYPR/` | Compatibility package and source pin for external HYPR | `src/SpaceAGORAHYPR.jl` checks and aliases the external adapter; `HYPRSource.toml` pins its revision. Core services are defined in `src/gnc/hypr/services.jl`. Install and load with the [RPO planner guide](rpo_planner_pilot.md#Installing-optional-HYPR). |
 | `examples/` | Runnable scenarios; `common.jl` is the shared bootstrap | primary scenario entrypoints; development viewer demos also live in `scripts/dev/viewer_demos/`; see the [Examples Catalog](examples_catalog.md) |
 | `templates/` | Starting files for a force/torque model, a density model and a control hook | copy one of these to begin an extension |
 | `test/` | Unit, integration, smoke and stress suites, CI gates under `test/gates/`, contract checks under `test/contracts/`, review artifacts under `test/ai_reviews/` | the gates enforce the ownership rules on this page |
@@ -246,15 +253,25 @@ page exists.
 it implements the supported interfaces but is not required for ordinary runs.
 Its integration should use the public API, with a small package extension only
 where conditional integration is needed. The algorithm source belongs in its
-own package, not copied into `ext/`. `SpaceAGORAHYPR` is the current companion
-for configured HYPR and robot-arm search. Core keeps shared planner interfaces,
-the direct baseline, configuration types and compatibility entry points; calls
-that need HYPR execution report that the companion must be loaded. Install the
-matching checkout and explicitly load `SpaceAGORAHYPR` using the
-[RPO planner guide](rpo_planner_pilot.md#Installing-optional-HYPR). The companion
-currently also imports core internals, so it must match the SpaceAGORA checkout.
-EDG remains in core; this does not claim that every specialized algorithm has
-been extracted.
+own package, with its simulator-specific adapter kept distinct from standalone
+search. HYPR now follows that split: its `src/` owns standalone search and swarm
+policy, while its `ext/HYPRSpaceAGORAExt.jl`, `ext/rpo/` and `ext/robot/` provide
+configured SpaceAGORA execution. These paths are in
+[HYPR.jl at the pinned revision](https://github.com/Space-FALCON-Lab/HYPR.jl/tree/6b2af3b4129907d76f6cdc873267a57445c1334b),
+which has its own tests, examples and documentation.
+
+SpaceAGORA retains shared planner interfaces, the direct baseline, configuration
+and result types, geometry, metrics, RRT and retiming services, and compatibility
+entry points. `SpaceAGORA.HYPRServices` exposes the adapter contract without
+changing the original owners of those bindings. Only the explicitly listed
+services and extension points are supported; arbitrary internal-module access is
+not the integration API. The current supported pair is SpaceAGORA 0.2.0 with
+HYPR 0.1.0, service contract 1.0.0 and compatibility package 0.2.0. Install the
+pinned pair and explicitly load `SpaceAGORAHYPR` using the
+[RPO planner guide](rpo_planner_pilot.md#Installing-optional-HYPR).
+The optimizer can run independently; configured RPO and robot-arm execution
+still requires SpaceAGORA services. EDG remains in core, so this is not a claim
+that every specialized algorithm has been extracted.
 
 **Put a study in `benchmarks/studies/` or a research repository when** it is a
 study driver, a parameter sweep or a comparison against another tool. Keep its failure and retry
@@ -287,7 +304,7 @@ of the public repository; review their provenance separately.
 
 ## Remaining cleanup
 
-Status at commit `9be384a2`. Each item states what is confirmed, what is
+Status at commit `5e9a9df9`. Each item states what is confirmed, what is
 deliberate, and who is expected to act; the last sub-list is a proposal, not a
 description of the current code.
 
@@ -303,13 +320,15 @@ description of the current code.
 - [#194](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/pull/194) consolidated
   results loading and vector-sample extraction in the aerobraking plot helpers.
   The broader responsibility split remains a separate review item below.
+- [#200](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/pull/200) added a CI
+  safeguard that keeps the retired test-migration script absent.
+- [#204](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/pull/204) changed
+  `scripts/dev/viewer_demos/cygnss_constellation.jl` to use `_with_configuration`.
+  It preserves the explicit DP8 solver, fresh tolerance settings, and mission
+  and dynamics overrides.
 
 **Confirmed cleanup targets:**
 
-- `scripts/dev/viewer_demos/cygnss_constellation.jl` builds a configuration by
-  copying seven fields instead of calling `_with_configuration`. A candidate for
-  the shared copy helper; its explicit DP8 solver, tolerances and scenario
-  overrides must be preserved.
 - `benchmarks/studies/performance_static_vs_parallel.jl` includes a
   nonexistent sibling; the owner is `benchmarks/scripts/performance_paper_pipeline.jl`.
   Broken include, to be repaired with the parallelization owner.
@@ -349,5 +368,4 @@ description of the current code.
   gates and this page cannot drift apart.
 - Add a `templates/guidance_hook_template.jl` beside the existing control
   hook template, for students building a guidance model.
-- Refresh the CYGNSS entry when its shared-copy-helper migration lands.
-  Repeat the definition scan when later changes justify it.
+- Repeat the definition scan when later changes justify it.

@@ -1,0 +1,29 @@
+KPL/PCK
+
+Mars orientation from the IAU WGCCRE 2009 report (identical to the 2000 and
+2006 reports for Mars), for loading after pck00011.tpc. This is the model GMAT
+R2025a uses for its built-in Mars body-fixed frame.
+
+Values copied verbatim from NAIF pck00010.tpc (sha256
+59468328349aa730d18bf1f8d7e86efe6e40b75dfb921908f99321b3a7a701d2), lines BODY499_POLE_RA,
+BODY499_POLE_DEC and BODY499_PM. The 2009 Mars model has no periodic terms, so
+the pck00011 (IAU 2015) BODY499_NUT_PREC_* arrays are overwritten with zeros;
+loading pck00010.tpc itself after pck00011.tpc would leave them in the pool and
+combine them with pck00010's different BODY4_NUT_PREC_ANGLES.
+
+Reference: Archinal, B.A., et al., "Report of the IAU Working Group on
+Cartographic Coordinates and Rotational Elements: 2009," Celestial Mechanics
+and Dynamical Astronomy 109, 101-135 (2011).
+
+\begindata
+
+        BODY499_POLE_RA          = (  317.68143   -0.1061      0.  )
+        BODY499_POLE_DEC         = (   52.88650   -0.0609      0.  )
+        BODY499_PM               = (  176.630    350.89198226  0.  )
+
+        BODY499_NUT_PREC_RA      = (  0 0 0 0 0  0 0 0 0 0  0 0 0 0 0 )
+        BODY499_NUT_PREC_DEC     = (  0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0 0 )
+        BODY499_NUT_PREC_PM      = (  0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0 0
+                                      0 0 0 0 0 )
+
+\begintext

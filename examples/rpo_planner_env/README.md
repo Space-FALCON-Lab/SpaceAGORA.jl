@@ -6,9 +6,13 @@ From the repository root, prepare this separate environment once:
 julia --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
 ```
 
-It seeds a fresh environment from the repository dependency manifest, adds this
-checkout and its optional `SpaceAGORAHYPR` companion by path and preserves those versions. The generated local manifest is
-ignored. After setup the run needs neither native assets nor network access:
+Setup creates a local `Project.toml` from the tracked `Project.template.toml`
+and seeds `Manifest.toml` from the repository dependency manifest. It adds this
+checkout and the `SpaceAGORAHYPR` compatibility shim by path, plus HYPR at the
+immutable revision in `packages/SpaceAGORAHYPR/HYPRSource.toml`, preserving the
+existing external dependency versions. Both generated installation files are
+ignored; the tracked template stays unchanged. Repeating setup reuses the local
+environment. After setup the run needs neither native assets nor network access:
 
 ```sh
 JULIA_PKG_OFFLINE=true julia --project=examples/rpo_planner_env examples/rpo_planner_env/smoke.jl

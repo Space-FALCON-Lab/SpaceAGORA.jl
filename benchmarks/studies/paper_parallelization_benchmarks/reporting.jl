@@ -213,7 +213,7 @@ function _ppb_add_router_regret!(agg::DataFrame)
     # row in a phase shares, and keying on it would split the process route into
     # its own group with no thread-backed route to compare against.
     budget_col = "effective_cores" in cols ? :effective_cores : :thread_count
-    point_key = [k for k in [:phase_id, :case, budget_col, :mc_samples] if string(k) in cols]
+    point_key = [k for k in [:phase_id, :case, budget_col, :mc_samples, :budget_condition] if string(k) in cols]
     isempty(point_key) && return agg
 
     # Matched-budget regret: best static route at the SAME thread/worker/sample
@@ -253,7 +253,7 @@ function _ppb_add_router_regret!(agg::DataFrame)
     # best route available to it). Under this definition oracle regret collapses
     # to matched-budget regret at the bottom of the ladder, where there is no
     # width choice to make, and diverges at the top, where there is.
-    oracle_key = [k for k in [:phase_id, :case, :mc_samples] if string(k) in cols]
+    oracle_key = [k for k in [:phase_id, :case, :mc_samples, :budget_condition] if string(k) in cols]
     if !isempty(oracle_key) && String(budget_col) in cols
         for sub in groupby(agg, oracle_key)
             for i in 1:nrow(sub)
@@ -289,7 +289,7 @@ function _ppb_add_router_regret!(agg::DataFrame)
     # Conservative in the right direction -- it can only admit points, never
     # exclude a real one.
     if "serial_median_s" in names(agg)
-        scale_key = [k for k in [:phase_id, :case, :mc_samples] if string(k) in cols]
+        scale_key = [k for k in [:phase_id, :case, :mc_samples, :budget_condition] if string(k) in cols]
         fallback = Dict{Any, Float64}()
         if !isempty(scale_key)
             for sub in groupby(agg, scale_key)
@@ -326,24 +326,27 @@ end
 # are reported together.
 function _ppb_router_regret_summary(agg::DataFrame)::DataFrame
     out = DataFrame(
-        phase_id=String[], axis=String[], mode=String[], regret_column=String[],
+        phase_id=String[], axis=String[], mode=String[], regret_column=String[], budget_condition=String[],
         n_points=Int[], n_below_floor=Int[], worst_regret=Float64[],
         median_regret=Float64[], frac_within_10pct=Float64[],
     )
     ("regret_vs_best_static" in names(agg) && nrow(agg) > 0) || return out
 
-    for phase in PPB_REGRET_PHASES, mode in sort(collect(PPB_ADAPTIVE_MODES)),
+    agg = ppc_with_budget_columns(agg)
+    for condition in unique(agg.budget_condition),
+        phase in PPB_REGRET_PHASES, mode in sort(collect(PPB_ADAPTIVE_MODES)),
         (col, colname) in ((:regret_vs_best_static, "matched_budget"),
                            (:regret_vs_best_static_oracle, "oracle"))
         string(col) in names(agg) || continue
-        rows = agg[(coalesce.(agg.phase_id, "") .== phase) .& (agg.mode .== mode), :]
+        rows = agg[(coalesce.(agg.phase_id, "") .== phase) .& (agg.mode .== mode) .&
+                   (agg.budget_condition .== condition), :]
         nrow(rows) == 0 && continue
         n_below = count(rows.below_noise_floor)
         scored = rows[.!rows.below_noise_floor .& .!ismissing.(rows[!, col]), :]
         nrow(scored) == 0 && continue
         r = collect(skipmissing(scored[!, col]))
         push!(out, (
-            phase, get(PPB_ROUTER_AXIS_LABELS, phase, phase), mode, colname,
+            phase, get(PPB_ROUTER_AXIS_LABELS, phase, phase), mode, colname, condition,
             length(r), n_below, maximum(r), median(r), count(<=(0.10), r) / length(r),
         ))
     end
@@ -352,11 +355,43 @@ end
 
 # ── Aggregation ───────────────────────────────────────────────────────────────
 
+# A controller runs serial only at its lowest thread count. Most phases thus
+# share that baseline across a thread ladder, but P6ps has two separate
+# controller runs with the same worker count. Prefer an exact thread match
+# before sharing a unique baseline. X5a/b explicitly run serial once at the
+# full budget, so their split rows share that phase's sole serial measurement.
+# Assign in place: an ambiguous baseline must never multiply measured rows.
+function _ppb_add_serial_baseline!(agg::DataFrame)
+    agg[!, :serial_median_s] = Vector{Union{Missing, Float64}}(missing, nrow(agg))
+    keys = [k for k in [:phase_id, :case, :mc_samples, :budget_condition] if string(k) in names(agg)]
+    has_workers = "process_workers" in names(agg)
+    has_threads = "thread_count" in names(agg)
+    for sub in groupby(agg, keys)
+        serial = findall(==("serial"), sub.mode)
+        for i in 1:nrow(sub)
+            candidates = has_workers ?
+                filter(j -> isequal(sub.process_workers[j], sub.process_workers[i]), serial) : serial
+            if has_threads
+                exact = filter(j -> isequal(sub.thread_count[j], sub.thread_count[i]), candidates)
+                isempty(exact) || (candidates = exact)
+            end
+            if isempty(candidates) && sub.phase_id[i] in ("X5a", "X5b")
+                candidates = serial
+            end
+            length(candidates) == 1 || continue
+            sub.serial_median_s[i] = sub.wall_time_median_s[only(candidates)]
+        end
+    end
+    return agg
+end
+
 function _ppb_aggregate(raw::DataFrame)::DataFrame
     nrow(raw) == 0 && return DataFrame()
+    raw = ppc_with_budget_columns(raw)
     cols = names(raw)
 
-    group_keys = [:phase_id, :case, :mode, :thread_count, :process_workers, :mc_samples]
+    group_keys = [:phase_id, :case, :mode, :thread_count, :process_workers, :mc_samples,
+                  :budget_condition, :core_budget, :hardware_class]
     group_keys = [k for k in group_keys if string(k) in cols]
 
     # Restrict to successful rows.
@@ -389,12 +424,7 @@ function _ppb_aggregate(raw::DataFrame)::DataFrame
     end
     _ppb_add_effective_cores!(agg)
 
-    # Serial baseline: join within (phase_id, case, mc_samples, process_workers) so
-    # each parallel row is compared against the serial run from the same sub-run.
-    serial_key = [k for k in [:phase_id, :case, :mc_samples, :process_workers] if k in Symbol.(names(agg))]
-    serial_df  = agg[agg.mode .== "serial", [serial_key..., :wall_time_median_s]]
-    rename!(serial_df, :wall_time_median_s => :serial_median_s)
-    agg = leftjoin(agg, serial_df; on=serial_key)
+    _ppb_add_serial_baseline!(agg)
 
     agg[!, :speedup] = [
         (ismissing(s) || t <= 0.0) ? missing : s / t

@@ -6,6 +6,9 @@
     # for the probe files under test/probes/ (the paid-off July 2026 coverage-debt register); the subprocess inherits
     # the coverage flag so the coverage gates see their line data.
     probe_files = [
+        "scenario_matrix_debug_probes.jl",
+        "pck_override_probes.jl",
+        "xval_provenance_probes.jl",
         "reference_system_probes.jl",
         "legacy_roots_callers_probes.jl",
         "aerobraking_study_frame_probes.jl",

@@ -8,6 +8,7 @@ end
 include(joinpath(@__DIR__, "example_imports_tests.jl"))
 include(joinpath(@__DIR__, "xval_fullarc_provenance_tests.jl"))
 include(joinpath(@__DIR__, "environment", "pck_override_order_tests.jl"))
+include("gnc/hypr_services_tests.jl")
 include("gnc/rpo_planner_contract_tests.jl")
 include("gnc/direct_rpo_planner_tests.jl")
 include("gnc/rpo_planner_adapter_tests.jl")

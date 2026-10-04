@@ -121,3 +121,6 @@ include(joinpath(@__DIR__, "mission", "cygnss_slew_tests.jl"))
 include(joinpath(@__DIR__, "mission", "cygnss_command_replay_tests.jl"))
 
 include(joinpath(@__DIR__, "simulation", "atmospheric_phase_tests.jl"))
+
+include(joinpath(@__DIR__, "simulation", "gram_density_perturbation_tests.jl"))
+include(joinpath(@__DIR__, "simulation", "gram_density_perturbation_callback_tests.jl"))

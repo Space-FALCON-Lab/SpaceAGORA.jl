@@ -658,11 +658,22 @@ function EM._gram_walk_sample(
     h::Float64,
     lat::Float64,
     lon::Float64,
-    el_time::Float64
+    el_time::Float64;
+    first_update::Bool=false
 )::NTuple{4, Float64}
     # Query and read under one lock acquisition so no other caller can move this
     # instance between the update and the read.
-    return GRAMSuite._with_gram_lock(_gram_call_lock(model)) do
+    #
+    # The first update after the instance was cloned or reseeded takes GRAM's
+    # one-time initialization branch, which on Earth reaches CSPICE
+    # (EarthAtmosphere.cpp `if (initializing)` -> getDayOfYear / getStartTime ->
+    # timout_c). CSPICE is not thread-safe and shares its state with SpaceAGORA's
+    # own SPICE.jl (GRAM_LOCK === SPICE_LOCK), so that update runs under the
+    # process-wide lock even with SPACEAGORA_GRAM_LOCK_SCOPE=model, as the pool
+    # and per-satellite warm-ups do. No throwaway query is added: the walk's random
+    # stream is the same either way. Later updates use the model's own call lock.
+    lock_obj = first_update ? _tl(:gram_setup) : _gram_call_lock(model)
+    return GRAMSuite._with_gram_lock(lock_obj) do
         GRAMSuite._gram_density_state_native(model.core, max(h, -30.0), lat, lon, el_time, false)
         _gram_density_state_tuple(model.core)
     end

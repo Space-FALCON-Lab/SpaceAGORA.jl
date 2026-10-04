@@ -382,6 +382,32 @@ available after `GRAMSuite` is loaded and is accessed through
 `SpaceAGORA.SimulationModel.GRAMAtmosphereModel` (or via `setup_gram_example!`
 in the examples).
 
+### Opt-in density perturbations
+
+Native GRAM uses mean density by default. Set
+`SPACEAGORA_GRAM_DENSITY_PERTURBATION=step` to advance a separate density walk
+at accepted solver steps and hold its factor between steps, or `pass` to
+sample a drag-free predicted atmospheric pass and interpolate its factor.
+Both modes apply the factor to spacecraft density on the scalar and distributed
+service paths. Temperature and wind retain their existing behavior.
+`naive_rhs` is a diagnostic negative control and is unsuitable for trajectory
+results; the distributed RHS density service declines this mode.
+
+Consecutive checkpoint segments within one run retain the same perturbation
+walk, pass counters and diagnostic history. Resuming a saved checkpoint is
+unsupported because it does not contain the native random state. Multirate
+splitting is also unsupported and is rejected before its first subsolve,
+because its overlapping intervals would revisit earlier walk times. Use a
+supported solver mode or set the perturbation mode to `off`.
+
+`SPACEAGORA_GRAM_DENSITY_PERTURBATION_PASS_RESEED=1` derives each pass's initial
+random stream from the seed and pass index. The realized density history still
+depends on the sampled states: accepted steps in `step` mode and the predicted
+trajectory in `pass` mode. In pass mode the last factor is held if the real pass
+outlasts its prediction. These modeling choices and their numerical accuracy
+need evidence for the intended scenario; lifecycle and interface tests do not
+validate a dispersed campaign.
+
 ### GRAM epoch alignment
 
 A GRAM model carries its own epoch: the `initial_time` keyword of

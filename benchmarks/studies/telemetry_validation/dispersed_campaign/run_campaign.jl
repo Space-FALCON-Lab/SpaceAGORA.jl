@@ -3,14 +3,19 @@
 # campaign under the adaptive execution policy (profile R7, route chosen by
 # run_monte_carlo(threads=:auto)), or the nominal member alone.
 #
-#   julia --project=. --threads=32 .../run_campaign.jl --out=DIR --orbits=41 --seeds=101:132
-#   julia --project=. .../run_campaign.jl --out=DIR --orbits=41 --member=nominal
+#   julia --project=. --threads=32 .../run_campaign.jl --out=DIR --orbits=42 --seeds=101:132
+#   julia --project=. .../run_campaign.jl --out=DIR --orbits=42 --member=nominal
+#
+# --orbits=N+2 runs to the apoapsis after pass N+1, which gives the N+1 apoapses
+# and N passes an N-pass analysis needs (analyze_campaign.py; N = 40 by default).
 #
 # The pool size is the policy's (SPACEAGORA_PERF_PROCS caps it; the remote
 # launcher sets it from --threads). Writes DIR/samples.csv (one row per member,
 # including each member's own solve time and the dispatcher's per-sample
 # elapsed time), DIR/campaign.toml (route, split, wall time), and per-member
-# per_orbit.csv / per_pass_r.csv under DIR/<member>/.
+# per_orbit.csv / per_pass_r.csv under DIR/<member>/. Each member's outcome is
+# classified (member_status.jl): dispatch failure, solver failure, early
+# termination before the horizon, or complete; campaign.toml counts each.
 
 include(joinpath(@__DIR__, "..", "common.jl"))
 const OPTS = parse_kv_args(copy(ARGS))
@@ -20,6 +25,11 @@ const MEMBER = get(OPTS, "member", "campaign")
 const SEEDS = let r = split(get(OPTS, "seeds", "101:132"), ":")
     collect(parse(Int, r[1]):parse(Int, r[2]))
 end
+# The analysis horizon these orbit events reach: N passes for --orbits=N+2.
+const HORIZON_PASSES = ORBITS - 2
+HORIZON_PASSES >= 1 || error("--orbits=$ORBITS reaches no complete pass; use N+2 for an N-pass horizon")
+include(joinpath(@__DIR__, "member_status.jl"))
+using .DispersedMemberStatus
 mkpath(OUT)
 
 # ── Run-wide environment, set before anything spawns so pool workers inherit it.
@@ -76,6 +86,7 @@ const ENV_SNAPSHOT = Dict(k => v for (k, v) in ENV if startswith(k, "SPACEAGORA_
 
 if MEMBER == "nominal"
     r = Base.invokelatest(Main.OdysseyDispersedSample.run_member, 1001, false, ORBITS, member_dir(1001))
+    r = merge(r, (status=member_status(merge(r, (dispatch_success=true,)); horizon_passes=HORIZON_PASSES),))
     CSV.write(joinpath(OUT, "nominal_summary.csv"), DataFrame([r]))
     println(r)
 else
@@ -145,15 +156,19 @@ else
         v === nothing ? base : merge(base, v)
     end
     df = vcat([DataFrame([r]) for r in rows]...; cols=:union)
+    df.status = [member_status(r; horizon_passes=HORIZON_PASSES) for r in rows]
     CSV.write(joinpath(OUT, "samples.csv"), df)
-    ok = df[df.dispatch_success .== true, :]
+    counts = status_counts(rows; horizon_passes=HORIZON_PASSES)
+    execution = member_execution_totals(rows)
     summary = Dict{String, Any}(
         "route" => string(result.route), "consumers" => result.threads, "local_slots" => result.local_slots,
         "wall_s" => result.elapsed_s, "started_utc" => string(started), "finished_utc" => string(finished),
-        "n_samples" => length(result.samples), "n_failed" => length(result.failed),
-        "sum_member_solve_s" => sum(skipmissing(ok.solve_s)),
+        "n_samples" => length(result.samples), "horizon_passes" => HORIZON_PASSES,
+        "n_complete" => counts["complete"], "n_early_terminated" => counts["early_termination"],
+        "n_solver_failed" => counts["solver_failure"], "n_dispatch_failed" => counts["dispatch_failure"],
+        "sum_member_solve_s" => execution.sum_member_solve_s,
         "sum_dispatch_elapsed_s" => sum(df.dispatch_elapsed_s),
-        "distinct_member_pids" => length(unique(skipmissing(ok.pid))),
+        "distinct_member_pids" => execution.distinct_member_pids,
         "coordinator_pid" => getpid(), "julia_threads" => Threads.nthreads(),
         "seeds" => SEEDS, "orbits_requested" => ORBITS,
         "prewarm_pool_workers" => length(pool_ids), "prewarm_provision_s" => provision_s,
@@ -161,7 +176,8 @@ else
         "commit" => get(ENV, "SPACEAGORA_RUN_COMMIT", "unknown"), "host" => gethostname(),
         "env" => ENV_SNAPSHOT)
     open(io -> TOML.print(io, summary), joinpath(OUT, "campaign.toml"), "w")
-    @printf("campaign route=%s consumers=%d local_slots=%d wall=%.1f s failed=%d sum_solve=%.1f s pids=%d\n",
+    @printf("campaign route=%s consumers=%d local_slots=%d wall=%.1f s complete=%d early_terminated=%d solver_failed=%d dispatch_failed=%d sum_solve=%.1f s pids=%d\n",
             summary["route"], result.threads, result.local_slots, result.elapsed_s,
-            length(result.failed), summary["sum_member_solve_s"], summary["distinct_member_pids"])
+            counts["complete"], counts["early_termination"], counts["solver_failure"], counts["dispatch_failure"],
+            summary["sum_member_solve_s"], summary["distinct_member_pids"])
 end

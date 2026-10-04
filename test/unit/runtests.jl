@@ -6,6 +6,8 @@ using Test
 end
 
 include(joinpath(@__DIR__, "example_imports_tests.jl"))
+include(joinpath(@__DIR__, "xval_fullarc_provenance_tests.jl"))
+include(joinpath(@__DIR__, "environment", "pck_override_order_tests.jl"))
 include("gnc/rpo_planner_contract_tests.jl")
 include("gnc/direct_rpo_planner_tests.jl")
 include("gnc/rpo_planner_adapter_tests.jl")
@@ -52,8 +54,12 @@ include(joinpath(@__DIR__, "parallel", "inner_speedup_curve_tests.jl"))
 include(joinpath(@__DIR__, "parallel", "inner_speedup_curve_outer_tests.jl"))
 include(joinpath(@__DIR__, "parallel", "predictive_corrections_tests.jl"))
 include(joinpath(@__DIR__, "parallel", "predictive_campaign_bookkeeping_tests.jl"))
+include(joinpath(@__DIR__, "parallel", "predictive_forced_plan_tests.jl"))
+include(joinpath(@__DIR__, "parallel", "ppb_serial_baseline_tests.jl"))
+include(joinpath(@__DIR__, "parallel", "ppb_exploration_selection_tests.jl"))
 include(joinpath(@__DIR__, "dynamics", "aero_batch_parity_tests.jl"))
 include(joinpath(@__DIR__, "parallel", "pool_worker_heap_hint_tests.jl"))
+include(joinpath(@__DIR__, "parallel", "benchmark_budget_condition_tests.jl"))
 include(joinpath(@__DIR__, "simulation", "third_body_route_parity_tests.jl"))
 include(joinpath(@__DIR__, "parallel", "outer_split_budget_tests.jl"))
 include(joinpath(@__DIR__, "parallel", "outer_split_budget_cap_tests.jl"))
@@ -115,3 +121,6 @@ include(joinpath(@__DIR__, "mission", "cygnss_slew_tests.jl"))
 include(joinpath(@__DIR__, "mission", "cygnss_command_replay_tests.jl"))
 
 include(joinpath(@__DIR__, "simulation", "atmospheric_phase_tests.jl"))
+
+include(joinpath(@__DIR__, "simulation", "gram_density_perturbation_tests.jl"))
+include(joinpath(@__DIR__, "simulation", "gram_density_perturbation_callback_tests.jl"))

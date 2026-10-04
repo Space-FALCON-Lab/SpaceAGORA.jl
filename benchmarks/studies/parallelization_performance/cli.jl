@@ -241,6 +241,37 @@ function _ppc_full_thread_ladder(cpu_threads::Int=_ppc_physical_core_count())::V
     ]))
 end
 
+# The experiment identity is shared by every arm, including its serial baseline.
+# A worker receives the controller's identity before an equal-core override is
+# applied; its effective budget/class are recorded separately from that identity.
+function ppc_budget_context(; cpu_pinning::Vector{Int}=Int[])
+    pp = SpaceAGORA.ParallelProfiles
+    equal = get(ENV, "SPACEAGORA_PPC_EQUAL_CORE_BUDGET", "0") == "1"
+    cores, hardware = pp.usable_core_budget(), string(pp._machine_parallel_class())
+    condition = "v1|equal_core=$(equal)|base_cores=$(cores)|" *
+                "base_class=$(hardware)|cpu_pinning=$(join(cpu_pinning, ','))"
+    return (; condition, equal, cores, hardware)
+end
+ppc_budget_condition(; kwargs...) = ppc_budget_context(; kwargs...).condition
+
+function ppc_budget_metadata(; condition::String=get(ENV, "SPACEAGORA_PPC_BUDGET_CONDITION", ""))
+    isempty(condition) && (condition = ppc_budget_condition())
+    return (budget_condition=condition,
+            core_budget=SpaceAGORA.ParallelProfiles.usable_core_budget(),
+            hardware_class=string(SpaceAGORA.ParallelProfiles._machine_parallel_class()))
+end
+
+# Historical CSVs remain readable, but unknown conditions must never combine
+# with newly recorded experiments or supply their serial baselines.
+function ppc_with_budget_columns(df::DataFrame)::DataFrame
+    out = copy(df)
+    for (key, fallback) in ((:budget_condition, "legacy_unrecorded"),
+                            (:core_budget, -1), (:hardware_class, "unknown"))
+        out[!, key] = hasproperty(out, key) ? coalesce.(out[!, key], fallback) : fill(fallback, nrow(out))
+    end
+    return out
+end
+
 function _ppc_defaults(profile::String)::NamedTuple
     if profile == "test"
         return (

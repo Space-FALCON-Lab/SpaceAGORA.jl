@@ -1,3 +1,20 @@
+# These experiments preserve the published 32-thread plan identities. They are
+# selected explicitly, so portable default and preview runs keep their own grids.
+const PPB_EXPLORATION_PHASES = Set(["X1", "X3", "X4", "X5a", "X5b"])
+
+function _ppb_validate_exploration(phase::PPBPhase, ppb::PPBConfig)
+    phase.id in PPB_EXPLORATION_PHASES || return nothing
+    fail(reason) = throw(ArgumentError("Phase $(phase.id) is an explicit 32-thread route experiment: $(reason)."))
+    ppb.preview && fail("--preview changes its declared workload; omit --preview")
+    PPB_PAPER_BUDGET == 32 || fail("SPACEAGORA_PPB_PAPER_BUDGET must be 32, got $(PPB_PAPER_BUDGET)")
+    if phase.id == "X1"
+        _ppb_thread_ladder(phase, ppb) == [32] || fail("select --threads=32")
+    else
+        ppb.process_workers >= 32 || fail("--process-workers must allow all 32 workers")
+    end
+    return nothing
+end
+
 # Phase execution order follows --phases when it is given, and the catalog order
 # only when it is not. These runs are long enough (the expanded B9-B14 set is
 # ~20 h on a 12-core box) that they are routinely stopped part-way and picked up
@@ -10,12 +27,14 @@ function _ppb_active_phases(ppb::PPBConfig)::Vector{PPBPhase}
     # selects among those (e.g. --quick --phases=Q3).
     catalog = ppb.quick ? ppb_quick_phases(ppb) : PAPER_BENCHMARK_PHASES
     by_id = Dict(p.id => p for p in catalog)
-    requested = isempty(ppb.phases) ? [p.id for p in catalog] : ppb.phases
+    requested = isempty(ppb.phases) ?
+        [p.id for p in catalog if !(p.id in PPB_EXPLORATION_PHASES)] : ppb.phases
     skip = ppb.preview ? PPB_PREVIEW_SKIP_PHASES : Set{String}()
     seen = Set{String}()
     phases = PPBPhase[]
     for id in requested
         (id in skip || id in seen || !haskey(by_id, id)) && continue
+        _ppb_validate_exploration(by_id[id], ppb)
         push!(seen, id)
         push!(phases, by_id[id])
     end
@@ -310,6 +329,10 @@ function _ppb_run_phase(
         # is. Nothing else in the harness tests hybrid splits: B4 and B8 both pin
         # thread_mode=:single and vary workers alone.
         grid = _ppb_budget_grid(phase, ppb)
+        # SPACEAGORA_PPB_BUDGET_WORKERS=2,4,8 keeps only the rungs with those
+        # worker counts (a partial rerun of a fixed grid).
+        only = strip(get(ENV, "SPACEAGORA_PPB_BUDGET_WORKERS", ""))
+        isempty(only) || (grid = filter(p -> p[1] in parse.(Int, split(only, ",")), grid))
         # Under --preview a host-sized split grid is kept whole, and so are its
         # worker counts; see _ppb_preview_budget_grid.
         worker_cap = !_ppb_preview_keeps_grid(phase)
@@ -460,6 +483,7 @@ function main_paper_benchmarks()
     else
         joinpath(ppb.outdir, stamp)
     end
+    ppb.dry_run || ppc_validate_resume_budget(root, ppc_budget_condition(; cpu_pinning=ppb.cpu_pinning))
     ppb.dry_run || mkpath(root)
 
     resuming && println("[paper-benchmarks] resuming        = $(root)")

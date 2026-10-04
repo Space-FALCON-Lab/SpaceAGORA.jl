@@ -4,6 +4,7 @@ using Plots.PlotMeasures: mm
 
 function ppc_hardware_snapshot()
     return (
+        ppc_budget_metadata()...,
         timestamp_utc=string(now(UTC)),
         machine=gethostname(),
         julia_version=string(VERSION),
@@ -268,7 +269,9 @@ end
 
 function ppc_summarize(raw::DataFrame, parity::DataFrame)::DataFrame
     nrow(raw) == 0 && return DataFrame()
-    grouped = groupby(raw, [:case, :family, :mode, :thread_count, :mc_samples])
+    raw = ppc_with_budget_columns(raw)
+    grouped = groupby(raw, [:case, :family, :mode, :thread_count, :mc_samples,
+                            :budget_condition, :core_budget, :hardware_class])
     summary = combine(
         grouped,
         :success => (x -> count(identity, skipmissing(x))) => :success_count,
@@ -283,9 +286,9 @@ function ppc_summarize(raw::DataFrame, parity::DataFrame)::DataFrame
     summary[!, :wall_time_ci95_low_s] = summary.wall_time_mean_s .- 1.96 .* coalesce.(summary.wall_time_std_s, 0.0) ./ sqrt.(summary.sample_count)
     summary[!, :wall_time_ci95_high_s] = summary.wall_time_mean_s .+ 1.96 .* coalesce.(summary.wall_time_std_s, 0.0) ./ sqrt.(summary.sample_count)
 
-    serial = summary[summary.mode .== "serial", [:case, :mc_samples, :wall_time_mean_s]]
+    serial = summary[summary.mode .== "serial", [:case, :mc_samples, :budget_condition, :wall_time_mean_s]]
     rename!(serial, :wall_time_mean_s => :serial_wall_time_mean_s)
-    summary = leftjoin(summary, serial; on=[:case, :mc_samples])
+    summary = leftjoin(summary, serial; on=[:case, :mc_samples, :budget_condition])
     summary[!, :speedup_vs_serial] = [
         (ismissing(s) || t <= 0.0) ? missing : s / t
         for (s, t) in zip(summary.serial_wall_time_mean_s, summary.wall_time_mean_s)
@@ -296,8 +299,9 @@ function ppc_summarize(raw::DataFrame, parity::DataFrame)::DataFrame
     ]
 
     if nrow(parity) > 0 && "pass" in names(parity)
-        parity_ok = combine(groupby(parity, [:case, :mode]), :pass => (x -> all(Bool.(x))) => :parity_pass)
-        summary = leftjoin(summary, parity_ok; on=[:case, :mode])
+        parity = ppc_with_budget_columns(parity)
+        parity_ok = combine(groupby(parity, [:case, :mode, :budget_condition]), :pass => (x -> all(Bool.(x))) => :parity_pass)
+        summary = leftjoin(summary, parity_ok; on=[:case, :mode, :budget_condition])
     else
         summary[!, :parity_pass] = fill(missing, nrow(summary))
     end

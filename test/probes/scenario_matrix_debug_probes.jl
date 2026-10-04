@@ -81,8 +81,7 @@ end
     @test all(getfield(support, name)[] === nothing for name in
         (:_BASILISK_MATRIX_RESULT_CACHE, :_STK_MATRIX_RESULT_CACHE,
          :_CYGNSS_48HR_RESULT_CACHE, :_CYGNSS_96HR_RESULT_CACHE,
-         :_CYGNSS_CYG04_96HR_RESULT_CACHE, :_CYGNSS_GMAT_RESULT_CACHE,
-         :_LUNA_STK_ADJUSTED_HARMONICS_FILE))
+         :_CYGNSS_CYG04_96HR_RESULT_CACHE, :_CYGNSS_GMAT_RESULT_CACHE))
     @test all(isdefined(support, name) for name in
         (:_run_scenario_matrix_testsets, :_run_basilisk_scenario_matrix_result_once,
          :_run_stk_scenario_matrix_result_once, :_plot_cygnss_drag_force_timeseries,
@@ -301,4 +300,35 @@ end
         @test check() === nothing # Basilisk-only diagnostic has no STK dependency
         @test_throws ArgumentError check(; stk=true)
     end
+end
+
+@testset "Full-arc entrypoint uses the maintained definition boundary" begin
+    # A separate process checks the command entrypoint. Empty arguments must
+    # reach its usage check before any campaign or output write.
+    script = joinpath(_DEBUG_PROBE_SCRIPTS, "xval_fullarc.jl")
+    code = """
+        using Test
+        err = try
+            include($(repr(script)))
+            main()
+            nothing
+        catch e
+            e
+        end
+        @test err isa ErrorException
+        @test occursin("usage: scripts/xval_fullarc.jl", sprint(showerror, err))
+        @test isempty(_BASILISK_MATRIX_CACHE_KEY[])
+        @test _BASILISK_MATRIX_RESULT_CACHE[] === nothing
+        @test _STK_MATRIX_RESULT_CACHE[] === nothing
+    """
+    cmd = `$(Base.julia_cmd()) --startup-file=no --compiled-modules=existing --project=$(_DEBUG_PROBE_ROOT) -e $code`
+    @test success(pipeline(cmd; stdout=devnull))
+    support = DebugProbeDefinitions.ScenarioMatrixDebugSupport
+    @test !isdefined(support, :_LUNA_STK_ADJUSTED_HARMONICS_FILE)
+    @test support._matrix_scenario_overrides("moon_j2_tbfalse", :stk)["gravity_harmonics_file"] ==
+          support._STK_HARMONICS_MOON_FILE
+    @test support._matrix_scenario_overrides("moon_j2_tbfalse", :gmat)["gravity_harmonics_file"] ==
+          support._GMAT_HARMONICS_MOON_FILE
+    @test support._matrix_scenario_overrides("mars_j2_tbfalse", :gmat)["gravity_harmonics_order"] == 0
+    @test support._matrix_scenario_overrides("mars_j2_tbfalse", :basilisk)["gravity_harmonics_order"] == 2
 end

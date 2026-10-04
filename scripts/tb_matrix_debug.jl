@@ -14,7 +14,7 @@ function _combined_xyz_rmse(summary::DataFrame, scenario::String)::Union{Float64
 end
 
 # The legacy GMAT report/CSV label maps to Basilisk_Examples_Full references
-# using reference_target=:gmat; see docs/quality/scenario_matrix_debug.md.
+# using reference_target=:basilisk; see docs/quality/scenario_matrix_debug.md.
 function run_tb_matrix_debug(;
     basilisk_runner=ScenarioMatrixDebugSupport._run_basilisk_scenario_matrix_result_once,
     stk_runner=ScenarioMatrixDebugSupport._run_stk_scenario_matrix_result_once,

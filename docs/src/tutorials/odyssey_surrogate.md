@@ -99,6 +99,28 @@ This is a prescribed panel-cap exercise. Its thermal threshold is infinite, and 
 
 `configure_case` in the example shows how to replace the guidance and control configuration while retaining the atmosphere and scenario. The unchanged P20 regression remains a separate reference with guidance and control disabled. Results from this active-control exercise do not inherit a mission-accuracy claim from that reference.
 
+## EDG state between runs and passes
+
+A fresh `run_simulation` initializes EDG state, including its counters. The
+paired guidance and controller must share one `AerobrakingEnergyDepletionState`
+with one entry per spacecraft and matching configurations. Default simulation
+isolation preserves this pairing in the run-owned copy. Reusing a configuration
+starts a fresh run; `isolate_state=false` also resets EDG state, while leaving
+ownership of all other mutable configuration to the caller.
+
+Atmospheric entry and exit use the simulator's existing boundary events. Each
+changed spacecraft loses its cached bracket, switch times and mode flags.
+Repeated delivery of the same crossing does not clear a new plan, and ordinary
+callbacks within a pass retain their cache. Bracketing counts accumulate within
+a run; last-command telemetry remains until the next control update. Propagated
+physical heat loads and panel geometry are not cleared by this reset.
+
+Maximum-depletion control may be configured without guidance. Targeting control
+requires paired guidance to establish its bracket. EDG checkpoint writing and
+resume are refused before output creation because the checkpoint format does
+not preserve EDG pass state. The stored `switch_recompute_interval_s` setting
+remains inactive; this lifecycle rule does not introduce periodic re-solving.
+
 ## Inspect the result
 
 Unless you pass `--output=DIR` (or `output_dir` in Julia), the comparison writes

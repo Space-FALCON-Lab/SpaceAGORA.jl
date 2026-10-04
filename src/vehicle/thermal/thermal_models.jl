@@ -190,13 +190,18 @@ function TabularHeat(path::AbstractString)
     end
     vs = sort(unique(Float64.(rows.velocity_m_s)))
     ds = sort(unique(Float64.(rows.density_kg_m3)))
-    q = fill(NaN, length(vs), length(ds))
+    q = Matrix{Float64}(undef, length(vs), length(ds))
+    filled = falses(size(q))
     for r in rows
+        heat_rate = Float64(r.heat_rate_W_cm2)
+        (isfinite(heat_rate) && heat_rate >= 0.0) ||
+            throw(ArgumentError("TabularHeat heat rates must be finite and >= 0."))
         i = searchsortedfirst(vs, Float64(r.velocity_m_s)); j = searchsortedfirst(ds, Float64(r.density_kg_m3))
-        isnan(q[i, j]) || throw(ArgumentError("TabularHeat file $(path) repeats grid point ($(vs[i]), $(ds[j]))."))
-        q[i, j] = Float64(r.heat_rate_W_cm2)
+        filled[i, j] && throw(ArgumentError("TabularHeat file $(path) repeats grid point ($(vs[i]), $(ds[j]))."))
+        q[i, j] = heat_rate
+        filled[i, j] = true
     end
-    any(isnan, q) && throw(ArgumentError("TabularHeat file $(path) does not cover the full velocity x density grid."))
+    all(filled) || throw(ArgumentError("TabularHeat file $(path) does not cover the full velocity x density grid."))
     return TabularHeat(vs, ds, q)
 end
 

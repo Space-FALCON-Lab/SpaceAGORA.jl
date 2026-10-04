@@ -614,16 +614,19 @@ end
 #   _gram_walk_clone(model) -> a NEW native instance built from the same
 #       constructor recipe (same seed, scales, map year, ...), whose walk no
 #       other code path touches.
-#   _gram_walk_sample(model, h, lat, lon, el_time) ->
+#   _gram_walk_sample(model, h, lat, lon, el_time; first_update=false) ->
 #       (perturbed_density, mean_density, density_sigma_fraction, relative_step_size)
 #       after advancing that instance's walk to the given point (h in m,
-#       lat/lon in rad, el_time in s since the run epoch).
+#       lat/lon in rad, el_time in s since the run epoch). `first_update` marks
+#       the instance's first update after it was cloned or reseeded, which takes
+#       native GRAM's one-time initialization branch (on Earth, through CSPICE)
+#       and so runs under the process-wide native lock.
 #   _gram_last_density_state(model) -> the same 4-tuple for the instance's most
 #       recent update, WITHOUT a new query (negative-control mode only).
 function _gram_walk_clone(model)
     _gram_not_loaded_error("GRAM perturbation walk instance")
 end
-function _gram_walk_sample(model, h::Float64, lat::Float64, lon::Float64, el_time::Float64)
+function _gram_walk_sample(model, h::Float64, lat::Float64, lon::Float64, el_time::Float64; first_update::Bool=false)
     _gram_not_loaded_error("GRAM perturbation walk sample")
 end
 function _gram_last_density_state(model)

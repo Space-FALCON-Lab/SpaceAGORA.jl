@@ -550,6 +550,17 @@ end
 end
 
 function _solve_with_multirate_solver(prob, cfg::SolverConfig, args, reltol_tol, abstol_tol)
+    # Strang subsolves revisit overlapping time intervals, and cached subsolves
+    # skip callback initialization. Refuse a captured perturbation callback here,
+    # before any subsolve can clone or advance a walk, rather than relying on its
+    # checkpoint-continuation guard to notice the time reversal.
+    perturbation_mode = SimulationModel.SimulationCallbacks._gram_density_perturbation_callback_mode(
+        get(prob.kwargs, :callback, nothing))
+    perturbation_mode === :off || throw(ArgumentError(
+        "SPACEAGORA_SOLVER_MODE=multirate does not support " *
+        "SPACEAGORA_GRAM_DENSITY_PERTURBATION=$(perturbation_mode): its overlapping subsolves " *
+        "do not preserve the perturbation history. Use another solver mode or turn density perturbations off."
+    ))
     if !(hasproperty(prob.f, :f1) && hasproperty(prob.f, :f2))
         throw(ArgumentError("SolverConfig.solver_mode=:multirate requires a split problem with f1/f2 components."))
     end

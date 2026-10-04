@@ -51,8 +51,45 @@
 #       thousands of km against GRAM's <= 600 km horizontal and 8 km vertical
 #       scales, i.e. already ~0.
 #
+# Checkpointed runs: the engine solves one run as consecutive segments, each a
+# new solve that reinitializes the callbacks (execution.jl's checkpoint loop,
+# solver_policy.jl). A segment that starts where the previous segment's last
+# accepted step ended continues this run's state: the same walk instances (so the
+# same random stream), pass counters, held factor or live interpolant, and
+# diagnostics, with nothing sampled again at the boundary. A solve that starts
+# over at the run's start time begins a fresh state; any other start time is
+# refused. Multirate splitting is rejected before its first subsolve because it
+# revisits overlapping time intervals. Resuming from a checkpoint file is refused: the
+# file holds the time and spacecraft state, not the walk's native random state.
+#
+# A walk's first update after it is cloned or reseeded takes native GRAM's
+# one-time initialization branch, which on Earth reaches CSPICE. That update runs
+# under the process-wide native lock (`_gram_walk_sample`'s `first_update`), as
+# the pool and per-satellite warm-ups do, without any extra query.
+#
 # With the mode off nothing is installed: the SharedBuffers slot stays `nothing`
 # and every density path returns exactly what it did before.
+
+# Carry the mode captured at callback construction into solver validation.
+# Checking live ENV later would miss a callback built in a temporary withenv
+# scope; checking callback initialization would miss cached multirate subsolves.
+struct _GramDensityPerturbationCondition
+    mode::Symbol
+end
+@inline (::_GramDensityPerturbationCondition)(u, t, integrator) = true
+
+@inline _gram_density_perturbation_callback_mode(callback) = :off
+@inline function _gram_density_perturbation_callback_mode(callback::DiscreteCallback)
+    condition = callback.condition
+    return condition isa _GramDensityPerturbationCondition ? condition.mode : :off
+end
+function _gram_density_perturbation_callback_mode(callbacks::CallbackSet)
+    for callback in callbacks.discrete_callbacks
+        mode = _gram_density_perturbation_callback_mode(callback)
+        mode === :off || return mode
+    end
+    return :off
+end
 
 @inline function _gram_density_perturbation_mode()::Symbol
     raw = lowercase(strip(get(ENV, "SPACEAGORA_GRAM_DENSITY_PERTURBATION", "off")))
@@ -99,6 +136,7 @@ function _new_gram_density_perturbation_state(mode::Symbol, num_sats::Int, ei_m:
         [Float64[] for _ in 1:num_sats],
         [Float64[] for _ in 1:num_sats],
         Int8[], Int[], Int[], Float64[], Float64[], Float64[], Float64[], Float64[], Float64[],
+        nothing, NaN, NaN, fill(true, num_sats),
     )
 end
 
@@ -162,6 +200,13 @@ with 1.0), otherwise `rho * r` at or below the entry interface.
     return rho, T, wind
 end
 
+"The perturbation mode installed in `p`'s shared buffers, or `:off`."
+@inline function _installed_gram_perturbation_mode(p)::Symbol
+    hasproperty(p.shared_buffers, :gram_density_perturbation) || return :off
+    st = p.shared_buffers.gram_density_perturbation[]
+    return st === nothing ? :off : st.mode
+end
+
 # ── Design B: drag-free pass prediction and the in-order sweep ──────────────
 
 function _build_gram_pass!(st::GramDensityPerturbationState, p, sat::Int,
@@ -177,7 +222,9 @@ function _build_gram_pass!(st::GramDensityPerturbationState, p, sat::Int,
         t_k = t0 + (k - 1) * dt
         l_pi = _planet_lpi_at(p, t_k)
         alt_k, lat_k, lon_k = rtolatlong(SVector{3, Float64}(l_pi * pos_k), planet)
-        perturbed, mean, sigma, relstep = EnvironmentModels._gram_walk_sample(walk, alt_k, lat_k, lon_k, t_k)
+        perturbed, mean, sigma, relstep = EnvironmentModels._gram_walk_sample(walk, alt_k, lat_k, lon_k, t_k;
+                                                                             first_update=st.walk_fresh[sat])
+        st.walk_fresh[sat] = false
         st.walk_calls[sat] += 1
         r = _gram_ratio(perturbed, mean)
         push!(knots, r); push!(alts, alt_k)
@@ -277,11 +324,14 @@ function get_gram_density_perturbation_callback(num_sats::Int, args::SimulationC
         entered && (st.pass_count[i] += 1)
         if entered && st.reseed && (st.mode === :step || st.mode === :pass)
             EnvironmentModels._gram_walk_reseed!(st.walk_models[i], _gram_pass_seed(st.base_seeds[i], st.pass_count[i]))
+            st.walk_fresh[i] = true
         end
         if st.mode === :step
             r_new = 1.0
             if in_atm
-                perturbed, mean, sigma, relstep = EnvironmentModels._gram_walk_sample(st.walk_models[i], kin.alt, kin.lat, kin.lon, t)
+                perturbed, mean, sigma, relstep = EnvironmentModels._gram_walk_sample(st.walk_models[i], kin.alt, kin.lat, kin.lon, t;
+                                                                                     first_update=st.walk_fresh[i])
+                st.walk_fresh[i] = false
                 st.walk_calls[i] += 1
                 r_new = _gram_ratio(perturbed, mean)
                 isempty(st.log_path) || _gram_perturbation_log!(st, 1, i, t, kin.alt, r_new, sigma, mean, relstep)
@@ -319,8 +369,34 @@ function get_gram_density_perturbation_callback(num_sats::Int, args::SimulationC
 
     function initialize(cb, u, t, integrator)
         p = integrator.p
-        # A fresh state on every initialization: a solver-policy re-solve from
-        # the start then replays a fresh walk instead of continuing a used one.
+        t = Float64(t)
+        prev = state_ref[]
+        if prev !== nothing && prev.owner === p
+            if t == prev.last_t
+                # The next checkpoint segment of this run: execution.jl rebuilds the
+                # problem from the previous segment's last accepted state and the
+                # solve reinitializes the callbacks. Continue the walks, counters,
+                # held factor or interpolant and diagnostics. That state was
+                # processed at the accepted step that ended the previous segment,
+                # so nothing is sampled here; staged densities are invalidated so
+                # the next right-hand side restages them.
+                p.shared_buffers.gram_density_perturbation[] = prev
+                for i in 1:num_sats
+                    invalidate!(p, i)
+                end
+                return nothing
+            elseif t != prev.t0
+                throw(ArgumentError(
+                    "SPACEAGORA_GRAM_DENSITY_PERTURBATION=$(mode): a solve of this run started at t = $(t) s, " *
+                    "neither where the previous solve ended ($(prev.last_t) s) nor at the run's start " *
+                    "($(prev.t0) s). The perturbation state continues only across consecutive solves " *
+                    "(checkpoint segments); a solver that integrates an interval more than once, such as " *
+                    "SPACEAGORA_SOLVER_MODE=multirate, is not supported with this mode."
+                ))
+            end
+            # A solve over again from the run's start: a fresh walk, as on the
+            # first initialization.
+        end
         st = _new_gram_density_perturbation_state(mode, num_sats, ei_m, pass_dt, pass_max, log_path, reseed)
         if mode === :step || mode === :pass
             for i in 1:num_sats
@@ -333,10 +409,13 @@ function get_gram_density_perturbation_callback(num_sats::Int, args::SimulationC
                 st.base_seeds[i] = EnvironmentModels._gram_recipe_seed(model)
             end
         end
+        st.owner = p
+        st.t0 = t
+        st.last_t = t
         state_ref[] = st
         p.shared_buffers.gram_density_perturbation[] = st
         for i in 1:num_sats
-            p.is_active[i] && update_sat!(st, p, u, Float64(t), i)
+            p.is_active[i] && update_sat!(st, p, u, t, i)
         end
         return nothing
     end
@@ -350,6 +429,7 @@ function get_gram_density_perturbation_callback(num_sats::Int, args::SimulationC
         for i in 1:num_sats
             p.is_active[i] && update_sat!(st, p, u, t, i)
         end
+        st.last_t = t
         return nothing
     end
 
@@ -359,7 +439,7 @@ function get_gram_density_perturbation_callback(num_sats::Int, args::SimulationC
         return nothing
     end
 
-    condition(u, t, integrator) = true
+    condition = _GramDensityPerturbationCondition(mode)
     return DiscreteCallback(condition, affect!; initialize=initialize, finalize=finalize,
                             save_positions=(false, false))
 end

@@ -20,6 +20,9 @@
 #
 # Writes to DIR/<tag>/: run_summary.toml, extrema.csv (per-orbit apsides, record
 # extraction), simulation_results.csv, and perturbation_log.csv (modes != off).
+# Each run is one attempt (attempt_record.jl): the tag's earlier outputs are
+# removed first, and the summary, written last, carries the attempt's identity,
+# its status (complete, incomplete or failed) and the SHA-256 of each output.
 
 include(joinpath(@__DIR__, "..", "common.jl"))
 load_gramsuite!()
@@ -31,6 +34,9 @@ using CSV
 using TOML
 using Dates
 using Printf
+
+include(joinpath(@__DIR__, "attempt_record.jl"))
+using .PerturbedModeAttempt
 
 const TV = SpaceAGORA.TelemetryVerification
 const SE = SpaceAGORA.SimulationEngine
@@ -73,6 +79,7 @@ const TIGHT_ENV = TIGHT ? [
 const DT_ENV = isempty(DT_MAX_ATM) ? Pair{String, String}[] : ["SPACEAGORA_TELEMETRY_DT_MAX_ATM" => DT_MAX_ATM]
 
 function main()
+    attempt_id = begin_attempt!(OUT)
     cfg, truth = run_cfg()
     TV._planet_from_name(cfg.planet_name)       # furnish kernels as a solve does
     args = withenv(TIGHT_ENV..., DT_ENV...) do
@@ -140,9 +147,30 @@ function main()
     end
 
     stats = result === nothing ? nothing : result.solution.stats
+    retcode = result === nothing ? "ERROR" : string(result.solution.retcode)
+    # The orbit-count stop and an impact both return Terminated; the run's own
+    # orbit counter (one count per apoapsis crossing) tells them apart.
+    completed = -1
+    if result !== nothing
+        try
+            completed = Int(result.solution.prob.p.orbit_counter[1]) - 1
+        catch
+        end
+    end
+    cause = result === nothing ? "error" :
+            retcode == "Success" ? "end_of_time_span" :
+            retcode != "Terminated" ? "retcode_$(retcode)" :
+            completed < 0 ? "terminated_unknown" :
+            completed >= N_ORBITS ? "orbit_count" : "terminated_before_orbit_count"
+    status, status_reason = attempt_status(; error=err_text, retcode=retcode,
+        have_trajectory=isfile(joinpath(OUT, "simulation_results.csv")) && isfile(joinpath(OUT, "extrema.csv")),
+        n_apo=n_apo, n_peri=n_peri, orbits=N_ORBITS,
+        completed_orbits=completed, termination_cause=cause)
     tol = args.integration_tolerances
     summary = Dict{String, Any}(
-        "tag" => TAG, "mode" => MODE,
+        "tag" => TAG, "mode" => MODE, "attempt_id" => attempt_id,
+        "status" => status, "status_reason" => status_reason,
+        "termination_cause" => cause, "completed_orbits" => completed,
         "gram_seed" => truth["gram_seed"], "gram_perturbation_scales" => truth["gram_perturbation_scales"],
         "orbits_requested" => N_ORBITS, "tight" => TIGHT,
         "reltol_orbit" => tol.reltol_orbit, "abstol_orbit" => tol.abstol_orbit,
@@ -150,7 +178,7 @@ function main()
         "dt_max_orbit" => tol.dt_max_orbit, "dt_max_atmosphere" => tol.dt_max_atmosphere,
         "solver_mode" => solver_mode, "maxiters" => maxiters, "pass_dt_s" => PASS_DT, "reseed" => RESEED,
         "wall_s" => wall_s, "started_utc" => string(started), "finished_utc" => string(finished),
-        "retcode" => result === nothing ? "ERROR" : string(result.solution.retcode),
+        "retcode" => retcode,
         "error" => err_text,
         "naccept" => stats === nothing ? -1 : Int(stats.naccept),
         "nreject" => stats === nothing ? -1 : Int(stats.nreject),
@@ -161,9 +189,9 @@ function main()
         "commit" => get(ENV, "SPACEAGORA_RUN_COMMIT", "unknown"),
         "host" => gethostname(), "julia_threads" => Threads.nthreads(),
     )
-    open(io -> TOML.print(io, summary), joinpath(OUT, "run_summary.toml"), "w")
-    @printf("[%s] mode=%s seed=%d wall=%.1f s retcode=%s naccept=%d nreject=%d nf=%d peri=%d apo=%d\n",
-            TAG, MODE, summary["gram_seed"], wall_s, summary["retcode"], summary["naccept"],
+    finish_attempt!(OUT, summary)
+    @printf("[%s] mode=%s seed=%d wall=%.1f s retcode=%s status=%s naccept=%d nreject=%d nf=%d peri=%d apo=%d\n",
+            TAG, MODE, summary["gram_seed"], wall_s, summary["retcode"], status, summary["naccept"],
             summary["nreject"], summary["nf"], n_peri, n_apo)
     return nothing
 end

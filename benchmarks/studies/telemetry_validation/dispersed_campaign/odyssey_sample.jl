@@ -48,6 +48,10 @@ Run one member and write its per-orbit and per-pass CSVs into `out_dir`.
 """
 function run_member(seed::Int, perturbed::Bool, orbits::Int, out_dir::String)
     mkpath(out_dir)
+    # A rerun into the same directory must not read an earlier attempt's files.
+    for f in ("simulation_results.csv", "per_orbit.csv", "per_pass_r.csv", "gram_density_perturbation_log.csv")
+        rm(joinpath(out_dir, f); force=true)
+    end
     cfg = member_cfg(seed, perturbed)
     args = TV._with_study_settings(TV._make_orbit_args(cfg, orbits); quick=false)
     args = TV._with_configuration(args;
@@ -65,7 +69,7 @@ function run_member(seed::Int, perturbed::Bool, orbits::Int, out_dir::String)
     end
 
     csv = joinpath(out_dir, "simulation_results.csv")
-    n_events = 0; apo_first = NaN; apo_last = NaN; peri_min = NaN; heat_final = NaN; final_t = NaN
+    n_apo = 0; n_peri = 0; apo_first = NaN; apo_last = NaN; peri_min = NaN; heat_final = NaN; final_t = NaN
     if isfile(csv)
         df = CSV.read(csv, DataFrame)
         t = Float64.(df.time); final_t = t[end]
@@ -73,20 +77,29 @@ function run_member(seed::Int, perturbed::Bool, orbits::Int, out_dir::String)
         hl_col = only(filter(c -> occursin("heat_load", c), names(df)))
         hr_col = only(filter(c -> occursin("heat_rate", c), names(df)))
         hl = Float64.(df[!, hl_col]); hr = Float64.(df[!, hr_col])
-        apo_t = ex.apo.time_s; n = min(length(ex.apo.altitude), length(ex.peri.altitude)); n_events = n
-        # Pass k (periapsis k) lies between apoapsis k and apoapsis k+1 (or the
-        # end of the run for the last pass).
-        bounds = vcat(apo_t[1:n], [t[end]])
-        heat_pass = [at_time(t, hl, bounds[k + 1]) - at_time(t, hl, bounds[k]) for k in 1:n]
-        peak_rate = [maximum(hr[(t .>= bounds[k]) .& (t .<= bounds[k + 1])]; init=0.0) for k in 1:n]
+        apo_t = ex.apo.time_s; n_apo = length(ex.apo.altitude); n_peri = length(ex.peri.altitude)
+        # Every apoapsis is kept: the decay over n passes needs the apoapsis after
+        # the last of them, so the apoapses are not truncated to the periapsis
+        # count. Rows run to the larger count; the shorter series is NaN-padded.
+        # Pass k (periapsis k) lies between apoapsis k and apoapsis k+1, or the end
+        # of the run when no later apoapsis was reached.
+        n_rows = max(n_apo, n_peri)
+        heat_pass = fill(NaN, n_rows); peak_rate = fill(NaN, n_rows)
+        for k in 1:min(n_peri, n_apo)
+            a = apo_t[k]; b = k + 1 <= n_apo ? apo_t[k + 1] : t[end]
+            heat_pass[k] = at_time(t, hl, b) - at_time(t, hl, a)
+            peak_rate[k] = maximum(hr[(t .>= a) .& (t .<= b)]; init=0.0)
+        end
+        pad(v) = vcat(Float64.(v), fill(NaN, n_rows - length(v)))
         off = something(cfg.epoch_orbit_offset, 0.0)
         CSV.write(joinpath(out_dir, "per_orbit.csv"), DataFrame(
-            index=1:n, flight_orbit=off .+ (0:n-1),
-            apo_time_s=apo_t[1:n], apo_km=ex.apo.altitude[1:n],
-            peri_time_s=ex.peri.time_s[1:n], peri_km=ex.peri.altitude[1:n],
+            index=1:n_rows, flight_orbit=off .+ (0:n_rows-1),
+            apo_time_s=pad(apo_t), apo_km=pad(ex.apo.altitude),
+            peri_time_s=pad(ex.peri.time_s), peri_km=pad(ex.peri.altitude),
             pass_heat_load_Jcm2=heat_pass, pass_peak_heat_rate_Wcm2=peak_rate))
-        apo_first = ex.apo.altitude[1]; apo_last = ex.apo.altitude[n]
-        peri_min = minimum(ex.peri.altitude[1:n]); heat_final = hl[end]
+        n_apo > 0 && (apo_first = ex.apo.altitude[1]; apo_last = ex.apo.altitude[n_apo])
+        n_peri > 0 && (peri_min = minimum(ex.peri.altitude))
+        heat_final = hl[end]
         rm(csv)   # per-orbit series kept; the full state history is not needed
     end
 
@@ -109,10 +122,25 @@ function run_member(seed::Int, perturbed::Bool, orbits::Int, out_dir::String)
     end
 
     stats = result === nothing ? nothing : result.solution.stats
+    retcode = result === nothing ? "ERROR" : string(result.solution.retcode)
+    # The orbit-count stop and an impact both return Terminated; the run's own
+    # orbit counter (one count per apoapsis crossing) tells them apart.
+    completed = -1
+    if result !== nothing
+        try
+            completed = Int(result.solution.prob.p.orbit_counter[1]) - 1
+        catch
+        end
+    end
+    cause = result === nothing ? "error" :
+            retcode == "Success" ? "end_of_time_span" :
+            retcode != "Terminated" ? "retcode_$(retcode)" :
+            completed < 0 ? "terminated_unknown" :
+            completed >= orbits ? "orbit_count" : "terminated_before_orbit_count"
     return (seed=seed, perturbed=perturbed, pid=getpid(), host=gethostname(),
             solve_s=solve_s,
-            retcode=result === nothing ? "ERROR" : string(result.solution.retcode),
-            error=err, final_t_s=final_t, n_passes=n_events,
+            retcode=retcode, termination_cause=cause, completed_orbits=completed,
+            error=err, final_t_s=final_t, requested_orbits=orbits, n_apo=n_apo, n_peri=n_peri, n_passes=n_peri,
             apo_first_km=apo_first, apo_final_km=apo_last, apo_decay_km=apo_first - apo_last,
             peri_min_km=peri_min, heat_load_final_Jcm2=heat_final, r_density_weighted_mean=rdw_mean,
             naccept=stats === nothing ? -1 : Int(stats.naccept),

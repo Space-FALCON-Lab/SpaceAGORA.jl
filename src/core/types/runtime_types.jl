@@ -578,6 +578,11 @@ export RhsEffectorDecision, RhsExecutionPlan
         log_sigma::Vector{Float64}            # GRAM densityStandardDeviation (fraction of mean)
         log_mean::Vector{Float64}             # GRAM mean density at the sample, kg/m^3
         log_aux::Vector{Float64}              # A/B: GRAM relativeStepSize; B-applied: predicted-minus-actual altitude, m
+        # Run continuity across checkpoint segments (gram_density_perturbation.jl, `initialize`).
+        owner::Any                            # the ODEParams this state is attached to (`nothing` until attached)
+        t0::Float64                           # time of the solve that started this state
+        last_t::Float64                       # last accepted-step time processed
+        walk_fresh::Vector{Bool}              # the walk's next update is its first after a clone or a reseed
     end
 
     # Per-link results of the multibody aerodynamic wrench; summed in link order.

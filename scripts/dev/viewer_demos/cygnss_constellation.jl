@@ -293,15 +293,11 @@ function build_args(planet, spacecraft::Vector, initial_time, outdir::AbstractSt
         density_model=NRLMSISE00AtmosphereModel(use_space_indices=true),
         orientation_sim=false, keplerian=true, EI_km=120.0, verbose=false, results=true,
         results_directory=String(outdir))
-    return SM.SimulationConfiguration(
-        file_paths=base.file_paths, simulation_settings=base.simulation_settings,
+    return SM.SimConfig._with_configuration(base;
         mission_configuration=SM.MissionConfiguration(mission_type=SM.MissionTime, keplerian=true,
             number_of_orbits=1, mission_time=mission_time, orientation_sim=false,
             num_steps_to_save=num_steps_to_save, data_rate=5.0),
-        environment_model=base.environment_model,
         dynamics_model=SM.DynamicsModel(spacecraft, effectors),
-        guidance_model=base.guidance_model, navigation_model=base.navigation_model,
-        control_model=base.control_model, initial_time=base.initial_time,
         integration_tolerances=SM.IntegrationTolerances(reltol_orbit=1e-10, abstol_orbit=1e-10,
             dt_max_orbit=30.0),
         solver_config=SM.SolverConfig(solver_mode=:dp8))

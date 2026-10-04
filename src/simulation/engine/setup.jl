@@ -354,9 +354,10 @@ end
 
 @inline function _has_active_srp_effector(dynamic_effectors::Tuple)::Bool
     @inbounds for effector in dynamic_effectors
-        if effector isa SimulationModel.SolarRadiationPressureModel &&
-           effector.A > 0.0 &&
-           (effector.direct || effector.albedo)
+        if effector isa SimulationModel.SolarRadiationPressureModel
+            # Preserve the cannonball model's zero-area and IR-only exemptions.
+            effector.A > 0.0 && (effector.direct || effector.albedo) && return true
+        elseif SimulationModel.environment_requirements(effector).solar
             return true
         end
     end

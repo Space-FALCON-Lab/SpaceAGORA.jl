@@ -151,20 +151,21 @@ sampling, metrics, RRT, retiming and quintic robot-arm planner. It preserves HYP
 configuration and result types so saved configurations and qualified names retain
 their defining modules. It does not load the HYPR optimizer or configured execution.
 
-Use a separate project for a checkout-based installation. Set `root` to your
-SpaceAGORA checkout, then choose the packages that project needs:
+Use a separate project and the setup helper from the reviewed SpaceAGORA
+checkout. The helper resolves HYPR from the full Git commit recorded in
+`packages/SpaceAGORAHYPR/HYPRSource.toml` and preserves existing dependency versions:
 
-```julia
-using Pkg
-Pkg.activate("my-rpo-project")
-Pkg.develop(path=root)                       # core only
-# Add this only for a project that uses HYPR:
-Pkg.develop(path=joinpath(root, "packages", "SpaceAGORAHYPR"))
+```sh
+julia --startup-file=no scripts/setup_hypr.jl /path/to/my-rpo-project
 ```
 
-The companion is currently supplied with this repository, not as a registered
-package. Keep the core and companion from the same reviewed checkout. Run with
-`--project=my-rpo-project` and explicitly load the companion before selecting it:
+Run with `--project=/path/to/my-rpo-project` and explicitly load the companion.
+The supported version pair is SpaceAGORA 0.2.0, HYPR 0.1.0 and compatibility shim 0.2.0.
+HYPR remains optional for the simulator core. For coordinated local development,
+`SPACEAGORA_HYPR_PATH` explicitly substitutes a local HYPR checkout; it is not
+published-installation evidence. Failed resolution is an error, not a fallback
+to another revision. The default Git route installs the immutable source pin
+from the HYPR repository.
 
 ```julia
 using SpaceAGORA, SpaceAGORAHYPR

@@ -124,16 +124,38 @@ end
     @testset "CSV database" begin
         mktempdir() do dir
             path = joinpath(dir, "aerothermal.csv")
-            open(path, "w") do io
-                println(io, "velocity_m_s,density_kg_m3,heat_rate_W_cm2")
-                for (j, d) in enumerate(ds), (i, v) in reverse(collect(enumerate(vs)))
-                    println(io, v, ",", d, ",", q[i, j])
+            function write_database(rows)
+                open(path, "w") do io
+                    println(io, "velocity_m_s,density_kg_m3,heat_rate_W_cm2")
+                    foreach(row -> println(io, row), rows)
                 end
             end
+            grid_rows = ["5000,1e-8,1.0", "7000,1e-8,2.0", "5000,1e-6,3.0", "7000,1e-6,6.0"]
+            write_database(grid_rows[[4, 1, 3, 2]])
             mf = SM.TabularHeat(path)
             @test mf.heat_rates == q && mf.velocities == vs && mf.densities == ds
-            open(io -> println(io, "velocity_m_s,density_kg_m3,heat_rate_W_cm2\n5000,1e-8,1.0\n7000,1e-6,6.0"), path, "w")
-            @test_throws ArgumentError SM.TabularHeat(path)        # incomplete grid
+            @test SM.getHeatRate(mf, 20.0, 200.0, 1.0e-7, 6000.0, 0.3) ≈ 3.0
+
+            invalid_heat = ArgumentError("TabularHeat heat rates must be finite and >= 0.")
+            nan_row = "5000,1e-8,NaN"
+            # Neither row order may let a duplicate overwrite an invalid value.
+            for rows in ([nan_row; grid_rows], [grid_rows; nan_row])
+                write_database(rows)
+                @test_throws invalid_heat SM.TabularHeat(path)
+            end
+            write_database([grid_rows; grid_rows[1]])
+            @test_throws ArgumentError("TabularHeat file $(path) repeats grid point (5000.0, 1.0e-8).") SM.TabularHeat(path)
+
+            # Invalid flux is not a missing grid point, even when it is NaN.
+            for value in ("NaN", "Inf", "-Inf", "-1.0")
+                write_database(["5000,1e-8,$(value)"; grid_rows[2:end]])
+                @test_throws invalid_heat SM.TabularHeat(path)
+            end
+            write_database(["5000,1e-8,0.0"; grid_rows[2:end]])
+            @test SM.TabularHeat(path).heat_rates[1, 1] == 0.0
+
+            write_database(grid_rows[[1, 4]])
+            @test_throws ArgumentError("TabularHeat file $(path) does not cover the full velocity x density grid.") SM.TabularHeat(path)
             open(io -> println(io, "velocity_m_s,density_kg_m3\n5000,1e-8"), path, "w")
             @test_throws ArgumentError SM.TabularHeat(path)        # missing column
         end

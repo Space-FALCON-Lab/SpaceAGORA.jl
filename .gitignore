@@ -165,3 +165,7 @@ benchmarks/studies/heap_contention/results/
 benchmarks/studies/paper_parallelization_benchmarks/workload/results/
 benchmarks/studies/rhs_heuristic_defaults/results/
 benchmarks/studies/small_wins/results/
+
+# Generated optional HYPR example environment; Project.template.toml is tracked.
+/examples/rpo_planner_env/Project.toml
+/examples/rpo_planner_env/Manifest.toml

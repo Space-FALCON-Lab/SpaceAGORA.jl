@@ -328,25 +328,28 @@ end
     PROCESS_WARMUP
 
 Scoped override for the warm-up the campaign runner gives new process workers.
-`nothing` (default) warms each new worker with the campaign's own first sample;
-a zero-argument function warms with that call instead (a short representative
-run is much cheaper than a full sample of a long campaign); `false` skips the
-warm-up, leaving each worker's first-call compilation inside its first sample.
+`nothing` (default) warms new workers one at a time with the campaign's own
+first sample, preserving exclusive access to that sample's output/checkpoint
+files. A zero-argument callable instead warms new workers concurrently with
+that call (a short representative run is much cheaper than a full sample of a
+long campaign). `false` skips warm-up, leaving each worker's first-call
+compilation inside its first sample.
 
 The override applies when an adaptive campaign grows its process pool. Existing
-workers are not warmed again. New workers execute warm-up concurrently, so the
-call must not write conflicting files or depend on an ordering between workers.
-A failed warm-up emits a warning and leaves compilation to the real dispatch.
+workers are not warmed again. Generic worker bootstrap remains concurrent. A
+custom warm-up must not write conflicting files or depend on an ordering
+between workers. A failed warm-up emits a warning and leaves compilation to the
+real dispatch.
 
     using Base.ScopedValues: with
     with(SpaceAGORA.PROCESS_WARMUP => () -> short_run(seed)) do
-        run_monte_carlo(f; seeds, threads=:auto)
+        run_monte_carlo(f, seeds; threads=:auto)
     end
 """
 const PROCESS_WARMUP = Base.ScopedValues.ScopedValue{Any}(nothing)
 
 """
-    ensure_process_workers!(pool::ProcessPool, n::Int; warmup_fn=nothing) -> Vector{Int}
+    ensure_process_workers!(pool::ProcessPool, n::Int; warmup_fn=nothing, warmup_concurrent=true) -> Vector{Int}
 
 Grow `pool` to at least `n` bootstrapped workers (spawning new `addprocs`
 workers only for the shortfall) and return its current worker ids.
@@ -354,7 +357,14 @@ workers only for the shortfall) and return its current worker ids.
 New workers are started against `pool.project_path` and bootstrapped with
 `SpaceAGORA`/`GRAMSuite`/default SPICE kernels before being added to the pool,
 so any worker id this function returns is immediately ready to accept
-campaign work using the standard vendored kernel set.
+campaign work using the standard vendored kernel set. Generic bootstrap runs
+concurrently across new workers.
+
+`warmup_concurrent=true` also runs a supplied warm-up concurrently. Set it to
+`false` when the warm-up repeats a sample with shared output/checkpoint files
+or otherwise requires exclusive access. Adaptive campaigns select serial
+warm-up for their implicit first sample and concurrent warm-up only for an
+explicit `PROCESS_WARMUP` callable. This setting does not change bootstrap.
 
 `warmup_fn`, if given, is a zero-argument closure `remotecall_fetch`'d
 (best-effort) on each *newly added* worker only, after the generic bootstrap
@@ -373,7 +383,8 @@ dispatch. Everything `warmup_fn` references must already be resolvable on the
 worker (ordinary Distributed closure-shipping rule -- see the campaign
 dispatch closures this same pool already ships for real work).
 """
-function ensure_process_workers!(pool::ProcessPool, n::Int; warmup_fn=nothing)::Vector{Int}
+function ensure_process_workers!(pool::ProcessPool, n::Int; warmup_fn=nothing,
+                                 warmup_concurrent::Bool=true)::Vector{Int}
     desired = max(1, n)
     lock(pool.lock) do
         shortfall = desired - length(pool.workers)
@@ -382,14 +393,27 @@ function ensure_process_workers!(pool::ProcessPool, n::Int; warmup_fn=nothing)::
             # the heap-size-hint share is per member of the final pool, not per
             # newly spawned worker.
             new_workers = _spawn_process_workers(shortfall, pool.project_path, desired)
-            # Bootstrap and warm the new workers concurrently: each is its own
-            # process, so one-at-a-time loops only serialized independent
-            # waits (32 workers took 225.6 s to bootstrap, ~7 s each, and a
-            # full-sample warm-up of an 11-minute campaign would have taken
-            # hours before dispatch started).
-            asyncmap(w -> _bootstrap_process_worker!(w, pool.project_path), new_workers)
+            # Join every bootstrap before releasing the lock, including when
+            # one fails. asyncmap may throw while sibling tasks are still live.
+            try
+                @sync for w in new_workers
+                    @async _bootstrap_process_worker!(w, pool.project_path)
+                end
+            catch
+                # Existing pool members remain usable. The failed addition
+                # has not been registered, so reclaim only its new workers.
+                try
+                    rmprocs(new_workers)
+                catch cleanup_err
+                    @warn "Could not remove new process workers after bootstrap failed." workers=new_workers exception=(cleanup_err, catch_backtrace())
+                end
+                rethrow()
+            end
             if warmup_fn !== nothing
-                asyncmap(new_workers) do w
+                # The router serializes its implicit first-sample warm-up,
+                # whose repeated calls can share output/checkpoint paths.
+                warmup_map = warmup_concurrent ? asyncmap : foreach
+                warmup_map(new_workers) do w
                     try
                         remotecall_fetch(warmup_fn, w)
                     catch err

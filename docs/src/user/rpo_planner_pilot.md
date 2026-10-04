@@ -160,12 +160,12 @@ julia --startup-file=no scripts/setup_hypr.jl /path/to/my-rpo-project
 ```
 
 Run with `--project=/path/to/my-rpo-project` and explicitly load the companion.
-The proposed pair is SpaceAGORA 0.2.0, HYPR 0.1.0 and compatibility shim 0.2.0.
+The supported version pair is SpaceAGORA 0.2.0, HYPR 0.1.0 and compatibility shim 0.2.0.
 HYPR remains optional for the simulator core. For coordinated local development,
 `SPACEAGORA_HYPR_PATH` explicitly substitutes a local HYPR checkout; it is not
 published-installation evidence. Failed resolution is an error, not a fallback
-to another revision. The candidates require publication before the default Git
-installation route can be used externally.
+to another revision. The default Git route installs the immutable source pin
+from the HYPR repository.
 
 ```julia
 using SpaceAGORA, SpaceAGORAHYPR

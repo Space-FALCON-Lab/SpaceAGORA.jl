@@ -6,9 +6,9 @@ SpaceAGORA.HYPRServices
 
 `SpaceAGORA.HYPRServices` is the supported boundary for HYPR's optional extension.
 SpaceAGORA **0.2.0** provides contract **1.0.0**, supporting HYPR **0.1.0** and the
-`SpaceAGORAHYPR` **0.2.0** compatibility package. These are candidate identities,
-not a published installation promise. Immutable source pairing and release-hosted
-installation tests remain release requirements.
+`SpaceAGORAHYPR` **0.2.0** compatibility package. The setup helper pins the exact
+HYPR source revision. A release requires both hosted checks and installation
+from the published sources for that version pair.
 
 ## Loading and failure behavior
 
@@ -32,8 +32,8 @@ The facade exposes `CompatibilityError` as an alias of the existing error type.
 Both core-first and HYPR-first loading are supported. Availability belongs to the
 current process; a worker must load its own supported packages. CI precompiles the core, extension and shim, then tests fresh processes with
 compiled modules required, including either load order and failed activation.
-Local package-image evidence is separate from the still-required published-source
-installation and hosted release checks.
+Local package-image evidence and published-source installation are separate
+checks; both are required alongside hosted CI before release acceptance.
 
 ## Ownership and version policy
 

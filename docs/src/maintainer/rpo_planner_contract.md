@@ -380,3 +380,8 @@ bootstrap is never used by the independent installation proof.
 Architecture and source-completeness checks scan the companion sources. Coverage
 collection and the existing quality thresholds include the moved implementation.
 The required `tests` check also waits for the independent installation job.
+
+## Optional HYPR package boundary
+
+The separate package uses the [versioned HYPR service contract](hypr_services.md).
+Its compatibility and loading checks are distinct from the planner-result contract.

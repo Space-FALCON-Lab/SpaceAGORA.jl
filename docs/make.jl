@@ -189,6 +189,7 @@ makedocs(
         "Maintainer Guide" => Any[
             "Maintainer Overview" => "maintainer/index.md",
             "RPO Planner Contract" => "maintainer/rpo_planner_contract.md",
+            "HYPR service contract" => "maintainer/hypr_services.md",
             "Documentation Policy" => "documentation_policy.md",
             "API Policy" => "public_api_policy.md",
             "Contracts" => "contracts.md",

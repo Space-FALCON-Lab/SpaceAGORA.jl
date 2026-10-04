@@ -1,6 +1,6 @@
 name = "SpaceAGORAHYPR"
 uuid = "4096c904-79d0-4d9a-9f5d-f1d6c7a2f1b4"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["SpaceAGORA Contributors"]
 
 [deps]

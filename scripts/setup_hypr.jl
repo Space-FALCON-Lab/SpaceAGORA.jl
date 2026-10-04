@@ -20,7 +20,8 @@ end
 
 function setup(environment; root=ROOT, with_hypr=true, local_path=get(ENV, "SPACEAGORA_HYPR_PATH", ""))
     env = abspath(environment)
-    env == abspath(root) && error("Use a separate HYPR project, not the SpaceAGORA root project.")
+    ispath(env) && samefile(env, root) &&
+        error("Use a separate HYPR project, not the SpaceAGORA root project.")
     spec = with_hypr ? source_spec(root; local_path) : nothing
     mkpath(env)
     project_path = joinpath(env, "Project.toml")

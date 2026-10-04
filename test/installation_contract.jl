@@ -24,3 +24,34 @@ include(joinpath(@__DIR__, "..", "scripts", "setup_hypr.jl"))
     end
     @test_throws ErrorException HYPRInstallation.setup(HYPRInstallation.ROOT)
 end
+
+@testset "Root aliases refuse before any installation write" begin
+    mktempdir() do parent
+        root = joinpath(parent, "checkout")
+        mkpath(root)
+        project = joinpath(root, "Project.toml")
+        manifest = joinpath(root, "Manifest.toml")
+        write(project, "name = \"RootGuardFixture\"\nuuid = \"d271120b-0ade-4aeb-b5fc-5e636b5dd1d3\"\n[deps]\n")
+        write(manifest, "# Sentinel manifest: refusal must not reach Pkg.\n")
+        before = (read(project), read(manifest), readdir(root))
+        link = joinpath(parent, "checkout-link")
+        symlink(root, link; dir_target=true)
+        active = Base.active_project()
+        cd(parent) do
+            for root_spelling in (root, root * "/"), environment in (
+                    root, root * "/", joinpath(root, "."),
+                    "checkout", joinpath("checkout", "..", "checkout"), link, link * "/")
+                err = try
+                    HYPRInstallation.setup(environment; root=root_spelling, with_hypr=false)
+                    nothing
+                catch caught
+                    caught
+                end
+                @test err isa ErrorException
+                @test occursin("Use a separate HYPR project", sprint(showerror, err))
+                @test (read(project), read(manifest), readdir(root)) == before
+                @test Base.active_project() == active
+            end
+        end
+    end
+end

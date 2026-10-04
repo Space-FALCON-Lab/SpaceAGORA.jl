@@ -803,6 +803,8 @@ jobs:
         run: julia --startup-file=no --project=. test/optional_hypr/setup.jl "$RUNNER_TEMP/hypr-installations"
       - name: Verify immutable installation inputs
         run: julia --startup-file=no --project=. test/installation_contract.jl
+      - name: Verify repeatable example setup without tracked changes
+        run: julia --startup-file=no --project=. test/optional_hypr/example_setup.jl
       - name: Example environment isolation
         env:
           JULIA_LOAD_PATH: "@:@stdlib"

@@ -970,6 +970,13 @@ export RhsEffectorDecision, RhsExecutionPlan
         drag_cache::Vector{SVector{3,Float64}} = []
         lift_cache::Vector{SVector{3,Float64}} = []
         cross_cache::Vector{SVector{3,Float64}} = []
+        # Initial savers run before the solver initializes its RHS. These
+        # destinations are populated once from the first unperturbed RHS at
+        # the initial time, never from a pre-solve calibration probe.
+        initial_force_output_pending::Base.RefValue{Bool} = Ref(false)
+        initial_force_output_time::Base.RefValue{Float64} = Ref(NaN)
+        initial_force_output_state::Base.RefValue{Any} = Ref{Any}(nothing)
+        initial_force_output_destinations::Vector{Tuple{Symbol, Any}} = Tuple{Symbol, Any}[]
         # Add more fields as needed to store the relevant data for saving results
     end
 

@@ -229,6 +229,11 @@ function get_callbacks(
         callbacks = _append_callback(callbacks, get_quaternion_projection_callback(num_sats, args))
     end
     callbacks = _append_callback(callbacks, get_plume_callback(args))
+    engine = _simulation_engine_module()
+    output_solver_mode = args.solver_config === nothing ? engine._solver_policy_mode() :
+        engine._solver_policy_mode(args.solver_config)
+    callbacks = _append_callback(callbacks,
+        get_initial_force_output_callback(effectors; solver_mode=output_solver_mode))
     if !backbone_mode && args.simulation_settings.results
         callbacks = _append_callback(callbacks, get_data_saving_callback(num_sats, args, save_fields_resolved, saved_values))
     end

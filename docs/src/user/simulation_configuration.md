@@ -25,24 +25,29 @@ What to read next:
 ## The top-level struct
 
 `SimulationConfiguration` is the single object passed to `run_simulation`. It
-is composed from several nested structs, all accessed through
-`SpaceAGORA.SimulationModel` (abbreviated `SM` in the examples):
+is composed from several nested structs. The common setup types
+(`SimulationConfiguration`, `MissionConfiguration`, `EnvironmentModel`,
+`DynamicsModel`, `SpacecraftModel`, `Link`, `InitialTime`,
+`IntegrationTolerances`, the inverse-square gravity effectors, and the
+`make_example_config` helper) are exported from the root module, so
+`using SpaceAGORA` alone is enough. Less common types are reached through
+`SpaceAGORA.SimulationModel` (abbreviated `SM` below).
 
 ```julia
 using SpaceAGORA
 const SM = SpaceAGORA.SimulationModel
 
-config = SM.SimulationConfiguration(
+config = SimulationConfiguration(
     file_paths             = SM.FilePaths(),
-    simulation_settings    = SM.SimulationSettings(...),
-    mission_configuration  = SM.MissionConfiguration(...),
-    environment_model      = SM.EnvironmentModel(...),
-    dynamics_model         = SM.DynamicsModel([spacecraft], effectors),
-    guidance_model         = SM.GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
-    navigation_model       = SM.NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
-    control_model          = SM.ControlModel(control_effectors=(), control_rates=Float64[]),
-    initial_time           = SM.InitialTime(year=2024, month=1, day=1, hour=0, minute=0, second=0.0),
-    integration_tolerances = SM.IntegrationTolerances()
+    simulation_settings    = SimulationSettings(...),
+    mission_configuration  = MissionConfiguration(...),
+    environment_model      = EnvironmentModel(...),
+    dynamics_model         = DynamicsModel([spacecraft], effectors),
+    guidance_model         = GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
+    navigation_model       = NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
+    control_model          = ControlModel(control_effectors=(), control_rates=Float64[]),
+    initial_time           = InitialTime(year=2024, month=1, day=1, hour=0, minute=0, second=0.0),
+    integration_tolerances = IntegrationTolerances()
 )
 
 run_simulation(config)

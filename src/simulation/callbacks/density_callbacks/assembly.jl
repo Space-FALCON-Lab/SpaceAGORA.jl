@@ -71,6 +71,10 @@ end
 end
 
 @inline function _requires_drag_state_callback(effectors::Tuple, args::SimulationConfiguration)::Bool
+    # Stateful guidance/control needs crossings even when both solver phases
+    # use equal tolerances or the configured density is identically zero.
+    any(SimulationLifecycle.requires_atmosphere_events, args.guidance_model.guidance_effectors) && return true
+    any(SimulationLifecycle.requires_atmosphere_events, args.control_model.control_effectors) && return true
     if !_requires_density_callback(effectors, args)
         return false
     end

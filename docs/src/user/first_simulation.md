@@ -47,6 +47,33 @@ Use the CLI to keep this run's files in their own directory:
 julia --project=. src/cli/main.jl run --example=AGORA_Earth_NoGRAM.jl --output-dir=output/cli_run
 ```
 
+### Your own script
+
+Every type needed to set up a run is exported from the root module, so
+`using SpaceAGORA` is the only import. `make_example_config` and
+`make_three_body_spacecraft` build a complete configuration from a planet, a
+spacecraft, and an initial condition. `make_example_config` defaults to SPICE
+ephemerides, so pass `SimpleEphemeridesModel()` for a run without SPICE kernels:
+
+```julia
+using SpaceAGORA
+
+planet = make_no_gram_planet(:earth)
+spacecraft = make_three_body_spacecraft(
+    bus_dims=(2.0, 2.0, 2.0), panel_dims=(0.01, 2.0, 1.0),
+    bus_mass=500.0, panel_mass_each=10.0, panel_offset_y=2.0,
+    ic=InitialCondition(ra=planet.Rp_e + 500e3, rp=planet.Rp_e + 500e3,
+                        i=45.0, ω=0.0, Ω=0.0, ν=0.0),
+)
+config = make_example_config(
+    planet=planet, spacecraft=spacecraft, mission_time=300.0,
+    initial_time=InitialTime(year=2024, month=1, day=1),
+    dynamic_effectors=(InverseSquaredGravityModel(),),
+    ephemerides_model=SimpleEphemeridesModel(), results=false,
+)
+run_simulation(config)
+```
+
 ## When to pick a different path
 
 Choose [Verification Study](verification_study.md) instead when your goal is a

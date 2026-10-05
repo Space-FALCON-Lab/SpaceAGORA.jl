@@ -169,4 +169,6 @@ include(joinpath(@__DIR__, "..", "analysis", "visualization", "scene", "scene_vi
 @reexport using .SceneVisualization
 include(joinpath(@__DIR__, "..", "simulation", "callbacks", "callbacks.jl"))
 @reexport using .SimulationCallbacks
+include(joinpath(@__DIR__, "..", "simulation", "config", "example_configuration.jl"))
+@reexport using .ExampleConfiguration
 end # module SimulationModel

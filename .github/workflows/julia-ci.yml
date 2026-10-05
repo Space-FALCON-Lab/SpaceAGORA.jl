@@ -206,7 +206,7 @@ jobs:
           persist-credentials: false
 
       - name: Download shard reports
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: plain-*
           path: shard-reports
@@ -325,7 +325,7 @@ jobs:
           persist-credentials: false
 
       - name: Download shard reports
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: coverage-*
           path: shard-reports
@@ -336,7 +336,7 @@ jobs:
         run: python3 .github/scripts/ci_shard_verify.py tests shard-reports
 
       - name: Download optional installation coverage
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: hypr-installation-coverage
           path: hypr-installation-coverage
@@ -432,7 +432,7 @@ jobs:
           persist-credentials: false
 
       - name: Download shard reports
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: examples-*
           path: shard-reports
@@ -718,7 +718,7 @@ jobs:
           persist-credentials: false
 
       - name: Download telemetry summaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: telemetry-quick-*
           path: telemetry-summaries

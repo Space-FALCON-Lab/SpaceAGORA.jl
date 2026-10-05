@@ -18,6 +18,9 @@ jobs:
     timeout-minutes: 90
     env:
       JULIA_NUM_THREADS: "4"
+      # Keep installation separate from the bounded, explicit precompile below.
+      JULIA_PKG_PRECOMPILE_AUTO: "0"
+      JULIA_NUM_PRECOMPILE_TASKS: "1"
       JULIA_LOAD_PATH: "@:@stdlib"
       GIT_TERMINAL_PROMPT: "0"
       GIT_LFS_SKIP_SMUDGE: "1"
@@ -33,7 +36,51 @@ jobs:
       - name: Use empty package and data cache
         run: echo "JULIA_DEPOT_PATH=${RUNNER_TEMP}/surrogate-clean-depot" >> "$GITHUB_ENV"
       - name: Install public pinned packages
-        run: julia --startup-file=no --project=examples/odyssey_surrogate_env examples/odyssey_surrogate_env/setup.jl
+        timeout-minutes: 20
+        run: |
+          date -u
+          julia --version
+          julia --startup-file=no --project=examples/odyssey_surrogate_env examples/odyssey_surrogate_env/setup.jl
+      - name: Precompile public pinned packages
+        timeout-minutes: 60
+        shell: bash
+        run: |
+          set -euo pipefail
+          diagnostics_dir="$RUNNER_TEMP/odyssey-precompile"
+          mkdir -p "$diagnostics_dir"
+          cp examples/odyssey_surrogate_env/Manifest.toml "$diagnostics_dir/Manifest.toml"
+          printf 'Precompile tasks: %s; automatic precompile: %s\n' "$JULIA_NUM_PRECOMPILE_TASKS" "$JULIA_PKG_PRECOMPILE_AUTO"
+          # Show which compiler processes remain active if progress stops.
+          python3 -u -c '
+          import datetime, subprocess, time
+          while True:
+              print(datetime.datetime.now(datetime.timezone.utc).isoformat(), flush=True)
+              result = subprocess.run(["ps", "-eo", "pid,ppid,etime,time,stat,rss,comm,args"], capture_output=True, text=True)
+              for row in result.stdout.splitlines():
+                  fields = row.split()
+                  if len(fields) >= 7 and (fields[0] == "PID" or fields[6] == "julia"):
+                      print(row, flush=True)
+              time.sleep(60)
+          ' > "$diagnostics_dir/processes.log" 2>&1 &
+          monitor_pid=$!
+          trap 'kill "$monitor_pid" 2>/dev/null || true; wait "$monitor_pid" 2>/dev/null || true' EXIT
+          date -u
+          julia --startup-file=no --project=examples/odyssey_surrogate_env -e 'using Pkg; Pkg.precompile(; strict=true, timing=true)' 2>&1 | tee "$diagnostics_dir/precompile.log"
+          date -u
+      - name: Report precompile process state
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/odyssey-precompile/processes.log" ]; then
+            tail -n 200 "$RUNNER_TEMP/odyssey-precompile/processes.log"
+          fi
+      - name: Preserve precompile diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: odyssey-precompile-diagnostics
+          path: |
+            ${{ runner.temp }}/odyssey-precompile
+            examples/odyssey_surrogate_env/Manifest.toml
       - name: Preset resolution and failure regressions
         run: julia --startup-file=no --project=examples/odyssey_surrogate_env test/surrogate_presets_tests.jl
       - name: Public preset and active control exercise

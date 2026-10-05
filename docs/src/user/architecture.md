@@ -327,11 +327,12 @@ description of the current code.
   It preserves the explicit DP8 solver, fresh tolerance settings, and mission
   and dynamics overrides.
 
-**Confirmed cleanup targets:**
+**Benchmark entry point:**
 
-- `benchmarks/studies/performance_static_vs_parallel.jl` includes a
-  nonexistent sibling; the owner is `benchmarks/scripts/performance_paper_pipeline.jl`.
-  Broken include, to be repaired with the parallelization owner.
+- `benchmarks/studies/performance_static_vs_parallel.jl` loads its maintained
+  owner, `benchmarks/scripts/performance_paper_pipeline.jl`, relative to the
+  launcher directory. The include route is tested without executing the pipeline;
+  benchmark workloads and performance validation remain separate.
 
 **Intentional similarities (keep):**
 

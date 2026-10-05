@@ -1,6 +1,8 @@
 using Test
 using SpaceAGORA
 
+include(joinpath(@__DIR__, "aerobraking_plot_errors_tests.jl"))
+
 @testset "shared example imports preserve caller module aliases" begin
     common_path = normpath(joinpath(@__DIR__, "..", "..", "examples", "common.jl"))
     aliases = quote
@@ -74,6 +76,11 @@ using Test
 # furnishing kernels, or loading a native atmosphere model.
 include(joinpath(@__DIR__, "..", "..", "examples", "common.jl"))
 include(joinpath(@__DIR__, "..", "..", "examples", "aerobraking_mission_plot_utils.jl"))
+
+@testset "RTN error helper remains available through plotting facade" begin
+    @test _rtn_error_components([-2], [3], [-4], [2], [0], [0], [0], [4], [0]) ==
+          ([2.0], [3.0], [4.0])
+end
 
 function _fixture_config(results_directory::String)
     craft = make_three_body_spacecraft(

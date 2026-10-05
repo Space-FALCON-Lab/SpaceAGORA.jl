@@ -31,6 +31,9 @@ exported symbols. That surface currently includes:
 
 - simulation entrypoints such as `run_simulation`
 - typed runtime configuration objects
+- simulation setup types and helpers (`SimulationConfiguration`, `SpacecraftModel`,
+  `Link`, `InitialTime`, `make_example_config`, ...), so `using SpaceAGORA` alone
+  is enough to configure a run
 - no-GRAM baseline constructors and builders
 - selected abstract extension interfaces
 - selected extension hook functions

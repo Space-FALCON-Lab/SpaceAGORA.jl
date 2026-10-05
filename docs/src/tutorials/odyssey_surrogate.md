@@ -119,18 +119,40 @@ Startup and crossing reconciliation share one boundary convention: within
 64 floating-point spacings of the entry-interface radius, outward motion is
 outside and inward or tangential motion is inside. This ensures that a plan
 computed at an exact-boundary outbound start is invalidated on the next entry.
+The startup flag also selects the initial solver phase when the simulation uses
+atmosphere-dependent solver settings. Outbound starts in this band therefore
+begin with orbit-phase settings, including in non-EDG configurations.
+
+A known limit remains for an exact-boundary start with zero radial velocity
+that subsequently rises, such as a periapsis exactly on the entry interface.
+It is classified as inside. In the reviewed witness, the mask stays inside
+through the coast, so a guidance plan computed at time zero survives the next
+entry; atmospheric solver settings can also persist during that coast. The
+outbound-start correction does not fix this tangential-start case. Its boundary
+classification and test expectations are retained; acceleration-based tangency
+handling requires a separate reviewed change.
 
 EDG enables the existing crossing pipeline even when both solver phases have
-identical settings. That pipeline also enables staged density updates,
+identical settings. That pipeline also enables staged density updates when the dynamics require density,
 exit-time thruster scheduling (which may call guidance), and phase-setting
 reapplication. Added root-finding stops can change the integration path;
 unchanged guidance formulas do not imply bitwise-identical trajectories.
 
-At exit, invalidating the old mode also changes subsequent control commands.
-For targeting-only EDG, the next control update uses the minimum-angle default
-instead of retaining the previous pass's maximum-angle command. This can affect
-forces above the entry interface when density, solar pressure or attitude
-coupling remains active. The reset itself does not change panel geometry.
+At exit, invalidating the old mode makes the next control update use the
+fresh-pass default for the configured modes: minimum angle for targeting-only
+EDG, or maximum angle when maximum depletion is configured. The effect relative
+to retaining the previous pass's command depends on whether its switch occurred:
+
+| Configuration | Previous pass's switch | Before exit invalidation | After exit invalidation |
+| --- | --- | --- | --- |
+| Targeting only | Completed | Minimum | Minimum, unchanged |
+| Targeting only | Still ahead | Maximum | Minimum |
+| Targeting plus maximum depletion | Completed | Minimum | Maximum |
+| Targeting plus maximum depletion | Still ahead | Maximum | Maximum, unchanged |
+
+These between-pass commands can affect forces above the entry interface when
+density, solar pressure or attitude coupling remains active. The reset itself
+does not change panel geometry.
 
 Maximum-depletion control may be configured without guidance. Targeting control
 requires paired guidance to establish its bracket. EDG checkpoint writing and

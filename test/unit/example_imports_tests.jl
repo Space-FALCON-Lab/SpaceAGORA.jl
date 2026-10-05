@@ -35,6 +35,38 @@ using SpaceAGORA
     end
 end
 
+module ExampleResultTableBoundaryTests
+using Test
+using SpaceAGORA: SimulationModel
+const SimulationConfiguration = SimulationModel.SimulationConfiguration
+
+# The saved-table owner can load independently of common.jl and the mission
+# plotting helper. Keep the caller's project and working directory intact.
+const PROJECT_BEFORE_INCLUDE = Base.active_project()
+const DIRECTORY_BEFORE_INCLUDE = pwd()
+include(joinpath(@__DIR__, "..", "..", "examples", "support", "aerobraking_result_tables.jl"))
+
+@testset "saved-result access without mission or plotting setup" begin
+    @test Base.active_project() == PROJECT_BEFORE_INCLUDE
+    @test pwd() == DIRECTORY_BEFORE_INCLUDE
+    for binding in (:Plots, :PlotlyJS, :SPICE, :RuntimeServices, :REPO_ROOT,
+                    :AerobrakingMissionSpiceConfig)
+        @test !isdefined(@__MODULE__, binding)
+    end
+
+    mktempdir() do directory
+        csv_path = joinpath(directory, "saved.csv")
+        write(csv_path, "other,time\n3,2\n4,-1\n")
+        df = _read_simulation_results(csv_path)
+        @test propertynames(df) == [:other, :time]
+        @test _require_float_column(df, :time) == [2.0, -1.0]
+        @test _require_float_column(df, :time) isa Vector{Float64}
+        @test_throws ArgumentError _require_float_column(df, :absent)
+        @test_throws ArgumentError _read_simulation_results(joinpath(directory, "missing.csv"))
+    end
+end
+end # module ExampleResultTableBoundaryTests
+
 module ExamplePlotResultsTests
 using Test
 

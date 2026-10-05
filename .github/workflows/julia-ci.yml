@@ -456,6 +456,8 @@ jobs:
     timeout-minutes: 60
     env:
       JULIA_NUM_THREADS: "4"
+      JULIA_PKG_PRECOMPILE_AUTO: "0"
+      JULIA_NUM_PRECOMPILE_TASKS: "1"
     steps:
       # The runner context is not available in job-level env, and GitHub
       # rejects the whole workflow file when it is used there. Export the
@@ -472,17 +474,72 @@ jobs:
           persist-credentials: false
 
       # No shared depot here: resolving and compiling from nothing is the point.
-      # Setup instantiates the root environment and then the vendored GRAMSuite
-      # in the clean depot, the root one while the GRAMSuite checkout downloads.
+      # Keep compilation outside setup so a timeout identifies the failing phase.
       - name: Setup (instantiate in clean depot)
+        timeout-minutes: 10
         uses: ./.github/actions/setup
         with:
           depot: "false"
           instantiate: "true"
+          precompile: "false"
+          gramsuite-smoke: "false"
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
+      - name: Instantiate vendored GRAMSuite in clean depot
+        timeout-minutes: 3
+        run: julia --startup-file=no --project=data/GRAMSuite.jl -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Precompile root environment in clean depot
+        timeout-minutes: 35
+        shell: bash
+        run: |
+          set -euo pipefail
+          diagnostics_dir="$RUNNER_TEMP/clean-depot-precompile"
+          mkdir -p "$diagnostics_dir"
+          cp Manifest.toml "$diagnostics_dir/Manifest.toml"
+          printf 'Precompile tasks: %s; automatic precompile: %s\n' "$JULIA_NUM_PRECOMPILE_TASKS" "$JULIA_PKG_PRECOMPILE_AUTO"
+          python3 -u -c '
+          import datetime, subprocess, time
+          while True:
+              print(datetime.datetime.now(datetime.timezone.utc).isoformat(), flush=True)
+              result = subprocess.run(["ps", "-eo", "pid,ppid,etime,time,stat,rss,comm,args"], capture_output=True, text=True)
+              for row in result.stdout.splitlines():
+                  fields = row.split()
+                  if len(fields) >= 7 and (fields[0] == "PID" or fields[6] == "julia"):
+                      print(row, flush=True)
+              time.sleep(60)
+          ' > "$diagnostics_dir/processes.log" 2>&1 &
+          monitor_pid=$!
+          trap 'kill "$monitor_pid" 2>/dev/null || true; wait "$monitor_pid" 2>/dev/null || true' EXIT
+          date -u
+          julia --startup-file=no --project=. -e 'using Pkg; Pkg.precompile(; strict=true, timing=true)' 2>&1 | tee "$diagnostics_dir/precompile.log"
+          date -u
+
+      - name: Load vendored GRAMSuite in clean depot
+        timeout-minutes: 3
+        run: julia --startup-file=no --project=data/GRAMSuite.jl -e 'using GRAMSuite; println("gramsuite_load_ok")'
+
       - name: Clean-depot student entrypoint smoke
+        timeout-minutes: 5
         run: julia --startup-file=no --depwarn=error --project=. test/smoke/ci_clean_depot_smoke.jl
+
+      - name: Summarize clean-depot precompile diagnostics
+        if: always()
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/clean-depot-precompile/processes.log" ]; then
+            tail -n 200 "$RUNNER_TEMP/clean-depot-precompile/processes.log"
+          fi
+
+      - name: Upload clean-depot precompile diagnostics
+        if: always()
+        timeout-minutes: 2
+        uses: actions/upload-artifact@v4
+        with:
+          name: clean-depot-precompile-diagnostics
+          path: ${{ runner.temp }}/clean-depot-precompile/
+          if-no-files-found: ignore
 
   threaded-smoke:
     needs: depot

@@ -37,6 +37,7 @@ include(joinpath(@__DIR__, "rhs_cost_probe.jl"))
 include(joinpath(@__DIR__, "persistence.jl"))
 include(joinpath(@__DIR__, "resume_checkpoint.jl"))
 include(joinpath(@__DIR__, "reporting.jl"))
+include(joinpath(@__DIR__, "results.jl"))
 include(joinpath(@__DIR__, "execution.jl"))
 include(joinpath(@__DIR__, "public_api.jl"))
 
@@ -47,6 +48,7 @@ export ArtifactConfig
 export SimulationEngineConfig
 export simulation_engine_config_from_env
 export run_simulation
+export SimulationResults
 export SolverIntegratorCache
 export prewarm_nbody_ephemeris_cache
 export load_nbody_ephemeris_cache!

@@ -401,10 +401,11 @@ but it trades away the default isolation guarantee.
 
 With `return_results=true` the call returns a [`SimulationResults`](@ref): the
 results table built in memory (same columns and values as the CSV, even when
-`simulation_settings.results=false`, in which case no file is written), the
+`simulation_settings.results=false`, in which case result files are not written), the
 configuration that actually ran (the deep copy under `isolate_state=true`, so
 controller state and logs are reachable), the files the run wrote, and the
 solution when `return_solution=true` is also given (otherwise `nothing`).
+Explicitly enabled checkpoint writing remains independent of result-file output.
 It cannot be combined with `return_solver_metadata=true`. With the default
 `return_results=false` the return value is unchanged.
 
@@ -763,6 +764,7 @@ function run_simulation(
     needs_full_solution = return_solution || solver_mode == :gravity_backbone_split
 
     last_sol = nothing
+    checkpoint_written = false
     solver_trace = NamedTuple[]
     checkpoint_saved_times = Float64[]
     checkpoint_saved_data = SimulationModel.SaveData[]
@@ -846,6 +848,7 @@ function run_simulation(
             t_cursor = Float64(seg_sol.t[end])
             u_cursor = deepcopy(seg_sol.u[end])
             _write_checkpoint!(args, t_cursor, u_cursor, string(solver_mode))
+            checkpoint_written = true
             if string(seg_sol.retcode) != "Success" || !_gravity_backbone_time_reached(t_cursor, t_next)
                 break
             end
@@ -959,7 +962,7 @@ function run_simulation(
         if args.simulation_settings.results && _typed_save_bundle_enabled()
             push!(candidates, prefix * ".feather", prefix * ".manifest.toml")
         end
-        if checkpoint_active
+        if checkpoint_written
             ck = SimulationModel.IOConfig._checkpoint_paths(args)
             push!(candidates, ck.data, ck.manifest)
         end

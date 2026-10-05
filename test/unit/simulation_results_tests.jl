@@ -71,10 +71,24 @@ end
 
     # Checkpointed solve with results=false fills the table from saved_values.
     ck_a = run_simulation(_checkpointed_config(results=true, dir=mktempdir()); return_results=true)
-    ck_b = run_simulation(_checkpointed_config(results=false, dir=mktempdir()); return_results=true)
+    ck_b_args = _checkpointed_config(results=false, dir=mktempdir())
+    ck_b = run_simulation(ck_b_args; return_results=true)
     @test nrow(ck_b.table) > 0
     @test nrow(ck_b.table) == nrow(ck_a.table)
     @test names(ck_b.table) == names(ck_a.table)
+
+    # A completed checkpoint is input to a resume, not output written by it.
+    @test length(ck_b.files) == 2
+    checkpoint_before = Dict(f => (stat(f).mtime, read(f)) for f in ck_b.files)
+    settings = ck_b_args.simulation_settings
+    fields = fieldnames(typeof(settings))
+    values = NamedTuple{fields}(map(n -> getfield(settings, n), fields))
+    resume_settings = SimulationSettings(; merge(values, (resume_from_checkpoint=true,))...)
+    resume_args = SpaceAGORA.SimulationModel.SimConfig._with_configuration(
+        ck_b_args; simulation_settings=resume_settings)
+    resumed = run_simulation(resume_args; return_results=true)
+    @test isempty(resumed.files)
+    @test all(checkpoint_before[f] == (stat(f).mtime, read(f)) for f in ck_b.files)
 
     # Default return value is unchanged.
     @test run_simulation(_results_test_config(results=false, dir=mktempdir())) === nothing

@@ -42,7 +42,10 @@ The Feather file is always written. The CSV is written when
 Pass `return_results=true` to get a [`SimulationResults`](@ref) back instead of
 reading files. Its `table` is the same `DataFrame` the CSV would contain
 (same columns and values), and it is built even when
-`simulation_settings.results = false`, in which case nothing is written.
+`simulation_settings.results = false`, in which case result files are not written.
+Explicitly enabled checkpoints can still be written; they are listed in `files`
+only when this call writes them. Resuming an already completed checkpoint does
+not report the old checkpoint files as new output.
 `configuration` is the configuration that actually ran: under the default
 `isolate_state=true` that is the deep copy, so controller state and logs, such
 as the RPO command log, are reachable there and not on the object you passed

@@ -220,7 +220,7 @@ date does not evolve it. Three presets are listed, all frozen at the P20 instant
 (see [atmosphere models](user/atmosphere_models.md)):
 - the bounded Odyssey preset;
 - `mars_global_upper_p20_frozen_v1`, a global Mars grid from 80 to 365 km;
-- `mars_global_near_surface_p20_frozen_v1`, a near-surface Mars atmosphere from 5 m above the surface, with no winds. Version 1.0.0 reaches 75 km; version 1.1.0 reaches 81 km areoid height, above the global preset's 80 km floor everywhere.
+- `mars_global_near_surface_p20_frozen_v1`, a near-surface Mars atmosphere from 5 m above the surface, with no winds in its published versions. Version 1.0.0 reaches 75 km; version 1.1.0 reaches 81 km areoid height, above the global preset's 80 km floor everywhere.
 
 The same `fetch` and `check` commands take `--preset=mars_global_upper_p20_frozen_v1 --version=1.0.0`,
 whose archive is about 230 MB, or `--preset=mars_global_near_surface_p20_frozen_v1 --version=1.1.0` (or

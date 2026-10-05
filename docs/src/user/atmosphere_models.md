@@ -27,7 +27,7 @@ What to read next:
 | `PiecewiseExponentialAtmosphereModel(...)` | Low–medium | None | Multi-layer; better altitude-shape fit |
 | `NRLMSISE00AtmosphereModel(...)` | Medium | None (fixed indices) or internet (live indices) | Standard empirical model; ~0–1000 km |
 | `GRAMGridAtmosphereModel(...)` | Fixed snapshot | GRAMSuite with its grid API and a trusted grid payload | Native-free evaluation within documented grid coverage |
-| `GRAMNearSurfaceAtmosphereModel(...)` | Fixed snapshot | GRAMSuite with its near-surface API and a trusted near-surface payload | Native-free Mars density and temperature from 5 m above the surface to 75 km; no winds |
+| `GRAMNearSurfaceAtmosphereModel(...)` | Fixed snapshot | GRAMSuite with its near-surface API and a trusted near-surface payload | Native-free Mars density and temperature from 5 m above the surface to the payload's top (75 or 81 km); stored winds only with a format 2 payload, none in the published versions |
 | `GRAMAtmosphereModel(...)` | High | Licensed NASA GRAM | Requires GRAM asset setup |
 
 For GRAM setup, see [GRAMSuite Setup](gramsuite_setup.md).
@@ -220,7 +220,12 @@ native Mars-GRAM's own near-surface rule, driven by the local terrain.
 - **Regime.** The first exposed table level comes from the query's own MOLA surface height. It selects the regime: level interpolation above it, and a surface-layer law from 30 m up to it and from 5 m to 30 m.
 - **Components.** They are stored on a 1.5-degree lattice and interpolated bilinearly.
 - **Model.** `surrogate_preset_model` returns a `GRAMNearSurfaceAtmosphereModel`.
-- **Outputs.** `getDensity` returns density, temperature and a zero wind vector. The preset stores no winds, so a simulation using it has no atmospheric wind.
+- **Outputs.** `getDensity` returns density, temperature and the wind vector.
+  - The published versions (1.0.0 and 1.1.0) have format 1 payloads, which store no winds: the wind vector is zero, so
+    a simulation using them has no atmospheric wind.
+  - A format 2 payload returns its stored east, north and vertical winds, with the horizontal components clipped at
+    0.7 times the speed of sound as native clips them.
+  - The catalog declares which kind a version is, and the loaded payload must agree.
 - **Pressure and status.** `GRAMSuite.near_surface_state(model.core, lat_deg, lon_deg, h_m)` returns pressure, the regime and the status of the surface-layer model used.
 
 ```julia
@@ -344,8 +349,11 @@ density_model = CombinedAtmosphereModel(lower, upper; handover_height_m=80e3)
   the selected component refuses fails with that component's `DomainError`. Below the handover, coverage stops 5 m
   above supported terrain and excludes latitudes beyond 85 degrees, volcano flanks and positions where a component is
   unavailable, even though the upper preset covers those columns above 80 km.
-- **Steps at the handover.** Each component returns its own wind. The near-surface preset stores none, so the wind
-  is zero below the handover and the upper preset's stored wind at and above it: the wind changes abruptly there.
+- **Steps at the handover.** Each component returns its own wind.
+  - The published near-surface versions store none, so with them the wind is zero below the handover and the upper
+    preset's stored wind at and above it: the wind changes abruptly there.
+  - A near-surface payload with stored winds (format 2) returns them below the handover; the two components' winds
+    still differ at the handover.
   Density and temperature can also step by the difference between the presets.
 - **Frozen state.** Both presets are frozen at the same instant. The composition adds no time evolution and has no
   validated accuracy claim of its own; each preset's documented validation applies on its side of the handover.

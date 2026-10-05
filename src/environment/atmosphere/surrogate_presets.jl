@@ -11,7 +11,11 @@ const _PRESET_METADATA_KEY = "spaceagora_named_surrogate"
 _preset_error(message) = throw(ArgumentError(message))
 # A preset's kind selects its model: a fixed grid (the default when absent) or a near-surface payload.
 const _PRESET_KINDS = ("gram_grid", "gram_near_surface_scalars")
+# A near-surface payload's format says whether it stores winds: format 1 (published versions 1.0.0 and 1.1.0) stores
+# none and returns a zero wind vector; format 2 adds a wind layer and returns its stored winds.
 const _NEAR_SURFACE_FORMAT = "spaceagora_mars_near_surface_scalars_v1"
+const _NEAR_SURFACE_WIND_FORMAT = "spaceagora_mars_near_surface_v2"
+const _WIND_FIELDS = ("wind_ew_ms", "wind_ns_ms", "wind_up_ms")
 _preset_kind(entry) = get(entry, "kind", "gram_grid")
 _preset_digest(file) = open(io -> bytes2hex(SHA.sha256(io)), file)
 
@@ -106,7 +110,9 @@ end
 # minimum clearance above the local surface, an areoid-height top and a volcano-flank refusal, all errors outside.
 function _preset_near_surface_domain(entry)
     domain = entry["domain"]; atmosphere = entry["atmosphere"]; required = entry["required_metadata"]
-    required["format"] == _NEAR_SURFACE_FORMAT || _preset_error("Near-surface presets require payload format $_NEAR_SURFACE_FORMAT.")
+    format = required["format"]
+    format in (_NEAR_SURFACE_FORMAT, _NEAR_SURFACE_WIND_FORMAT) ||
+        _preset_error("Near-surface presets require payload format $_NEAR_SURFACE_FORMAT or $_NEAR_SURFACE_WIND_FORMAT.")
     haskey(entry, "axes") && _preset_error("A near-surface preset declares a terrain-following domain, not grid axes.")
     limits = ("planetocentric_latitude_max_deg", "minimum_clearance_m", "top_areoid_height_m", "surface_height_refused_at_or_above_m")
     all(key -> domain[key] isa Real && !(domain[key] isa Bool) && isfinite(domain[key]), limits) ||
@@ -119,8 +125,19 @@ function _preset_near_surface_domain(entry)
         _preset_error("Near-surface preset domain differs from its payload support limits.")
     domain["longitude_period_deg"] == 360 || _preset_error("Near-surface preset longitude must be periodic over 360 degrees.")
     domain["outside"] == "error" || _preset_error("Named presets require errors outside their supported domain.")
-    atmosphere["winds_available"] === false && atmosphere["wind_returned"] == "zero_vector" ||
-        _preset_error("A near-surface preset must declare that it stores no winds and returns a zero wind vector.")
+    fields = get(atmosphere, "fields", Any[])
+    if format == _NEAR_SURFACE_FORMAT
+        atmosphere["winds_available"] === false && atmosphere["wind_returned"] == "zero_vector" && !any(in(fields), _WIND_FIELDS) ||
+            _preset_error("A near-surface preset with payload format $format stores no winds: it must declare winds_available = false " *
+                "and wind_returned = \"zero_vector\", and list no wind fields.")
+    else
+        atmosphere["winds_available"] === true && atmosphere["wind_returned"] == "stored_components" &&
+            get(atmosphere, "wind_convention", nothing) == "stored_nominal_local_ENU" &&
+            get(atmosphere, "wind_boolean_suppresses_stored_components", nothing) === false && all(in(fields), _WIND_FIELDS) ||
+            _preset_error("A near-surface preset with payload format $format returns its stored winds: it must declare " *
+                "winds_available = true, wind_returned = \"stored_components\", wind_convention = \"stored_nominal_local_ENU\", " *
+                "wind_boolean_suppresses_stored_components = false, and the wind fields $(join(_WIND_FIELDS, ", ")).")
+    end
     return nothing
 end
 
@@ -286,6 +303,11 @@ function _validate_near_surface_preset_model(model, resolution)
         _preset_error("Near-surface payload support limits differ from the preset's declared domain.")
     1000*evaluator.a_km == atmosphere["equatorial_radius_m"] && 1000*evaluator.b_km == atmosphere["polar_radius_m"] ||
         _preset_error("Near-surface payload radii differ from the preset's declared datum.")
+    # The payload format is checked through the required metadata above; the loaded model must also agree with the
+    # declared winds (a wind layer exactly when the preset declares stored winds).
+    _near_surface_model_has_winds(model) === atmosphere["winds_available"] ||
+        _preset_error("The loaded near-surface payload $(atmosphere["winds_available"] ? "has no wind layer" : "has a wind layer"), " *
+            "contrary to the preset's wind declaration.")
     return model
 end
 
@@ -307,8 +329,10 @@ Build the model a verified named preset declares: the existing `GRAMGridAtmosphe
 for a grid preset, or `GRAMNearSurfaceAtmosphereModel` for a near-surface preset. Load
 `GRAMSuite` first. Validates the retained generation settings, datum and all grid
 axes (or the near-surface domain limits) before use. Stored winds and the frozen-time
-behavior are unchanged; a near-surface preset stores no winds and returns a zero wind
-vector. Queries outside the declared domain fail; longitude is periodic.
+behavior are unchanged. A near-surface preset with payload format 1 (the published
+versions 1.0.0 and 1.1.0) stores no winds and returns a zero wind vector; one with
+format 2 returns its stored winds, and its catalog entry and payload must agree on
+that. Queries outside the declared domain fail; longitude is periodic.
 Use `atmosphere_provenance(model)` to retain the selected contract in run outputs.
 Without `GRAMSuite` loaded it raises an `ArgumentError` before resolving anything.
 Accepts the keywords of `resolve_surrogate_preset` only. A named preset fixes its

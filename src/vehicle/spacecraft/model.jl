@@ -384,9 +384,14 @@ end
 # Preserve the collection type in this module while giving configuration its own file.
 include(joinpath(@__DIR__, "..", "..", "simulation", "config", "constellation_configuration.jl"))
 
+"""
+    GuidanceModel(; guidance_effectors=(), guidance_rates=Float64[])
+
+Tuple of guidance effectors and the rate (s) at which each is called. `GuidanceModel()` is the empty model (no effectors).
+"""
 @kwdef struct GuidanceModel{T_Effectors<:Tuple}
-    guidance_effectors::T_Effectors # Tuple of guidance effector models (maneuver planning, etc.)
-    guidance_rates::Vector{Float64} # Rates at which to call each guidance effector, in seconds
+    guidance_effectors::T_Effectors = () # Tuple of guidance effector models (maneuver planning, etc.)
+    guidance_rates::Vector{Float64} = Float64[] # Rates at which to call each guidance effector, in seconds
     function GuidanceModel(guidance_effectors::T_Effectors, guidance_rates::Vector{Float64}) where {T_Effectors<:Tuple}
         n_effectors = length(guidance_effectors)
         if length(guidance_rates) != n_effectors
@@ -401,9 +406,14 @@ include(joinpath(@__DIR__, "..", "..", "simulation", "config", "constellation_co
     end
 end
 
+"""
+    NavigationModel(; navigation_effectors=(), navigation_rates=Float64[])
+
+Tuple of navigation effectors and the rate (s) at which each is called. `NavigationModel()` is the empty model (no effectors).
+"""
 @kwdef struct NavigationModel{T_Effectors<:Tuple}
-    navigation_effectors::T_Effectors # Tuple of navigation effector models (sensors, etc.)
-    navigation_rates::Vector{Float64} # Rates at which to call each navigation effector, in seconds
+    navigation_effectors::T_Effectors = () # Tuple of navigation effector models (sensors, etc.)
+    navigation_rates::Vector{Float64} = Float64[] # Rates at which to call each navigation effector, in seconds
     function NavigationModel(navigation_effectors::T_Effectors, navigation_rates::Vector{Float64}) where {T_Effectors<:Tuple}
         n_effectors = length(navigation_effectors)
         if length(navigation_rates) != n_effectors
@@ -418,9 +428,14 @@ end
     end
 end
 
+"""
+    ControlModel(; control_effectors=(), control_rates=Float64[])
+
+Tuple of control effectors and the rate (s) at which each is called. `ControlModel()` is the empty model (no effectors).
+"""
 @kwdef struct ControlModel{T_Effectors<:Tuple}
-    control_effectors::T_Effectors # Tuple of control effector models (reaction wheels, thrusters, etc.)
-    control_rates::Vector{Float64} # Control rates for each effector, in seconds
+    control_effectors::T_Effectors = () # Tuple of control effector models (reaction wheels, thrusters, etc.)
+    control_rates::Vector{Float64} = Float64[] # Control rates for each effector, in seconds
 
      function ControlModel(control_effectors::T_Effectors, control_rates::Vector{Float64}) where {T_Effectors<:Tuple}
         n_effectors = length(control_effectors)

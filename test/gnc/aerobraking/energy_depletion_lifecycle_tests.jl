@@ -126,6 +126,27 @@ end
     end
 end
 
+@testset "Atmosphere startup and reconciliation share boundary direction" begin
+    x=context()
+    boundary=x.a.environment_model.planet.Rp_e+x.a.environment_model.EI*1e3
+    for (offset, inbound, tangent, outbound) in (
+        (-100.0, true, true, true),
+        (-32eps(boundary), true, true, false),
+        (0.0, true, true, false),
+        (32eps(boundary), true, true, false),
+        (100.0, false, false, false))
+        for (speed, expected) in ((-100.0,inbound),(0.0,tangent),(100.0,outbound))
+            x.u.sc[1].pos .= (boundary+offset,0,0)
+            x.u.sc[1].vel .= (speed,10,0)
+            E._initialize_in_atmosphere_flags!(x.p,x.u)
+            @test x.p.shared_buffers.in_atmosphere == [expected]
+            x.p.shared_buffers.in_atmosphere[1]=!expected
+            CB._refresh_crossing_atmosphere_flags!(mask_integrator(x),Int8[0])
+            @test x.p.shared_buffers.in_atmosphere == [expected]
+        end
+    end
+end
+
 @testset "EDG crossings remain scheduled with identical solver phases" begin
     for control_only in (false,true)
         x=context(;control_only)
@@ -162,6 +183,21 @@ end
     @test_throws ArgumentError L.preflight_guidance(x.g,a;isolate_state=true)
     a=SC._with_configuration(x.a;control_model=S.ControlModel((x.c,x.c),[1.0,2.0]))
     @test_throws ArgumentError L.preflight_control(x.c,a;isolate_state=true)
+    # Single-sided duplicates must fail for the explicit EDG ownership rule,
+    # without relying on only(...) in the paired-model path to throw.
+    for guidance_only in (false,true)
+        a=SC._with_configuration(x.a;
+            guidance_model=guidance_only ? S.GuidanceModel((x.g,x.g),[1.0,2.0]) : S.GuidanceModel((),Float64[]),
+            control_model=guidance_only ? S.ControlModel((),Float64[]) : S.ControlModel((x.c,x.c),[1.0,2.0]))
+        err=try
+            guidance_only ? L.preflight_guidance(x.g,a;isolate_state=true) : L.preflight_control(x.c,a;isolate_state=true)
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError
+        @test occursin("EDG requires at most one guidance model and one control model",sprint(showerror,err))
+    end
     y=context(targeting=true,control_only=true)
     @test_throws ArgumentError L.preflight_control(y.c,y.a;isolate_state=true)
     # Both write and resume fail through the public engine before creating output.
@@ -237,5 +273,42 @@ end
     @test x.state.targeting_switch_s==[Inf]
     @test x.u.sc[1].heat_loads==fill(7.0,3)
     println("EDG_SCHEDULED_REENTRY ",records)
+end
+
+@testset "EDG outbound boundary start invalidates t0 plan on reentry" begin
+    x=context(targeting=true)
+    boundary=x.a.environment_model.planet.Rp_e+x.a.environment_model.EI*1e3
+    x.u.sc[1].pos .= (boundary,0,0)
+    x.u.sc[1].vel .= (100pi/10.6,0,0)
+    # A real thruster initialization invokes guidance at t0. No burn is requested.
+    thruster=S.BaseThrusterModel(thrust=[0.0],direction=[0.0],Δv=[0.0],
+        start_burn_time=[Inf],stop_burn_time=[Inf],Isp=[300.0])
+    a=SC._with_configuration(x.a;control_model=S.ControlModel((x.c,thruster),[0.5,1.0]))
+    p=S.ODEParams(n_sats=1,args=a)
+    p.shared_buffers.et_start[]=x.p.shared_buffers.et_start[]
+    E._initialize_in_atmosphere_flags!(p,x.u)
+    @test p.shared_buffers.in_atmosphere == [false]
+    function radial!(du,u,p,t)
+        du .= 0
+        du.sc[1].pos[1]=u.sc[1].vel[1]
+        du.sc[1].vel[1]=-100*(pi/10.6)^2*sin(pi*t/10.6)
+    end
+    records=NamedTuple[]
+    record=PeriodicCallback(i->push!(records,(t=i.t,inside=i.p.shared_buffers.in_atmosphere[1],
+        count=x.state.energy_bracketing_count[1])),0.5)
+    callbacks=CallbackSet(CB.get_drag_state_callback(1),CB.get_control_callbacks(1,a)...,
+        CB.get_guidance_callbacks(1,a)...,record)
+    integrator=init(ODEProblem(radial!,x.u,(0.,19.),p),Tsit5();callback=callbacks,
+        dtmax=0.25,abstol=1e-8,reltol=1e-10)
+    @test x.state.energy_bracketing_count == [1] # The production t0 trigger actually ran.
+    solve!(integrator)
+    @test string(integrator.sol.retcode)=="Success" && integrator.t==19.0
+    coast=filter(r->r.t<10.5,records)
+    nextpass=filter(r->r.t>=11,records)
+    @test !isempty(coast) && all(r->!r.inside && r.count==1,coast)
+    @test !isempty(nextpass) && all(r->r.inside && r.count==2,nextpass)
+    @test x.state.energy_bracketing_count == [2]
+    @test x.u.sc[1].heat_loads==fill(7.0,3)
+    println("EDG_BOUNDARY_REENTRY ",records)
 end
 end

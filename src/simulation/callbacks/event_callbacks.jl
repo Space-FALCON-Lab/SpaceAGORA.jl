@@ -262,16 +262,9 @@ function _refresh_crossing_atmosphere_flags!(integrator, events)
     p = integrator.p
     engine = _simulation_engine_module()
     boundary = p.args.environment_model.planet.Rp_e + p.args.environment_model.EI * 1e3
-    boundary_roundoff = 64 * eps(boundary)
     previous_inside = copy(p.shared_buffers.in_atmosphere)
     for i in eachindex(p.is_active)
-        position = engine._state_position_ii(integrator.u, i)
-        height = norm(position) - boundary
-        now_inside = if abs(height) <= boundary_roundoff
-            dot(position, engine._state_velocity_ii(integrator.u, i)) <= 0.0
-        else
-            height < 0.0
-        end
+        now_inside = engine._inside_atmosphere_at_state(integrator.u, i, boundary)
         events[i] != 0 && (now_inside = events[i] < 0)
         # An exit invalidates a vacuum prediction even if this member's own
         # callback was omitted from a simultaneous event by the solver library.

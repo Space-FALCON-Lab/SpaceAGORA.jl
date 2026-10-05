@@ -115,6 +115,23 @@ callbacks within a pass retain their cache. Bracketing counts accumulate within
 a run; last-command telemetry remains until the next control update. Propagated
 physical heat loads and panel geometry are not cleared by this reset.
 
+Startup and crossing reconciliation share one boundary convention: within
+64 floating-point spacings of the entry-interface radius, outward motion is
+outside and inward or tangential motion is inside. This ensures that a plan
+computed at an exact-boundary outbound start is invalidated on the next entry.
+
+EDG enables the existing crossing pipeline even when both solver phases have
+identical settings. That pipeline also enables staged density updates,
+exit-time thruster scheduling (which may call guidance), and phase-setting
+reapplication. Added root-finding stops can change the integration path;
+unchanged guidance formulas do not imply bitwise-identical trajectories.
+
+At exit, invalidating the old mode also changes subsequent control commands.
+For targeting-only EDG, the next control update uses the minimum-angle default
+instead of retaining the previous pass's maximum-angle command. This can affect
+forces above the entry interface when density, solar pressure or attitude
+coupling remains active. The reset itself does not change panel geometry.
+
 Maximum-depletion control may be configured without guidance. Targeting control
 requires paired guidance to establish its bracket. EDG checkpoint writing and
 resume are refused before output creation because the checkpoint format does

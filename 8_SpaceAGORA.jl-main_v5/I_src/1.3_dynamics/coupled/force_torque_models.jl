@@ -36,7 +36,7 @@ module DynamicEffectors
     using .ThrusterModels: BaseThrusterModel
     using .GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel
     using .RobotArmReactionEffectors: RobotArmReactionEffector
-    using .LaserForceEffectors: laser_force_on_spacecraft
+    using .LaserForceEffectors: force_on_endpoint, laser_force_on_spacecraft
 
     export ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel
     export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
@@ -50,5 +50,5 @@ module DynamicEffectors
     export BaseThrusterModel
     export AerobrakingCampaignPropulsiveManeuverGuidanceModel
     export RobotArmReactionEffector
-    export laser_force_on_spacecraft
+    export force_on_endpoint, laser_force_on_spacecraft
 end

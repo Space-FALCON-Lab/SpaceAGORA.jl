@@ -23,7 +23,7 @@
 
 # ── 1. Bootstrap SpaceAGORA ──────────────────────────────────────────────────
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
-include(joinpath(REPO_ROOT, "examples", "common.jl"))
+include(joinpath(@__DIR__, "..", "..", "examples", "common.jl"))
 
 # ── 2. Dependencies ──────────────────────────────────────────────────────────
 using Arrow

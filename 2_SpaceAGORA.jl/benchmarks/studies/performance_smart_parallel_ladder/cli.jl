@@ -1,6 +1,6 @@
 const _SMART_LADDER_STUDIES_DIR = dirname(@__DIR__)
 const _SMART_LADDER_BENCHMARKS_DIR = dirname(_SMART_LADDER_STUDIES_DIR)
-include(joinpath(_SMART_LADDER_BENCHMARKS_DIR, "scripts", "performance_paper_pipeline.jl"))
+include(joinpath(@__DIR__, "..", "..", "scripts", "performance_paper_pipeline.jl"))
 
 using Random
 using SHA

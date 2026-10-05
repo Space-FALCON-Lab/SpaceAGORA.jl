@@ -1498,13 +1498,6 @@ end
     )
 end
 
-"""
-    calcForceTorque(model::GravitationalHarmonicsModel, x, param, i)
-
-Compute spherical-harmonics gravity using coefficients stored in the model's internal fully
-normalized convention. By default this includes the inverse-square central term, so it should
-not be paired with a separate `InverseSquaredGravityModel` for the same primary body.
-"""
 # Inner kernel: compute harmonics force/torque given a pre-computed inertial→planet-fixed
 # rotation matrix. Called directly by the flat-batch parallel region (which already computed
 # L_PI once serially) to avoid per-satellite cache-key allocation inside the parallel loop.
@@ -1654,6 +1647,13 @@ not be paired with a separate `InverseSquaredGravityModel` for the same primary 
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
+"""
+    calcForceTorque(model::GravitationalHarmonicsModel, x, param, i)
+
+Compute spherical-harmonics gravity using coefficients stored in the model's internal fully
+normalized convention. By default this includes the inverse-square central term, so it should
+not be paired with a separate `InverseSquaredGravityModel` for the same primary body.
+"""
 function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
     L_PI = _harmonics_lpi_at!(model, param, et)

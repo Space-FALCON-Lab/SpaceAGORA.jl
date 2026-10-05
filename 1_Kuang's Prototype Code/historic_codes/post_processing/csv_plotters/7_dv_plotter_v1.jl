@@ -6,11 +6,11 @@ const R_EARTH = 6_378_137.0
 const R_ATMDEF = R_EARTH + 100_000.0    # default "atmosphere radius" (Kármán line) [m]
 @inline idx(i, off) = 6*(i-1) + off
 
-include("../../functions/4_Diagnostics.jl")
-include("../../functions/5_OE_Converters.jl")
-include("../../functions/2_Laser_Forces_ver2.jl")
-include("../../functions/6_OE_and_dv_in_RTN.jl")
-include("../../functions/12_CSV_Write_Read.jl")
+include(joinpath(@__DIR__, "..", "..", "..", "functions", "4_Diagnostics.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "functions", "5_OE_Converters.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "functions", "2_Laser_Forces_ver2.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "functions", "6_OE_and_dv_in_RTN.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "functions", "12_CSV_Write_Read.jl"))
 
 # --- Config ---
 csv_path   = normpath(joinpath(@__DIR__, "..", "..", "output", "CSV",

@@ -5,11 +5,11 @@ using StaticArrays
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
-include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+include(joinpath(@__DIR__, "..", "..", "src", "core", "simulation_model.jl"))
 using .SimulationModel
 
 if !isdefined(@__MODULE__, :RPOStationAssets)
-    include(joinpath(REPO_ROOT, "src", "assets", "rpo_station_assets.jl"))
+    include(joinpath(@__DIR__, "..", "..", "src", "assets", "rpo_station_assets.jl"))
 end
 
 const SM = SimulationModel

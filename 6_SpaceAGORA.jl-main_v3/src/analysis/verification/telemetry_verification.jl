@@ -27,7 +27,7 @@ using TOML
 
 using ..SimulationModel
 using ..SimulationEngine
-include(joinpath(REPO_ROOT, "src", "core", "interfaces", "reference_system.jl"))
+include(joinpath(@__DIR__, "..", "..", "core", "interfaces", "reference_system.jl"))
 
 const SPICE_PATH = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 

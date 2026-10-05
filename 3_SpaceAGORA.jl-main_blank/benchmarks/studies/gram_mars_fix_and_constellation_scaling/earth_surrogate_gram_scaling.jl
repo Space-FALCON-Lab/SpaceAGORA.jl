@@ -8,7 +8,7 @@
 #   julia --project=. --threads=4 benchmarks/studies/gram_mars_fix_and_constellation_scaling/earth_surrogate_gram_scaling.jl
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
-include(joinpath(REPO_ROOT, "examples", "common.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "examples", "common.jl"))
 ensure_gramsuite_loaded!()
 const GRAMAtmosphereModel = SimulationModel.GRAMAtmosphereModel
 const GRAMAtmosphereModelSurrogate = SimulationModel.GRAMAtmosphereModelSurrogate

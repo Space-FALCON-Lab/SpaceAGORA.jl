@@ -3,9 +3,9 @@ using Test
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
 module EngineSandbox
-include(joinpath(Main.REPO_ROOT, "src", "simulation", "runtime_services.jl"))
-include(joinpath(Main.REPO_ROOT, "src", "core", "simulation_model.jl"))
-include(joinpath(Main.REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+include(joinpath(@__DIR__, "..", "src", "simulation", "runtime_services.jl"))
+include(joinpath(@__DIR__, "..", "src", "core", "simulation_model.jl"))
+include(joinpath(@__DIR__, "..", "src", "simulation", "engine", "simulation_engine.jl"))
 end
 
 const SE = EngineSandbox.SimulationEngine

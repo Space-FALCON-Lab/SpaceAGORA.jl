@@ -25,7 +25,7 @@ using Distributed
 using Printf
 using Statistics
 
-include(joinpath(_MCTSW_REPO_ROOT, "examples", "common.jl"))
+include(joinpath(@__DIR__, "..", "..", "examples", "common.jl"))
 
 const _MCTSW_RP_ALT_M = 125e3
 const _MCTSW_RA_ALT_M = 2_000e3

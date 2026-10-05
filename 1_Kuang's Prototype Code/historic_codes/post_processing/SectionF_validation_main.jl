@@ -52,11 +52,11 @@ const Ẑ       = SVector(0.0, 0.0, 1.0)
 
 # ── Include shared function libraries ─────────────────────────────────────────
 const FUNC_DIR = normpath(joinpath(@__DIR__, "..", "functions"))
-include(joinpath(FUNC_DIR, "1_LOS_Metrics.jl"))
-include(joinpath(FUNC_DIR, "2_Laser_Forces_ver2.jl"))
-include(joinpath(FUNC_DIR, "3_Dynamics.jl"))
-include(joinpath(FUNC_DIR, "4_Diagnostics.jl"))
-include(joinpath(FUNC_DIR, "5_OE_Converters.jl"))
+include(joinpath(@__DIR__, "..", "..", "functions", "1_LOS_Metrics.jl"))
+include(joinpath(@__DIR__, "..", "..", "functions", "2_Laser_Forces_ver2.jl"))
+include(joinpath(@__DIR__, "..", "..", "functions", "3_Dynamics.jl"))
+include(joinpath(@__DIR__, "..", "..", "functions", "4_Diagnostics.jl"))
+include(joinpath(@__DIR__, "..", "..", "functions", "5_OE_Converters.jl"))
 
 # ── Include Section-F specific functions ──────────────────────────────────────
 include(joinpath(@__DIR__, "SectionF_diagnostics.jl"))

@@ -28,9 +28,9 @@ catch err
     err
 end
 
-include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+include(joinpath(@__DIR__, "..", "..", "src", "core", "simulation_model.jl"))
 using .SimulationModel
-include(REFSYS_PATH)
+include(joinpath(@__DIR__, "..", "..", "src", "core", "interfaces", "reference_system.jl"))
 
 const SPICE_PATH = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 const EARTH = Earth("", SPICE_PATH)

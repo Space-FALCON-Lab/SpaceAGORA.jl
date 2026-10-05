@@ -3,7 +3,7 @@
 # 1. load common.jl
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..")) # find path to the repository root
 println("Loading SpaceAGORA (precompilation may take a few minutes on first run)...")
-include(joinpath(REPO_ROOT, "examples", "common.jl")) # load common.jl for utility functions and types
+include(joinpath(@__DIR__, "..", "examples", "common.jl")) # load common.jl for utility functions and types
 
 # 2. load dependencies
 using Arrow

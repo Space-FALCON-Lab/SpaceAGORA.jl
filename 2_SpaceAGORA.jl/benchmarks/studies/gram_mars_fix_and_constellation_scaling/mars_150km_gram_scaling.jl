@@ -32,7 +32,7 @@ mode in ("serial", "parallel", "accuracy", "ensemble") || error(
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
 
-include(joinpath(REPO_ROOT, "examples", "common.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "examples", "common.jl"))
 ensure_gramsuite_loaded!()
 const GRAMAtmosphereModel = SimulationModel.GRAMAtmosphereModel
 
@@ -40,7 +40,7 @@ using LinearAlgebra
 using StaticArrays
 using Statistics
 
-include(joinpath(REPO_ROOT, "benchmarks", "studies", "parallelization_performance", "trajectory_parity.jl"))
+include(joinpath(@__DIR__, "..", "parallelization_performance", "trajectory_parity.jl"))
 
 const N_SATS = parse(Int, get(ENV, "LEO_SCALING_N_SATS", "1024"))
 const ALT_M = 150e3  # same altitude above the surface as the Earth case

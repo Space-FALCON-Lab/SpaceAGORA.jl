@@ -36,7 +36,7 @@ const N_SAMPLES = 256
 const OUTER_PROCESSES = 4
 const OUT_CSV = joinpath(@__DIR__, "mc_multisat_process_backend_summary.csv")
 
-include(SAMPLE_LOGIC)  # loads mc_run_sample/mc_build_sample_config on the driver too (serial route);
+include(joinpath(@__DIR__, "mc_multisat_process_sample.jl"))  # loads mc_run_sample/mc_build_sample_config on the driver too (serial route);
                         # also `using SpaceAGORA` transitively via examples/common.jl, so SpaceAGORA is
                         # a bare name here.
 

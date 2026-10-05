@@ -4,7 +4,7 @@ using StaticArrays
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
-include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+include(joinpath(@__DIR__, "..", "..", "src", "core", "simulation_model.jl"))
 using .SimulationModel
 
 const SPICE_PATH = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")

@@ -12,10 +12,10 @@ print("\033c")  # Clears the terminal on Windows
 # --------- Constants ---------
 const MU       = 3.986004418e14         # Earth μ [m^3/s^2]
 
-include("../functions/5_OE_Converters.jl")
-include("../functions/6_OE_and_dv_in_RTN.jl")
-include("../functions/7_Plots.jl")
-include("../functions/12_CSV_Write_Read.jl")
+include(joinpath(@__DIR__, "..", "..", "..", "functions", "5_OE_Converters.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "functions", "6_OE_and_dv_in_RTN.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "functions", "7_Plots.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "functions", "12_CSV_Write_Read.jl"))
 
 function _rbf_kernel_2d(X1::AbstractMatrix{<:Real}, X2::AbstractMatrix{<:Real}, ℓ1::Real, ℓ2::Real, σf2::Real)
     # Computes the RBF kernel matrix between two sets of 2D points, with separate length scales for each dimension.

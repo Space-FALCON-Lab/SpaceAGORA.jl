@@ -383,9 +383,9 @@ mutable struct SpacecraftModel
     n_thrusters::Int64 # Number of thrusters in the spacecraft model
     initial_condition::AbstractInitialCondition # Initial conditions for the simulation (orbit, attitude, etc.)
     id::Int64 # Unique identifier for the spacecraft (useful for multi-spacecraft simulations)
-    n_terminal::Int64
-    battery_energy_index::Float64
-    tempurature_index::Float64
+    n_terminal::Int64 # Number of terminal components (e.g., antennas, sensors) on the spacecraft
+    battery_energy_index::Float64 # Battery energy level as a percentage (0-100)
+    tempurature_index::Float64 # Temperature level as a percentage (0-100)
 end
 
 function SpacecraftModel(; joints::AbstractVector{<:Joint}=Joint[], links::AbstractVector{<:Link}=Link[], root::Link=Link{0}(root=true),

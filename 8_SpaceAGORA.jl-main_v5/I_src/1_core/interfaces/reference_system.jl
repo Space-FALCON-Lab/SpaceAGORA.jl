@@ -570,24 +570,22 @@ function rotate_vector_by_quaternion(v::Vector{Float64}, q::Vector{Float64})
     return v_rotated
 end
 
-"""
-    ned_to_ecef(v_ned::AbstractVector, date::DateTime, lat::Number, lon::Number)
-
-Converts a vector `v_ned` from the local North-East-Down (NED) frame to the
-Earth-Centered, Earth-Fixed (ECEF) frame.
-
-# Args
-
-- `v_ned`: A 3-element vector in the NED frame `[North, East, Down]`.
-- `date`: The `DateTime` at which the conversion is to be performed. This is
-          crucial for determining the Earth's orientation.
-- `lat`: The geodetic latitude of the observer [radians].
-- `lon`: The longitude of the observer [radians].
-
-# Returns
-
-- A 3-element `SVector` representing the vector in the GCRF frame.
-"""
+#     ned_to_ecef(v_ned::AbstractVector, date::DateTime, lat::Number, lon::Number)
+#
+# Converts a vector `v_ned` from the local North-East-Down (NED) frame to the
+# Earth-Centered, Earth-Fixed (ECEF) frame.
+#
+# # Args
+#
+# - `v_ned`: A 3-element vector in the NED frame `[North, East, Down]`.
+# - `date`: The `DateTime` at which the conversion is to be performed. This is
+#           crucial for determining the Earth's orientation.
+# - `lat`: The geodetic latitude of the observer [radians].
+# - `lon`: The longitude of the observer [radians].
+#
+# # Returns
+#
+# - A 3-element `SVector` representing the vector in the GCRF frame.
 # function ned_to_ecef(v_ned::AbstractVector, date::DateTime, lat::Float64, lon::Float64, alt_m::Float64)
 #     # Ensure the input vector is a 3-element SVector for performance.
 #     v_ned_svector = SVector{3, Float64}(v_ned)

@@ -11,7 +11,7 @@ using LinearAlgebra, StaticArrays, Printf
 const R_EARTH  = 6_378_137.0
 @inline idx(i, off) = 6*(i-1) + off
 
-include("functions/4_Diagnostics.jl")
+include(joinpath(@__DIR__, "..", "functions", "4_Diagnostics.jl"))
 
 # ── Helper ────────────────────────────────────────────────────────────────────
 function check(label, N_got, N_expected; tol=0)

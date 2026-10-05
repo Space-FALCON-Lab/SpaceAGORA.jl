@@ -3,7 +3,7 @@ using DataFrames
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
-include(joinpath(REPO_ROOT, "benchmarks", "studies", "performance_runtime_analysis", "main.jl"))
+include(joinpath(@__DIR__, "..", "benchmarks", "studies", "performance_runtime_analysis", "main.jl"))
 
 spec = ProfileSpec(
     name="quick",

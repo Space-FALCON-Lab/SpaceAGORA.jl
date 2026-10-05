@@ -7,8 +7,8 @@ using LinearAlgebra, Statistics, Plots, Printf, StaticArrays, DelimitedFiles
 const MU = 3.986004418e14; const C = 3.0e8; const R_EARTH = 6_378_137.0
 @inline idx(i, off) = 6*(i-1) + off
 
-include(joinpath(@__DIR__, "..", "functions", "4_Diagnostics.jl"))
-include(joinpath(@__DIR__, "..", "functions", "12_CSV_Write_Read.jl"))
+include(joinpath(@__DIR__, "..", "..", "functions", "4_Diagnostics.jl"))
+include(joinpath(@__DIR__, "..", "..", "functions", "12_CSV_Write_Read.jl"))
 
 # ── Tuning Knobs ──────────────────────────────────────────────────────────────
 target_altitudes_km     = 950 #[850, 950, 1000, 1050, 1150]

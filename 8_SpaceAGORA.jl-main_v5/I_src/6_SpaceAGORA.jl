@@ -74,6 +74,7 @@ using .SimulationModel: NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
 using .SimulationModel: SimpleEphemeridesModel
 using .SimulationModel: make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
 using .SimulationModel: calcForceTorque, wrench, environment_requirements, solver_partition
+using .SimulationModel: force_on_endpoint
 using .SimulationModel: gravity_backbone_structure, gravity_backbone_acceleration_ii
 using .SimulationModel: gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 using .SimulationModel: getDensity, getDensityBatch!
@@ -320,6 +321,7 @@ export NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
 export SimpleEphemeridesModel
 export make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
 export calcForceTorque, wrench, environment_requirements, solver_partition
+export force_on_endpoint
 export gravity_backbone_structure, gravity_backbone_acceleration_ii
 export gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 export getDensity, getDensityBatch!

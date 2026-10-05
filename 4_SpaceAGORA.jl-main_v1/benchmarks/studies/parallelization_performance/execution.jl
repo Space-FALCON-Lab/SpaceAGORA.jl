@@ -82,12 +82,13 @@ function ppc_ensure_process_workers!(n::Int)::Vector{Int}
         )
         @sync for w in new_workers
             @async remotecall_wait(w, PPC_REPO_ROOT) do repo_root
+                # Load into the worker module, not the driver\'s include context.
                 study_dir = joinpath(repo_root, "benchmarks", "studies", "parallelization_performance")
-                include(joinpath(study_dir, "cli.jl"))
-                include(joinpath(study_dir, "modes.jl"))
-                include(joinpath(study_dir, "cases.jl"))
-                include(joinpath(study_dir, "trajectory_parity.jl"))
-                include(joinpath(study_dir, "execution.jl"))
+                Base.include(Main, joinpath(study_dir, "cli.jl"))
+                Base.include(Main, joinpath(study_dir, "modes.jl"))
+                Base.include(Main, joinpath(study_dir, "cases.jl"))
+                Base.include(Main, joinpath(study_dir, "trajectory_parity.jl"))
+                Base.include(Main, joinpath(study_dir, "execution.jl"))
                 nothing
             end
         end

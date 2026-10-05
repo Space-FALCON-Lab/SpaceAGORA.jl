@@ -5,8 +5,8 @@ const C       = 3.0e8
 const R_EARTH = 6_378_137.0
 @inline idx(i, off) = 6*(i-1) + off
 
-include("../../functions/4_Diagnostics.jl")
-include("../../functions/12_CSV_Write_Read.jl")
+include(joinpath(@__DIR__, "..", "..", "..", "functions", "4_Diagnostics.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "functions", "12_CSV_Write_Read.jl"))
 
 # --- Load all CSVs and plot ---
 # data_dir  = normpath(joinpath(@__DIR__, "..", "..", "output", "CSV", "target_h850km_i0.0deg"))

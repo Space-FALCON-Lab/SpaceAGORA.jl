@@ -7,17 +7,33 @@ using StaticArrays
 const _COV_REPO_ROOT = isdefined(Main, :REPO_ROOT) ? Main.REPO_ROOT : normpath(joinpath(@__DIR__, "..", ".."))
 
 if !isdefined(@__MODULE__, :SimulationModel)
-    include(joinpath(_COV_REPO_ROOT, "src", "core", "simulation_model.jl"))
+    if _COV_REPO_ROOT == normpath(joinpath(@__DIR__, "..", ".."))
+        include(joinpath(@__DIR__, "..", "..", "src", "core", "simulation_model.jl"))
+    else
+        Base.include(@__MODULE__, joinpath(_COV_REPO_ROOT, "src", "core", "simulation_model.jl"))
+    end
     using .SimulationModel
 end
 if !isdefined(@__MODULE__, :SimulationEngine)
-    include(joinpath(_COV_REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+    if _COV_REPO_ROOT == normpath(joinpath(@__DIR__, "..", ".."))
+        include(joinpath(@__DIR__, "..", "..", "src", "simulation", "engine", "simulation_engine.jl"))
+    else
+        Base.include(@__MODULE__, joinpath(_COV_REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+    end
 end
 if !isdefined(@__MODULE__, :TelemetryVerification)
-    include(joinpath(_COV_REPO_ROOT, "src", "analysis", "verification", "telemetry_verification.jl"))
+    if _COV_REPO_ROOT == normpath(joinpath(@__DIR__, "..", ".."))
+        include(joinpath(@__DIR__, "..", "..", "src", "analysis", "verification", "telemetry_verification.jl"))
+    else
+        Base.include(@__MODULE__, joinpath(_COV_REPO_ROOT, "src", "analysis", "verification", "telemetry_verification.jl"))
+    end
 end
 
-include(joinpath(_COV_REPO_ROOT, "src", "parallel", "routing", "parallel_profiles.jl"))
+if _COV_REPO_ROOT == normpath(joinpath(@__DIR__, "..", ".."))
+    include(joinpath(@__DIR__, "..", "..", "src", "parallel", "routing", "parallel_profiles.jl"))
+else
+    Base.include(@__MODULE__, joinpath(_COV_REPO_ROOT, "src", "parallel", "routing", "parallel_profiles.jl"))
+end
 
 const PP = ParallelProfiles
 const TV = TelemetryVerification

@@ -16,7 +16,7 @@ const _PERF_POLICY_ENV_BASELINE = Dict{String, Union{Nothing, String}}(
 )
 const _PERF_THREADS_BACKEND_WARNING_EMITTED = Ref(false)
 
-include(joinpath(REPO_ROOT, "src", "parallel", "routing", "parallel_profiles.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "src", "parallel", "routing", "parallel_profiles.jl"))
 using .ParallelProfiles
 
 using CSV
@@ -36,7 +36,7 @@ if myid() == 1
     using Plots
 end
 
-include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "src", "core", "simulation_model.jl"))
 using .SimulationModel
 const MissionType = SimulationModel.SimConfig.MissionType
 const MissionTime = SimulationModel.SimConfig.MissionTime
@@ -232,7 +232,7 @@ end
 # run_simulation.jl expects quat_mult in the including scope.
 const quat_mult = SimulationModel.quat_mult
 if !isdefined(@__MODULE__, :SimulationEngine)
-    include(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+    include(joinpath(@__DIR__, "..", "..", "..", "src", "simulation", "engine", "simulation_engine.jl"))
 end
 if !isdefined(@__MODULE__, :run_simulation)
     const run_simulation = SimulationEngine.run_simulation

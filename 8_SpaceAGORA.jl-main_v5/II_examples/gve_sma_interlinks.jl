@@ -7,6 +7,7 @@ using DataFrames
 
 function gve_sma_configuration(; dt_max_orbit::Float64=10.0, duration::Float64=3600.0,
     power::Float64=10_000.0, save_results::Bool=false, with_interlinks::Bool=true)
+    # Step 1: Define the Earth and the three-spacecraft test constellation.
     planet = make_no_gram_planet(:earth)
     radii = planet.Rp_e .+ [1000e3, 1050e3, 1050e3]
     phases = [0.0, 0.018, -0.018]
@@ -18,11 +19,13 @@ function gve_sma_configuration(; dt_max_orbit::Float64=10.0, duration::Float64=3
             initial_condition=initial_condition, id=index, n_terminal=1)
     end
     model = InterLinkModel()
+    # Step 2: Register the two candidate laser links from spacecraft 1.
     for partner in 2:length(spacecraft)
         register_candidate!(model, spacecraft, (1, 1), (partner, 1);
             parameters=InterLinkParameters(P=power, B=100.0, range=200e3))
     end
     output = joinpath(REPO_ROOT, "III_output", "gve_sma_interlinks", "dt_$(dt_max_orbit)s")
+    # Step 3: Assemble the simulation settings, environment, dynamics, and scheduler.
     return SimulationConfiguration(
         simulation_settings=SimulationSettings(results=save_results, generate_plots=false,
             results_directory=output, save_csv=true),
@@ -42,22 +45,26 @@ function gve_sma_configuration(; dt_max_orbit::Float64=10.0, duration::Float64=3
 end
 
 function interlink_switches(history)
+    # Step 1: Keep schedule samples where the selected-link set changes.
     return [history[index] for index in 2:length(history)
         if history[index].active != history[index - 1].active]
 end
 
 function run_gve_sma_case(; dt_max_orbit::Float64=10.0, duration::Float64=3600.0,
     save_results::Bool=true)
+    # Step 1: Build and run one configuration at the requested maximum timestep.
     args = gve_sma_configuration(; dt_max_orbit, duration, save_results)
     solution = run_simulation(args; return_solution=true)
     model = solution.prob.p.args.interlink_model
     history = model.history
     intervals = diff([sample.time for sample in history])
     delta_sma = [current.laser_delta_sma for current in solution.u[end].sc]
+    # Step 2: Report integration cadence, link switches, and accumulated SMA changes.
     @printf("dtmax=%.1f s: %d accepted steps, max/median dt=%.6f/%.6f s, %d switches\n",
         dt_max_orbit, length(intervals), maximum(intervals), median(intervals), length(interlink_switches(history)))
     println("  Integrated laser semimajor-axis changes [m]: ", delta_sma)
     if save_results
+        # Step 3: Write the accepted-step link schedule alongside the simulation output.
         output = args.simulation_settings.results_directory
         mkpath(output)
         schedule = DataFrame(time_s=[sample.time for sample in history],
@@ -68,6 +75,7 @@ function run_gve_sma_case(; dt_max_orbit::Float64=10.0, duration::Float64=3600.0
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
+    # Step 1: Compare the default run with a run using half the maximum timestep.
     run_gve_sma_case(dt_max_orbit=10.0)
     run_gve_sma_case(dt_max_orbit=5.0)
 end

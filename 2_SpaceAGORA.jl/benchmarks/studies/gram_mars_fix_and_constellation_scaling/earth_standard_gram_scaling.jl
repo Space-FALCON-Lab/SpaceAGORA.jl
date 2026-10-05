@@ -13,7 +13,7 @@
 # work still threaded (rhs_mode=flat), only density sampling is serialized.
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
-include(joinpath(REPO_ROOT, "examples", "common.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "examples", "common.jl"))
 ensure_gramsuite_loaded!()
 const GRAMAtmosphereModel = SimulationModel.GRAMAtmosphereModel
 

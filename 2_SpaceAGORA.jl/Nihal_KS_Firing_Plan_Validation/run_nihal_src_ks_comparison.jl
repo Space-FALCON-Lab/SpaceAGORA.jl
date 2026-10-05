@@ -12,15 +12,13 @@
 
 using LinearAlgebra, StaticArrays, OrdinaryDiffEq, CSV, DataFrames, Printf
 
-const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
-const SRC_ROOT  = joinpath(REPO_ROOT, "src")
 const PLAN_DIR  = joinpath(@__DIR__, "Input", "Schedule_v2")
 
-include(joinpath(SRC_ROOT, "constants.jl"))
-include(joinpath(SRC_ROOT, "ks_common.jl"))
-include(joinpath(SRC_ROOT, "ks_forces.jl"))
-include(joinpath(SRC_ROOT, "ks_propagation.jl"))
-include(joinpath(SRC_ROOT, "orbital_setup.jl"))
+include(joinpath(@__DIR__, "src_by_Nihal", "constants.jl"))
+include(joinpath(@__DIR__, "src_by_Nihal", "ks_common.jl"))
+include(joinpath(@__DIR__, "src_by_Nihal", "ks_forces.jl"))
+include(joinpath(@__DIR__, "src_by_Nihal", "ks_propagation.jl"))
+include(joinpath(@__DIR__, "src_by_Nihal", "orbital_setup.jl"))
 
 # Canonical Kuang production laser parameters (matches ORACLE's magnification=100,
 # power_w=10_000, mass_kg=227; Kuang's real Fint=B*Pin/c has no extra factor).

@@ -7,7 +7,7 @@ using Plots
 using Plots.PlotMeasures: mm
 using Printf
 
-include(joinpath(REPO_ROOT, "examples", "common.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "examples", "common.jl"))
 setup_gram_example!()
 
 gr()

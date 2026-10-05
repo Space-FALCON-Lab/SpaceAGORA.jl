@@ -2,7 +2,7 @@ using SpaceAGORA
 
 const REPO_ROOT = dirname(dirname(@__FILE__))
 
-include(joinpath(REPO_ROOT, "docs", "public_api_symbols.jl"))
+include(joinpath(@__DIR__, "..", "docs", "public_api_symbols.jl"))
 using .PublicAPISymbols
 
 documented = Set(spec.symbol for spec in public_api_specs(SpaceAGORA))

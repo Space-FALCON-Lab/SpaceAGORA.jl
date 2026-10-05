@@ -1,7 +1,7 @@
-include(joinpath(PPC_REPO_ROOT, "src", "parallel", "routing", "parallel_profiles.jl"))
-include(joinpath(PPC_REPO_ROOT, "src", "simulation", "runtime_services.jl"))
-include(joinpath(PPC_REPO_ROOT, "src", "core", "simulation_model.jl"))
-include(joinpath(PPC_REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "src", "parallel", "routing", "parallel_profiles.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "src", "simulation", "runtime_services.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "src", "core", "simulation_model.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "src", "simulation", "engine", "simulation_engine.jl"))
 
 using .SimulationModel
 

@@ -14,7 +14,7 @@
 # no longer necessary to bound compiled-code growth to a sane amount.
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
-include(joinpath(REPO_ROOT, "examples", "common.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "examples", "common.jl"))
 include(joinpath(@__DIR__, "resource_monitor.jl"))
 ensure_gramsuite_loaded!()
 const GRAMAtmosphereModel = SimulationModel.GRAMAtmosphereModel

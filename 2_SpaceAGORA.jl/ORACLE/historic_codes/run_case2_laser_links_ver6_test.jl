@@ -1,8 +1,8 @@
 #!/usr/bin/env julia
 
 # 1. load common.jl
-const REPO_ROOT = normpath(joinpath(@__DIR__, "..")) # find path to the repository root
-include(joinpath(REPO_ROOT, "examples", "common.jl")) # load common.jl for utility functions and types
+const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..")) # find path to the repository root
+include(joinpath(@__DIR__, "..", "..", "examples", "common.jl")) # load common.jl for utility functions and types
 
 # 2. load dependencies
 using CSV
@@ -16,7 +16,7 @@ using .SimulationModel  # NOTE: must come AFTER include(common.jl) — SpaceAGOR
 
 # 3. -animate flag & import "10_Animation_ver2.jl"
 const _HAS_GLMAKIE = "--animate" in ARGS && (try; @eval using GLMakie; true; catch; false; end)
-_HAS_GLMAKIE && include(joinpath(@__DIR__, "10_Animation_ver2.jl"))
+_HAS_GLMAKIE && include(joinpath(@__DIR__, "..", "10_Animation_ver2.jl"))
 
 # 4. define output path
 const DEFAULT_SUMMARY_CSV = joinpath(@__DIR__, "output", "case2_laser_summary.csv")
@@ -53,15 +53,13 @@ end
 
 # --------- Functions ---------
 #include("functions/0_Module_Setup.jl")
-include("functions/1_LOS_Metrics.jl")
-include("functions/2_Laser_Forces_ver2.jl")
-include("functions/3_Dynamics.jl")
-include("functions/4_Diagnostics.jl")
-include("functions/5_OE_Converters.jl")
-include("functions/6_OE_and_dv_in_RTN.jl")
-include("functions/7_Plots.jl")
-include("functions/8_LoS_time_series.jl")
-include("functions/9_Runners.jl")
+include(joinpath(@__DIR__, "..", "functions", "2_Laser_Forces_ver2.jl"))
+include(joinpath(@__DIR__, "..", "functions", "3_Dynamics.jl"))
+include(joinpath(@__DIR__, "..", "functions", "4_Diagnostics.jl"))
+include(joinpath(@__DIR__, "..", "functions", "5_OE_Converters.jl"))
+include(joinpath(@__DIR__, "..", "functions", "6_OE_and_dv_in_RTN.jl"))
+include(joinpath(@__DIR__, "..", "functions", "7_Plots.jl"))
+include(joinpath(@__DIR__, "..", "functions", "9_Runners.jl"))
 #include("functions/10_Animation_ver2.jl")  # loaded conditionally above (requires --animate)
 
 # 6. help text printed when you run the script with --help.

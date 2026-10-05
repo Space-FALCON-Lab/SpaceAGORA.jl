@@ -7,7 +7,7 @@
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 println("Loading SpaceAGORA (precompilation may take a few minutes on first run)...")
-include(joinpath(REPO_ROOT, "examples", "common.jl"))
+include(joinpath(@__DIR__, "..", "examples", "common.jl"))
 
 using Arrow
 using CSV
@@ -54,12 +54,12 @@ Base.@kwdef struct OracleCase2Options
     animate::Bool = false
 end
 
-include(joinpath(REPO_ROOT, "ORACLE", "functions", "0_Spacecraft.jl"))
-include(joinpath(REPO_ROOT, "ORACLE", "functions", "4_Diagnostics.jl"))
-include(joinpath(REPO_ROOT, "ORACLE", "functions", "5_OE_Converters.jl"))
-include(joinpath(REPO_ROOT, "ORACLE", "functions", "6_OE_and_dv_in_RTN.jl"))
-include(joinpath(REPO_ROOT, "ORACLE", "functions", "7_Plots.jl"))
-include(joinpath(REPO_ROOT, "ORACLE", "functions", "9_Runners.jl"))
+include(joinpath(@__DIR__, "..", "ORACLE", "functions", "0_Spacecraft.jl"))
+include(joinpath(@__DIR__, "..", "ORACLE", "functions", "4_Diagnostics.jl"))
+include(joinpath(@__DIR__, "..", "ORACLE", "functions", "5_OE_Converters.jl"))
+include(joinpath(@__DIR__, "..", "ORACLE", "functions", "6_OE_and_dv_in_RTN.jl"))
+include(joinpath(@__DIR__, "..", "ORACLE", "functions", "7_Plots.jl"))
+include(joinpath(@__DIR__, "..", "ORACLE", "functions", "9_Runners.jl"))
 const DT_MAX_S         = 10.0
 
 # --------- 1. Parse initial_conditions.csv + mpc_schedule.csv ---------

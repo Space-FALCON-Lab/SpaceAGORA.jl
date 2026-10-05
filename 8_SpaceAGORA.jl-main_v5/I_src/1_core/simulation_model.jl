@@ -34,7 +34,7 @@ include(joinpath(@__DIR__, "..", "1.2_vehicle", "spacecraft", "model.jl"))
 @reexport using .SpacecraftModels
 include(joinpath(@__DIR__, "..", "1.4_satellite_interlink", "inter_link_models.jl"))
 @reexport using .InterLinkModels
-include(joinpath(@__DIR__, "..", "1.4_satellite_interlink", "scheduling_policies.jl"))
+include(joinpath(@__DIR__, "..", "1.4_satellite_interlink", "scheduling_models.jl"))
 @reexport using .SchedulingPolicies
 include(joinpath(@__DIR__, "..", "1.2_vehicle", "spacecraft", "assembly.jl"))
 @reexport using .Assembly

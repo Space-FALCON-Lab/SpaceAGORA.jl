@@ -8,7 +8,7 @@ using StaticArrays
 using CSV
 using DataFrames
 
-include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+include(joinpath(@__DIR__, "..", "..", "src", "core", "simulation_model.jl"))
 using .SimulationModel
 
 const EM = SimulationModel.EnvironmentModels

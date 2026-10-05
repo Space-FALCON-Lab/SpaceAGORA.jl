@@ -17,6 +17,27 @@ Cross-platform command conventions used below:
 - `./bin/spaceagora` and `./scripts/ensure_gram_native.sh` remain available as
   convenience wrappers on Linux/macOS
 
+### Integration-workspace include validation
+
+When this project is stored inside the multi-version integration workspace,
+run `julia --startup-file=no test/include_paths.jl` from that outer workspace to
+check Julia syntax and static include targets across all archived copies.
+Ordinary includes are anchored at the including file's `@__DIR__`, rather than
+at a runtime path variable.
+
+Distributed benchmark workers explicitly load files into the worker's `Main`
+module. Coverage probes retain support for a caller-provided `Main.REPO_ROOT`;
+the canonical path is statically analyzable, and noncanonical roots use explicit
+`Base.include` calls. The combined contract runner uses the PR suite, which is a
+superset of the standalone nightly suite, so shared gates are not executed twice.
+
+`benchmarks/studies/gram_planet_rho_altitude_sweep.jl` additionally needs the
+external GRAM offline-grid builder. Its include cannot be validated until the
+GRAM assets described below are installed. In this integration snapshot, the
+GRAM submodule pin `50809c5809de2a2a3c6b42794b7a635071472d70` could not be fetched
+from its remote; restore the matching dependency through its maintainers rather
+than silently changing the pin.
+
 ## Installation
 
 Use the repository root environment as the canonical committed execution environment for examples, tests, and normal local runs:

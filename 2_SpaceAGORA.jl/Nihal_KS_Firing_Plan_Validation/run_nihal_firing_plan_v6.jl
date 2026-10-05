@@ -28,7 +28,7 @@ end
 
 if abspath(PROGRAM_FILE) == @__FILE__
     if ARGS != ["--check-inputs"]
-        include(joinpath(@__DIR__, "run_nihal_firing_plan_v3.jl"))
+        load_v4_simulation_runner!()
     end
     main_v6()
 end

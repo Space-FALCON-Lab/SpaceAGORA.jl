@@ -6,12 +6,12 @@ using CSV
 using SPICE
 using Profile
 
-include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+include(joinpath(@__DIR__, "..", "..", "src", "core", "simulation_model.jl"))
 using .SimulationModel
 
 const QUAT_MULT = SimulationModel.quat_mult
 if !isdefined(@__MODULE__, :SimulationEngine)
-    include(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+    include(joinpath(@__DIR__, "..", "..", "src", "simulation", "engine", "simulation_engine.jl"))
 end
 if !isdefined(@__MODULE__, :run_simulation)
     const run_simulation = SimulationEngine.run_simulation

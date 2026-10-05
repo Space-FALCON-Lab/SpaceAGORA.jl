@@ -37,7 +37,7 @@ using Distributed
 using Statistics
 using Printf
 
-include(joinpath(_LEPP_REPO_ROOT, "examples", "common.jl"))
+include(joinpath(@__DIR__, "..", "..", "examples", "common.jl"))
 
 const N_SATS = parse(Int, get(ENV, "LEO_SCALING_N_SATS", "1024"))
 const ALT_M = 150e3

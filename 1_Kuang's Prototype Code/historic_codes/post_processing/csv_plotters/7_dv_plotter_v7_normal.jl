@@ -5,12 +5,12 @@ const C       = 3.0e8
 const R_EARTH = 6_378_137.0
 @inline idx(i, off) = 6*(i-1) + off
 
-include("../../functions/4_Diagnostics.jl")
-include("../../functions/5_OE_Converters.jl")
-include("../../functions/1_LOS_Metrics.jl")
-include("../../functions/2_Laser_Forces_ver2.jl")
-include("../../functions/6_OE_and_dv_in_RTN.jl")
-include("../../functions/12_CSV_Write_Read.jl")
+include(joinpath(@__DIR__, "..", "..", "..", "functions", "4_Diagnostics.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "functions", "5_OE_Converters.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "functions", "1_LOS_Metrics.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "functions", "2_Laser_Forces_ver2.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "functions", "6_OE_and_dv_in_RTN.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "functions", "12_CSV_Write_Read.jl"))
 
 # --- Config ---
 # data_dir   = normpath(joinpath(@__DIR__, "..", "..", "output", "CSV", "target_h850km_i0.0deg"))

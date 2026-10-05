@@ -249,7 +249,7 @@ module SimConfig
         integration_tolerances::IntegrationTolerances = IntegrationTolerances() # Tolerances for the numerical integrator
         solver_config::Union{Nothing, SolverConfig} = nothing # nothing = read from env at run time
         interlink_model::Union{Nothing, InterLinkModel} = nothing
-        scheduling_policy_model::SchedulingPolicyModel = SchedulingPolicyModel()
+        scheduling_policy_model::SchedulingPolicyModel = SchedulingPolicyModel(:gve_sma)
     end # struct SimulationConfiguration
     
 end # module SimConfig

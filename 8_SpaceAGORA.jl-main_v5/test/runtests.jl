@@ -4,16 +4,17 @@ using OrdinaryDiffEq
 using Random
 include(joinpath(@__DIR__, "..", "II_examples", "gve_sma_interlinks.jl"))
 
-function endpoint_fixture(; eligibility=nothing)
+function endpoint_fixture(; range=200e3)
     spacecraft = [SpacecraftModel(id=index) for index in 1:2]
     state = ComponentVector(sc=[
         (pos=[7e6, 1000.0, 0.0], vel=[0.0, 7500.0, 0.0], mass=100.0,
             laser_dv=zeros(3), laser_delta_sma=0.0),
         (pos=[7e6, 0.0, 0.0], vel=[0.0, 7500.0, 0.0], mass=200.0,
             laser_dv=zeros(3), laser_delta_sma=0.0)])
-    model = InterLinkModel(; eligibility)
-    key = register_candidate!(model, spacecraft, (1, 1), (2, 1))
-    runtime = (args=(interlink_model=model, scheduling_policy_model=SchedulingPolicyModel(),
+    model = InterLinkModel()
+    key = register_candidate!(model, spacecraft, (1, 1), (2, 1);
+        parameters=InterLinkParameters(; range))
+    runtime = (args=(interlink_model=model, scheduling_policy_model=SchedulingPolicyModel(:gve_sma),
         dynamics_model=(spacecraft=spacecraft,), environment_model=(planet=make_no_gram_planet(:earth),)),
         is_active=trues(2))
     return spacecraft, state, model, key, runtime
@@ -43,7 +44,6 @@ semimajor_axis(state, mu) = inv(2 / norm(state.pos) - dot(state.vel, state.vel) 
         @test_throws ArgumentError InterLinkParameters(P=-1)
         @test_throws ArgumentError InterLinkParameters(B=0)
         @test_throws ArgumentError InterLinkParameters(range=0)
-        @test_throws ArgumentError InterLinkModel(active_link_penalty=-1)
         @test_throws ArgumentError InterLinkModel(battery_energy_threshold=101)
         model = InterLinkModel(tempurature_threshold=25.0)
         key = register_candidate!(model, spacecraft, (2, 1), (1, 1);
@@ -76,13 +76,12 @@ semimajor_axis(state, mu) = inv(2 / norm(state.pos) - dot(state.vel, state.vel) 
         @test !update_availability!(model, key, spacecraft, state)
         empty!(model.forbidden_pairs)
         @test !update_availability!(model, key, spacecraft, state; is_active=[true, false, true, true])
-        model.eligibility = (key, spacecraft, state) -> false
-        @test !update_availability!(model, key, spacecraft, state)
+        @test update_availability!(model, key, spacecraft, state)
     end
 
-    @testset "Exact penalized terminal matching" begin
+    @testset "Exact terminal matching" begin
         spacecraft = [SpacecraftModel(n_terminal=2) for _ in 1:5]
-        model = InterLinkModel(active_link_penalty=1.0)
+        model = InterLinkModel()
         central = register_candidate!(model, spacecraft, (1, 1), (2, 1))
         left = register_candidate!(model, spacecraft, (1, 1), (3, 1))
         right = register_candidate!(model, spacecraft, (2, 1), (4, 1))
@@ -93,7 +92,19 @@ semimajor_axis(state, mu) = inv(2 / norm(state.pos) - dot(state.vel, state.vel) 
         @test select_interlinks!(model) == [left, right]
         @test select_interlinks!(model) == [left, right]
         @test !model.linkgraph[central].state.active
-        model.active_link_penalty = 10.0
+        model.linkgraph[central].state.score = 13.0
+        @test select_interlinks!(model) == [central]
+        for scale in (1.0, 1e-20)
+            model.linkgraph[central].state.score = 2 * scale
+            model.linkgraph[left].state.score = scale
+            model.linkgraph[right].state.score = nextfloat(scale)
+            @test select_interlinks!(model) == [left, right]
+            model.linkgraph[right].state.score = prevfloat(scale)
+            @test select_interlinks!(model) == [central]
+        end
+        for connection in values(model.linkgraph)
+            connection.state.score -= 10.0
+        end
         @test isempty(select_interlinks!(model))
         @test all(!connection.state.active for connection in values(model.linkgraph))
         @test isempty(select_interlinks!(InterLinkModel()))
@@ -102,13 +113,13 @@ semimajor_axis(state, mu) = inv(2 / norm(state.pos) - dot(state.vel, state.vel) 
         second_key = register_candidate!(model, spacecraft, (1, 2), (3, 1))
         for connection in values(model.linkgraph)
             connection.state.available = true
-            connection.state.score = 1.0
+            connection.state.score = 0.5
         end
         @test select_interlinks!(model) == [first_key, second_key]
 
         generator = MersenneTwister(52)
         for trial in 1:8
-            model = InterLinkModel(active_link_penalty=1.0)
+            model = InterLinkModel()
             candidates = [register_candidate!(model, spacecraft, (first_satellite, 1), (second_satellite, 1))
                 for first_satellite in 1:4 for second_satellite in (first_satellite + 1):5]
             for connection in values(model.linkgraph)
@@ -121,18 +132,47 @@ semimajor_axis(state, mu) = inv(2 / norm(state.pos) - dot(state.vel, state.vel) 
                 endpoints = [endpoint for key in subset for endpoint in key]
                 length(unique(endpoints)) == length(endpoints) || continue
                 all(model.linkgraph[key].state.available for key in subset) || continue
-                best_score = max(best_score, sum((model.linkgraph[key].state.score - 1.0 for key in subset); init=0.0))
+                best_score = max(best_score, sum((model.linkgraph[key].state.score for key in subset); init=0.0))
             end
             selected = select_interlinks!(model)
-            @test sum((model.linkgraph[key].state.score - 1.0 for key in selected); init=0.0) == best_score
+            @test sum((model.linkgraph[key].state.score for key in selected); init=0.0) == best_score
             @test selected == select_interlinks!(model)
         end
+
+        model = InterLinkModel()
+        for (first_satellite, second_satellite, score) in ((1, 2, 9.0), (2, 3, 10.0),
+                (1, 3, 9.0), (1, 4, 8.0), (3, 5, 8.0))
+            key = register_candidate!(model, spacecraft, (first_satellite, 1), (second_satellite, 1))
+            model.linkgraph[key].state.available = true
+            model.linkgraph[key].state.score = score
+        end
+        selected = select_interlinks!(model)
+        @test sum(model.linkgraph[key].state.score for key in selected) == 18.0
+        @test length(unique([endpoint for key in selected for endpoint in key])) == 2 * length(selected)
+        for connection in values(model.linkgraph)
+            connection.state.available = false
+        end
+        @test isempty(select_interlinks!(model))
+        @test all(!connection.state.active for connection in values(model.linkgraph))
+
+        spacecraft = [SpacecraftModel() for _ in 1:100]
+        model = InterLinkModel()
+        for first_satellite in 1:99, second_satellite in (first_satellite + 1):100
+            key = register_candidate!(model, spacecraft, (first_satellite, 1), (second_satellite, 1))
+            model.linkgraph[key].state.available = true
+            model.linkgraph[key].state.score = isodd(first_satellite) && second_satellite == first_satellite + 1 ? 2.0 : 1.0
+        end
+        selected = select_interlinks!(model)
+        @test selected == [((satellite, 1), (satellite + 1, 1)) for satellite in 1:2:99]
+        @test sum(model.linkgraph[key].state.score for key in selected) == 100.0
+        @test all(connection.state.active == (key in selected) for (key, connection) in model.linkgraph)
     end
 
     @testset "Endpoint forces and physical scores" begin
         spacecraft, state, model, key, runtime = endpoint_fixture()
         mu = runtime.args.environment_model.planet.μ
-        @test schedule_interlinks!(model, SchedulingPolicyModel(), spacecraft, state, mu) == [key]
+        @test schedule_interlinks!(model, SchedulingPolicyModel(:gve_sma), spacecraft, state, mu;
+            candidate_force=force_on_endpoint) == [key]
         forces = [laser_force_on_spacecraft(model, state, index) for index in 1:2]
         @test norm(forces[1]) ≈ 1e6 / 299_792_458.0
         @test forces[1] == -forces[2]
@@ -156,31 +196,54 @@ semimajor_axis(state, mu) = inv(2 / norm(state.pos) - dot(state.vel, state.vel) 
             forward.sc[index].vel .+= acceleration
             backward.sc[index].vel .-= acceleration
             finite_difference = (semimajor_axis(forward.sc[index], mu) - semimajor_axis(backward.sc[index], mu)) / 2
-            @test isapprox(semimajor_axis_rate(state.sc[index], forces[index], mu), finite_difference; atol=1e-7)
+            score_candidates!(model, SchedulingPolicyModel(:gve_sma; target_idx=index), state, mu;
+                candidate_force=force_on_endpoint)
+            @test isapprox(model.linkgraph[key].state.score, finite_difference; atol=1e-7)
         end
+        circular_state = (pos=[7e6, 0.0, 0.0], vel=[0.0, sqrt(mu / 7e6), 0.0], mass=100.0)
+        score_candidates!(model, SchedulingPolicyModel(:gve_eccentricity), (sc=[circular_state, state.sc[2]],), mu;
+            candidate_force=(target, partner, parameters) -> [0.0, 1.0, 0.0])
+        @test model.linkgraph[key].state.score ≈ 2 / (circular_state.mass * circular_state.vel[2])
         stage = copy(state)
         stage.sc[2].pos[1] += 1000.0
         @test laser_force_on_spacecraft(model, stage, 1) != forces[1]
         @test model.linkgraph[key].state.active
         stage.sc[2].pos[1] += 300e3
         @test norm(laser_force_on_spacecraft(model, stage, 1)) > 0
-        @test isempty(schedule_interlinks!(model, SchedulingPolicyModel(), spacecraft, stage, mu))
+        @test isempty(schedule_interlinks!(model, SchedulingPolicyModel(:gve_sma), spacecraft, stage, mu;
+            candidate_force=force_on_endpoint))
         @test iszero(laser_force_on_spacecraft(model, stage, 1))
-        @test SchedulingPolicyModel().target_idx == 1
+        @test SchedulingPolicyModel(:gve_sma).target_idx == 1
         @test_throws ArgumentError SchedulingPolicyModel(:gve_sma; target_idx=0)
-        @test isempty(schedule_interlinks!(model, SchedulingPolicyModel(:gve_sma; target_idx=2), spacecraft, state, mu))
-        @test model.linkgraph[key].state.score ≈ semimajor_axis_rate(state.sc[2], forces[2], mu)
-        @test_throws ArgumentError score_candidates!(model, SchedulingPolicyModel(target_idx=3), state, mu)
+        @test isempty(schedule_interlinks!(model, SchedulingPolicyModel(:gve_sma; target_idx=2), spacecraft, state, mu;
+            candidate_force=force_on_endpoint))
+        @test model.linkgraph[key].state.score ≈ derivative.sc[2].laser_delta_sma
+        @test_throws ArgumentError score_candidates!(model, SchedulingPolicyModel(:gve_sma; target_idx=3), state, mu;
+            candidate_force=force_on_endpoint)
+
+        model.linkgraph[key].state.available = true
+        all_satellites_policy = SchedulingPolicyModel(:gve_sma; target_idx=nothing)
+        @test all_satellites_policy.target_idx === nothing
+        score_candidates!(model, all_satellites_policy, state, mu; candidate_force=force_on_endpoint)
+        both_endpoint_rates = derivative.sc[1].laser_delta_sma + derivative.sc[2].laser_delta_sma
+        @test model.linkgraph[key].state.score ≈ both_endpoint_rates
+
+        eccentricity_policy = SchedulingPolicyModel(:gve_eccentricity; target_idx=1)
+        score_candidates!(model, eccentricity_policy, state, mu; candidate_force=force_on_endpoint)
+        forward, backward = copy(state.sc[1]), copy(state.sc[1])
+        forward.vel .+= forces[1] / forward.mass
+        backward.vel .-= forces[1] / backward.mass
+        forward_eccentricity = norm(cross(forward.vel, cross(forward.pos, forward.vel)) / mu - forward.pos / norm(forward.pos))
+        backward_eccentricity = norm(cross(backward.vel, cross(backward.pos, backward.vel)) / mu - backward.pos / norm(backward.pos))
+        @test isapprox(model.linkgraph[key].state.score, (forward_eccentricity - backward_eccentricity) / 2; rtol=1e-5)
     end
 
     @testset "Continuous positions and switching cache refresh" begin
-        spacecraft, state, model, key, runtime = endpoint_fixture(
-            eligibility=(key, spacecraft, state) -> state.sc[1].pos[2] < 1001.0)
-        for current in state.sc
-            current.vel[2] = 1.0
-        end
+        spacecraft, state, model, key, runtime = endpoint_fixture(range=1000.5)
+        state.sc[1].vel[2] = 1.0
+        state.sc[2].vel[2] = 0.0
         problem = ODEProblem(continuous_laser_fixture!, state, (0.0, 2.0), runtime;
-            callback=interlink_scheduler_callback())
+            callback=interlink_scheduler_callback(candidate_force=force_on_endpoint))
         solution = solve(problem, Tsit5(); adaptive=false, dt=1.0)
         @test [sample.time for sample in model.history] == [0.0, 1.0, 2.0]
         @test model.history[1].active == [key]

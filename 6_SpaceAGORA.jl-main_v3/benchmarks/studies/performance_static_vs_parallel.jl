@@ -1,5 +1,5 @@
 const _WRAPPER_DIR = @__DIR__
-include(joinpath(_WRAPPER_DIR, "performance_paper_pipeline.jl"))
+include(joinpath(@__DIR__, "..", "scripts", "performance_paper_pipeline.jl"))
 
 using Random
 

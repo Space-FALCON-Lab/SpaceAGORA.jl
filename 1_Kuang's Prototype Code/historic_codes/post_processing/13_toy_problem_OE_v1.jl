@@ -8,10 +8,10 @@ if !@isdefined(R_ATMDEF)
 end
 @inline idx(i, off) = 6*(i-1) + off
 
-include("../functions/4_Diagnostics.jl")
-include("../functions/5_OE_Converters.jl")
-include("../functions/6_OE_and_dv_in_RTN.jl")
-include("../functions/12_CSV_Write_Read.jl")
+include(joinpath(@__DIR__, "..", "..", "functions", "4_Diagnostics.jl"))
+include(joinpath(@__DIR__, "..", "..", "functions", "5_OE_Converters.jl"))
+include(joinpath(@__DIR__, "..", "..", "functions", "6_OE_and_dv_in_RTN.jl"))
+include(joinpath(@__DIR__, "..", "..", "functions", "12_CSV_Write_Read.jl"))
 
 const N_PTS_OE_TOY = 2000
 

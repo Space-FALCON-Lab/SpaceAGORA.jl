@@ -13,7 +13,7 @@
 # no separate step is needed to make them "visible" on the worker.
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
-include(joinpath(REPO_ROOT, "examples", "common.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "examples", "common.jl"))
 ensure_gramsuite_loaded!()
 const GRAMAtmosphereModel = SimulationModel.GRAMAtmosphereModel
 const GRAMAtmosphereModelSurrogate = SimulationModel.GRAMAtmosphereModelSurrogate

@@ -263,7 +263,8 @@ function run_simulation(
         extra_callbacks=extra_callbacks
     ) # Get the callbacks based on the number of satellites and the dynamic effectors being used in the simulation
     if args.interlink_model !== nothing
-        callbacks = CallbackSet(callbacks, SimulationModel.interlink_scheduler_callback())
+        callbacks = CallbackSet(callbacks, SimulationModel.interlink_scheduler_callback(
+            candidate_force=SimulationModel.force_on_endpoint))
     end
     ephemerides_model = args.environment_model.ephemerides_model
     et_start = SimulationModel.ephemerides_time_seconds(args.initial_time, ephemerides_model)

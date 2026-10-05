@@ -3,7 +3,6 @@ module LaserForceEffectors
 using LinearAlgebra
 using StaticArrays
 using ...InterLinkModels: InterLinkModel, InterLinkParameters
-import ...InterLinkModels: force_on_endpoint
 
 export force_on_endpoint, laser_force_on_spacecraft
 

@@ -27,7 +27,7 @@
 # Julia's --threads is set by the controller and is part of the point definition.
 
 const PS_REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
-include(joinpath(PS_REPO_ROOT, "examples", "common.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "examples", "common.jl"))
 
 using Statistics
 using Distributed

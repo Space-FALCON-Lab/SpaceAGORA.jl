@@ -78,10 +78,17 @@ function main_v4(arguments=ARGS)
     return nothing
 end
 
+function load_v4_simulation_runner!()
+    if !isdefined(@__MODULE__, :main_newnew)
+        include(joinpath(@__DIR__, "run_nihal_firing_plan_v3.jl"))
+    end
+    return nothing
+end
+
 if abspath(PROGRAM_FILE) == @__FILE__
     if ARGS != ["--check-inputs"]
         _validate_v4_initial_conditions(isempty(ARGS) ? V4_IC_PATH : abspath(first(ARGS)))
-        include(joinpath(@__DIR__, "run_nihal_firing_plan_v3.jl"))
+        load_v4_simulation_runner!()
     end
     main_v4()
 end

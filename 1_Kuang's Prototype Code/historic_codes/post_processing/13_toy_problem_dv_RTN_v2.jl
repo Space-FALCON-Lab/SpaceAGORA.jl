@@ -8,12 +8,12 @@ if !@isdefined(R_ATMDEF)
 end
 @inline idx(i, off) = 6*(i-1) + off
 
-include("../functions/1_LOS_Metrics.jl")
-include("../functions/2_Laser_Forces_ver3.jl")
-include("../functions/4_Diagnostics.jl")
-include("../functions/5_OE_Converters.jl")
-include("../functions/6_OE_and_dv_in_RTN.jl")
-include("../functions/12_CSV_Write_Read.jl")
+include(joinpath(@__DIR__, "..", "..", "functions", "1_LOS_Metrics.jl"))
+include(joinpath(@__DIR__, "..", "..", "functions", "2_Laser_Forces_ver3.jl"))
+include(joinpath(@__DIR__, "..", "..", "functions", "4_Diagnostics.jl"))
+include(joinpath(@__DIR__, "..", "..", "functions", "5_OE_Converters.jl"))
+include(joinpath(@__DIR__, "..", "..", "functions", "6_OE_and_dv_in_RTN.jl"))
+include(joinpath(@__DIR__, "..", "..", "functions", "12_CSV_Write_Read.jl"))
 
 # ── Target CSV ──────────────────────────────────────────────────────────────
 csv_path = normpath(joinpath(@__DIR__, "..", "output", "CSV",

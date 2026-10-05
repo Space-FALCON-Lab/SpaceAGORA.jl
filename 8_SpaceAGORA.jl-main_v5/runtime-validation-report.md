@@ -1,6 +1,7 @@
 # V5 Laser Interlinks: Implementation and Validation
 
-Date: 2026-09-28. Runtime: Julia 1.12.1 on Linux.
+Initial validation: 2026-09-28. Latest regression run: 2026-10-05.
+Runtime: Julia 1.12.1 on Linux.
 
 ## Run
 
@@ -32,12 +33,10 @@ GRAM assets, browser, or external services are required.
   zero. Distinct terminals can connect a spacecraft to multiple partners.
 - `InterLinkParameters` contains only `P` (watts), `B`, and `range` (meters).
   Defaults are 10,000 W, 100, and 200,000 m. Mutable scheduling state is separate.
-- Eligibility checks range, terminal bounds, active spacecraft, battery energy,
-  and forbidden satellite pairs. `battery_energy_threshold=50.0` by default.
+- Availability checks range, terminal bounds, active spacecraft, battery energy,
+  temperature, and forbidden satellite pairs. `battery_energy_threshold=50.0` by default.
   `tempurature_threshold=0.0` leaves temperature unrestricted by default.
-  Optional `eligibility(key, spacecraft, state)::Bool` handles explicitly
-  configured additional restrictions and should be read-only. Previous terminal
-  occupancy does not affect availability.
+  Previous terminal occupancy does not affect availability.
 - `SchedulingPolicyModel(:gve_sma; target_idx=1)` is a separate simulation-level
   setting. It **maximizes the chosen target's instantaneous semimajor-axis
   increase**, in m/s, not the sum of both endpoints. `target_idx` is a spacecraft
@@ -54,11 +53,9 @@ GRAM assets, browser, or external services are required.
   stage snapshot and divided by that endpoint's own mass. Equal and opposite
   forces here follow from this chosen symmetric law, not from an assumption
   that all interlinks must behave that way.
-- `InterLinkModel.active_link_penalty` defaults to zero and has score units
-  (m/s for `gve_sma`). It is charged for every selected physical connection.
-  The memoized terminal-subset matching algorithm finds the exact maximum
-  penalized total on general, including non-bipartite, graphs. Nonpositive net
-  benefits are omitted; sorted traversal makes ties deterministic.
+- The memoized terminal-subset matching algorithm finds the exact maximum
+  total score on general, including non-bipartite, graphs. Only available links
+  with positive scores are considered; sorted traversal makes ties deterministic.
 - Matching is intended for small candidate graphs and has exponential worst-case
   cost. Large dense terminal graphs would need a scalable exact matching solver.
 - Attach the graph and policy using `SimulationConfiguration(interlink_model=...,
@@ -73,8 +70,8 @@ GRAM assets, browser, or external services are required.
   `model.history` records initial/accepted-step selections, not output times.
 - The example defaults to `dt_max_orbit=10.0`; the comparison uses 5.0 at identical
   `reltol_orbit=1e-9`, `abstol_orbit=1e-11`. Existing non-interlink defaults are
-  unchanged. Range/eligibility crossings are acted on at accepted endpoints, not
-  localized by exact events.
+  unchanged. Availability changes, including range crossings, are acted on at
+  accepted endpoints, not localized by exact events.
 - Radio can be represented but its force physics is not implemented. Split,
   multirate, and gravity-backbone solver modes explicitly reject interlinks.
   Validation covers the full-state `:tsit5` solver. Cross-spacecraft coupling
@@ -82,14 +79,16 @@ GRAM assets, browser, or external services are required.
 
 ## Verification Results
 
-**PASS: 143/143 assertions; command exit code 0.** No skipped or failing tests.
+**PASS: 142/142 assertions; command exit code 0.** No skipped or failing tests.
+The 2026-10-05 rerun removes the custom availability callback and per-link
+penalty, with the switching test now exercising the built-in range limit.
 The v5 snapshot had no pre-existing test suite; one focused suite was added.
 Package loading and a 20-second engine run were verified before the full run.
 The user's pre-existing deletions and reconstruction edits were preserved.
 
 Coverage includes initialization, invalid registration, range, battery energy,
-temperature and forbidden-pair restrictions, multiple terminals, repeated penalties, empty
-selection, a greedy-failure example, exhaustive subset comparisons on eight
+temperature and forbidden-pair restrictions, multiple terminals, positive and
+nonpositive scores, empty selection, a greedy-failure example, exhaustive subset comparisons on eight
 small general graphs, mass/power dependence, evaluation-order independence,
 finite-difference orbital-rate checks, and changing stage geometry. Target-only
 scoring is checked against the target's integrated derivative, including a

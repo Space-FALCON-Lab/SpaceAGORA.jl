@@ -1743,7 +1743,8 @@ function _apply_interlink_rhs!(derivative, state, parameters)
         acceleration = force / current.mass
         current_derivative.vel .+= acceleration
         current_derivative.laser_dv .= acceleration
-        current_derivative.laser_delta_sma = SimulationModel.semimajor_axis_rate(current, force, mu)
+        semimajor_axis = inv(2 / norm(current.pos) - dot(current.vel, current.vel) / mu)
+        current_derivative.laser_delta_sma = 2 * semimajor_axis^2 / mu * dot(current.vel, force) / current.mass
     end
     return nothing
 end

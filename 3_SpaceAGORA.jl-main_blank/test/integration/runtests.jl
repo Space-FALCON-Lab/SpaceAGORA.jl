@@ -28,35 +28,35 @@ end
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
-include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+include(joinpath(@__DIR__, "..", "..", "src", "core", "simulation_model.jl"))
 using .SimulationModel
-include(joinpath(REPO_ROOT, "src", "core", "interfaces", "reference_system.jl"))
-include(joinpath(REPO_ROOT, "src", "mission", "operations", "maneuver_plans.jl"))
+include(joinpath(@__DIR__, "..", "..", "src", "core", "interfaces", "reference_system.jl"))
+include(joinpath(@__DIR__, "..", "..", "src", "mission", "operations", "maneuver_plans.jl"))
 
 # SimulationEngine uses SimulationModel and provides canonical runtime entrypoints.
 const quat_mult = SimulationModel.quat_mult
 if !isdefined(@__MODULE__, :SimulationEngine)
-    include(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+    include(joinpath(@__DIR__, "..", "..", "src", "simulation", "engine", "simulation_engine.jl"))
 end
 if !isdefined(@__MODULE__, :run_simulation)
     const run_simulation = SimulationEngine.run_simulation
 end
 if !isdefined(@__MODULE__, :TelemetryVerification)
-    include(joinpath(REPO_ROOT, "src", "analysis", "verification", "telemetry_verification.jl"))
+    include(joinpath(@__DIR__, "..", "..", "src", "analysis", "verification", "telemetry_verification.jl"))
 end
 if !isdefined(@__MODULE__, :ParallelProfiles)
     # SimulationCampaigns consumes the outer-route bandit via `..ParallelProfiles`.
-    include(joinpath(REPO_ROOT, "src", "parallel", "routing", "parallel_profiles.jl"))
+    include(joinpath(@__DIR__, "..", "..", "src", "parallel", "routing", "parallel_profiles.jl"))
 end
 if !isdefined(@__MODULE__, :ParallelProcess)
     # SimulationCampaigns consumes the process-route outer pool via `..ParallelProcess`.
-    include(joinpath(REPO_ROOT, "src", "parallel", "process", "parallel_process.jl"))
+    include(joinpath(@__DIR__, "..", "..", "src", "parallel", "process", "parallel_process.jl"))
 end
 if !isdefined(@__MODULE__, :SimulationCampaigns)
-    include(joinpath(REPO_ROOT, "src", "simulation", "campaigns", "simulation_campaigns.jl"))
+    include(joinpath(@__DIR__, "..", "..", "src", "simulation", "campaigns", "simulation_campaigns.jl"))
 end
 if !isdefined(@__MODULE__, :SpaceAGORA)
-    include(joinpath(REPO_ROOT, "src", "SpaceAGORA.jl"))
+    include(joinpath(@__DIR__, "..", "..", "src", "SpaceAGORA.jl"))
 end
 const HAS_GRAMSUITE = let
     vendored_gramsuite = joinpath(REPO_ROOT, "data", "GRAMSuite.jl")
@@ -235,7 +235,7 @@ if !isdefined(@__MODULE__, :make_example_config)
     const run_and_report = TelemetryVerification.run_and_report
 end
 
-include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "energy_depletion_gnc_tests.jl"))
+include(joinpath(@__DIR__, "..", "gnc", "aerobraking", "energy_depletion_gnc_tests.jl"))
 
 if !isdefined(@__MODULE__, :_solver_policy_mode)
     const build_initial_conditions = SimulationEngine.build_initial_conditions
@@ -1010,12 +1010,12 @@ end
 const GUIDANCE_SANDBOX = GuidanceSandbox
 
 
-include(joinpath(REPO_ROOT, "test", "suites", "01_contract_and_api_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "02_callbacks_parallel_and_smoke_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "03_persistence_units_and_rotational_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "04_solver_env_and_regression_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "05_thruster_control_and_quality_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "06_monolith_split_runtime_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "07_no_gram_onboarding_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "08_cli_and_assets_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "09_probe_drivers.jl"))
+include(joinpath(@__DIR__, "..", "suites", "01_contract_and_api_tests.jl"))
+include(joinpath(@__DIR__, "..", "suites", "02_callbacks_parallel_and_smoke_tests.jl"))
+include(joinpath(@__DIR__, "..", "suites", "03_persistence_units_and_rotational_tests.jl"))
+include(joinpath(@__DIR__, "..", "suites", "04_solver_env_and_regression_tests.jl"))
+include(joinpath(@__DIR__, "..", "suites", "05_thruster_control_and_quality_tests.jl"))
+include(joinpath(@__DIR__, "..", "suites", "06_monolith_split_runtime_tests.jl"))
+include(joinpath(@__DIR__, "..", "suites", "07_no_gram_onboarding_tests.jl"))
+include(joinpath(@__DIR__, "..", "suites", "08_cli_and_assets_tests.jl"))
+include(joinpath(@__DIR__, "..", "suites", "09_probe_drivers.jl"))

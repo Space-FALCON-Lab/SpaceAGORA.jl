@@ -1,5 +1,5 @@
 include(joinpath(@__DIR__, "pr_runtests.jl"))
-include(joinpath(@__DIR__, "nightly_runtests.jl"))
+# The PR suite already includes every nightly gate; do not run them twice.
 
 # Full contract superset used for local runs.
 include(joinpath(@__DIR__, "..", "gates", "ci_final_clean_contract_gate.jl"))

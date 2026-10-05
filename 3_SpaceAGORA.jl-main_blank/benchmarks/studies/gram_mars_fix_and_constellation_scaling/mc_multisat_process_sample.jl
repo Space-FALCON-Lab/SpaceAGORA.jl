@@ -8,7 +8,7 @@
 # THREAD_ALLOCATION_AND_GRAM_CONCURRENCY_HANDOFF.md).
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
-include(joinpath(REPO_ROOT, "examples", "common.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "examples", "common.jl"))
 ensure_gramsuite_loaded!()
 const GRAMAtmosphereModelSurrogate = SimulationModel.GRAMAtmosphereModelSurrogate
 

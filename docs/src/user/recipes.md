@@ -79,6 +79,31 @@ SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=examples/rpo_planner_env examples/Ear
 SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=examples/rpo_planner_env examples/Robot_Arm_Planner_Cloth_Demo.jl
 ```
 
+## Attach guidance, navigation or control to one spacecraft
+
+Declare the effector on the spacecraft instead of in the configuration-level `ControlModel`;
+it is bound to that spacecraft's position in the constellation when the run starts, so it
+follows the spacecraft into `run_constellation_ensemble` without `allow_gnc_effectors=true`.
+
+```julia
+const SM = SpaceAGORA.SimulationModel
+momentum = SM.MagneticMomentumManagerModel(commanded_torque=tau_fn, b_field_ii=b_fn)
+sc = SM.SpacecraftModel(; links=[root], root=root, initial_condition=ic, id=2,
+                        control=SM.ControlModel(control_effectors=(momentum,), control_rates=[1.0]))
+```
+
+Only effectors that select their vehicle by an index (`bind_spacecraft` is defined for them)
+can be declared this way; RPO chaser/target effectors and effectors that act on every
+spacecraft raise an `ArgumentError` and belong in the configuration.
+
+When any spacecraft declares GNC, the run uses a flattened copy of the configuration.
+With `isolate_state=false`, configuration-level effectors remain your objects. Binding may
+reuse a per-spacecraft effector whose index already matches, or make a shallow copy that
+shares mutable members. Scalar field updates on a copied effector stay on that copy;
+mutations of shared members remain visible on your original. Spacecraft copies also share
+links, joints and initial conditions. Keep the default isolation to preserve caller state,
+and use `run_simulation(...; return_results=true).configuration` to inspect the state that ran.
+
 ## Inspect local assets
 
 ```text

@@ -380,6 +380,45 @@ function _with_density_model_epoch(args::SimulationConfiguration)
         environment_model=aligned_environment)
 end
 
+_declares_gnc(sc) = !(isempty(sc.guidance.guidance_effectors) &&
+                      isempty(sc.navigation.navigation_effectors) &&
+                      isempty(sc.control.control_effectors))
+
+# Spacecraft copy without its per-spacecraft GNC (links, joints and the rest are shared).
+_without_gnc(sc::SimulationModel.SpacecraftModel) = SimulationModel.SpacecraftModel(
+    sc.joints, sc.links, sc.root, sc.instant_actuation, sc.dry_mass, sc.prop_mass, sc.inertia_tensor,
+    sc.n_reaction_wheels, sc.n_thrusters, sc.initial_condition, sc.id)
+
+"""
+Fold per-spacecraft GNC declarations (`SpacecraftModel` `guidance`/`navigation`/`control`) into the
+configuration-level GNC tuples, once, at the start of `run_simulation`: configuration-level effectors
+first, then each spacecraft's effectors bound to its position by `bind_spacecraft`, in spacecraft order.
+The returned configuration's spacecraft declare no GNC, so a second pass is a no-op, and the caller's
+spacecraft are not modified. Returns `args` itself when no spacecraft declares GNC.
+"""
+function _flatten_spacecraft_gnc(args::SimulationConfiguration)
+    spacecraft = args.dynamics_model.spacecraft
+    any(_declares_gnc, spacecraft) || return args
+    g = Any[args.guidance_model.guidance_effectors...]; gr = copy(args.guidance_model.guidance_rates)
+    n = Any[args.navigation_model.navigation_effectors...]; nr = copy(args.navigation_model.navigation_rates)
+    c = Any[args.control_model.control_effectors...]; cr = copy(args.control_model.control_rates)
+    for (idx, sc) in enumerate(spacecraft)
+        append!(g, SimulationLifecycle.bind_spacecraft(e, idx) for e in sc.guidance.guidance_effectors)
+        append!(gr, sc.guidance.guidance_rates)
+        append!(n, SimulationLifecycle.bind_spacecraft(e, idx) for e in sc.navigation.navigation_effectors)
+        append!(nr, sc.navigation.navigation_rates)
+        append!(c, SimulationLifecycle.bind_spacecraft(e, idx) for e in sc.control.control_effectors)
+        append!(cr, sc.control.control_rates)
+    end
+    return SimulationModel.SimConfig._with_configuration(args;
+        guidance_model=SimulationModel.GuidanceModel(Tuple(g), gr),
+        navigation_model=SimulationModel.NavigationModel(Tuple(n), nr),
+        control_model=SimulationModel.ControlModel(Tuple(c), cr),
+        dynamics_model=SimulationModel.DynamicsModel(
+            SimulationModel.SpacecraftModel[_declares_gnc(sc) ? _without_gnc(sc) : sc for sc in spacecraft],
+            args.dynamics_model.dynamic_effectors))
+end
+
 """
     run_simulation(args...; isolate_state=true, kwargs...)
 
@@ -397,7 +436,14 @@ references.
 Set `isolate_state=false` only as an advanced performance lever when the caller owns the
 configuration instance and will not reuse it concurrently or across runs that may mutate
 shared state. This can reduce setup cost for large mission definitions or many short runs,
-but it trades away the default isolation guarantee.
+but it trades away the default isolation guarantee. When any spacecraft declares GNC, the
+configuration that runs is a flattened copy. With `isolate_state=false`, configuration-level
+effectors remain the caller's objects. Per-spacecraft binding may return the original effector
+when its index already matches, or a shallow copy that shares mutable members. Scalar field
+updates on a copied effector are not reflected in the original, while mutations of shared
+members are. GNC-stripped spacecraft likewise share their links, joints and initial conditions.
+Keep the default isolation when the caller needs its state preserved; use the returned
+`SimulationResults.configuration` with `return_results=true` to inspect the objects that ran.
 
 With `return_results=true` the call returns a [`SimulationResults`](@ref): the
 results table built in memory (same columns and values as the CSV, even when
@@ -432,6 +478,7 @@ function run_simulation(
 )
     return_results && return_solver_metadata &&
         throw(ArgumentError("return_results=true and return_solver_metadata=true cannot be combined."))
+    args = _flatten_spacecraft_gnc(args)
     for guidance in args.guidance_model.guidance_effectors
         SimulationLifecycle.preflight_guidance(guidance, args; isolate_state=isolate_state)
     end

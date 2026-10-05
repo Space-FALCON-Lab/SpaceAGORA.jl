@@ -252,25 +252,96 @@ Base.@noinline function test_solver_paths()
             args = configuration(mode=mode)
             u, p = Base.invokelatest(parameters, args)
             expected = expected_drag(u, p)
-            rec = TrajectoryRecorder(args)
+            # This solver matrix concerns only initial forces. Retain the full
+            # fused recorder in Tsit5; the other modes exercise the narrow field
+            # path, avoiding an unrelated third SavingCallback specialization.
+            fields = filter(field -> field.name in (:drag, :lift, :cross), default_save_fields(args))
+            rec = mode === :tsit5 ? TrajectoryRecorder(args) : TrajectoryRecorder(args; save_fields=fields)
             saved = SavedValues(Float64, SM.SaveData)
-            standard = CB.get_data_saving_callback(1, args, default_save_fields(args), saved)
+            standard = CB.get_data_saving_callback(1, args, fields, saved)
             recorder = get_trajectory_recorder_callback(rec)
-            custom = TrajectoryRecorder(args; save_fields=[SaveField(:drag,
-                (u, t, integrator) -> [SVector(9.0, 8.0, 7.0)]; per_satellite=true)])
             callbacks = recorder_first ? (recorder, standard) : (standard, recorder)
+            println("initial_force_output: solver mode=$mode recorder_first=$recorder_first")
+            flush(stdout)
             result = Base.invokelatest(run_simulation, args; isolate_state=false,
-                return_solver_metadata=true,
-                extra_callbacks=(callbacks..., get_trajectory_recorder_callback(custom)))
+                return_solver_metadata=true, extra_callbacks=callbacks)
             @test result.retcode == "Success"
             @test first(saved.t) == first(trajectory_times(rec)) == 0.0
             @test saved.saveval[1][:drag][1] ≈ expected rtol=5e-14
-            @test trajectory_field(rec, :drag)[:, 1, 1] ≈ expected rtol=5e-14
-            @test saved.saveval[1][:drag][1] == SVector{3, Float64}(trajectory_field(rec, :drag)[:, 1, 1])
-            @test all(iszero, trajectory_field(rec, :lift)[:, :, 1])
-            @test all(iszero, trajectory_field(rec, :cross)[:, :, 1])
-            @test trajectory_field(custom, :drag)[1] == [SVector(9.0, 8.0, 7.0)]
+            # Default fused fields use (component, spacecraft, sample) arrays;
+            # an explicit field subset keeps a vector of per-sample payloads.
+            initial_force(name) = mode === :tsit5 ?
+                SVector{3, Float64}(trajectory_field(rec, name)[:, 1, 1]) :
+                only(trajectory_field(rec, name)[1])
+            @test initial_force(:drag) ≈ expected rtol=5e-14
+            @test saved.saveval[1][:drag][1] == initial_force(:drag)
+            @test initial_force(:lift) == ZERO3
+            @test initial_force(:cross) == ZERO3
         end
+    end
+end
+
+Base.@noinline function test_custom_force_getter()
+    args = configuration()
+    custom = TrajectoryRecorder(args; save_fields=[SaveField(:drag,
+        (u, t, integrator) -> [SVector(9.0, 8.0, 7.0)]; per_satellite=true)])
+    result = Base.invokelatest(run_simulation, args; isolate_state=false,
+        return_solver_metadata=true,
+        extra_callbacks=(get_trajectory_recorder_callback(custom),))
+    @test result.retcode == "Success"
+    @test !isempty(trajectory_times(custom)) &&
+        all(value -> value == [SVector(9.0, 8.0, 7.0)], trajectory_field(custom, :drag))
+end
+
+# Keep callback construction in one helper, so the second solve has the same
+# callback types but fresh captured output objects. Integrator identity below
+# proves this exercises the cached reinit path, rather than a new solver.
+Base.@noinline function run_cached_initial_output(args, cache)
+    u, p = Base.invokelatest(parameters, args)
+    expected = expected_drag(u, p)
+    rec = TrajectoryRecorder(args)
+    saved = SavedValues(Float64, SM.SaveData)
+    standard = CB.get_data_saving_callback(1, args, default_save_fields(args), saved)
+    result = Base.invokelatest(run_simulation, args; isolate_state=false,
+        solver_cache=cache, return_solver_metadata=true,
+        extra_callbacks=(standard, get_trajectory_recorder_callback(rec)))
+    @test result.retcode == "Success"
+    @test first(saved.t) == first(trajectory_times(rec)) == 0.0
+    @test saved.saveval[1][:drag][1] ≈ expected rtol=5e-14
+    @test trajectory_field(rec, :drag)[:, 1, 1] ≈ expected rtol=5e-14
+    @test all(isfinite, expected) && norm(expected) > 0.0
+    @test all(iszero, trajectory_field(rec, :lift)[:, :, 1]) &&
+        all(iszero, trajectory_field(rec, :cross)[:, :, 1])
+    @test !cache.integrator.p.save_cache.initial_force_output_pending[]
+    @test isempty(cache.integrator.p.save_cache.initial_force_output_destinations)
+    return (; saved, rec, expected)
+end
+
+Base.@noinline function test_cached_integrator_reinit()
+    withenv("SPACEAGORA_RHS_CALIBRATE" => "off",
+            "SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS" => "0",
+            "SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST" => "0") do
+        cache = SE.SolverIntegratorCache()
+        first_run = Base.invokelatest(run_cached_initial_output, configuration(), cache)
+        integrator = cache.integrator
+        saved_times = copy(first_run.saved.t)
+        saved_values = deepcopy(first_run.saved.saveval)
+        recorder_times = copy(trajectory_times(first_run.rec))
+        recorder_values = Dict(field.name => deepcopy(trajectory_field(first_run.rec, field.name))
+            for field in first_run.rec.save_fields)
+        # Change the force expectation without changing callback or parameter
+        # types. A stale captured saver or an unarmed second solve must fail.
+        second_args = configuration(model=ExponentialAtmosphereModel(2e-11, 550e3,
+            50e3; temperature_k=800.0))
+        second_run = Base.invokelatest(run_cached_initial_output, second_args, cache)
+        @test cache.integrator === integrator
+        @test second_run.saved.saveval[1][:drag][1] ≈
+            2.0 * first_run.saved.saveval[1][:drag][1] rtol=5e-14
+        @test first_run.saved.t == saved_times
+        @test isequal(first_run.saved.saveval, saved_values)
+        @test trajectory_times(first_run.rec) == recorder_times
+        @test all(isequal(trajectory_field(first_run.rec, name), values)
+            for (name, values) in recorder_values)
     end
 end
 
@@ -299,6 +370,20 @@ println("initial_force_output: initial force publication adds no stateful querie
 flush(stdout)
 @testset "initial force publication adds no stateful queries" begin
     Base.invokelatest(test_stateful_queries)
+end
+flush(stdout)
+
+println("initial_force_output: cached integrator reinitializes both initial savers")
+flush(stdout)
+@testset "cached integrator reinitializes both initial savers" begin
+    Base.invokelatest(test_cached_integrator_reinit)
+end
+flush(stdout)
+
+println("initial_force_output: custom force getter remains unchanged")
+flush(stdout)
+@testset "custom force getter remains unchanged" begin
+    Base.invokelatest(test_custom_force_getter)
 end
 flush(stdout)
 

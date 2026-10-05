@@ -8,9 +8,9 @@
     mission_configuration::MissionConfiguration = MissionConfiguration() # Mission-specific configuration
     environment_model::EnvironmentModel{P, D, E, T} # Physical environment models
     dynamics_model::DynamicsModel{DM} # Dynamics models to use for the simulation, e.g., drag, n-body gravity, gravity harmonics, etc. that calculate forces/torques on the spacecraft
-    guidance_model::GuidanceModel # Guidance models to use for the simulation, e.g., for calculating control inputs based on the state vector
-    navigation_model::NavigationModel # Navigation models to use for the simulation, e.g., for calculating state estimates based on sensor data
-    control_model::ControlModel # Control models to use for the simulation, e.g., for calculating control inputs based on the state vector
+    guidance_model::GuidanceModel = GuidanceModel() # Guidance models to use for the simulation, e.g., for calculating control inputs based on the state vector
+    navigation_model::NavigationModel = NavigationModel() # Navigation models to use for the simulation, e.g., for calculating state estimates based on sensor data
+    control_model::ControlModel = ControlModel() # Control models to use for the simulation, e.g., for calculating control inputs based on the state vector
     initial_time::InitialTime # Initial time for the simulation
     integration_tolerances::IntegrationTolerances = IntegrationTolerances() # Tolerances for the numerical integrator
     solver_config::Union{Nothing, SolverConfig} = nothing # nothing = read from env at run time

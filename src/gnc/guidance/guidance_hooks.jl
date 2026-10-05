@@ -89,6 +89,7 @@ module GuidanceHooks
     include(joinpath(@__DIR__, "rpo", "rpo_guidance_hooks.jl"))
     include(joinpath(@__DIR__, "aerobraking", "interfaces.jl"))
     include(joinpath(@__DIR__, "target_energy_bracketing.jl"))
+    include(joinpath(@__DIR__, "aerobraking", "energy_depletion_lifecycle.jl"))
     include(joinpath(@__DIR__, "aerobraking", "common", "closed_form_solution.jl"))
     include(joinpath(@__DIR__, "aerobraking", "common", "heat_rate_models.jl"))
     include(joinpath(@__DIR__, "aerobraking", "t_edg", "trajectory_predictor.jl"))

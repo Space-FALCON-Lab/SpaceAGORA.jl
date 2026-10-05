@@ -239,3 +239,4 @@ Support files included by examples:
 
 - `common.jl`
 - `aerobraking_mission_plot_utils.jl`
+- `support/aerobraking_result_tables.jl` (saved-table access used by the mission plotting helper)

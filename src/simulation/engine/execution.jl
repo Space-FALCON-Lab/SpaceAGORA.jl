@@ -433,10 +433,13 @@ Set `isolate_state=false` only as an advanced performance lever when the caller 
 configuration instance and will not reuse it concurrently or across runs that may mutate
 shared state. This can reduce setup cost for large mission definitions or many short runs,
 but it trades away the default isolation guarantee. When any spacecraft declares GNC, the
-configuration that runs is a flattened copy: configuration-level effector objects are still
-the caller's, but the bound copies of per-spacecraft effectors and the GNC-stripped spacecraft
-copies are not, so with `isolate_state=false` their mutated state is not visible on the caller's
-configuration.
+configuration that runs is a flattened copy. With `isolate_state=false`, configuration-level
+effectors remain the caller's objects. Per-spacecraft binding may return the original effector
+when its index already matches, or a shallow copy that shares mutable members. Scalar field
+updates on a copied effector are not reflected in the original, while mutations of shared
+members are. GNC-stripped spacecraft likewise share their links, joints and initial conditions.
+Keep the default isolation when the caller needs its state preserved; use the returned
+`SimulationResults.configuration` with `return_results=true` to inspect the objects that ran.
 
 # Examples
 ```jldoctest
@@ -461,6 +464,9 @@ function run_simulation(
     args = _flatten_spacecraft_gnc(args)
     for guidance in args.guidance_model.guidance_effectors
         SimulationLifecycle.preflight_guidance(guidance, args; isolate_state=isolate_state)
+    end
+    for control in args.control_model.control_effectors
+        SimulationLifecycle.preflight_control(control, args; isolate_state=isolate_state)
     end
     # SolverConfig(parallel=true): re-enter under the flag's scoped environment
     # (see `_with_parallel_flag`). Inside it the flag reads as resolved, so this
@@ -600,6 +606,9 @@ function run_simulation(
     # println("args.mission_configuration.mission_time: $(args.mission_configuration.mission_time)")
     for guidance in args.guidance_model.guidance_effectors
         SimulationLifecycle.initialize_guidance!(guidance, u_start, p, t_start)
+    end
+    for control in args.control_model.control_effectors
+        SimulationLifecycle.initialize_control!(control, u_start, p, t_start)
     end
     p.shared_buffers.solve_segment_end_time[] = mission_end
     # prob_debug exists only to feed the NaN-probe below, which itself only

@@ -15,10 +15,12 @@ SpaceAGORA.bind_spacecraft(m::SgPushEffector, sat_idx::Int) = SgPushEffector(sat
 const SG_PLANET = SimulationModel.make_no_gram_planet(:earth)
 const SG_PUSH = SVector{3, Float64}(0.0, 5.0, 0.0)
 
-function sg_sat(id::Int, raan_deg::Float64; guidance=nothing, control=nothing)
+function sg_sat(id::Int, raan_deg::Float64; guidance=nothing, navigation=nothing, control=nothing)
     root = Link(root=true, m=100.0, ref_area=2.0)
     ic = InitialCondition(ra=SG_PLANET.Rp_e + 700e3, rp=SG_PLANET.Rp_e + 650e3, i=45.0, ω=0.0, Ω=raan_deg, ν=10.0)
     kw = control === nothing ? (;) : (; control)
+    guidance === nothing || (kw = merge(kw, (; guidance)))
+    navigation === nothing || (kw = merge(kw, (; navigation)))
     return SpacecraftModel(joints=Joint[], links=[root], root=root, prop_mass=0.0,
         inertia_tensor=root.inertia, initial_condition=ic, id=id; kw...)
 end
@@ -151,4 +153,59 @@ final_state(args) = collect(run_simulation(args; return_solution=true).u[end])
         # Configuration-level effectors still need the flag.
         @test_throws ArgumentError run_constellation_ensemble(sg_config(sats; control=sg_control(SgPushEffector(1, SG_PUSH))))
     end
+end
+
+# Both scheduling lanes must survive flattening, including mutable-state isolation.
+struct SgGuidanceProbe <: SpaceAGORA.AbstractGuidanceModel
+    sat_idx::Int
+    visits::Vector{Int}
+end
+struct SgNavigationProbe
+    sat_idx::Int
+    visits::Vector{Int}
+end
+SpaceAGORA.bind_spacecraft(m::SgGuidanceProbe, i::Int) = SgGuidanceProbe(i, m.visits)
+SpaceAGORA.bind_spacecraft(m::SgNavigationProbe, i::Int) = SgNavigationProbe(i, m.visits)
+function SpaceAGORA.SimulationModel.GuidanceHooks.calcGuidanceEffect!(m::SgGuidanceProbe, u, p, t::Float64, i::Int)
+    i == m.sat_idx && push!(m.visits, i)
+    return nothing
+end
+function SpaceAGORA.SimulationModel.NavigationHooks.calcNavigationEffect!(m::SgNavigationProbe, u, p, t::Float64, i::Int)
+    i == m.sat_idx && push!(m.visits, i)
+    return nothing
+end
+
+@testset "Per-spacecraft GNC scheduling and ownership" begin
+    g = SgGuidanceProbe(9, Int[])
+    n = SgNavigationProbe(9, Int[])
+    gm = GuidanceModel((g,), [2.0]); nm = NavigationModel((n,), [3.0])
+    args = sg_config([sg_sat(1, 0.0), sg_sat(2, 40.0; guidance=gm, navigation=nm)])
+    flat = SpaceAGORA.SimulationEngine._flatten_spacecraft_gnc(args)
+    @test flat.guidance_model.guidance_effectors isa Tuple{SgGuidanceProbe}
+    @test flat.navigation_model.navigation_effectors isa Tuple{SgNavigationProbe}
+    @test flat.guidance_model.guidance_effectors[1].sat_idx == 2
+    @test flat.navigation_model.navigation_effectors[1].sat_idx == 2
+    @test flat.guidance_model.guidance_rates == [2.0]
+    @test flat.navigation_model.navigation_rates == [3.0]
+    @test flat.guidance_model.guidance_rates !== gm.guidance_rates
+    @test flat.navigation_model.navigation_rates !== nm.navigation_rates
+    @test SpaceAGORA.SimulationEngine._flatten_spacecraft_gnc(flat) === flat
+    @test (run_simulation(args); true)
+    @test isempty(g.visits) && isempty(n.visits)
+    @test (run_simulation(args; isolate_state=false); true)
+    @test !isempty(g.visits) && all(==(2), g.visits)
+    @test !isempty(n.visits) && all(==(2), n.visits)
+    @test length(g.visits) > length(n.visits)
+    @test g.sat_idx == 9 && n.sat_idx == 9
+    @test args.dynamics_model.spacecraft[2].guidance === gm
+    @test args.dynamics_model.spacecraft[2].navigation === nm
+
+    # Built-in rebinds copy scalar fields but retain nested mutable members.
+    arm = RobotArmControlEffector(spacecraft_idx=1)
+    bound = bind_spacecraft(arm, 2)
+    bound.updated_at_s = 5.0
+    push!(bound.held.joint_torque_nm, 7.0)
+    @test arm.updated_at_s == 0.0
+    @test bound.held === arm.held
+    @test arm.held.joint_torque_nm == [7.0]
 end

@@ -96,9 +96,13 @@ Only effectors that select their vehicle by an index (`bind_spacecraft` is defin
 can be declared this way; RPO chaser/target effectors and effectors that act on every
 spacecraft raise an `ArgumentError` and belong in the configuration.
 
-When any spacecraft declares GNC, the run uses a flattened copy of the configuration. With
-`isolate_state=false`, the mutated state of per-spacecraft effectors and of those spacecraft
-is therefore not visible on your configuration; configuration-level effectors are still your objects.
+When any spacecraft declares GNC, the run uses a flattened copy of the configuration.
+With `isolate_state=false`, configuration-level effectors remain your objects. Binding may
+reuse a per-spacecraft effector whose index already matches, or make a shallow copy that
+shares mutable members. Scalar field updates on a copied effector stay on that copy;
+mutations of shared members remain visible on your original. Spacecraft copies also share
+links, joints and initial conditions. Keep the default isolation to preserve caller state,
+and use `run_simulation(...; return_results=true).configuration` to inspect the state that ran.
 
 ## Inspect local assets
 

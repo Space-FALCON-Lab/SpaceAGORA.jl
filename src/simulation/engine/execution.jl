@@ -330,9 +330,10 @@ function _save_simulation_results_if_enabled!(
     checkpoint_saved_times,
     checkpoint_saved_data,
     backbone_saved_times,
-    backbone_saved_data,
+    backbone_saved_data;
+    return_table::Bool=false,
 )
-    args.simulation_settings.results || return nothing
+    (args.simulation_settings.results || return_table) || return nothing
     results_times = if solver_mode == :gravity_backbone_split
         checkpoint_active ? checkpoint_saved_times : backbone_saved_times
     else
@@ -348,11 +349,14 @@ function _save_simulation_results_if_enabled!(
         convert(Vector{SimulationModel.SaveData}, results_data),
     )
     results_df = _build_results_dataframe(results_times, results_data, save_fields_resolved, args)
-    csv_path = _write_results_csv!(results_df, args)
-    if _typed_save_bundle_enabled()
-        _write_results_bundle!(results_df, results_times, args; csv_path=csv_path)
+    csv_path = nothing
+    if args.simulation_settings.results
+        csv_path = _write_results_csv!(results_df, args)
+        if _typed_save_bundle_enabled()
+            _write_results_bundle!(results_df, results_times, args; csv_path=csv_path)
+        end
     end
-    return csv_path
+    return return_table ? (; csv_path, table=results_df) : csv_path
 end
 
 function _try_save_simulation_results_if_enabled!(args...)
@@ -395,6 +399,16 @@ configuration instance and will not reuse it concurrently or across runs that ma
 shared state. This can reduce setup cost for large mission definitions or many short runs,
 but it trades away the default isolation guarantee.
 
+With `return_results=true` the call returns a [`SimulationResults`](@ref): the
+results table built in memory (same columns and values as the CSV, even when
+`simulation_settings.results=false`, in which case result files are not written), the
+configuration that actually ran (the deep copy under `isolate_state=true`, so
+controller state and logs are reachable), the files the run wrote, and the
+solution when `return_solution=true` is also given (otherwise `nothing`).
+Explicitly enabled checkpoint writing remains independent of result-file output.
+It cannot be combined with `return_solver_metadata=true`. With the default
+`return_results=false` the return value is unchanged.
+
 # Examples
 ```jldoctest
 julia> args = spaceagora_no_gram_example_args();
@@ -410,11 +424,14 @@ function run_simulation(
     isolate_state::Bool=true,
     return_solution::Bool=false,
     return_solver_metadata::Bool=false,
+    return_results::Bool=false,
     save_fields=nothing,
     extra_callbacks=(),
     solver_cache::Union{Nothing, SolverIntegratorCache}=nothing,
     visualization::Bool=(_engine_env_get("SPACEAGORA_VISUALIZATION", "0") == "1")
 )
+    return_results && return_solver_metadata &&
+        throw(ArgumentError("return_results=true and return_solver_metadata=true cannot be combined."))
     for guidance in args.guidance_model.guidance_effectors
         SimulationLifecycle.preflight_guidance(guidance, args; isolate_state=isolate_state)
     end
@@ -427,8 +444,8 @@ function run_simulation(
     if args.solver_config !== nothing && _parallel_flag_applies(args.solver_config.parallel)
         return _with_parallel_flag(true) do
             run_simulation(args; isolate_state=isolate_state, return_solution=return_solution,
-                           return_solver_metadata=return_solver_metadata, save_fields=save_fields,
-                           extra_callbacks=extra_callbacks, solver_cache=solver_cache,
+                           return_solver_metadata=return_solver_metadata, return_results=return_results,
+                           save_fields=save_fields, extra_callbacks=extra_callbacks, solver_cache=solver_cache,
                            visualization=visualization)
         end
     end
@@ -509,7 +526,8 @@ function run_simulation(
         args;
         saved_values=saved_values,
         save_fields=save_fields_resolved,
-        extra_callbacks=extra_callbacks
+        extra_callbacks=extra_callbacks,
+        record_saved_values=return_results
     ) # Get the callbacks based on the number of satellites and the dynamic effectors being used in the simulation
     ephemerides_model = args.environment_model.ephemerides_model
     et_start = SimulationModel.ephemerides_time_seconds(args.initial_time, ephemerides_model)
@@ -752,6 +770,7 @@ function run_simulation(
     needs_full_solution = return_solution || solver_mode == :gravity_backbone_split
 
     last_sol = nothing
+    checkpoint_written = false
     solver_trace = NamedTuple[]
     checkpoint_saved_times = Float64[]
     checkpoint_saved_data = SimulationModel.SaveData[]
@@ -835,6 +854,7 @@ function run_simulation(
             t_cursor = Float64(seg_sol.t[end])
             u_cursor = deepcopy(seg_sol.u[end])
             _write_checkpoint!(args, t_cursor, u_cursor, string(solver_mode))
+            checkpoint_written = true
             if string(seg_sol.retcode) != "Success" || !_gravity_backbone_time_reached(t_cursor, t_next)
                 break
             end
@@ -886,7 +906,7 @@ function run_simulation(
     _rhs_calib_record_solve_time!()
 
     # Process and save results
-    _save_simulation_results_if_enabled!(
+    saved_results = _save_simulation_results_if_enabled!(
         args,
         solver_mode,
         checkpoint_active,
@@ -895,11 +915,13 @@ function run_simulation(
         checkpoint_saved_times,
         checkpoint_saved_data,
         backbone_saved_times,
-        backbone_saved_data,
+        backbone_saved_data;
+        return_table=return_results,
     )
-    _write_visualization_scene_if_enabled!(args; density_params=p)
+    scene_path = _write_visualization_scene_if_enabled!(args; density_params=p)
+    export_path = nothing
     if visualization && args.simulation_settings.results
-        SimulationModel.SceneVisualization.export_visualization(args)
+        export_path = SimulationModel.SceneVisualization.export_visualization(args)
     end
 
     if return_solution && checkpoint_active && args.simulation_settings.checkpoint_interval_s < mission_end
@@ -934,6 +956,24 @@ function run_simulation(
             parallel_policy=parallel_policy,
             spice_counters=_spice_runtime_counters_snapshot(p)
         )
+    end
+    if return_results
+        # Files this run left behind: only paths that exist, so a disabled
+        # output never shows up. The bundle and checkpoint paths are the
+        # engine's own naming (IOConfig), not guesses.
+        prefix = _results_bundle_prefix(args)
+        candidates = Any[saved_results.csv_path, scene_path, export_path]
+        # The bundle is this run's only when this run wrote it; a leftover
+        # from an earlier run in the same directory must not be listed.
+        if args.simulation_settings.results && _typed_save_bundle_enabled()
+            push!(candidates, prefix * ".feather", prefix * ".manifest.toml")
+        end
+        if checkpoint_written
+            ck = SimulationModel.IOConfig._checkpoint_paths(args)
+            push!(candidates, ck.data, ck.manifest)
+        end
+        files = String[string(f) for f in candidates if f !== nothing && isfile(f)]
+        return SimulationResults(saved_results.table, args, files, return_solution ? last_sol : nothing)
     end
     return_solution && return last_sol
     return nothing

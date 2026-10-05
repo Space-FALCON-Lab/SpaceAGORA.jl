@@ -1790,23 +1790,34 @@ function _reset_and_rewarm_density_model!(model)::Bool
     return true
 end
 
+# Use the same geometric convention at startup and when reconciling undelivered
+# crossings. At the boundary (within the existing roundoff band), outward
+# motion is outside; inward or tangential motion is inside.
+@inline function _inside_atmosphere_at_state(u, i::Int, boundary)
+    position = _state_position_ii(u, i)
+    height = norm(position) - boundary
+    if abs(height) <= 64 * eps(boundary)
+        return dot(position, _state_velocity_ii(u, i)) <= 0.0
+    end
+    return height < 0.0
+end
+
 # in_atmosphere[] otherwise defaults to false for every satellite (runtime_types.jl)
 # and is only ever flipped by the up/down-crossing event callback in
 # event_callbacks.jl. A satellite whose initial orbit never crosses EI --
 # because it starts (and stays) below it, e.g. a circular low-altitude orbit --
 # would then incorrectly read as "not in atmosphere" for the entire mission,
 # silently skipping the vacuum-predicted GRAM cache and the finer
-# dt_max_atmosphere step size. Set the flag from the actual starting altitude
+# dt_max_atmosphere step size. Set the flag from the starting position and
+# boundary direction using the crossing convention,
 # instead of leaving every satellite to default to the "above the atmosphere"
 # state regardless of where it actually starts.
 function _initialize_in_atmosphere_flags!(p, initial_conditions)::Nothing
     n = length(p.is_active)
     length(p.shared_buffers.in_atmosphere) == n || resize!(p.shared_buffers.in_atmosphere, n)
-    planet = p.args.environment_model.planet
-    ei_m = p.args.environment_model.EI * 1e3
+    boundary = p.args.environment_model.planet.Rp_e + p.args.environment_model.EI * 1e3
     @inbounds for i in 1:n
-        alt = norm(_state_position_ii(initial_conditions, i)) - planet.Rp_e
-        p.shared_buffers.in_atmosphere[i] = alt <= ei_m
+        p.shared_buffers.in_atmosphere[i] = _inside_atmosphere_at_state(initial_conditions, i, boundary)
     end
     return nothing
 end

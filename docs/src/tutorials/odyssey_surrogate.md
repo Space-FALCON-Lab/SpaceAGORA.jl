@@ -99,6 +99,67 @@ This is a prescribed panel-cap exercise. Its thermal threshold is infinite, and 
 
 `configure_case` in the example shows how to replace the guidance and control configuration while retaining the atmosphere and scenario. The unchanged P20 regression remains a separate reference with guidance and control disabled. Results from this active-control exercise do not inherit a mission-accuracy claim from that reference.
 
+## EDG state between runs and passes
+
+A fresh `run_simulation` initializes EDG state, including its counters. The
+paired guidance and controller must share one `AerobrakingEnergyDepletionState`
+with one entry per spacecraft and matching configurations. Default simulation
+isolation preserves this pairing in the run-owned copy. Reusing a configuration
+starts a fresh run; `isolate_state=false` also resets EDG state, while leaving
+ownership of all other mutable configuration to the caller.
+
+Atmospheric entry and exit use the simulator's existing boundary events. Each
+changed spacecraft loses its cached bracket, switch times and mode flags.
+Repeated delivery of the same crossing does not clear a new plan, and ordinary
+callbacks within a pass retain their cache. Bracketing counts accumulate within
+a run; last-command telemetry remains until the next control update. Propagated
+physical heat loads and panel geometry are not cleared by this reset.
+
+Startup and crossing reconciliation share one boundary convention: within
+64 floating-point spacings of the entry-interface radius, outward motion is
+outside and inward or tangential motion is inside. This ensures that a plan
+computed at an exact-boundary outbound start is invalidated on the next entry.
+The startup flag also selects the initial solver phase when the simulation uses
+atmosphere-dependent solver settings. Outbound starts in this band therefore
+begin with orbit-phase settings, including in non-EDG configurations.
+
+A known limit remains for an exact-boundary start with zero radial velocity
+that subsequently rises, such as a periapsis exactly on the entry interface.
+It is classified as inside. In the reviewed witness, the mask stays inside
+through the coast, so a guidance plan computed at time zero survives the next
+entry; atmospheric solver settings can also persist during that coast. The
+outbound-start correction does not fix this tangential-start case. Its boundary
+classification and test expectations are retained; acceleration-based tangency
+handling requires a separate reviewed change.
+
+EDG enables the existing crossing pipeline even when both solver phases have
+identical settings. That pipeline also enables staged density updates when the dynamics require density,
+exit-time thruster scheduling (which may call guidance), and phase-setting
+reapplication. Added root-finding stops can change the integration path;
+unchanged guidance formulas do not imply bitwise-identical trajectories.
+
+At exit, invalidating the old mode makes the next control update use the
+fresh-pass default for the configured modes: minimum angle for targeting-only
+EDG, or maximum angle when maximum depletion is configured. The effect relative
+to retaining the previous pass's command depends on whether its switch occurred:
+
+| Configuration | Previous pass's switch | Before exit invalidation | After exit invalidation |
+| --- | --- | --- | --- |
+| Targeting only | Completed | Minimum | Minimum, unchanged |
+| Targeting only | Still ahead | Maximum | Minimum |
+| Targeting plus maximum depletion | Completed | Minimum | Maximum |
+| Targeting plus maximum depletion | Still ahead | Maximum | Maximum, unchanged |
+
+These between-pass commands can affect forces above the entry interface when
+density, solar pressure or attitude coupling remains active. The reset itself
+does not change panel geometry.
+
+Maximum-depletion control may be configured without guidance. Targeting control
+requires paired guidance to establish its bracket. EDG checkpoint writing and
+resume are refused before output creation because the checkpoint format does
+not preserve EDG pass state. The stored `switch_recompute_interval_s` setting
+remains inactive; this lifecycle rule does not introduce periodic re-solving.
+
 ## Inspect the result
 
 Unless you pass `--output=DIR` (or `output_dir` in Julia), the comparison writes

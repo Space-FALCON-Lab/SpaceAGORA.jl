@@ -435,6 +435,9 @@ function run_simulation(
     for guidance in args.guidance_model.guidance_effectors
         SimulationLifecycle.preflight_guidance(guidance, args; isolate_state=isolate_state)
     end
+    for control in args.control_model.control_effectors
+        SimulationLifecycle.preflight_control(control, args; isolate_state=isolate_state)
+    end
     # SolverConfig(parallel=true): re-enter under the flag's scoped environment
     # (see `_with_parallel_flag`). Inside it the flag reads as resolved, so this
     # branch is taken once; with the flag off nothing here runs.
@@ -574,6 +577,9 @@ function run_simulation(
     # println("args.mission_configuration.mission_time: $(args.mission_configuration.mission_time)")
     for guidance in args.guidance_model.guidance_effectors
         SimulationLifecycle.initialize_guidance!(guidance, u_start, p, t_start)
+    end
+    for control in args.control_model.control_effectors
+        SimulationLifecycle.initialize_control!(control, u_start, p, t_start)
     end
     p.shared_buffers.solve_segment_end_time[] = mission_end
     # prob_debug exists only to feed the NaN-probe below, which itself only

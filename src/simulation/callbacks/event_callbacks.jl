@@ -262,15 +262,9 @@ function _refresh_crossing_atmosphere_flags!(integrator, events)
     p = integrator.p
     engine = _simulation_engine_module()
     boundary = p.args.environment_model.planet.Rp_e + p.args.environment_model.EI * 1e3
-    boundary_roundoff = 64 * eps(boundary)
+    previous_inside = copy(p.shared_buffers.in_atmosphere)
     for i in eachindex(p.is_active)
-        position = engine._state_position_ii(integrator.u, i)
-        height = norm(position) - boundary
-        now_inside = if abs(height) <= boundary_roundoff
-            dot(position, engine._state_velocity_ii(integrator.u, i)) <= 0.0
-        else
-            height < 0.0
-        end
+        now_inside = engine._inside_atmosphere_at_state(integrator.u, i, boundary)
         events[i] != 0 && (now_inside = events[i] < 0)
         # An exit invalidates a vacuum prediction even if this member's own
         # callback was omitted from a simultaneous event by the solver library.
@@ -281,6 +275,18 @@ function _refresh_crossing_atmosphere_flags!(integrator, events)
         end
         p.shared_buffers.in_atmosphere[i] = now_inside
         p.shared_buffers.in_atmosphere_sample_t[i] = Float64(integrator.t)
+    end
+    # Notify only after the complete simultaneous mask is reconciled. Repeated
+    # delivery of the same direction must not erase a newly computed plan.
+    for i in eachindex(p.is_active)
+        inside = p.shared_buffers.in_atmosphere[i]
+        inside == previous_inside[i] && continue
+        for model in p.args.guidance_model.guidance_effectors
+            SimulationLifecycle.atmosphere_transition!(model, integrator.u, p, integrator.t, i, inside)
+        end
+        for model in p.args.control_model.control_effectors
+            SimulationLifecycle.atmosphere_transition!(model, integrator.u, p, integrator.t, i, inside)
+        end
     end
     return nothing
 end

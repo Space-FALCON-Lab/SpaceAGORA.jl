@@ -209,3 +209,27 @@ end
     @test bound.held === arm.held
     @test arm.held.joint_torque_nm == [7.0]
 end
+
+@testset "Per-spacecraft GNC returned configuration" begin
+    g = SgGuidanceProbe(9, Int[])
+    n = SgNavigationProbe(9, Int[])
+    args = sg_config([sg_sat(1, 0.0), sg_sat(2, 40.0;
+        guidance=GuidanceModel((g,), [2.0]), navigation=NavigationModel((n,), [3.0]))])
+    result = run_simulation(args; return_results=true, return_solution=true)
+    @test result isa SimulationResults
+    @test result.solution !== nothing
+    @test size(result.table, 1) > 0
+    @test isempty(result.files)
+    ran_g = only(result.configuration.guidance_model.guidance_effectors)
+    ran_n = only(result.configuration.navigation_model.navigation_effectors)
+    @test ran_g !== g && ran_n !== n
+    @test !isempty(ran_g.visits) && all(==(2), ran_g.visits)
+    @test !isempty(ran_n.visits) && all(==(2), ran_n.visits)
+    @test isempty(g.visits) && isempty(n.visits)
+    @test all(sc -> isempty(sc.guidance.guidance_effectors) &&
+        isempty(sc.navigation.navigation_effectors), result.configuration.dynamics_model.spacecraft)
+    rerun = run_simulation(result.configuration; return_results=true)
+    @test length(rerun.configuration.guidance_model.guidance_effectors) == 1
+    @test length(rerun.configuration.navigation_model.navigation_effectors) == 1
+    @test_throws ArgumentError run_simulation(args; return_results=true, return_solver_metadata=true)
+end

@@ -48,6 +48,25 @@ config = SM.SimulationConfiguration(
 run_simulation(config)
 ```
 
+The guidance, navigation and control models are optional. Leave them out and
+each defaults to an empty model, the same as the zero-argument constructors
+`SM.GuidanceModel()`, `SM.NavigationModel()` and `SM.ControlModel()` (no
+effectors, no rates). The minimal form is:
+
+```julia
+config = SM.SimulationConfiguration(
+    simulation_settings   = SM.SimulationSettings(...),
+    mission_configuration = SM.MissionConfiguration(...),
+    environment_model     = SM.EnvironmentModel(...),
+    dynamics_model        = SM.DynamicsModel([spacecraft], effectors),
+    initial_time          = SM.InitialTime(year=2024, month=1, day=1),
+)
+```
+
+`environment_model`, `dynamics_model` and `initial_time` stay required;
+pass explicit models only when you attach guidance, navigation or control
+effectors.
+
 ## InitialTime
 
 Specifies the simulation epoch. All fields default to the J2000 epoch

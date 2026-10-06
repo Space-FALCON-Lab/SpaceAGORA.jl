@@ -26,7 +26,11 @@ Base.@kwdef struct RPOHyPRRLConfig
     ]
     thruster_max_thrust_n::Vector{Float64} = fill(0.05, 6)
     thruster_isp_s::Vector{Float64} = fill(60.0, 6)
+    # A commanded pulse must remain on for at least this long.  There is no
+    # minimum-off-time dwell between pulses.
     thruster_min_firing_time_s::Float64 = 0.010
+    thruster_opening_time_s::Float64 = 0.010
+    thruster_closing_time_s::Float64 = 0.010
     reaction_wheel_inertia_kgm2::Vector{Float64} = [0.035, 0.035, 0.025]
     reaction_wheel_kp::Float64 = 0.020
     reaction_wheel_kd::Float64 = 0.050
@@ -74,6 +78,12 @@ function _validate_rpo_hypr_rl_config(config::RPOHyPRRLConfig)
         throw(ArgumentError("maximum thrust must be nonnegative"))
     config.thruster_min_firing_time_s >= 0.0 ||
         throw(ArgumentError("minimum firing time must be nonnegative"))
+    config.thruster_opening_time_s >= 0.0 ||
+        throw(ArgumentError("thruster opening time must be nonnegative"))
+    config.thruster_closing_time_s >= 0.0 ||
+        throw(ArgumentError("thruster closing time must be nonnegative"))
+    config.thruster_min_firing_time_s + 1.0e-12 >= config.thruster_opening_time_s ||
+        throw(ArgumentError("minimum firing time must allow the thruster to open"))
     length(config.reaction_wheel_inertia_kgm2) == 3 ||
         throw(DimensionMismatch("three reaction-wheel inertia values are required"))
     all(>(0.0), config.reaction_wheel_inertia_kgm2) ||

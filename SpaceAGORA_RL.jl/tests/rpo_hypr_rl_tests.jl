@@ -87,7 +87,7 @@ end
     @test RPOHyPRRLTrainingConfig().epsilon_decay_end_episode == 20_000
 end
 
-@testset "HyPR-RL bounded fuel and wheel reward" begin
+@testset "HyPR-RL linear fuel and wheel reward" begin
     config = RPOHyPRRLConfig()
     components = (fuel_ref=0.002, total=1.0e6, J_len=1.0e6)
     wheel_reference = sum(
@@ -100,7 +100,7 @@ end
     with_wheel = SpaceAGORA_RL._rpo_fuel_wheel_objective(
         components, 0.001, wheel_reference, config,
     )
-    @test fuel_only.total ≈ 0.25
+    @test fuel_only.total ≈ 0.5
     @test with_wheel.total - fuel_only.total ≈ config.wheel_weight
 
     evaluation = objective -> RPOHyPRRLEvaluation(
@@ -329,9 +329,16 @@ end
     config = RPOHyPRRLConfig(safe_distance_m=0.5)
     components = (
         total=42.0,
+        J_len=1.0,
+        J_len_norm=0.1,
         J_obs=1.0e-6,
+        J_fuel=0.0,
+        J_fuel_norm=0.0,
         violation_count=7,
         min_clearance=0.1,
+        cutoff_exceeded=false,
+        len_ref=10.0,
+        fuel_ref=0.002,
     )
     evaluation = RPOHyPRRLEvaluation(
         false, 42.0, 42.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
@@ -347,6 +354,24 @@ end
     @test pso_components.clearance_penalty == 42.0
     @test pso_components.violation_count == 7
     @test !pso_components.retimed_feasible
+
+    common_kwargs = (
+        clearance_penalty=0.0,
+        propellant_used_kg=0.0,
+        normalized_fuel=0.0,
+        wheel_energy_j=0.0,
+        normalized_wheel_energy=0.0,
+        duration_s=0.0,
+        cutoff_exceeded=false,
+    )
+    feasible_components = SpaceAGORA_RL._rpo_pso_objective_components(
+        components; total=1.0, violation_count=0, feasible=true, common_kwargs...,
+    )
+    infeasible_components = SpaceAGORA_RL._rpo_pso_objective_components(
+        components; total=Inf, violation_count=1, feasible=false, common_kwargs...,
+    )
+    @test typeof(feasible_components) === typeof(infeasible_components)
+    @test !any(==(Any), fieldtypes(typeof(feasible_components)))
 end
 
 @testset "attitude changes six-thruster propellant accounting" begin
@@ -354,6 +379,8 @@ end
         max_translation_waypoints=0,
         max_attitude_waypoints=0,
         thruster_min_firing_time_s=0.0,
+        thruster_opening_time_s=0.0,
+        thruster_closing_time_s=0.0,
         reaction_wheel_kp=0.0,
         reaction_wheel_kd=0.0,
     )
@@ -377,6 +404,258 @@ end
         command, reshape(tilted, 4, 1), 1.0, tilted_scenario, config,
     )
     @test tilted_result.propellant_used_kg > 1.3 * identity_result.propellant_used_kg
+
+    allocator = SpaceAGORA_RL._rpo_thruster_allocator(config)
+    allocated = SpaceAGORA_RL._allocate_thrusters!(
+        zeros(6), [0.01, -0.02, 0.03], allocator,
+    )
+    @test allocator.paired_axes
+    @test allocated ≈ [0.01, 0.0, 0.0, 0.02, 0.03, 0.0]
+
+    valve_derated_limit = SpaceAGORA_RL._rpo_guaranteed_acceleration_limit_mps2(
+        RPOHyPRRLConfig(), 0.1,
+    )
+    @test valve_derated_limit ≈ 0.9 * 0.05 / config.mass_kg
+
+    scheduler = SpaceAGORA_RL._rpo_thruster_pulse_scheduler(config)
+    within_limit = SpaceAGORA_RL._thruster_translation_step(
+        [0.005, 0.0, 0.0], identity, 0.1, config, allocator, scheduler,
+    )
+    above_limit = SpaceAGORA_RL._thruster_translation_step(
+        [0.02, 0.0, 0.0], identity, 0.1, config, allocator, scheduler,
+    )
+    @test !within_limit.saturated
+    @test above_limit.saturated
+end
+
+@testset "retimed pointing aligns a nearby body thruster axis" begin
+    config = RPOHyPRRLConfig()
+    identity = [0.0, 0.0, 0.0, 1.0]
+    command = normalize([1.0, 1.0, 1.0])
+    target = SpaceAGORA_RL._rpo_fuel_optimal_pointing_attitude(
+        identity, identity, command, 0.5, config,
+    )
+    force_body = SpaceAGORA_RL._quat_rotation_matrix(target) * command
+    alignment = maximum(
+        dot(force_body, view(config.thruster_directions_body, :, index))
+        for index in axes(config.thruster_directions_body, 2)
+    )
+    @test alignment ≈ 1.0 atol=1.0e-12
+    @test SpaceAGORA_RL._rpo_fuel_optimal_pointing_attitude(
+        identity, identity, command, 0.0, config,
+    ) ≈ identity
+    @test SpaceAGORA_RL._rpo_fuel_optimal_pointing_attitude(
+        identity, identity, command, 1.0, config,
+    ) ≈ identity
+end
+
+@testset "thruster pulse accumulation honors valve opening and closing" begin
+    config = RPOHyPRRLConfig(
+        thruster_min_firing_time_s=0.010,
+        thruster_opening_time_s=0.010,
+        thruster_closing_time_s=0.010,
+    )
+    allocator = SpaceAGORA_RL._rpo_thruster_allocator(config)
+    scheduler = SpaceAGORA_RL._rpo_thruster_pulse_scheduler(config)
+    identity = [0.0, 0.0, 0.0, 1.0]
+    minimum_impulse = 0.05 * 0.010
+    sub_mib_command = [0.5 * minimum_impulse / (config.mass_kg * 0.1), 0.0, 0.0]
+    first = SpaceAGORA_RL._thruster_translation_step(
+        sub_mib_command, identity, 0.1, config, allocator, scheduler,
+    )
+    second = SpaceAGORA_RL._thruster_translation_step(
+        sub_mib_command, identity, 0.1, config, allocator, scheduler,
+    )
+    @test sum(first.thruster_impulse_ns) == 0.0
+    @test sum(second.thruster_impulse_ns) ≈ minimum_impulse
+
+    scheduler = SpaceAGORA_RL._rpo_thruster_pulse_scheduler(config)
+    full_command = [0.05 / config.mass_kg, 0.0, 0.0]
+    opening = SpaceAGORA_RL._thruster_translation_step(
+        full_command, identity, 0.1, config, allocator, scheduler,
+    )
+    held = SpaceAGORA_RL._thruster_translation_step(
+        full_command, identity, 0.1, config, allocator, scheduler,
+    )
+    closing = SpaceAGORA_RL._thruster_translation_step(
+        zeros(3), identity, 0.1, config, allocator, scheduler,
+    )
+    immediate = SpaceAGORA_RL._thruster_translation_step(
+        [minimum_impulse / (config.mass_kg * 0.1), 0.0, 0.0],
+        identity, 0.1, config, allocator, scheduler,
+    )
+    @test sum(opening.thruster_impulse_ns) ≈ 0.05 * (0.1 - 0.005)
+    @test sum(held.thruster_impulse_ns) ≈ 0.05 * 0.1
+    @test sum(closing.thruster_impulse_ns) ≈ 0.05 * 0.005
+    @test sum(immediate.thruster_impulse_ns) ≈ minimum_impulse
+end
+
+@testset "streamed retimed objective matches materialized accounting" begin
+    config = RPOHyPRRLConfig(
+        thruster_min_firing_time_s=0.0,
+        thruster_opening_time_s=0.0,
+        thruster_closing_time_s=0.0,
+        reaction_wheel_kp=0.0,
+        reaction_wheel_kd=0.0,
+    )
+    samples = [0.0 0.5 1.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+    profile = (
+        samples=samples,
+        s_samples=[0.0, 0.5, 1.0],
+        s_ref=[0.0, 0.25, 0.5, 0.75, 1.0],
+        dt_s=0.5,
+    )
+    interpolate! = function (out, points, arc_length, query)
+        index = clamp(searchsortedlast(arc_length, query), 1, length(arc_length) - 1)
+        fraction = (query - arc_length[index]) /
+            (arc_length[index + 1] - arc_length[index])
+        out .= (1.0 - fraction) .* view(points, :, index) .+
+            fraction .* view(points, :, index + 1)
+        return out
+    end
+    r_ref = zeros(3, length(profile.s_ref))
+    for index in eachindex(profile.s_ref)
+        interpolate!(
+            view(r_ref, :, index), samples, profile.s_samples, profile.s_ref[index],
+        )
+    end
+    v_ref = zeros(size(r_ref))
+    for index in 2:(size(r_ref, 2) - 1)
+        v_ref[:, index] .= (r_ref[:, index + 1] - r_ref[:, index]) / profile.dt_s
+    end
+    tracking = (
+        mean_motion_radps=0.001,
+        dt_s=profile.dt_s,
+        final_position_tol_m=1.0e-9,
+    )
+    commands = SpaceAGORA_RL._rpo_feedforward_acceleration_history(
+        r_ref, v_ref, tracking.mean_motion_radps, tracking.dt_s,
+    )
+    # With no orbital drift, a constant-speed interior still costs departure
+    # and braking: 0 -> 0.5 -> 0 m/s gives an equivalent delta-v of 1 m/s.
+    rest_commands = SpaceAGORA_RL._rpo_feedforward_acceleration_history(
+        r_ref, v_ref, 0.0, tracking.dt_s,
+    )
+    @test rest_commands[:, 1] ≈ [1.0, 0.0, 0.0]
+    @test rest_commands[:, end] ≈ [-1.0, 0.0, 0.0]
+    @test sum(norm, eachcol(rest_commands)) * tracking.dt_s ≈ 1.0
+    rest_proxy = SpaceAGORA_RL._stream_retimed_timing_aware_proxy_objective(
+        profile, 0.0, 5.0, 60.0, 9.80665, 0.01, 1.0, 0.0, Inf,
+        interpolate!,
+    )
+    @test rest_proxy.propellant_used_kg ≈ 5.0 / (60.0 * 9.80665)
+    identity = [0.0, 0.0, 0.0, 1.0]
+    scenario = RPOHyPRRLScenario(
+        start_rtn=r_ref[:, 1], goal_rtn=r_ref[:, end], geometry=nothing,
+        initial_attitude_rtn_to_body=identity,
+        final_attitude_rtn_to_body=identity,
+    )
+    q_reference = repeat(identity, 1, size(r_ref, 2))
+    materialized = SpaceAGORA_RL._account_thruster_and_attitude_history(
+        commands, q_reference, tracking.dt_s, scenario, config,
+    )
+    allocator = SpaceAGORA_RL._rpo_thruster_allocator(config)
+    streamed = SpaceAGORA_RL._stream_retimed_feedforward_objective(
+        profile, tracking, identity, identity, config, allocator,
+        0.01, Inf, interpolate!,
+    )
+    @test streamed.propellant_used_kg ≈ materialized.propellant_used_kg
+    @test streamed.allocation_error_impulse_mps ≈
+        materialized.allocation_error_impulse_mps
+    @test streamed.thruster_impulse_ns ≈ materialized.thruster_impulse_ns
+    @test streamed.wheel_energy_j ≈ materialized.wheel_energy_j
+    @test streamed.duration_s ≈ (size(r_ref, 2) - 1) * tracking.dt_s
+    @test !streamed.cutoff_exceeded
+
+    pruned = SpaceAGORA_RL._stream_retimed_feedforward_objective(
+        profile, tracking, identity, identity, config, allocator,
+        0.01, streamed.total / 2.0, interpolate!,
+    )
+    @test pruned.cutoff_exceeded
+    @test pruned.duration_s < streamed.duration_s
+
+    proxy_mass_kg = 5.0
+    proxy_isp_s = 60.0
+    proxy_g0_mps2 = 9.80665
+    proxy_fuel_reference_kg = 0.01
+    geometric_cost = 0.01
+    timing_aware = SpaceAGORA_RL._stream_retimed_timing_aware_proxy_objective(
+        profile, tracking.mean_motion_radps, proxy_mass_kg, proxy_isp_s,
+        proxy_g0_mps2, proxy_fuel_reference_kg, 1.0, geometric_cost, Inf,
+        interpolate!,
+    )
+    expected_proxy_fuel = proxy_mass_kg /
+        (proxy_isp_s * proxy_g0_mps2) *
+        sum(norm(view(commands, :, index)) * profile.dt_s
+            for index in axes(commands, 2))
+    @test timing_aware.propellant_used_kg ≈ expected_proxy_fuel
+    @test timing_aware.total ≈ geometric_cost +
+        expected_proxy_fuel / proxy_fuel_reference_kg
+    @test timing_aware.duration_s ≈ streamed.duration_s
+    @test !timing_aware.cutoff_exceeded
+
+    timing_pruned = SpaceAGORA_RL._stream_retimed_timing_aware_proxy_objective(
+        profile, tracking.mean_motion_radps, proxy_mass_kg, proxy_isp_s,
+        proxy_g0_mps2, proxy_fuel_reference_kg, 1.0, geometric_cost,
+        timing_aware.total / 2.0, interpolate!,
+    )
+    @test timing_pruned.cutoff_exceeded
+    @test timing_pruned.duration_s < timing_aware.duration_s
+
+    path_components = (
+        total=0.0,
+        J_len=1.0,
+        J_len_norm=0.1,
+        J_obs=0.0,
+        J_fuel=0.0,
+        J_fuel_norm=0.0,
+        min_clearance=1.0,
+        violation_count=0,
+        cutoff_exceeded=false,
+        len_ref=10.0,
+        fuel_ref=0.01,
+    )
+    prepare_candidate = (args...; kwargs...) -> (
+        components=path_components, profile=profile,
+    )
+    evaluator = RPOHyPRRLPSOObjectiveEvaluator(
+        config, tracking, identity, identity,
+        prepare_candidate, interpolate!, allocator,
+    )
+    full_components = evaluator(
+        samples[:, [1, 3]], nothing, nothing, 0.0, Inf,
+    )
+    cutoff_components = evaluator(
+        samples[:, [1, 3]], nothing, nothing, 0.0, full_components.total / 2.0,
+    )
+    @test full_components.total ≈ streamed.total
+    @test full_components.retimed_feasible
+    @test cutoff_components.cutoff_exceeded
+    @test typeof(full_components) === typeof(cutoff_components)
+
+    timing_path_components = merge(path_components, (total=geometric_cost,))
+    timing_prepare_candidate = (args...; kwargs...) -> (
+        components=timing_path_components, profile=profile,
+    )
+    timing_evaluator = RPOTimingAwareProxyPSOObjectiveEvaluator(
+        config, tracking, timing_prepare_candidate, interpolate!,
+    )
+    timing_pso_config = (
+        w_len=1.0, w_obs=1.0e6, w_fuel=1.0,
+        mass_kg=proxy_mass_kg, isp_s=proxy_isp_s, g0_mps2=proxy_g0_mps2,
+    )
+    timing_components = timing_evaluator(
+        samples[:, [1, 3]], nothing, timing_pso_config, 0.0, Inf,
+    )
+    timing_cutoff_components = timing_evaluator(
+        samples[:, [1, 3]], nothing, timing_pso_config, 0.0,
+        timing_components.total / 2.0,
+    )
+    @test timing_components.total ≈ timing_aware.total
+    @test timing_components.J_len_norm == path_components.J_len_norm
+    @test timing_components.retimed_feasible
+    @test timing_cutoff_components.cutoff_exceeded
+    @test typeof(timing_components) === typeof(timing_cutoff_components)
 end
 
 @testset "HyPR-RL two-level terminal evaluation" begin

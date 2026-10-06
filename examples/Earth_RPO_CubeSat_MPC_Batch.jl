@@ -471,6 +471,9 @@ function _write_rpo_planner_comparison_reproducibility_csv(
     obstacle_margin_m::Real,
     runtime_limit_s::Real,
     write_failed_path_outputs::Bool,
+    hypr_objective_name::AbstractString="original_geometric_proxy",
+    tracking_evaluator_name::AbstractString="ideal_continuous_hcw_lqmpc_nonlinear_two_body",
+    share_rrt_initial_path::Bool=false,
 )
     rows = NamedTuple[]
     clearance_summary = _rpo_case_clearance_summary(generated_cases, geometry)
@@ -483,6 +486,9 @@ function _write_rpo_planner_comparison_reproducibility_csv(
     _rpo_repro_push!(rows, "run", "julia_num_threads", Threads.nthreads())
     _rpo_repro_push!(rows, "run", "smoke_mode", _rpo_batch_smoke_mode(); source="SPACEAGORA_EXAMPLE_SMOKE")
     _rpo_repro_push!(rows, "run", "planners", join(string.(cfg.planners), ";"))
+    _rpo_repro_push!(rows, "run", "hypr_objective", hypr_objective_name)
+    _rpo_repro_push!(rows, "run", "terminal_tracking_evaluator", tracking_evaluator_name)
+    _rpo_repro_push!(rows, "run", "shared_rrt_initial_path", share_rrt_initial_path)
     _rpo_repro_push!(rows, "run", "runtime_limit_s", runtime_limit_s; units="s")
     _rpo_repro_push!(rows, "run", "failed_path_plots", write_failed_path_outputs; source="SPACEAGORA_RPO_COMPARISON_FAILED_PATH_PLOTS")
 
@@ -518,8 +524,8 @@ function _write_rpo_planner_comparison_reproducibility_csv(
 
     _rpo_repro_push!(rows, "hypr_adaptive", "adaptive_enable", pso_cfg.adaptive_enable)
     _rpo_repro_push!(rows, "hypr_adaptive", "adaptive_allow_downscale", pso_cfg.adaptive_allow_downscale)
-    _rpo_repro_push!(rows, "hypr_adaptive", "adaptive_complexity_weight", pso_cfg.adaptive_complexity_weight)
-    _rpo_repro_push!(rows, "hypr_adaptive", "adaptive_distance_weight", pso_cfg.adaptive_distance_weight)
+    _rpo_repro_push!(rows, "hypr_adaptive", "adaptive_detour_weight", pso_cfg.adaptive_detour_weight)
+    _rpo_repro_push!(rows, "hypr_adaptive", "adaptive_search_effort_weight", pso_cfg.adaptive_search_effort_weight)
     _rpo_repro_push!(rows, "hypr_adaptive", "adaptive_waypoint_gain", pso_cfg.adaptive_waypoint_gain)
     _rpo_repro_push!(rows, "hypr_adaptive", "adaptive_effort_min_fraction", pso_cfg.adaptive_effort_min_fraction)
     _rpo_repro_push!(rows, "hypr_adaptive", "adaptive_effort_max_fraction", pso_cfg.adaptive_effort_max_fraction)
@@ -593,6 +599,16 @@ function _write_rpo_planner_comparison_reproducibility_csv(
     _rpo_repro_push!(rows, "mpc", "horizon", tracking.horizon)
     _rpo_repro_push!(rows, "mpc", "dt_s", tracking.dt_s; units="s")
     _rpo_repro_push!(rows, "mpc", "mean_motion_radps", tracking.mean_motion_radps; units="rad/s")
+    orbit = SM.GuidanceHooks.rpo_two_body_reference_orbit(tracking.mean_motion_radps)
+    _rpo_repro_push!(rows, "propagation", "model", "nonlinear_two_body")
+    _rpo_repro_push!(rows, "propagation", "integrator", "RK4")
+    _rpo_repro_push!(rows, "propagation", "max_step_s", 0.05; units="s")
+    _rpo_repro_push!(rows, "propagation", "earth_mu_m3ps2", orbit.μ; units="m^3/s^2")
+    _rpo_repro_push!(rows, "propagation", "reference_radius_m", orbit.radius_m; units="m", notes="Circular orbit derived from the HCW mean motion.")
+    _rpo_repro_push!(rows, "propagation", "target_initial_position_eci_m", orbit.r_target; units="m")
+    _rpo_repro_push!(rows, "propagation", "target_initial_velocity_eci_mps", orbit.v_target; units="m/s")
+    _rpo_repro_push!(rows, "propagation", "acceleration_hold", "constant_RTN_interval_average")
+    _rpo_repro_push!(rows, "geometry", "target_attitude", "fixed_in_RTN")
     _rpo_repro_push!(rows, "mpc", "Q_diag", [tracking.q_pos, tracking.q_pos, tracking.q_pos, tracking.q_vel, tracking.q_vel, tracking.q_vel])
     _rpo_repro_push!(rows, "mpc", "R_diag", [tracking.r_accel, tracking.r_accel, tracking.r_accel])
     _rpo_repro_push!(rows, "mpc", "Qf_diag", [tracking.qf_pos, tracking.qf_pos, tracking.qf_pos, tracking.qf_vel, tracking.qf_vel, tracking.qf_vel])
@@ -613,6 +629,9 @@ function _write_rpo_planner_comparison_reproducibility_csv(
     _rpo_repro_push!(rows, "geometry", "point_cloud_resolution", n_station_points; units="points")
     _rpo_repro_push!(rows, "geometry", "station_keepout_radius_m", geometry.station.keepout_radius_m; units="m")
     _rpo_repro_push!(rows, "geometry", "chaser_half_extents_m", geometry.chaser.half_extents_body; units="m")
+    _rpo_repro_push!(rows, "geometry", "chaser_bounding_radius_m", norm(geometry.chaser.half_extents_body); units="m")
+    _rpo_repro_push!(rows, "geometry", "clearance_measurement", "continuous_segment_capsule")
+    _rpo_repro_push!(rows, "pso", "clearance_feasibility_tol_m", cfg.pso_config.clearance_feasibility_tol_m; units="m")
 
     _rpo_repro_push!(rows, "sampling", "obstacle_distribution", "Gateway CAD triangle surface sampled proportional to triangle area")
     _rpo_repro_push!(rows, "sampling", "start_goal_sampling", "Independent near-surface start/goal samples; reject surrounded endpoints; require minimum separation")
@@ -916,20 +935,27 @@ end
 function run_rpo_cubesat_mpc_planner_comparison_batch(;
     n_cases::Integer=_rpo_batch_smoke_mode() ? 1 : _env_int("SPACEAGORA_RPO_COMPARISON_N", 50),
     seed::Integer=_env_int("SPACEAGORA_RPO_COMPARISON_SEED", _env_int("SPACEAGORA_RPO_BATCH_SEED", 740)),
-    results_directory::AbstractString=joinpath(REPO_ROOT, "output", "rpo_planner_comparison_cases"),
+    geometry_seed::Integer=seed,
+    results_directory::AbstractString=get(
+        ENV,
+        "SPACEAGORA_RPO_COMPARISON_OUTPUT",
+        joinpath(REPO_ROOT, "output", "rpo_planner_comparison_cases"),
+    ),
     pso_n_particles::Integer=_rpo_batch_smoke_mode() ? 8 : _env_int("SPACEAGORA_RPO_COMPARISON_PSO_PARTICLES", 100),
     pso_n_iters::Integer=_rpo_batch_smoke_mode() ? 2 : _env_int("SPACEAGORA_RPO_COMPARISON_PSO_ITERS", 60),
     pso_n_waypoints::Integer=_rpo_batch_smoke_mode() ? 1 : _env_int("SPACEAGORA_RPO_COMPARISON_PSO_WAYPOINTS", 5),
-    rrt_connect_iters::Integer=_rpo_batch_smoke_mode() ? 25 : _env_int("SPACEAGORA_RPO_COMPARISON_RRT_CONNECT_ITERS", 1000),
+    pso_sample_ds_m::Real=_env_float("SPACEAGORA_RPO_COMPARISON_HYPR_SAMPLE_DS", 0.05),
+    pso_clearance_feasibility_tol_m::Real=_env_float("SPACEAGORA_RPO_COMPARISON_CLEARANCE_TOL", 1.0e-3),
+    rrt_connect_iters::Integer=_rpo_batch_smoke_mode() ? 25 : _env_int("SPACEAGORA_RPO_COMPARISON_RRT_CONNECT_ITERS", 25_000),
     rrt_connect_step_size_m::Real=_env_float("SPACEAGORA_RPO_COMPARISON_RRT_CONNECT_STEP_SIZE", 0.75),
-    rrt_star_iters::Integer=_rpo_batch_smoke_mode() ? 25 : _env_int("SPACEAGORA_RPO_COMPARISON_RRT_STAR_ITERS", rrt_connect_iters),
+    rrt_star_iters::Integer=_rpo_batch_smoke_mode() ? 25 : _env_int("SPACEAGORA_RPO_COMPARISON_RRT_STAR_ITERS", 1000),
     rrt_star_step_size_m::Real=_env_float("SPACEAGORA_RPO_COMPARISON_RRT_STAR_STEP_SIZE", rrt_connect_step_size_m),
     rrt_star_neighbor_radius_m::Real=_env_float("SPACEAGORA_RPO_COMPARISON_RRT_STAR_NEIGHBOR_RADIUS", 2.0),
     chomp_iters::Integer=_rpo_batch_smoke_mode() ? 2 : _env_int("SPACEAGORA_RPO_COMPARISON_CHOMP_ITERS", pso_n_iters),
     stomp_iters::Integer=_rpo_batch_smoke_mode() ? 2 : _env_int("SPACEAGORA_RPO_COMPARISON_STOMP_ITERS", pso_n_iters),
     stomp_rollouts::Integer=_rpo_batch_smoke_mode() ? 3 : _env_int("SPACEAGORA_RPO_COMPARISON_STOMP_ROLLOUTS", 20),
     n_station_points::Integer=_rpo_batch_smoke_mode() ? 800 : _env_int("SPACEAGORA_RPO_COMPARISON_STATION_POINTS", 10000),
-    safe_distance_m::Real=_env_float("SPACEAGORA_RPO_COMPARISON_SAFE_DISTANCE", 0.5),
+    safe_distance_m::Real=_env_float("SPACEAGORA_RPO_COMPARISON_SAFE_DISTANCE", 0.25),
     endpoint_clearance_margin_m::Real=_env_float("SPACEAGORA_RPO_COMPARISON_ENDPOINT_CLEARANCE_MARGIN", 0.05),
     endpoint_max_clearance_m::Real=_env_float("SPACEAGORA_RPO_COMPARISON_ENDPOINT_MAX_CLEARANCE", 1.0),
     min_separation_m::Real=_env_float("SPACEAGORA_RPO_COMPARISON_MIN_SEPARATION", 1.5),
@@ -952,6 +978,13 @@ function run_rpo_cubesat_mpc_planner_comparison_batch(;
     write_plotly_outputs::Bool=_env_bool("SPACEAGORA_RPO_COMPARISON_PLOTS", true),
     write_failed_path_outputs::Bool=_env_bool("SPACEAGORA_RPO_COMPARISON_FAILED_PATH_PLOTS", true),
     show_progress::Bool=_env_bool("SPACEAGORA_RPO_COMPARISON_PROGRESS", true),
+    hypr_objective_evaluator_factory=nothing,
+    tracking_evaluator=nothing,
+    comparison_case_generator=nothing,
+    planner_rng_factory=nothing,
+    share_rrt_initial_path::Bool=false,
+    hypr_objective_name::AbstractString="original_geometric_proxy",
+    tracking_evaluator_name::AbstractString="ideal_continuous_hcw_lqmpc_nonlinear_two_body",
 )
     mkpath(results_directory)
     comparison_safe_distance_m = SM.GuidanceHooks.RPO_PLANNER_COMPARISON_SAFE_DISTANCE_M
@@ -959,28 +992,31 @@ function run_rpo_cubesat_mpc_planner_comparison_batch(;
     println("RPO planner comparison batch: HYPR vs PSO (unrefined) vs RRT-Connect vs RRT-Connect + Bezier vs RRT* vs CHOMP vs STOMP")
     println("  cases=$(n_cases), seed=$(seed), station_points=$(n_station_points)")
     println("  safety=$(comparison_safe_distance_m) m, endpoint_min_clearance=$(endpoint_min_clearance_m) m")
+    println("  hypr_objective=$(hypr_objective_name), terminal=$(tracking_evaluator_name)")
     println("  output=$(abspath(results_directory))")
 
     station_points = SpaceAGORA.load_rpo_station_cad_pointcloud(
         :gateway;
         n_points=n_station_points,
-        rng=MersenneTwister(seed),
+        rng=MersenneTwister(geometry_seed),
     )
     geometry = RPOReferenceGeometry(
         RPOStationGeometry(station_points; keepout_radius_m=0.25, name="gateway_core");
         chaser=RPOCubeSatGeometry(dims_m=(0.1, 0.1, 0.3)),
     )
-    generated_cases = generate_rpo_seeded_batch_cases(
-        n_cases=n_cases,
-        seed=seed,
-        geometry_seed=seed,
-        n_station_points=n_station_points,
-        endpoint_min_clearance_m=endpoint_min_clearance_m,
-        endpoint_max_clearance_m=endpoint_max_clearance_m,
-        min_separation_m=min_separation_m,
-        surrounded_max_distance_m=surrounded_max_distance_m,
-        max_sampling_tries=max_sampling_tries,
-    )
+    generated_cases = comparison_case_generator === nothing ?
+        generate_rpo_seeded_batch_cases(
+            n_cases=n_cases,
+            seed=seed,
+            geometry_seed=geometry_seed,
+            n_station_points=n_station_points,
+            endpoint_min_clearance_m=endpoint_min_clearance_m,
+            endpoint_max_clearance_m=endpoint_max_clearance_m,
+            min_separation_m=min_separation_m,
+            surrounded_max_distance_m=surrounded_max_distance_m,
+            max_sampling_tries=max_sampling_tries,
+        ) :
+        comparison_case_generator(Int(n_cases), geometry)
     comparison_cases = [
         RPOPlannerComparisonCase(
             start_rtn=SVector{3, Float64}(case.start_rtn),
@@ -995,6 +1031,9 @@ function run_rpo_cubesat_mpc_planner_comparison_batch(;
         n_particles=Int(pso_n_particles),
         n_iters=Int(pso_n_iters),
         n_waypoints=Int(pso_n_waypoints),
+        sample_ds_m=Float64(pso_sample_ds_m),
+        refinement_sample_ds_m=Float64(pso_sample_ds_m),
+        clearance_feasibility_tol_m=Float64(pso_clearance_feasibility_tol_m),
         adaptive_enable=!_rpo_batch_smoke_mode(),
         refinement_enable=true,
     )
@@ -1057,7 +1096,15 @@ function run_rpo_cubesat_mpc_planner_comparison_batch(;
         show_progress=show_progress,
     )
 
-    runtime = @elapsed batch = rpo_run_planner_comparison_batch(comparison_cases, geometry, cfg)
+    runtime = @elapsed batch = rpo_run_planner_comparison_batch(
+        comparison_cases,
+        geometry,
+        cfg;
+        hypr_objective_evaluator_factory=hypr_objective_evaluator_factory,
+        tracking_evaluator=tracking_evaluator,
+        planner_rng_factory=planner_rng_factory,
+        share_rrt_initial_path=share_rrt_initial_path,
+    )
     batch = merge(batch, (station_triangles=SpaceAGORA.load_rpo_station_cad_triangles(:gateway),))
     outputs = rpo_write_planner_comparison_outputs(batch)
     rows = rpo_flatten_planner_results(batch)
@@ -1075,7 +1122,7 @@ function run_rpo_cubesat_mpc_planner_comparison_batch(;
         geometry=geometry,
         n_cases=n_cases,
         seed=seed,
-        geometry_seed=seed,
+        geometry_seed=geometry_seed,
         n_station_points=n_station_points,
         endpoint_min_clearance_m=endpoint_min_clearance_m,
         endpoint_max_clearance_m=endpoint_max_clearance_m,
@@ -1087,6 +1134,9 @@ function run_rpo_cubesat_mpc_planner_comparison_batch(;
         obstacle_margin_m=obstacle_margin_m,
         runtime_limit_s=runtime_limit_s,
         write_failed_path_outputs=write_failed_path_outputs,
+        hypr_objective_name=hypr_objective_name,
+        tracking_evaluator_name=tracking_evaluator_name,
+        share_rrt_initial_path=share_rrt_initial_path,
     )
 
     println("RPO planner comparison complete in $(round(runtime, digits=2)) s.")

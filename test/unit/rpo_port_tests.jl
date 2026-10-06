@@ -45,7 +45,7 @@ end
         obstacle_sigmoid_tol_m=0.01,
     )
     @test sigmoid_stats.violation_count == 0
-    @test sigmoid_stats.obstacle_score ≈ 1.0 atol=1.0e-9
+    @test sigmoid_stats.obstacle_score ≈ 2.0 atol=1.0e-9
     intersect_stats = SM.GuidanceHooks.rpo_clearance_stats_from_samples(
         reshape([0.005, 0.0, 0.0], 3, 1),
         sigmoid_geom,
@@ -121,17 +121,88 @@ end
     @test custom_plan.components.custom_objective
     @test custom_plan.cost ≈ standard_custom_path.total + 123.0
 
-    synced_cfg = SM.rpo_pso_config(SM.RPOPSOConfig(sample_ds_m=0.5, safe_distance_m=0.2))
-    @test synced_cfg.sample_ds_m == synced_cfg.safe_distance_m
-    @test SM.GuidanceHooks.rpo_hypr_sampling_density_m(SM.RPOPSOConfig(sample_ds_m=0.5), 0.2) == 0.2
-    @test SM.GuidanceHooks.rpo_740_mpc_final_pso_config(safe_distance_m=0.2).sample_ds_m == 0.2
+    incumbent_geom = SM.RPOReferenceGeometry(
+        SM.RPOStationGeometry(
+            reshape([0.0, 0.0, 0.0], 3, 1);
+            keepout_radius_m=0.0,
+        );
+        chaser=SM.RPOCubeSatGeometry(dims_m=(0.02, 0.02, 0.02)),
+    )
+    incumbent_cfg = SM.RPOPSOConfig(
+        n_waypoints=1,
+        n_particles=1,
+        n_iters=1,
+        sample_ds_m=0.02,
+        curve_type=:bezier,
+        safe_distance_m=0.1,
+        clearance_feasibility_tol_m=0.0,
+        adaptive_enable=false,
+        early_stopping_enable=false,
+        cull_enable=false,
+        schedule_enable=false,
+        stagnation_learning_enable=false,
+        reexplore_enable=false,
+        rrt_warmstart_enable=false,
+        refinement_enable=false,
+    )
+    corrupt_incumbent! = function (_, _, _, gbest, _, _, _, _, _)
+        # This control point makes the quadratic Bezier pass through the origin.
+        gbest .= [0.0, -1.0, 0.0]
+        return nothing
+    end
+    protected_plan = SM.rpo_pso_plan_path(
+        SVector{3, Float64}(-1.0, 1.0, 0.0),
+        SVector{3, Float64}(1.0, 1.0, 0.0),
+        incumbent_geom,
+        incumbent_cfg;
+        safe_distance_m=0.1,
+        rng=MersenneTwister(3),
+        swarm_callback=corrupt_incumbent!,
+    )
+    @test protected_plan.components.violation_count == 0
+    @test protected_plan.components.min_clearance >= 0.1
+    @test protected_plan.cost == protected_plan.components.total
+
+    explicit_sampling_cfg = SM.rpo_pso_config(
+        SM.RPOPSOConfig(sample_ds_m=0.5, safe_distance_m=0.2),
+    )
+    @test explicit_sampling_cfg.sample_ds_m == 0.5
+    @test SM.GuidanceHooks.rpo_hypr_sampling_density_m(
+        SM.RPOPSOConfig(sample_ds_m=0.5), 0.2,
+    ) == 0.5
+    fuel_only_cfg = SM.GuidanceHooks.rpo_740_mpc_final_pso_config(
+        safe_distance_m=0.2,
+    )
+    @test fuel_only_cfg.sample_ds_m == 0.05
+    @test fuel_only_cfg.w_len == 0.0
+    @test fuel_only_cfg.w_fuel == 1.0
+    @test fuel_only_cfg.adaptive_w_len_min == 0.0
+    @test fuel_only_cfg.adaptive_w_len_max == 0.0
     @test SM.GuidanceHooks.rpo_740_mpc_final_pso_config(safe_distance_m=0.2).rrt_warmstart_enable === true
     @test SM.GuidanceHooks.rpo_740_mpc_final_pso_config(safe_distance_m=0.2; rrt_warmstart_enable=false).rrt_warmstart_enable === false
     comparison_cfg = SM.RPOPlannerComparisonConfig()
-    @test comparison_cfg.safe_distance_m == 0.5
-    @test comparison_cfg.pso_config.safe_distance_m == 0.5
+    @test comparison_cfg.safe_distance_m == 0.25
+    @test comparison_cfg.pso_config.safe_distance_m == 0.25
     fallback_comparison_cfg = SM.RPOPlannerComparisonConfig(pso_config=SM.RPOPSOConfig())
-    @test fallback_comparison_cfg.safe_distance_m == 0.5
+    @test fallback_comparison_cfg.safe_distance_m == 0.25
+
+    tolerance_cfg = SM.RPOPSOConfig(
+        curve_type=:polyline,
+        sample_ds_m=0.5,
+        clearance_feasibility_tol_m=1.0e-3,
+    )
+    within_tolerance = reshape([norm(sigmoid_geom.chaser.half_extents_body) + 0.4995, 0.0, 0.0], 3, 1)
+    outside_tolerance = reshape([norm(sigmoid_geom.chaser.half_extents_body) + 0.4980, 0.0, 0.0], 3, 1)
+    within_components = SM.GuidanceHooks.rpo_normalized_path_cost_components_from_samples(
+        within_tolerance, within_tolerance, sigmoid_geom, tolerance_cfg;
+        safe_distance_m=0.5,
+    )
+    outside_components = SM.GuidanceHooks.rpo_normalized_path_cost_components_from_samples(
+        outside_tolerance, outside_tolerance, sigmoid_geom, tolerance_cfg;
+        safe_distance_m=0.5,
+    )
+    @test within_components.violation_count == 0
+    @test outside_components.violation_count == 1
 
     adaptive_sampling_cfg = SM.RPOPSOConfig(
         sample_ds_m=0.05,
@@ -558,7 +629,7 @@ end
         @test all(isfinite(row.planner_compute_time) for row in rows)
         @test all(row.success for row in rows)
         @test all(
-            plan.config.safe_distance_m == 0.5
+            plan.config.safe_distance_m == 0.25
             for plans in values(batch.plans_by_planner)
             for plan in plans
         )
@@ -590,7 +661,7 @@ end
         @test !any(endswith(name, " retimed") for name in trace_names)
 
         cost_plot = SM.GuidanceHooks.rpo_comparison_cost_iteration_plot(batch; planner=:hypr)
-        @test length(cost_plot.data) == 1
+        @test length(cost_plot.data) == 3
 
         outputs = SM.rpo_write_planner_comparison_outputs(batch)
         @test isfile(outputs.csv)
@@ -604,6 +675,72 @@ end
         @test outputs.failed_path_outputs === true
         @test filesize(outputs.csv) > 0
     end
+end
+
+@testset "HYPR mean cost history plot" begin
+    plans = [(cost_history=[10.0, Inf, 4.0],), (cost_history=[6.0, 2.0],)]
+    batch = (plans_by_planner=Dict(:hypr => plans),)
+    plot = SM.GuidanceHooks.rpo_comparison_cost_iteration_plot(batch; planner=:hypr)
+    @test plot.data[1][:y] == [6.0, 2.0, 2.0]
+    @test plot.data[2][:y] == [10.0, 10.0, 4.0]
+    @test plot.data[2][:fill] == "tonexty"
+    @test plot.data[3][:x] == [1, 2, 3]
+    @test plot.data[3][:y] == [8.0, 6.0, 3.0]
+    @test plot.data[3][:customdata] == [2, 2, 2]
+    @test all(diff(plot.data[3][:y]) .<= 0)
+
+    dropout = (plans_by_planner=Dict(:hypr => [(cost_history=[2.0, 1.0],),
+        (cost_history=[10.0, 8.0, 6.0],)]),)
+    plot = SM.GuidanceHooks.rpo_comparison_cost_iteration_plot(dropout; planner=:hypr)
+    @test plot.data[3][:y] == [6.0, 4.5, 3.5]
+    @test plot.data[3][:customdata] == [2, 2, 2]
+
+    single = (plans_by_planner=Dict(:hypr => [(cost_history=[3.0], planner_iteration_count=7)]),)
+    plot = SM.GuidanceHooks.rpo_comparison_cost_iteration_plot(single; planner=:hypr)
+    @test plot.data[3][:x] == [7]
+    @test plot.data[3][:mode] == "markers"
+
+    empty_batch = (plans_by_planner=Dict(:hypr => [(cost_history=[Inf, NaN],)]),)
+    plot = SM.GuidanceHooks.rpo_comparison_cost_iteration_plot(empty_batch; planner=:hypr)
+    @test length(plot.data) == 1
+    @test isempty(plot.data[1][:y])
+
+    swarm_batch = (plans_by_planner=Dict(:hypr => [
+        (cost_history=[1.0, 1.0], particle_mean_cost_history=[4.0, 8.0]),
+        (cost_history=[2.0], particle_mean_cost_history=[6.0]),
+    ]),)
+    plot = SM.GuidanceHooks.rpo_comparison_cost_iteration_plot(swarm_batch; planner=:hypr, history=:particle_mean)
+    @test plot.data[3][:y] == [5.0, 7.0]
+    @test plot.data[3][:customdata] == [2, 2]
+    @test plot.data[3][:name] == "Mean swarm cost"
+
+    nonfinite = (plans_by_planner=Dict(:hypr => [
+        (particle_mean_cost_history=[4.0, Inf],),
+        (particle_mean_cost_history=[6.0, 8.0],),
+    ]),)
+    plot = SM.GuidanceHooks.rpo_comparison_cost_iteration_plot(nonfinite; planner=:hypr, history=:particle_mean)
+    @test plot.data[3][:y] == [5.0, Inf]
+    @test plot.data[3][:customdata] == [2, 2]
+end
+
+@testset "HYPR particle mean logging" begin
+    GH = SM.GuidanceHooks
+    geom = SM.RPOReferenceGeometry(SM.RPOStationGeometry(reshape([100.0, 0.0, 0.0], 3, 1)))
+    cfg = SM.RPOPSOConfig(n_waypoints=1, n_particles=6, n_iters=1,
+        adaptive_enable=false, rrt_warmstart_enable=false, refinement_enable=false,
+        cull_enable=false, reexplore_enable=false, stagnation_learning_enable=false)
+    observed = Float64[]
+    result = GH.rpo_pso_plan_path([0.0, 0.0, 0.0], [2.0, 0.0, 0.0], geom, cfg;
+        rng=MersenneTwister(15), record_particle_mean=true,
+        swarm_callback=(iter, pbest, costs, args...) -> append!(observed, costs))
+    @test length(result.particle_mean_cost_history) == length(result.cost_history) == 1
+    @test result.particle_mean_cost_history[1] ≈ sum(observed) / length(observed)
+    @test all(isfinite, observed)
+    @test result.particle_mean_cost_history[1] > result.cost_history[1]
+    @test result.particle_finite_mean_cost_history == result.particle_mean_cost_history
+    @test result.particle_invalid_fraction_history == [0.0]
+    result = GH.rpo_pso_plan_path([0.0, 0.0, 0.0], [2.0, 0.0, 0.0], geom, cfg; rng=MersenneTwister(15))
+    @test isempty(result.particle_mean_cost_history)
 end
 
 @testset "RPO six-axis thrust allocation" begin

@@ -17,6 +17,67 @@ Base.@kwdef struct RPOLQMPCTrackingSettings
     final_position_tol_m::Float64 = 0.25
 end
 
+"""Circular Earth reference orbit matching the HCW prediction mean motion."""
+function rpo_two_body_reference_orbit(mean_motion_radps::Real)
+    n = Float64(mean_motion_radps)
+    isfinite(n) && n > 0.0 || throw(ArgumentError("RPO mean motion must be finite and positive."))
+    μ = Earth().μ
+    radius = cbrt(μ / n^2)
+    return (μ=μ, radius_m=radius,
+        r_target=SVector(radius, 0.0, 0.0),
+        v_target=SVector(0.0, sqrt(μ / radius), 0.0))
+end
+
+"""Inertial target/chaser states for the nonlinear comparison plant."""
+mutable struct RPOTwoBodyPlant
+    state::SVector{12, Float64}
+    μ::Float64
+end
+
+function rpo_init_two_body_plant(relative_state, mean_motion_radps::Real)
+    orbit = rpo_two_body_reference_orbit(mean_motion_radps)
+    r_chaser, v_chaser = rtn_to_inertial_relative_state(
+        relative_state[1:3], relative_state[4:6], orbit.r_target, orbit.v_target,
+    )
+    return RPOTwoBodyPlant(
+        SVector{12, Float64}(vcat(orbit.r_target, orbit.v_target, r_chaser, v_chaser)), orbit.μ,
+    )
+end
+
+@inline function _rpo_two_body_derivative(state::SVector{12, Float64}, acceleration_rtn, μ)
+    r_target = SVector(state[1], state[2], state[3])
+    v_target = SVector(state[4], state[5], state[6])
+    r_chaser = SVector(state[7], state[8], state[9])
+    v_chaser = SVector(state[10], state[11], state[12])
+    a_target = -μ * r_target / norm(r_target)^3
+    a_chaser = -μ * r_chaser / norm(r_chaser)^3 +
+        rtn_dcm_from_inertial(r_target, v_target) * acceleration_rtn
+    return SVector{12, Float64}(vcat(v_target, a_target, v_chaser, a_chaser))
+end
+
+"""
+Advance both inertial orbits with RK4, then return rotating-frame RTN feedback.
+Acceleration is held constant in RTN over the control interval and rotated to
+inertial at every RK stage. Actuator evaluators supply their interval-averaged
+realized acceleration. The target geometry remains fixed in RTN.
+"""
+function rpo_step_two_body!(plant::RPOTwoBodyPlant, acceleration_rtn, dt_s::Real; max_step_s::Real=0.05)
+    dt_s > 0.0 && max_step_s > 0.0 || throw(ArgumentError("RPO integration steps must be positive."))
+    steps = max(1, ceil(Int, dt_s / max_step_s))
+    h = Float64(dt_s) / steps
+    u = SVector{3, Float64}(acceleration_rtn)
+    y = plant.state
+    for _ in 1:steps
+        k1 = _rpo_two_body_derivative(y, u, plant.μ)
+        k2 = _rpo_two_body_derivative(y + (h / 2) * k1, u, plant.μ)
+        k3 = _rpo_two_body_derivative(y + (h / 2) * k2, u, plant.μ)
+        k4 = _rpo_two_body_derivative(y + h * k3, u, plant.μ)
+        y += (h / 6) * (k1 + 2 * k2 + 2 * k3 + k4)
+    end
+    plant.state = y
+    return inertial_to_rtn_relative_state(y[7:9], y[10:12], y[1:3], y[4:6])
+end
+
 """Single start-goal case definition for planner comparison batches."""
 Base.@kwdef struct RPOPlannerComparisonCase
     start_rtn::SVector{3, Float64}
@@ -25,7 +86,7 @@ Base.@kwdef struct RPOPlannerComparisonCase
 end
 
 """Configuration for running and exporting RPO planner comparison batches."""
-const RPO_PLANNER_COMPARISON_SAFE_DISTANCE_M = 0.5
+const RPO_PLANNER_COMPARISON_SAFE_DISTANCE_M = 0.25
 
 Base.@kwdef struct RPOPlannerComparisonConfig
     planners::Vector{Symbol} = [:hypr, :pso_unrefined, :rrt_connect, :rrt_connect_bezier, :rrt_star, :chomp, :stomp]
@@ -95,7 +156,7 @@ function rpo_740_mpc_final_pso_config(; safe_distance_m::Real=0.0, goal_collisio
         n_waypoints=5,
         n_particles=100,
         n_iters=60,
-        w_len=1.0,
+        w_len=0.0,
         w_obs=1.0e6,
         w_fuel=1.0,
         w_inertia=0.7,
@@ -121,15 +182,15 @@ function rpo_740_mpc_final_pso_config(; safe_distance_m::Real=0.0, goal_collisio
         goal_collision_margin_m=Float64(goal_collision_margin_m),
         adaptive_enable=true,
         adaptive_allow_downscale=true,
-        adaptive_complexity_weight=0.35,
+        adaptive_detour_weight=2.0,
         adaptive_n_waypoints_min=3,
         adaptive_n_waypoints_max=8,
         adaptive_n_particles_min=60,
         adaptive_n_particles_max=160,
         adaptive_n_iters_min=10,
         adaptive_n_iters_max=60,
-        adaptive_w_len_min=0.5,
-        adaptive_w_len_max=1.5,
+        adaptive_w_len_min=0.0,
+        adaptive_w_len_max=0.0,
         adaptive_w_obs_min=1.0e6,
         adaptive_w_obs_max=1.0e6,
         adaptive_w_inertia_min=0.4,
@@ -188,7 +249,12 @@ function rpo_740_mpc_final_pso_config(; safe_distance_m::Real=0.0, goal_collisio
         refinement_straight_max_inserted=12,
         refinement_straight_clearance_margin_m=0.0,
     )
-    return rpo_pso_config(cfg; kwargs...)
+    configured = rpo_pso_config(cfg; kwargs...)
+    overrides = _rpo_pso_normalize_kwargs(kwargs)
+    return haskey(overrides, :refinement_sample_ds_m) ? configured :
+        rpo_pso_config(
+            configured; refinement_sample_ds_m=configured.sample_ds_m,
+        )
 end
 
 """Build RRT-Connect settings for comparison planners with a caller-selected iteration cap."""
@@ -199,6 +265,7 @@ function _rpo_comparison_rrt_connect_settings(cfg::RPOPlannerComparisonConfig, n
         step_size_m=src.step_size_m,
         goal_sample_rate=src.goal_sample_rate,
         collision_sample_ds_m=src.collision_sample_ds_m,
+        clearance_feasibility_tol_m=cfg.pso_config.clearance_feasibility_tol_m,
         adaptive_collision_sampling_enable=src.adaptive_collision_sampling_enable,
         collision_max_sample_ds_m=src.collision_max_sample_ds_m,
         collision_far_clearance_m=src.collision_far_clearance_m,
@@ -218,6 +285,7 @@ function _rpo_comparison_rrt_star_settings(cfg::RPOPlannerComparisonConfig, n_it
         step_size_m=src.step_size_m,
         goal_sample_rate=src.goal_sample_rate,
         collision_sample_ds_m=src.collision_sample_ds_m,
+        clearance_feasibility_tol_m=cfg.pso_config.clearance_feasibility_tol_m,
         adaptive_collision_sampling_enable=src.adaptive_collision_sampling_enable,
         collision_max_sample_ds_m=src.collision_max_sample_ds_m,
         collision_far_clearance_m=src.collision_far_clearance_m,
@@ -263,6 +331,8 @@ function rpo_plan_comparison_path(
     cfg::RPOPlannerComparisonConfig;
     rng=Random.default_rng(),
     runtime_limit_s::Real=Inf,
+    objective_evaluator=nothing,
+    initial_path=nothing,
 )
     cfg = _rpo_comparison_config_with_fixed_safe_distance(cfg)
     planner = normalize_rpo_comparison_planner_type(planner_type)
@@ -273,7 +343,19 @@ function rpo_plan_comparison_path(
         (cfg.optimizer.match_hypr_iters ? base_cfg.n_iters : default_iters)
     t0 = time_ns()
     if planner == :hypr
-        plan = rpo_pso_plan_path(start_rtn, goal_rtn, geometry, base_cfg; safe_distance_m=cfg.safe_distance_m, rng=rng)
+        planner_keywords = objective_evaluator === nothing ?
+            (safe_distance_m=cfg.safe_distance_m, rng=rng) :
+            (
+                safe_distance_m=cfg.safe_distance_m,
+                rng=rng,
+                objective_evaluator=objective_evaluator,
+                initial_path=initial_path,
+            )
+        objective_evaluator === nothing && initial_path !== nothing &&
+            (planner_keywords = merge(planner_keywords, (initial_path=initial_path,)))
+        plan = rpo_pso_plan_path(
+            start_rtn, goal_rtn, geometry, base_cfg; planner_keywords...,
+        )
         elapsed = (time_ns() - t0) / 1.0e9
         iterations = length(plan.cost_history)
         return merge(plan, (
@@ -286,7 +368,15 @@ function rpo_plan_comparison_path(
         ))
     elseif planner == :pso_unrefined
         unrefined_cfg = rpo_pso_config(base_cfg; refinement_enable=false)
-        plan = rpo_pso_plan_path(start_rtn, goal_rtn, geometry, unrefined_cfg; safe_distance_m=cfg.safe_distance_m, rng=rng)
+        plan = rpo_pso_plan_path(
+            start_rtn,
+            goal_rtn,
+            geometry,
+            unrefined_cfg;
+            safe_distance_m=cfg.safe_distance_m,
+            rng=rng,
+            initial_path=initial_path,
+        )
         elapsed = (time_ns() - t0) / 1.0e9
         iterations = length(plan.cost_history)
         return merge(plan, (
@@ -367,16 +457,17 @@ function rpo_plan_comparison_path(
             gradient_eps=cfg.chomp.gradient_eps,
             w_smooth=cfg.chomp.w_smooth,
         )
-        initial_path = _rpo_comparison_rrt_connect_seed_path(
-            start_rtn,
-            goal_rtn,
-            geometry,
-            base_cfg,
-            cfg,
-            runtime_limited_iters(cfg.rrt_connect.n_iters);
-            runtime_limit_s=runtime_limit_s,
-            rng=rng,
-        )
+        initial_path === nothing && (initial_path =
+            _rpo_comparison_rrt_connect_seed_path(
+                start_rtn,
+                goal_rtn,
+                geometry,
+                base_cfg,
+                cfg,
+                runtime_limited_iters(cfg.rrt_connect.n_iters);
+                runtime_limit_s=runtime_limit_s,
+                rng=rng,
+            ))
         plan = rpo_chomp_plan_path(
             start_rtn,
             goal_rtn,
@@ -406,16 +497,17 @@ function rpo_plan_comparison_path(
             update_step=cfg.stomp.update_step,
             w_smooth=cfg.stomp.w_smooth,
         )
-        initial_path = _rpo_comparison_rrt_connect_seed_path(
-            start_rtn,
-            goal_rtn,
-            geometry,
-            base_cfg,
-            cfg,
-            runtime_limited_iters(cfg.rrt_connect.n_iters);
-            runtime_limit_s=runtime_limit_s,
-            rng=rng,
-        )
+        initial_path === nothing && (initial_path =
+            _rpo_comparison_rrt_connect_seed_path(
+                start_rtn,
+                goal_rtn,
+                geometry,
+                base_cfg,
+                cfg,
+                runtime_limited_iters(cfg.rrt_connect.n_iters);
+                runtime_limit_s=runtime_limit_s,
+                rng=rng,
+            ))
         plan = rpo_stomp_plan_path(
             start_rtn,
             goal_rtn,
@@ -460,22 +552,14 @@ function rpo_lqmpc_tracking_fuel_used_pct(fuel_used_kg::Real, tracking::RPOLQMPC
         NaN
 end
 
-"""Track a retimed RPO path with LQ-MPC and report tracking/fuel metrics."""
-function rpo_track_retimed_path_lqmpc(path_rtn, goal_rtn, geometry, pso_cfg::RPOPSOConfig, tracking::RPOLQMPCTrackingSettings; safe_distance_m::Real=0.0)
-    retime_cfg = rpo_pso_config(
-        pso_cfg;
-        retime_dt_s=tracking.dt_s,
-        mass_kg=tracking.mass_kg,
-        isp_s=tracking.isp_s,
-        g0_mps2=tracking.g0_mps2,
-    )
-    t_ref, r_ref, v_ref = rpo_reference_from_path(path_rtn, geometry, retime_cfg; safe_distance_m=safe_distance_m)
+"""Build the controller shared by path tracking and replanning position hold."""
+function rpo_tracking_controller(tracking::RPOLQMPCTrackingSettings)
     Q = Diagonal(vcat(fill(tracking.q_pos, 3), fill(tracking.q_vel, 3)))
     R = Diagonal(fill(tracking.r_accel, 3))
     Qf = Diagonal(vcat(fill(tracking.qf_pos, 3), fill(tracking.qf_vel, 3)))
     u_max = Vector{Float64}(tracking.u_max_mps2)
     u_min = -u_max
-    ctrl = _control_module().init_rpo_lqmpc(
+    return _control_module().init_rpo_lqmpc(
         tracking.mean_motion_radps,
         tracking.dt_s,
         Q,
@@ -485,8 +569,19 @@ function rpo_track_retimed_path_lqmpc(path_rtn, goal_rtn, geometry, pso_cfg::RPO
         u_min=u_min,
         u_max=u_max,
     )
-    x = zeros(6)
-    x[1:3] .= r_ref[:, 1]
+end
+
+"""Track a retimed path, optionally continuing from a moving or held relative state."""
+function rpo_track_retimed_path_lqmpc(path_rtn, goal_rtn, geometry, pso_cfg::RPOPSOConfig, tracking::RPOLQMPCTrackingSettings; safe_distance_m::Real=0.0, initial_state_rtn=nothing, reference_plan=nothing)
+    retime_cfg = rpo_pso_config(pso_cfg; retime_dt_s=tracking.dt_s, mass_kg=tracking.mass_kg,
+        isp_s=tracking.isp_s, g0_mps2=tracking.g0_mps2)
+    t_ref, r_ref, v_ref = reference_plan === nothing ?
+        rpo_reference_from_path(path_rtn, geometry, retime_cfg; safe_distance_m=safe_distance_m) :
+        (reference_plan.t_ref_s, reference_plan.r_ref_rtn, reference_plan.v_ref_rtn)
+    ctrl = rpo_tracking_controller(tracking)
+    u_max = Vector{Float64}(tracking.u_max_mps2)
+    x = initial_state_rtn === nothing ? vcat(r_ref[:, 1], zeros(3)) : Vector{Float64}(initial_state_rtn)
+    plant = rpo_init_two_body_plant(x, tracking.mean_motion_radps)
     n_plan_steps = max(size(r_ref, 2) - 1, 0)
     settle_steps = max(0, Int(ceil(tracking.settle_time_s / tracking.dt_s)))
     total_steps = n_plan_steps + settle_steps
@@ -509,17 +604,17 @@ function rpo_track_retimed_path_lqmpc(path_rtn, goal_rtn, geometry, pso_cfg::RPO
         fuel_used += tracking.mass_kg * sum(abs, u_vec) * tracking.dt_s / max(tracking.isp_s * tracking.g0_mps2, 1.0e-9)
         control_effort += u_norm * tracking.dt_s
         saturated += any(abs.(u_vec) .>= (0.999 .* u_max)) ? 1 : 0
-        x .= ctrl.Ad * x .+ ctrl.Bd * u_vec
+        x .= rpo_step_two_body!(plant, u_vec, tracking.dt_s)
         x_hist[:, k + 1] .= x
         u_hist[:, k] .= u_vec
 
-        clearance = rpo_clearance_distance_to_station(x[1:3], geometry)
+        clearance = rpo_capsule_clearance_to_station(view(x_hist, 1:3, k), view(x, 1:3), geometry)
         min_clearance = min(min_clearance, clearance)
-        keepout_violations += clearance < 0.0 ? 1 : 0
+        keepout_violations += clearance + pso_cfg.clearance_feasibility_tol_m < safe_distance_m ? 1 : 0
     end
 
     final_error = norm(x[1:3] - Vector{Float64}(goal_rtn))
-    success = final_error <= tracking.final_position_tol_m && min_clearance + 1.0e-9 >= 0.0
+    success = final_error <= tracking.final_position_tol_m && keepout_violations == 0
     return (
         success=success,
         fuel_used=fuel_used,
@@ -541,7 +636,15 @@ function rpo_track_retimed_path_lqmpc(path_rtn, goal_rtn, geometry, pso_cfg::RPO
 end
 
 """Run all configured RPO planners across all comparison cases."""
-function rpo_run_planner_comparison_batch(cases, geometry, cfg::RPOPlannerComparisonConfig=RPOPlannerComparisonConfig())
+function rpo_run_planner_comparison_batch(
+    cases,
+    geometry,
+    cfg::RPOPlannerComparisonConfig=RPOPlannerComparisonConfig();
+    hypr_objective_evaluator_factory=nothing,
+    tracking_evaluator=nothing,
+    planner_rng_factory=nothing,
+    share_rrt_initial_path::Bool=false,
+)
     cfg = _rpo_comparison_config_with_fixed_safe_distance(cfg)
     comparison_cases = collect(cases)
     planner_types = [normalize_rpo_comparison_planner_type(p) for p in cfg.planners]
@@ -552,6 +655,32 @@ function rpo_run_planner_comparison_batch(cases, geometry, cfg::RPOPlannerCompar
     results_by_planner = Dict{Symbol, Vector{NamedTuple}}()
     plans_by_planner = Dict{Symbol, Vector{NamedTuple}}()
     master_rng = MersenneTwister(cfg.rng_seed)
+    shared_initial_paths = Union{Nothing, Matrix{Float64}}[
+        nothing for _ in comparison_cases
+    ]
+    if share_rrt_initial_path
+        base_cfg = rpo_pso_config(
+            cfg.pso_config; safe_distance_m=cfg.safe_distance_m,
+        )
+        for (case_idx, case) in enumerate(comparison_cases)
+            seed_rng = planner_rng_factory === nothing ?
+                MersenneTwister(cfg.rng_seed + case_idx) :
+                planner_rng_factory(:rrt_connect_seed, case_idx, case)
+            seed_path, _ = rpo_pso_rrt_warmstart_path(
+                case.start_rtn,
+                case.goal_rtn,
+                geometry,
+                base_cfg,
+                cfg.safe_distance_m,
+                seed_rng,
+            )
+            seed_path === nothing && (seed_path = hcat(
+                Vector{Float64}(case.start_rtn),
+                Vector{Float64}(case.goal_rtn),
+            ))
+            shared_initial_paths[case_idx] = seed_path
+        end
+    end
     total_runs = length(planner_types) * length(comparison_cases)
     completed_runs = 0
     cfg.show_progress && _rpo_comparison_progress_line!(completed_runs, total_runs)
@@ -571,7 +700,14 @@ function rpo_run_planner_comparison_batch(cases, geometry, cfg::RPOPlannerCompar
                 planner=planner,
                 case_label=case.label,
             )
-            rng = MersenneTwister(rand(master_rng, UInt) + UInt(1000 * planner_idx + case_idx))
+            rng = planner_rng_factory === nothing ?
+                MersenneTwister(
+                    rand(master_rng, UInt) + UInt(1000 * planner_idx + case_idx),
+                ) :
+                planner_rng_factory(planner, case_idx, case)
+            objective_evaluator = planner == :hypr &&
+                hypr_objective_evaluator_factory !== nothing ?
+                hypr_objective_evaluator_factory(case, geometry, cfg) : nothing
             plan = rpo_plan_comparison_path(
                 planner,
                 case.start_rtn,
@@ -580,15 +716,20 @@ function rpo_run_planner_comparison_batch(cases, geometry, cfg::RPOPlannerCompar
                 cfg;
                 rng=rng,
                 runtime_limit_s=runtime_limit,
+                objective_evaluator=objective_evaluator,
+                initial_path=shared_initial_paths[case_idx] === nothing ?
+                    nothing : copy(shared_initial_paths[case_idx]),
             )
-            tracking = rpo_track_retimed_path_lqmpc(
-                plan.path,
-                case.goal_rtn,
-                geometry,
-                plan.config,
-                cfg.tracking;
-                safe_distance_m=cfg.safe_distance_m,
-            )
+            tracking = tracking_evaluator === nothing ?
+                rpo_track_retimed_path_lqmpc(
+                    plan.path,
+                    case.goal_rtn,
+                    geometry,
+                    plan.config,
+                    cfg.tracking;
+                    safe_distance_m=cfg.safe_distance_m,
+                ) :
+                tracking_evaluator(plan, case, geometry, cfg)
             result = merge((
                     planner=planner,
                     planner_label=rpo_comparison_planner_label(planner),
@@ -1074,17 +1215,36 @@ function rpo_comparison_cost_iteration_xvalues(plan, costs)
     return collect(1:n)
 end
 
-"""Create cost-versus-iteration traces for planners that report histories."""
-function rpo_comparison_cost_iteration_plot(batch; planner)
+"""
+Create cost-versus-iteration traces for planners that report histories.
+HYPR shows the mean and min–max range with each case's last finite cost carried
+forward through missing samples and beyond termination. No costs are backfilled
+before a case's first finite sample.
+With `history=:particle_mean`, use the separately logged current-swarm means and
+retain non-finite samples as plot gaps instead of excluding particles or cases.
+"""
+function rpo_comparison_cost_iteration_plot(batch; planner, history::Symbol=:best)
     PlotlyJS = _rpo_plotlyjs()
     planner_type = normalize_rpo_comparison_planner_type(planner)
+    history in (:best, :particle_mean) || throw(ArgumentError("Unknown cost history: $(history)."))
+    history == :particle_mean && planner_type != :hypr &&
+        throw(ArgumentError("Particle-mean plots are supported for HYPR only."))
+    history_field = history == :particle_mean ? :particle_mean_cost_history : :cost_history
     haskey(batch.plans_by_planner, planner_type) ||
         throw(ArgumentError("No planner results found for $(planner_type)."))
 
     label = rpo_comparison_planner_label(planner_type)
     traces = PlotlyJS.GenericTrace[]
+    costs_by_iteration = Dict{Int, Vector{Float64}}()
+    hypr_histories = Dict{Int, Float64}[]
     for plan in batch.plans_by_planner[planner_type]
-        hasproperty(plan, :cost_history) || continue
+        hasproperty(plan, history_field) || continue
+        if planner_type == :hypr
+            costs = Float64.(getproperty(plan, history_field))
+            push!(hypr_histories, Dict(iter => cost for
+                (iter, cost) in zip(rpo_comparison_cost_iteration_xvalues(plan, costs), costs)))
+            continue
+        end
         costs = [Float64(c) for c in plan.cost_history if isfinite(Float64(c))]
         isempty(costs) && continue
         iters = rpo_comparison_cost_iteration_xvalues(plan, costs)
@@ -1099,12 +1259,86 @@ function rpo_comparison_cost_iteration_plot(batch; planner)
         ))
     end
 
+    if !isempty(hypr_histories)
+        iters = sort!(unique([iter for case_history in hypr_histories for iter in keys(case_history)]))
+        for case_history in hypr_histories
+            last_cost = NaN
+            has_sample = false
+            for iter in iters
+                cost = get(case_history, iter, NaN)
+                if history == :particle_mean
+                    if haskey(case_history, iter)
+                        last_cost = cost
+                        has_sample = true
+                    end
+                    has_sample && push!(get!(costs_by_iteration, iter, Float64[]), last_cost)
+                    continue
+                end
+                isfinite(cost) && (last_cost = cost)
+                isfinite(last_cost) || continue
+                push!(get!(costs_by_iteration, iter, Float64[]), last_cost)
+            end
+        end
+    end
+
+    if !isempty(costs_by_iteration)
+        iters = sort!(collect(keys(costs_by_iteration)))
+        samples = [costs_by_iteration[iter] for iter in iters]
+        push!(traces, PlotlyJS.scatter(
+            x=iters, y=minimum.(samples), mode="lines",
+            line=PlotlyJS.attr(width=0), showlegend=false, hoverinfo="skip",
+        ))
+        push!(traces, PlotlyJS.scatter(
+            x=iters, y=maximum.(samples), mode="lines",
+            line=PlotlyJS.attr(width=0), fill="tonexty",
+            fillcolor="rgba(100,100,100,0.18)", name="Min–max across cases",
+            hoverinfo="skip",
+        ))
+        push!(traces, PlotlyJS.scatter(
+            x=iters, y=[sum(values) / length(values) for values in samples],
+            customdata=length.(samples),
+            mode=length(iters) == 1 ? "markers" : "lines",
+            line=PlotlyJS.attr(width=2.4, color="rgb(20,45,70)"),
+            marker=PlotlyJS.attr(size=6, color="rgb(20,45,70)"),
+            name=history == :particle_mean ? "Mean swarm cost" : "Mean cost",
+            hovertemplate="iteration %{x}<br>$(history == :particle_mean ? "mean swarm cost" : "mean cost") %{y:.6g}<br>cases %{customdata}<br>last cost carried forward after termination<extra></extra>",
+        ))
+    end
+
     isempty(traces) && push!(traces, PlotlyJS.scatter(
         x=Int[],
         y=Float64[],
         mode="markers",
         name="no finite cost history",
     ))
+
+    if planner_type == :hypr
+        # 7.16 inches at 96 px/in; 11-point text at the final two-column size.
+        return PlotlyJS.Plot(traces, PlotlyJS.Layout(
+            width=687.36, height=360,
+            font=PlotlyJS.attr(family="Arial, Helvetica, sans-serif", size=44 / 3, color="black"),
+            paper_bgcolor="white", plot_bgcolor="white",
+            margin=PlotlyJS.attr(l=70, r=16, t=42, b=56),
+            hovermode="x unified",
+            legend=PlotlyJS.attr(
+                orientation="h", x=0.5, xanchor="center", y=1.03, yanchor="bottom",
+                traceorder="reversed", bgcolor="rgba(255,255,255,0)",
+            ),
+            xaxis=PlotlyJS.attr(
+                title=PlotlyJS.attr(text="Iteration", standoff=10),
+                showline=true, linecolor="black", linewidth=1, mirror=true,
+                ticks="outside", ticklen=4, tickcolor="black",
+                showgrid=false, zeroline=false, nticks=7,
+            ),
+            yaxis=PlotlyJS.attr(
+                title=PlotlyJS.attr(text=history == :particle_mean ? "Mean particle cost" : "Planner cost", standoff=10),
+                showline=true, linecolor="black", linewidth=1, mirror=true,
+                ticks="outside", ticklen=4, tickcolor="black",
+                gridcolor="rgb(230,230,230)", gridwidth=0.5,
+                zeroline=false, rangemode="tozero", nticks=6,
+            ),
+        ))
+    end
 
     return PlotlyJS.Plot(
         traces,

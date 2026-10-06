@@ -2,18 +2,20 @@
 
 include(joinpath(@__DIR__, "evaluate_hypr_baseline.jl"))
 
-function _run_hypr_comparison_cases(config, scenarios, seeds, n_workers::Int)
+function _run_hypr_comparison_cases(
+    config, scenarios, seeds, n_workers::Int, comparison_mode::Symbol,
+)
     n_cases = length(scenarios)
     results = Vector{Any}(undef, n_cases)
     active_workers = min(max(n_workers, 1), n_cases)
     println(
-        "comparing original and retimed-fuel HYPR " *
+        "comparing original and $(replace(String(comparison_mode), '_' => '-')) HYPR " *
         "cases=$n_cases active_workers=$active_workers terminal=full_lqmpc",
     )
     if active_workers == 1
         for index in eachindex(scenarios)
             results[index] = evaluate_hypr_pso_comparison_case(
-                config, scenarios[index], seeds[index],
+                config, scenarios[index], seeds[index], comparison_mode,
             )
             println("HYPR comparison progress $index/$n_cases")
         end
@@ -25,27 +27,26 @@ function _run_hypr_comparison_cases(config, scenarios, seeds, n_workers::Int)
         foreach(fetch, [remotecall(
             SpaceAGORA_RL._prepare_hypr_rl_process_worker!, process_id,
         ) for process_id in process_ids])
-        for first_index in 1:active_workers:n_cases
-            last_index = min(first_index + active_workers - 1, n_cases)
-            indices = first_index:last_index
-            futures = [remotecall(
+        results = _run_dynamic_process_cases(
+            n_cases,
+            process_ids,
+            (process_id, index) -> remotecall_fetch(
                 evaluate_hypr_pso_comparison_case,
-                process_ids[mod1(offset, active_workers)],
-                config, scenarios[index], seeds[index],
-            ) for (offset, index) in enumerate(indices)]
-            for (index, future) in zip(indices, futures)
-                results[index] = try
-                    fetch(future)
-                catch error
-                    failure = (
-                        plan=nothing, runtime_s=NaN, planner_runtime_s=NaN,
-                        terminal_runtime_s=NaN, error=sprint(showerror, error),
-                    )
-                    (original=failure, retimed_fuel=failure)
-                end
-                println("HYPR comparison progress $index/$n_cases")
-            end
-        end
+                process_id,
+                config, scenarios[index], seeds[index], comparison_mode,
+            ),
+            error -> begin
+                failure = (
+                    plan=nothing,
+                    runtime_s=NaN,
+                    planner_runtime_s=NaN,
+                    terminal_runtime_s=NaN,
+                    error=sprint(showerror, error),
+                )
+                (original=failure, retimed_fuel=failure)
+            end;
+            progress_label="HYPR comparison progress",
+        )
     finally
         rmprocs(process_ids)
     end
@@ -73,31 +74,31 @@ function _paired_hypr_metrics(original_rows, retimed_rows)
             case=original.case,
             both_successful=both_successful,
             original_success=original.success,
-            retimed_fuel_success=retimed.success,
+            alternative_success=retimed.success,
             original_propellant_used_g=original.propellant_used_g,
-            retimed_fuel_propellant_used_g=retimed.propellant_used_g,
+            alternative_propellant_used_g=retimed.propellant_used_g,
             fuel_savings_g=fuel_savings_g,
             fuel_savings_percent=fuel_savings_percent,
             original_minimum_clearance_m=original.minimum_clearance_m,
-            retimed_fuel_minimum_clearance_m=retimed.minimum_clearance_m,
+            alternative_minimum_clearance_m=retimed.minimum_clearance_m,
             original_safety_violations=original.safety_violation_count,
-            retimed_fuel_safety_violations=retimed.safety_violation_count,
+            alternative_safety_violations=retimed.safety_violation_count,
             original_reference_path_length_m=original.reference_path_length_m,
-            retimed_fuel_reference_path_length_m=retimed.reference_path_length_m,
+            alternative_reference_path_length_m=retimed.reference_path_length_m,
             original_duration_s=original.duration_s,
-            retimed_fuel_duration_s=retimed.duration_s,
+            alternative_duration_s=retimed.duration_s,
             original_runtime_s=original.runtime_s,
-            retimed_fuel_runtime_s=retimed.runtime_s,
+            alternative_runtime_s=retimed.runtime_s,
             runtime_ratio=runtime_ratio,
             original_planner_runtime_s=original.planner_runtime_s,
-            retimed_fuel_planner_runtime_s=retimed.planner_runtime_s,
+            alternative_planner_runtime_s=retimed.planner_runtime_s,
             planner_runtime_ratio=planner_runtime_ratio,
             original_terminal_runtime_s=original.terminal_runtime_s,
-            retimed_fuel_terminal_runtime_s=retimed.terminal_runtime_s,
+            alternative_terminal_runtime_s=retimed.terminal_runtime_s,
             original_pso_iterations=original.pso_iterations,
-            retimed_fuel_pso_iterations=retimed.pso_iterations,
+            alternative_pso_iterations=retimed.pso_iterations,
             original_pso_objective=original.edit_objective,
-            retimed_fuel_pso_objective=retimed.edit_objective,
+            alternative_pso_objective=retimed.edit_objective,
         )
     end for index in 1:nrow(original_rows)]
 end
@@ -115,12 +116,12 @@ function _paired_hypr_summary(rows::DataFrame)
         cases=nrow(rows),
         paired_success_count=nrow(paired),
         original_success_count=count(rows.original_success),
-        retimed_fuel_success_count=count(rows.retimed_fuel_success),
+        alternative_success_count=count(rows.alternative_success),
         mean_paired_fuel_savings_g=_finite_mean(savings),
         median_paired_fuel_savings_g=_finite_median(savings),
         mean_paired_fuel_savings_percent=
             _finite_mean(paired.fuel_savings_percent),
-        retimed_fuel_lower_count=count(>(tolerance_g), savings),
+        alternative_lower_count=count(>(tolerance_g), savings),
         original_lower_count=count(<(-tolerance_g), savings),
         equal_fuel_count=count(value -> abs(value) <= tolerance_g, savings),
         mean_runtime_ratio=_finite_mean(rows.runtime_ratio),
@@ -128,37 +129,44 @@ function _paired_hypr_summary(rows::DataFrame)
     )
 end
 
-function _write_paired_case(path, case_index, original, retimed)
+function _write_paired_case(
+    path, case_index, original, retimed;
+    alternative_directory::AbstractString="retimed_fuel",
+    alternative_label::AbstractString="HyPR retimed-fuel objective",
+)
     title = @sprintf("HYPR objective comparison case %03d", case_index)
     open(path, "w") do io
         print(io, """<!doctype html><html><head><meta charset=\"utf-8\"><title>$(title)</title>
 <style>html,body{height:100%;margin:0;font:14px system-ui;color:#18212b}.header{height:4rem;box-sizing:border-box;padding:.6rem 1rem;background:#f2f5f7}.plots{display:grid;grid-template-columns:1fr 1fr;height:calc(100% - 4rem);gap:2px;background:#bcc5ce}.panel{background:white;display:flex;flex-direction:column}.label{text-align:center;padding:.35rem;font-weight:600}.panel iframe{border:0;flex:1;width:100%}</style>
-</head><body><div class=\"header\"><b>$(title)</b><br>Original: $(@sprintf("%.5f g", original.propellant_used_g)) fuel, $(@sprintf("%.3f s", original.runtime_s)) runtime · Retimed fuel: $(@sprintf("%.5f g", retimed.propellant_used_g)) fuel, $(@sprintf("%.3f s", retimed.runtime_s)) runtime</div>
+</head><body><div class=\"header\"><b>$(title)</b><br>Original: $(@sprintf("%.5f g", original.propellant_used_g)) fuel, $(@sprintf("%.3f s", original.runtime_s)) runtime · Alternative: $(@sprintf("%.5f g", retimed.propellant_used_g)) fuel, $(@sprintf("%.3f s", retimed.runtime_s)) runtime</div>
 <div class=\"plots\"><div class=\"panel\"><div class=\"label\">Original HyPR proxy objective</div><iframe src=\"../original/trajectories/case_$(@sprintf("%03d", case_index)).html\"></iframe></div>
-<div class=\"panel\"><div class=\"label\">HyPR retimed-fuel objective</div><iframe src=\"../retimed_fuel/trajectories/case_$(@sprintf("%03d", case_index)).html\"></iframe></div></div></body></html>""")
+<div class=\"panel\"><div class=\"label\">$(_html_escape(alternative_label))</div><iframe src=\"../$(_html_escape(alternative_directory))/trajectories/case_$(@sprintf("%03d", case_index)).html\"></iframe></div></div></body></html>""")
     end
     return path
 end
 
-function _write_hypr_comparison_index(path, rows::DataFrame, summary)
+function _write_hypr_comparison_index(
+    path, rows::DataFrame, summary;
+    alternative_label::AbstractString="retimed-fuel HYPR",
+)
     open(path, "w") do io
         print(io, """<!doctype html><html><head><meta charset=\"utf-8\"><title>HYPR objective comparison</title>
 <style>body{font:14px system-ui;margin:2rem;color:#18212b}table{border-collapse:collapse;width:100%}th,td{padding:.45rem;border-bottom:1px solid #d9dfe5;text-align:right}th{background:#f2f5f7;position:sticky;top:0}td:first-child,th:first-child{text-align:left}.positive{color:#16834a}.negative{color:#c0392b}.summary{columns:2;margin-bottom:2rem}</style>
-</head><body><h1>Original versus retimed-fuel HYPR</h1><div class=\"summary\">""")
+</head><body><h1>Original versus $(_html_escape(alternative_label))</h1><div class=\"summary\">""")
         for name in propertynames(summary)
             print(io, "<div><b>$(_html_escape(name)):</b> $(_html_escape(getproperty(summary, name)))</div>")
         end
         print(io, """</div><p><a href=\"paired_cases.csv\">Paired CSV</a> · <a href=\"comparison_summary.csv\">Comparison summary</a> · <a href=\"planner_summaries.csv\">Planner summaries</a></p>
-<table><thead><tr><th>case</th><th>original success</th><th>retimed success</th><th>original fuel (g)</th><th>retimed fuel (g)</th><th>fuel savings (g)</th><th>original runtime (s)</th><th>retimed runtime (s)</th><th>runtime ratio</th></tr></thead><tbody>""")
+<table><thead><tr><th>case</th><th>original success</th><th>alternative success</th><th>original fuel (g)</th><th>alternative fuel (g)</th><th>fuel savings (g)</th><th>original runtime (s)</th><th>alternative runtime (s)</th><th>runtime ratio</th></tr></thead><tbody>""")
         for row in eachrow(rows)
             savings_class = row.fuel_savings_g >= 0.0 ? "positive" : "negative"
             print(io, @sprintf(
                 "<tr><td><a href=\"case_comparisons/case_%03d.html\">case %03d</a></td><td>%s</td><td>%s</td><td>%.5f</td><td>%.5f</td><td class=\"%s\">%.5f</td><td>%.3f</td><td>%.3f</td><td>%.2f</td></tr>",
                 row.case, row.case, row.original_success,
-                row.retimed_fuel_success, row.original_propellant_used_g,
-                row.retimed_fuel_propellant_used_g, savings_class,
+                row.alternative_success, row.original_propellant_used_g,
+                row.alternative_propellant_used_g, savings_class,
                 row.fuel_savings_g, row.original_runtime_s,
-                row.retimed_fuel_runtime_s, row.runtime_ratio,
+                row.alternative_runtime_s, row.runtime_ratio,
             ))
         end
         print(io, "</tbody></table></body></html>")
@@ -186,6 +194,39 @@ function comparison_main(args=ARGS)
     ))
     n_workers = length(args) >= 4 ? parse(Int, args[4]) :
         Int(get(evaluation_config, "n_workers", training_config["n_workers"]))
+    station_points = length(args) >= 5 ? parse(Int, args[5]) :
+        Int(scenario_config["station_points"])
+    station_points > 0 || throw(ArgumentError("station-point count must be positive"))
+    sample_ds_m = length(args) >= 6 ? parse(Float64, args[6]) :
+        Float64(get(evaluation_config, "hypr_sample_ds_m", 0.05))
+    sample_ds_m > 0.0 || throw(ArgumentError("HYPR sample spacing must be positive"))
+    clearance_feasibility_tol_m = Float64(get(
+        evaluation_config, "hypr_clearance_feasibility_tol_m", 1.0e-3,
+    ))
+    clearance_feasibility_tol_m >= 0.0 || throw(ArgumentError(
+        "HYPR clearance feasibility tolerance must be nonnegative",
+    ))
+    curve_type = length(args) >= 7 ? Symbol(args[7]) :
+        Symbol(get(evaluation_config, "hypr_curve_type", "bezier"))
+    comparison_mode = length(args) >= 8 ? Symbol(args[8]) : :retimed_fuel
+    comparison_mode in (:retimed_fuel, :timing_aware_proxy) ||
+        throw(ArgumentError(
+            "comparison mode must be retimed_fuel or timing_aware_proxy",
+        ))
+    timing_aware = comparison_mode == :timing_aware_proxy
+    alternative_directory_name = timing_aware ?
+        "timing_aware_proxy" : "retimed_fuel"
+    alternative_plot_label = timing_aware ?
+        "HYPR (retimed timing-aware proxy objective)" :
+        "HYPR (retimed-fuel objective)"
+    alternative_heading_label = timing_aware ?
+        "timing-aware proxy HYPR" : "retimed-fuel HYPR"
+    alternative_planner_name = timing_aware ?
+        "hypr_timing_aware_proxy" : "hypr_retimed_fuel"
+    alternative_objective_name = timing_aware ?
+        "hypr_length_obstacle_retimed_hcw_continuous_thrust_proxy_fuel" :
+        "retimed_feedforward_pointing_optimized_six_thruster_fuel_plus_wheel"
+    terminal_evaluator_name = "full_lqmpc_command_aligned_attitude_both"
     evaluation_seed = Int(get(
         evaluation_config, "seed", training_config["seed"] + 10_000_000,
     ))
@@ -197,11 +238,15 @@ function comparison_main(args=ARGS)
         n_particles=Int(evaluation_config["hypr_baseline_particles"]),
         n_iters=Int(evaluation_config["hypr_baseline_iterations"]),
         n_waypoints=Int(evaluation_config["hypr_baseline_waypoints"]),
+        sample_ds_m=sample_ds_m,
+        refinement_sample_ds_m=sample_ds_m,
+        clearance_feasibility_tol_m=clearance_feasibility_tol_m,
+        curve_type=curve_type,
         refinement_enable=true,
     )
     base_scenario = build_rpo_hypr_rl_scenario(
         station_asset=station_asset,
-        station_points=scenario_config["station_points"],
+        station_points=station_points,
         station_seed=scenario_config["station_seed"],
         station_keepout_radius_m=scenario_config["station_keepout_radius_m"],
         pso_config=pso_config,
@@ -223,7 +268,7 @@ function comparison_main(args=ARGS)
         sampler, MersenneTwister(scenario_seeds[index]),
     ) for index in 1:n_cases]
     results = _run_hypr_comparison_cases(
-        config, scenarios, planner_seeds, n_workers,
+        config, scenarios, planner_seeds, n_workers, comparison_mode,
     )
     original_results = [result.original for result in results]
     retimed_results = [result.retimed_fuel for result in results]
@@ -245,7 +290,7 @@ function comparison_main(args=ARGS)
     comparison_summary = _paired_hypr_summary(paired_rows)
 
     original_directory = joinpath(output_directory, "original")
-    retimed_directory = joinpath(output_directory, "retimed_fuel")
+    retimed_directory = joinpath(output_directory, alternative_directory_name)
     comparison_directory = joinpath(output_directory, "case_comparisons")
     for directory in (
         joinpath(original_directory, "trajectories"),
@@ -278,7 +323,7 @@ function comparison_main(args=ARGS)
         joinpath(output_directory, "planner_summaries.csv"),
         DataFrame([
             merge((planner="original_hypr_proxy",), original_summary),
-            merge((planner="hypr_retimed_fuel",), retimed_summary),
+            merge((planner=alternative_planner_name,), retimed_summary),
         ]),
     )
     bezier_plot_spacing_m = Float64(get(
@@ -297,11 +342,13 @@ function comparison_main(args=ARGS)
             index, scenarios[index], retimed_results[index], retimed_metrics[index], config;
             station_mesh_script="../../$(basename(mesh_path))",
             bezier_plot_spacing_m=bezier_plot_spacing_m,
-            planner_label="HYPR (retimed-fuel objective)",
+            planner_label=alternative_plot_label,
         )
         _write_paired_case(
             joinpath(comparison_directory, @sprintf("case_%03d.html", index)),
             index, original_rows[index, :], retimed_rows[index, :],
+            alternative_directory=alternative_directory_name,
+            alternative_label=alternative_plot_label,
         )
     end
     _write_index(
@@ -310,10 +357,11 @@ function comparison_main(args=ARGS)
     )
     _write_index(
         joinpath(retimed_directory, "index.html"), retimed_rows, retimed_summary;
-        planner_label="HYPR (retimed-fuel objective)",
+        planner_label=alternative_plot_label,
     )
     index_path = _write_hypr_comparison_index(
         joinpath(output_directory, "index.html"), paired_rows, comparison_summary,
+        alternative_label=alternative_heading_label,
     )
     manifest = Dict(
         "config" => abspath(config_path),
@@ -322,12 +370,19 @@ function comparison_main(args=ARGS)
         "scenario_seeds" => scenario_seeds,
         "planner_seeds" => planner_seeds,
         "workers" => min(max(n_workers, 1), n_cases),
+        "station_points" => station_points,
         "pso_particles" => pso_config.n_particles,
         "pso_iterations" => pso_config.n_iters,
         "pso_waypoints" => pso_config.n_waypoints,
+        "pso_sample_ds_m" => pso_config.sample_ds_m,
+        "pso_refinement_sample_ds_m" => pso_config.refinement_sample_ds_m,
+        "pso_clearance_feasibility_tol_m" =>
+            pso_config.clearance_feasibility_tol_m,
+        "pso_curve_type" => String(pso_config.curve_type),
+        "comparison_mode" => String(comparison_mode),
         "original_objective" => "hypr_length_obstacle_proxy_fuel",
-        "current_objective" => "retimed_feedforward_six_thruster_fuel_plus_wheel",
-        "terminal_evaluator" => "full_lqmpc_six_thruster_attitude_for_both",
+        "current_objective" => alternative_objective_name,
+        "terminal_evaluator" => terminal_evaluator_name,
         "index_html" => abspath(index_path),
     )
     open(joinpath(output_directory, "evaluation_manifest.toml"), "w") do io

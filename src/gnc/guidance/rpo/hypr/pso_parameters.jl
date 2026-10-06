@@ -14,8 +14,9 @@ Base.@kwdef struct RPOPSOObjectiveSettings
     w_len::Float64 = 1.0
     w_obs::Float64 = 1.0e6
     w_fuel::Float64 = 1.0
-    obstacle_sigmoid_k::Float64 = 1.0e6
+    obstacle_sigmoid_k::Float64 = 1.0e5
     obstacle_sigmoid_tol_m::Float64 = 0.0
+    clearance_feasibility_tol_m::Float64 = 1.0e-3
     w_inertia::Float64 = 0.7
     c1::Float64 = 1.4
     c2::Float64 = 1.4
@@ -30,8 +31,8 @@ end
 Base.@kwdef struct RPOPSOAdaptiveSettings
     enabled::Bool = true
     allow_downscale::Bool = false
-    complexity_weight::Float64 = 0.35
-    distance_weight::Float64 = 0.65
+    detour_weight::Float64 = 2.0
+    search_effort_weight::Float64 = 1.0
     waypoint_gain::Float64 = 3.0
     effort_min_fraction::Float64 = 0.75
     effort_max_fraction::Float64 = 1.5
@@ -80,7 +81,7 @@ Base.@kwdef struct RPOPSOScheduleSettings
     w_end_fraction::Float64 = 0.65
     c1_end_fraction::Float64 = 0.75
     c2_end_fraction::Float64 = 1.25
-    transition_fraction::Float64 = 0.45
+    transition_fraction::Float64 = 0.5
     w_min::Float64 = 0.25
     c_min::Float64 = 0.5
     c_max::Float64 = 2.5
@@ -127,7 +128,7 @@ end
 """RRT-Connect warm-start settings used before PSO refinement."""
 Base.@kwdef struct RPOPSORRTConnectWarmstartSettings
     enabled::Bool = false
-    n_iters::Int = 250
+    n_iters::Int = 25_000
     step_size_m::Float64 = 0.75
     goal_sample_rate::Float64 = 0.05
     collision_sample_ds_m::Float64 = 0.10
@@ -193,8 +194,9 @@ Base.@kwdef struct RPOPSOConfig
     w_len::Float64 = 1.0
     w_obs::Float64 = 1.0e6
     w_fuel::Float64 = 1.0
-    obstacle_sigmoid_k::Float64 = 1.0e6
+    obstacle_sigmoid_k::Float64 = 1.0e5
     obstacle_sigmoid_tol_m::Float64 = 0.0
+    clearance_feasibility_tol_m::Float64 = 1.0e-3
     w_inertia::Float64 = 0.7
     c1::Float64 = 1.4
     c2::Float64 = 1.4
@@ -218,8 +220,8 @@ Base.@kwdef struct RPOPSOConfig
     goal_collision_margin_m::Float64 = 0.0
     adaptive_enable::Bool = true
     adaptive_allow_downscale::Bool = false
-    adaptive_complexity_weight::Float64 = 0.35
-    adaptive_distance_weight::Float64 = 0.65
+    adaptive_detour_weight::Float64 = 2.0
+    adaptive_search_effort_weight::Float64 = 1.0
     adaptive_waypoint_gain::Float64 = 3.0
     adaptive_effort_min_fraction::Float64 = 0.75
     adaptive_effort_max_fraction::Float64 = 1.5
@@ -256,7 +258,7 @@ Base.@kwdef struct RPOPSOConfig
     schedule_w_end_fraction::Float64 = 0.65
     schedule_c1_end_fraction::Float64 = 0.75
     schedule_c2_end_fraction::Float64 = 1.25
-    schedule_transition_fraction::Float64 = 0.45
+    schedule_transition_fraction::Float64 = 0.5
     schedule_w_min::Float64 = 0.25
     schedule_c_min::Float64 = 0.5
     schedule_c_max::Float64 = 2.5
@@ -283,7 +285,7 @@ Base.@kwdef struct RPOPSOConfig
     reexplore_waypoint_increment::Int = 2
     reexplore_max_waypoints::Int = max(8 + 4, Int(ceil(1.5 * 8)))
     rrt_warmstart_enable::Bool = false
-    rrt_warmstart_iters::Int = 250
+    rrt_warmstart_iters::Int = 25_000
     rrt_warmstart_step_size_m::Float64 = 0.75
     rrt_warmstart_goal_sample_rate::Float64 = 0.05
     rrt_warmstart_collision_sample_ds_m::Float64 = 0.10
@@ -312,26 +314,15 @@ function _rpo_pso_config_tuple(cfg::RPOPSOConfig)
     return NamedTuple{names}(map(name -> getfield(cfg, name), names))
 end
 
-"""Fill sampling-distance defaults from the configured keepout distance when needed."""
-function _rpo_pso_sync_sample_ds_with_safe_distance(values)
-    safe_distance_m = Float64(get(values, :safe_distance_m, 0.0))
-    safe_distance_m > 0.0 || return values
-    return merge(values, (sample_ds_m=safe_distance_m,))
-end
-
 """Return the collision-sampling spacing used for primary RPO HYPR evaluation."""
 function rpo_hypr_sampling_density_m(cfg::RPOPSOConfig, safe_distance_m::Real=cfg.safe_distance_m)
-    safe_distance = Float64(safe_distance_m)
-    safe_distance > 0.0 && return safe_distance
-    cfg.safe_distance_m > 0.0 && return cfg.safe_distance_m
+    _ = safe_distance_m
     return cfg.sample_ds_m
 end
 
 """Return the collision-sampling spacing used during RPO post-refinement."""
 function rpo_hypr_refinement_sampling_density_m(cfg::RPOPSOConfig, safe_distance_m::Real=cfg.safe_distance_m)
-    safe_distance = Float64(safe_distance_m)
-    safe_distance > 0.0 && return safe_distance
-    cfg.safe_distance_m > 0.0 && return cfg.safe_distance_m
+    _ = safe_distance_m
     return cfg.refinement_sample_ds_m
 end
 
@@ -347,6 +338,7 @@ const RPO_PSO_CONFIG_ALIASES = Dict{Symbol, Symbol}(
     :pso_obstacle_sigmoid_k => :obstacle_sigmoid_k,
     :pso_obstacle_sigmoid_tol => :obstacle_sigmoid_tol_m,
     :pso_obstacle_sigmoid_tol_m => :obstacle_sigmoid_tol_m,
+    :pso_clearance_feasibility_tol_m => :clearance_feasibility_tol_m,
     :pso_w_inertia => :w_inertia,
     :pso_c1 => :c1,
     :pso_c2 => :c2,
@@ -398,7 +390,7 @@ const RPO_PSO_CONFIG_ALIASES = Dict{Symbol, Symbol}(
     :pso_probe_sample_ds => :probe_sample_ds_m,
     :pso_probe_seed => :probe_seed,
     :pso_cost_ref_distance => :cost_ref_distance_m,
-    :pso_complexity_weight => :adaptive_complexity_weight,
+    :pso_detour_weight => :adaptive_detour_weight,
     :pso_w_inertia_min => :adaptive_w_inertia_min,
     :pso_w_inertia_max => :adaptive_w_inertia_max,
     :pso_c1_min => :adaptive_c1_min,
@@ -466,6 +458,7 @@ function RPOPSOConfig(configurator::RPOPSOConfigurator; kwargs...)
         w_fuel=objective.w_fuel,
         obstacle_sigmoid_k=objective.obstacle_sigmoid_k,
         obstacle_sigmoid_tol_m=objective.obstacle_sigmoid_tol_m,
+        clearance_feasibility_tol_m=objective.clearance_feasibility_tol_m,
         w_inertia=objective.w_inertia,
         c1=objective.c1,
         c2=objective.c2,
@@ -489,8 +482,8 @@ function RPOPSOConfig(configurator::RPOPSOConfigurator; kwargs...)
         goal_collision_margin_m=configurator.goal_collision_margin_m,
         adaptive_enable=adaptive.enabled,
         adaptive_allow_downscale=adaptive.allow_downscale,
-        adaptive_complexity_weight=adaptive.complexity_weight,
-        adaptive_distance_weight=adaptive.distance_weight,
+        adaptive_detour_weight=adaptive.detour_weight,
+        adaptive_search_effort_weight=adaptive.search_effort_weight,
         adaptive_waypoint_gain=adaptive.waypoint_gain,
         adaptive_effort_min_fraction=adaptive.effort_min_fraction,
         adaptive_effort_max_fraction=adaptive.effort_max_fraction,
@@ -582,7 +575,6 @@ end
 """Construct an RPO PSO config by overriding an existing config or configurator."""
 function rpo_pso_config(base::RPOPSOConfig=RPOPSOConfig(); kwargs...)
     values = merge(_rpo_pso_config_tuple(base), _rpo_pso_normalize_kwargs(kwargs))
-    values = _rpo_pso_sync_sample_ds_with_safe_distance(values)
     return validate_rpo_pso_config(RPOPSOConfig(; values...))
 end
 
@@ -597,10 +589,14 @@ function validate_rpo_pso_config(cfg::RPOPSOConfig)
     cfg.iteration_runtime_limit_s >= 0.0 ||
         throw(ArgumentError("iteration_runtime_limit_s must be nonnegative."))
     cfg.sample_ds_m > 0.0 || throw(ArgumentError("sample_ds_m must be positive."))
-    cfg.curve_type in (:bezier, :polyline) ||
-        throw(ArgumentError("curve_type must be :bezier or :polyline."))
+    cfg.curve_type in (:bezier, :cubic_bezier, :polyline) ||
+        throw(ArgumentError(
+            "curve_type must be :bezier, :cubic_bezier, or :polyline.",
+        ))
     cfg.obstacle_sigmoid_k > 0.0 || throw(ArgumentError("obstacle_sigmoid_k must be positive."))
     cfg.obstacle_sigmoid_tol_m >= 0.0 || throw(ArgumentError("obstacle_sigmoid_tol_m must be nonnegative."))
+    cfg.clearance_feasibility_tol_m >= 0.0 ||
+        throw(ArgumentError("clearance_feasibility_tol_m must be nonnegative."))
     cfg.cost_ref_distance_m >= 0.0 || throw(ArgumentError("cost_ref_distance_m must be nonnegative."))
     cfg.mass_kg > 0.0 || throw(ArgumentError("mass_kg must be positive."))
     cfg.tf_s > 0.0 || throw(ArgumentError("tf_s must be positive."))
@@ -615,8 +611,8 @@ function validate_rpo_pso_config(cfg::RPOPSOConfig)
     cfg.retime_max_steps > 0 || throw(ArgumentError("retime_max_steps must be positive."))
     cfg.safe_distance_m >= 0.0 || throw(ArgumentError("safe_distance_m must be nonnegative."))
     cfg.goal_collision_margin_m >= 0.0 || throw(ArgumentError("goal_collision_margin_m must be nonnegative."))
-    0.0 <= cfg.adaptive_complexity_weight || throw(ArgumentError("adaptive_complexity_weight must be nonnegative."))
-    0.0 <= cfg.adaptive_distance_weight || throw(ArgumentError("adaptive_distance_weight must be nonnegative."))
+    0.0 <= cfg.adaptive_detour_weight || throw(ArgumentError("adaptive_detour_weight must be nonnegative."))
+    0.0 <= cfg.adaptive_search_effort_weight || throw(ArgumentError("adaptive_search_effort_weight must be nonnegative."))
     cfg.adaptive_effort_min_fraction > 0.0 || throw(ArgumentError("adaptive_effort_min_fraction must be positive."))
     cfg.adaptive_effort_max_fraction >= cfg.adaptive_effort_min_fraction ||
         throw(ArgumentError("adaptive_effort_max_fraction must be at least adaptive_effort_min_fraction."))

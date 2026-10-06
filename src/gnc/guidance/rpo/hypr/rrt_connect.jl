@@ -1,9 +1,10 @@
 """RRT-Connect planner settings for RPO warm starts and comparison planners."""
 Base.@kwdef struct RPORRTConnectSettings
-    n_iters::Int = 1000
+    n_iters::Int = 25_000
     step_size_m::Float64 = 0.75
     goal_sample_rate::Float64 = 0.05
     collision_sample_ds_m::Float64 = 0.10
+    clearance_feasibility_tol_m::Float64 = 1.0e-3
     adaptive_collision_sampling_enable::Bool = true
     collision_max_sample_ds_m::Float64 = 0.50
     collision_far_clearance_m::Float64 = 1.0
@@ -20,6 +21,7 @@ Base.@kwdef struct RPORRTStarSettings
     step_size_m::Float64 = 0.75
     goal_sample_rate::Float64 = 0.05
     collision_sample_ds_m::Float64 = 0.10
+    clearance_feasibility_tol_m::Float64 = 1.0e-3
     adaptive_collision_sampling_enable::Bool = true
     collision_max_sample_ds_m::Float64 = 0.50
     collision_far_clearance_m::Float64 = 1.0
@@ -94,43 +96,12 @@ function rpo_rrt_segment_is_safe(
     sampling_power::Real=1.0,
     safe_distance_fraction::Real=0.5,
     obstacle_guard_fraction::Real=0.5,
+    clearance_feasibility_tol_m::Real=1.0e-3,
 )
-    q0 = SVector{3, Float64}(q_from)
-    q1 = SVector{3, Float64}(q_to)
-    safe = Float64(safe_distance_m)
-    samples = if adaptive_enable
-        min_ds = rpo_rrt_collision_min_ds_m(
-            sample_ds_m,
-            geometry,
-            safe,
-            safe_distance_fraction,
-            obstacle_guard_fraction,
-        )
-        rpo_adaptive_segment_samples(
-            q0,
-            q1,
-            geometry;
-            safe_distance_m=safe,
-            min_ds_m=min_ds,
-            max_ds_m=max(Float64(max_sample_ds_m), min_ds),
-            far_clearance_m=far_clearance_m,
-            power=sampling_power,
-        )
-    else
-        dist = norm(q1 - q0)
-        n = max(1, Int(ceil(dist / max(Float64(sample_ds_m), 1.0e-6))))
-        out = zeros(3, n + 1)
-        @inbounds for i in 0:n
-            α = i / n
-            out[:, i + 1] .= (1.0 - α) * q0 + α * q1
-        end
-        out
-    end
-    @inbounds for i in 1:size(samples, 2)
-        q = SVector{3, Float64}(samples[:, i])
-        rpo_clearance_distance_to_station(q, geometry) + 1.0e-9 >= safe || return false
-    end
-    return true
+    # Legacy sampling keywords remain accepted; an exact segment query no
+    # longer depends on the collision sample spacing.
+    return rpo_capsule_clearance_to_station(q_from, q_to, geometry) +
+        Float64(clearance_feasibility_tol_m) >= Float64(safe_distance_m)
 end
 
 """Check whether an RPO RRT edge is collision-free under the active safety margin."""
@@ -141,6 +112,7 @@ function rpo_rrt_segment_is_safe(q_from, q_to, geometry, settings; safe_distance
         geometry;
         safe_distance_m=safe_distance_m,
         sample_ds_m=settings.collision_sample_ds_m,
+        clearance_feasibility_tol_m=settings.clearance_feasibility_tol_m,
         adaptive_enable=settings.adaptive_collision_sampling_enable,
         max_sample_ds_m=settings.collision_max_sample_ds_m,
         far_clearance_m=settings.collision_far_clearance_m,
@@ -316,6 +288,10 @@ function rpo_rrt_connect_plan_path(
     rng=Random.default_rng(),
 )
     local_cfg = rpo_pso_config(cfg; curve_type=:polyline)
+    settings = typeof(settings)(; (
+        field => (field == :clearance_feasibility_tol_m ? cfg.clearance_feasibility_tol_m : getfield(settings, field))
+        for field in fieldnames(typeof(settings))
+    )...)
     start = SVector{3, Float64}(start_rtn)
     goal = SVector{3, Float64}(goal_rtn)
     lo, hi = rpo_pso_bounds(start, goal, local_cfg)
@@ -496,6 +472,10 @@ function rpo_rrt_star_plan_path(
     rng=Random.default_rng(),
 )
     local_cfg = rpo_pso_config(cfg; curve_type=:polyline)
+    settings = typeof(settings)(; (
+        field => (field == :clearance_feasibility_tol_m ? cfg.clearance_feasibility_tol_m : getfield(settings, field))
+        for field in fieldnames(typeof(settings))
+    )...)
     start = SVector{3, Float64}(start_rtn)
     goal = SVector{3, Float64}(goal_rtn)
     lo, hi = rpo_pso_bounds(start, goal, local_cfg)
@@ -583,6 +563,7 @@ function rpo_rrt_star_plan_path(
         step_size_m=settings.step_size_m,
         goal_sample_rate=settings.goal_sample_rate,
         collision_sample_ds_m=settings.collision_sample_ds_m,
+        clearance_feasibility_tol_m=settings.clearance_feasibility_tol_m,
         adaptive_collision_sampling_enable=settings.adaptive_collision_sampling_enable,
         collision_max_sample_ds_m=settings.collision_max_sample_ds_m,
         collision_far_clearance_m=settings.collision_far_clearance_m,

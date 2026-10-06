@@ -242,13 +242,20 @@ function _marker_trace(path, name, color; size=5, visible=true)
     )
 end
 
-function _sample_planned_bezier(control_points; spacing_m::Real=0.05)
+function _sample_planned_path(control_points, pso_config, geometry;
+                              spacing_m::Real=0.05)
     modules = SpaceAGORA_RL._spaceagora_rpo_modules()
     sampler = Base.invokelatest(
-        getproperty, modules.guidance, :rpo_sample_path_bezier,
+        getproperty, modules.guidance, :rpo_sample_path,
     )
     return Matrix{Float64}(Base.invokelatest(
-        sampler, control_points, Float64(spacing_m),
+        sampler,
+        control_points,
+        pso_config,
+        geometry;
+        safe_distance_m=getproperty(pso_config, :safe_distance_m),
+        base_ds_m=Float64(spacing_m),
+        curve_type=getproperty(pso_config, :curve_type),
     ))
 end
 
@@ -326,15 +333,26 @@ function _write_case_plot(path, case_index, scenario, result, metrics, config;
     end
     if plan !== nothing
         if size(plan.path_rtn, 2) > 1
-            planned_bezier = _sample_planned_bezier(
-                plan.path_rtn; spacing_m=bezier_plot_spacing_m,
-            )
+            pso_config = scenario.pso_config
+            curve_type = pso_config === nothing ? :bezier :
+                getproperty(pso_config, :curve_type)
+            planned_bezier = pso_config === nothing ? plan.path_rtn :
+                _sample_planned_path(
+                    plan.path_rtn,
+                    pso_config,
+                    scenario.geometry;
+                    spacing_m=bezier_plot_spacing_m,
+                )
+            path_label = curve_type == :cubic_bezier ?
+                "planned piecewise cubic trajectory" : "planned Bezier trajectory"
+            knot_label = curve_type == :cubic_bezier ?
+                "piecewise cubic knots" : "Bezier control waypoints"
             push!(traces, _line_trace(
-                planned_bezier, "planned Bezier trajectory", "rgb(35,90,205)";
+                planned_bezier, path_label, "rgb(35,90,205)";
                 width=7,
             ))
             push!(traces, _marker_trace(
-                plan.path_rtn, "Bezier control waypoints", "rgb(70,75,85)";
+                plan.path_rtn, knot_label, "rgb(70,75,85)";
                 size=5,
             ))
             sampled = _downsample(planned_bezier, 2_000)
@@ -447,6 +465,40 @@ td:first-child,th:first-child{text-align:left}.ok{color:#16834a}.bad{color:#c039
     return path
 end
 
+function _run_dynamic_process_cases(
+    n_cases::Int,
+    process_ids,
+    run_case,
+    failure_result;
+    progress_label::AbstractString,
+)
+    jobs = Channel{Int}(n_cases)
+    for index in 1:n_cases
+        put!(jobs, index)
+    end
+    close(jobs)
+
+    results = Vector{Any}(undef, n_cases)
+    completed = Ref(0)
+    @sync for process_id in process_ids
+        @async begin
+            for index in jobs
+                results[index] = try
+                    run_case(process_id, index)
+                catch error
+                    failure_result(error)
+                end
+                completed[] += 1
+                println(
+                    progress_label, " ", completed[], "/", n_cases,
+                    " (case ", index, ")",
+                )
+            end
+        end
+    end
+    return results
+end
+
 function _run_cases(config, scenarios, policy, policy_seeds, n_workers::Int)
     n_cases = length(scenarios)
     results = Vector{Any}(undef, n_cases)
@@ -471,23 +523,21 @@ function _run_cases(config, scenarios, policy, policy_seeds, n_workers::Int)
         foreach(fetch, [remotecall(
             SpaceAGORA_RL._prepare_hypr_rl_process_worker!, process_id,
         ) for process_id in process_ids])
-        for first_index in 1:active_workers:n_cases
-            last_index = min(first_index + active_workers - 1, n_cases)
-            indices = first_index:last_index
-            futures = [remotecall(
+        results = _run_dynamic_process_cases(
+            n_cases,
+            process_ids,
+            (process_id, index) -> remotecall_fetch(
                 evaluate_hypr_rl_policy_case,
-                process_ids[mod1(offset, active_workers)],
+                process_id,
                 config, scenarios[index], policy, policy_seeds[index],
-            ) for (offset, index) in enumerate(indices)]
-            for (index, future) in zip(indices, futures)
-                results[index] = try
-                    fetch(future)
-                catch error
-                    (plan=nothing, runtime_s=NaN, error=sprint(showerror, error))
-                end
-                println("evaluation progress $index/$n_cases")
-            end
-        end
+            ),
+            error -> (
+                plan=nothing,
+                runtime_s=NaN,
+                error=sprint(showerror, error),
+            );
+            progress_label="evaluation progress",
+        )
     finally
         rmprocs(process_ids)
     end

@@ -204,12 +204,12 @@ end
         # Station point at origin, keepout 2.0, max chaser half extent 0.15.
         result = SM.rpo_clearance_to_station(SVector{3, Float64}(10.0, 0.0, 0.0), geom)
         @test result.distance ≈ 10.0
-        @test result.clearance ≈ 10.0 - 2.0 - 0.15
+        @test result.clearance ≈ 10.0 - 2.0 - norm(geom.chaser.half_extents_body)
         @test result.nearest_point == SVector{3, Float64}(0.0, 0.0, 0.0)
         @test result.nearest_index == 1
 
         @test SM.rpo_clearance_distance_to_station(SVector{3, Float64}(10.0, 0.0, 0.0), geom) ≈ result.clearance
-        @test SM.rpo_clearance_distance_to_station([0.0, 1.0, 0.0], geom) ≈ 1.0 - 2.0 - 0.15
+        @test SM.rpo_clearance_distance_to_station([0.0, 1.0, 0.0], geom) ≈ 1.0 - 2.0 - norm(geom.chaser.half_extents_body)
 
         inside = SM.rpo_clearance_to_station([0.5, 0.0, 0.0], geom)
         @test inside.clearance < 0.0
@@ -223,18 +223,18 @@ end
         stats = SM.rpo_path_clearance_stats(path, geom)
         @test stats.violation_count == 1
         @test stats.violation_fraction ≈ 0.25
-        @test stats.min_clearance ≈ 0.5 - 2.0 - 0.15
+        @test stats.min_clearance ≈ 0.5 - 2.0 - norm(geom.chaser.half_extents_body)
 
         # All-clear path.
         clear_stats = SM.rpo_path_clearance_stats([9.0 8.0; 0.0 0.0; 0.0 0.0], geom; safe_distance_m=0.5)
         @test clear_stats.violation_count == 0
         @test clear_stats.violation_fraction == 0.0
-        @test clear_stats.min_clearance ≈ 8.0 - 2.0 - 0.15
+        @test clear_stats.min_clearance ≈ 8.0 - 2.0 - norm(geom.chaser.half_extents_body)
 
         # Violations are counted against the safe-distance margin, not just clearance < 0.
         margin_stats = SM.rpo_path_clearance_stats([2.5 9.0; 0.0 0.0; 0.0 0.0], geom; safe_distance_m=1.0)
-        @test margin_stats.min_clearance ≈ 2.5 - 2.0 - 0.15
-        @test margin_stats.violation_count == 1  # clearance 0.35 sits inside the 1.0 m margin
+        @test margin_stats.min_clearance ≈ 2.5 - 2.0 - norm(geom.chaser.half_extents_body)
+        @test margin_stats.violation_count == 1  # clearance sits inside the 1.0 m margin
         @test margin_stats.violation_fraction ≈ 0.5
 
         @test_throws ArgumentError SM.rpo_path_clearance_stats(zeros(4, 3), geom)

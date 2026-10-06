@@ -21,7 +21,7 @@ function _run_hypr_baseline_cases(config, scenarios, seeds, n_workers::Int)
     results = Vector{Any}(undef, n_cases)
     active_workers = min(max(n_workers, 1), n_cases)
     println(
-        "evaluating baseline HYPR with PSO retimed-fuel objective " *
+        "evaluating baseline HYPR with PSO retimed-fuel and optimized-pointing objective " *
         "cases=$n_cases active_workers=$active_workers terminal=full_lqmpc",
     )
     if active_workers == 1
@@ -43,23 +43,21 @@ function _run_hypr_baseline_cases(config, scenarios, seeds, n_workers::Int)
         foreach(fetch, [remotecall(
             SpaceAGORA_RL._prepare_hypr_rl_process_worker!, process_id,
         ) for process_id in process_ids])
-        for first_index in 1:active_workers:n_cases
-            last_index = min(first_index + active_workers - 1, n_cases)
-            indices = first_index:last_index
-            futures = [remotecall(
+        results = _run_dynamic_process_cases(
+            n_cases,
+            process_ids,
+            (process_id, index) -> remotecall_fetch(
                 evaluate_hypr_pso_baseline_case,
-                process_ids[mod1(offset, active_workers)],
+                process_id,
                 config, scenarios[index], seeds[index],
-            ) for (offset, index) in enumerate(indices)]
-            for (index, future) in zip(indices, futures)
-                results[index] = try
-                    fetch(future)
-                catch error
-                    (plan=nothing, runtime_s=NaN, error=sprint(showerror, error))
-                end
-                println("baseline evaluation progress $index/$n_cases")
-            end
-        end
+            ),
+            error -> (
+                plan=nothing,
+                runtime_s=NaN,
+                error=sprint(showerror, error),
+            );
+            progress_label="baseline evaluation progress",
+        )
     finally
         rmprocs(process_ids)
     end
@@ -112,6 +110,8 @@ function baseline_main(args=ARGS)
     ))
     n_workers = length(args) >= 4 ? parse(Int, args[4]) :
         Int(get(evaluation_config, "n_workers", training_config["n_workers"]))
+    curve_type = length(args) >= 5 ? Symbol(args[5]) :
+        Symbol(get(evaluation_config, "hypr_curve_type", "bezier"))
     evaluation_seed = Int(get(
         evaluation_config, "seed", training_config["seed"] + 10_000_000,
     ))
@@ -123,6 +123,7 @@ function baseline_main(args=ARGS)
         n_particles=Int(evaluation_config["hypr_baseline_particles"]),
         n_iters=Int(evaluation_config["hypr_baseline_iterations"]),
         n_waypoints=Int(evaluation_config["hypr_baseline_waypoints"]),
+        curve_type=curve_type,
         refinement_enable=true,
     )
     base_scenario = build_rpo_hypr_rl_scenario(
@@ -203,8 +204,9 @@ function baseline_main(args=ARGS)
         "pso_particles" => pso_config.n_particles,
         "pso_iterations" => pso_config.n_iters,
         "pso_waypoints" => pso_config.n_waypoints,
-        "pso_objective" => "retimed_feedforward_six_thruster_fuel_plus_wheel",
-        "terminal_evaluator" => "full_lqmpc_six_thruster_attitude",
+        "pso_curve_type" => String(pso_config.curve_type),
+        "pso_objective" => "retimed_feedforward_pointing_optimized_six_thruster_fuel_plus_wheel",
+        "terminal_evaluator" => "full_lqmpc_pointing_optimized_six_thruster_attitude",
         "index_html" => abspath(index_path),
     )
     open(joinpath(output_directory, "evaluation_manifest.toml"), "w") do io

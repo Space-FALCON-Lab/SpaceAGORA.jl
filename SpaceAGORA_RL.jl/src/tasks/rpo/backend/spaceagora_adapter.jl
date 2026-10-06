@@ -67,7 +67,7 @@ function _rpo_spaceagora_settings(scenario::RPOHyPRRLScenario,
         ) : scenario.pso_config
     pso_config = Base.invokelatest(
         getproperty(modules.guidance, :rpo_pso_config), pso_config;
-        curve_type=:bezier, safe_distance_m=config.safe_distance_m,
+        safe_distance_m=config.safe_distance_m,
         w_len=0.0, w_fuel=0.0,
     )
     tracking = scenario.tracking_settings === nothing ?
@@ -91,7 +91,7 @@ function _rpo_fuel_wheel_objective(components, propellant_used_kg::Real,
     normalized_wheel_energy = Float64(wheel_energy_j) /
         max(wheel_energy_reference_j, 1.0e-12)
     return (
-        total=config.fuel_weight * normalized_fuel^2 +
+        total=config.fuel_weight * normalized_fuel +
               config.wheel_weight * normalized_wheel_energy,
         normalized_fuel=normalized_fuel,
         normalized_wheel_energy=normalized_wheel_energy,
@@ -120,21 +120,81 @@ function _rpo_clearance_penalty_components(components, violation_count::Integer)
     )
 end
 
-"""PSO objective adapter that applies the HyPR-RL retiming and actuator model."""
-struct RPOHyPRRLPSOObjectiveEvaluator
+@inline function _rpo_clearance_feasibility_tol_m(pso_config)
+    return pso_config !== nothing &&
+        hasproperty(pso_config, :clearance_feasibility_tol_m) ?
+        Float64(getproperty(pso_config, :clearance_feasibility_tol_m)) : 1.0e-3
+end
+
+@inline function _rpo_clearance_is_feasible(clearance::Real,
+                                             safe_distance_m::Real,
+                                             pso_config)
+    return Float64(clearance) + _rpo_clearance_feasibility_tol_m(pso_config) >=
+        Float64(safe_distance_m)
+end
+
+@inline function _rpo_pso_objective_components(
+    components;
+    total::Float64=Inf,
+    violation_count::Int=Int(components.violation_count),
+    clearance_penalty::Float64=0.0,
+    propellant_used_kg::Float64=0.0,
+    normalized_fuel::Float64=0.0,
+    wheel_energy_j::Float64=0.0,
+    normalized_wheel_energy::Float64=0.0,
+    duration_s::Float64=0.0,
+    feasible::Bool=false,
+    cutoff_exceeded::Bool=false,
+)
+    return (
+        total=total,
+        J_len=Float64(components.J_len),
+        J_len_norm=Float64(components.J_len_norm),
+        J_obs=Float64(components.J_obs),
+        J_fuel=propellant_used_kg,
+        J_fuel_norm=normalized_fuel,
+        min_clearance=Float64(components.min_clearance),
+        violation_count=violation_count,
+        cutoff_exceeded=cutoff_exceeded,
+        len_ref=Float64(components.len_ref),
+        fuel_ref=Float64(components.fuel_ref),
+        clearance_penalty=clearance_penalty,
+        retimed_propellant_used_kg=propellant_used_kg,
+        retimed_wheel_energy_j=wheel_energy_j,
+        retimed_wheel_energy_norm=normalized_wheel_energy,
+        retimed_duration_s=duration_s,
+        retimed_feasible=feasible,
+    )
+end
+
+"""Typed PSO objective adapter for streamed retiming and actuator evaluation."""
+struct RPOHyPRRLPSOObjectiveEvaluator{TTracking, TPrepare, TInterpolate, TAllocator}
     config::RPOHyPRRLConfig
-    tracking_settings
+    tracking_settings::TTracking
     initial_attitude_rtn_to_body::Vector{Float64}
     final_attitude_rtn_to_body::Vector{Float64}
+    prepare_candidate::TPrepare
+    interpolate_along_path!::TInterpolate
+    allocator::TAllocator
 end
 
 function RPOHyPRRLPSOObjectiveEvaluator(config::RPOHyPRRLConfig,
                                         scenario::RPOHyPRRLScenario)
+    modules, _, tracking, _ = _rpo_spaceagora_settings(scenario, config)
+    prepare_candidate = getproperty(
+        modules.guidance, :rpo_prepare_retimed_candidate,
+    )
+    interpolate_along_path! = getproperty(
+        modules.guidance, :rpo_interpolate_along_path!,
+    )
     return RPOHyPRRLPSOObjectiveEvaluator(
         config,
-        scenario.tracking_settings,
+        tracking,
         copy(scenario.initial_attitude_rtn_to_body),
         copy(scenario.final_attitude_rtn_to_body),
+        prepare_candidate,
+        interpolate_along_path!,
+        _rpo_thruster_allocator(config),
     )
 end
 
@@ -145,78 +205,198 @@ function (evaluator::RPOHyPRRLPSOObjectiveEvaluator)(
     safe_distance_m::Real,
     cost_cutoff::Real,
 )
-    # A PSO incumbent cutoff is expressed in the retimed fuel objective, so it
-    # cannot safely prune the geometrical precheck before retiming.
-    _ = cost_cutoff
-    modules = _spaceagora_rpo_modules()
-    geometric_config = Base.invokelatest(
-        getproperty(modules.guidance, :rpo_pso_config),
-        pso_config;
-        curve_type=:bezier,
-        safe_distance_m=Float64(safe_distance_m),
-        w_len=0.0,
-        w_fuel=0.0,
-    )
-    components = Base.invokelatest(
-        getproperty(modules.guidance, :rpo_normalized_path_cost_components),
+    prepared = evaluator.prepare_candidate(
         control_points_rtn,
         geometry,
-        geometric_config;
+        pso_config;
         safe_distance_m=Float64(safe_distance_m),
-        cost_cutoff=Inf,
+        retime_dt_s=evaluator.tracking_settings.dt_s,
+        w_len=0.0,
+        w_fuel=0.0,
+        compute_fuel_proxy=false,
+        retime_mean_motion_radps=evaluator.tracking_settings.mean_motion_radps,
+        retime_command_limit_mps2=_rpo_guaranteed_acceleration_limit_mps2(
+            evaluator.config,
+            evaluator.tracking_settings.dt_s,
+            evaluator.allocator,
+        ),
     )
-    violation_count = components.min_clearance + 1.0e-9 < safe_distance_m ?
+    components = prepared.components
+    violation_count = !_rpo_clearance_is_feasible(
+        components.min_clearance, safe_distance_m, pso_config,
+    ) ?
         max(1, components.violation_count) : components.violation_count
     if violation_count > 0
-        return _rpo_clearance_penalty_components(
-            components, violation_count,
+        penalty = _rpo_original_clearance_penalty(components)
+        return _rpo_pso_objective_components(
+            components;
+            total=penalty,
+            violation_count=Int(violation_count),
+            clearance_penalty=penalty,
         )
     end
-    geometric_components = merge(components, (violation_count=violation_count,))
     if !isfinite(components.total)
-        return merge(geometric_components, (retimed_feasible=false,))
+        return _rpo_pso_objective_components(
+            components; violation_count=Int(violation_count),
+        )
     end
 
-    points = Matrix{Float64}(control_points_rtn)
-    scenario = RPOHyPRRLScenario(
-        start_rtn=Vector{Float64}(points[:, 1]),
-        goal_rtn=Vector{Float64}(points[:, end]),
-        geometry=geometry,
-        pso_config=geometric_config,
-        tracking_settings=evaluator.tracking_settings,
-        initial_attitude_rtn_to_body=evaluator.initial_attitude_rtn_to_body,
-        final_attitude_rtn_to_body=evaluator.final_attitude_rtn_to_body,
+    prepared.profile === nothing && return _rpo_pso_objective_components(
+        components; violation_count=Int(violation_count),
     )
-    progress, quaternions = _initial_attitude_knots(scenario)
-    evaluation = evaluate_rpo_training_candidate(
-        scenario,
+    accounting = _stream_retimed_feedforward_objective(
+        prepared.profile,
+        evaluator.tracking_settings,
+        evaluator.initial_attitude_rtn_to_body,
+        evaluator.final_attitude_rtn_to_body,
         evaluator.config,
-        points,
-        progress,
-        quaternions,
+        evaluator.allocator,
+        components.fuel_ref,
+        Float64(cost_cutoff),
+        evaluator.interpolate_along_path!,
+        optimize_pointing=true,
     )
-    (evaluation.feasible && isfinite(evaluation.objective)) || return merge(
-        geometric_components,
-        (total=Inf, retimed_feasible=false),
+    accounting.cutoff_exceeded && return _rpo_pso_objective_components(
+        components;
+        total=Inf,
+        violation_count=Int(violation_count),
+        clearance_penalty=0.0,
+        propellant_used_kg=accounting.propellant_used_kg,
+        normalized_fuel=accounting.normalized_fuel,
+        wheel_energy_j=accounting.wheel_energy_j,
+        normalized_wheel_energy=accounting.normalized_wheel_energy,
+        duration_s=accounting.duration_s,
+        cutoff_exceeded=true,
     )
-    objective = get(evaluation.diagnostics, :objective_components, nothing)
-    normalized_fuel = objective === nothing ?
-        evaluation.propellant_used_kg / max(components.fuel_ref, 1.0e-12) :
-        objective.normalized_fuel
-    normalized_wheel_energy = objective === nothing ? 0.0 :
-        objective.normalized_wheel_energy
-    return merge(
-        geometric_components,
-        (
-            total=evaluation.objective,
-            J_fuel=evaluation.propellant_used_kg,
-            J_fuel_norm=normalized_fuel,
-            retimed_propellant_used_kg=evaluation.propellant_used_kg,
-            retimed_wheel_energy_j=evaluation.wheel_energy_j,
-            retimed_wheel_energy_norm=normalized_wheel_energy,
-            retimed_duration_s=evaluation.duration_s,
-            retimed_feasible=evaluation.feasible,
+    final_point = view(prepared.profile.samples, :, size(prepared.profile.samples, 2))
+    goal_point = view(control_points_rtn, :, size(control_points_rtn, 2))
+    final_error = norm(final_point - goal_point)
+    wheel_feasible = accounting.wheel_peak_momentum_nms <=
+        evaluator.config.reaction_wheel_max_momentum_nms + 1.0e-12
+    feasible = final_error <= evaluator.tracking_settings.final_position_tol_m &&
+        wheel_feasible && isfinite(accounting.total)
+    return _rpo_pso_objective_components(
+        components;
+        total=feasible ? accounting.total : Inf,
+        violation_count=Int(violation_count),
+        clearance_penalty=0.0,
+        propellant_used_kg=accounting.propellant_used_kg,
+        normalized_fuel=accounting.normalized_fuel,
+        wheel_energy_j=accounting.wheel_energy_j,
+        normalized_wheel_energy=accounting.normalized_wheel_energy,
+        duration_s=accounting.duration_s,
+        feasible=feasible,
+    )
+end
+
+"""Typed PSO adapter for the geometric objective with retimed HCW proxy fuel."""
+struct RPOTimingAwareProxyPSOObjectiveEvaluator{TTracking, TPrepare, TInterpolate}
+    config::RPOHyPRRLConfig
+    tracking_settings::TTracking
+    prepare_candidate::TPrepare
+    interpolate_along_path!::TInterpolate
+end
+
+function RPOTimingAwareProxyPSOObjectiveEvaluator(
+    config::RPOHyPRRLConfig,
+    scenario::RPOHyPRRLScenario,
+)
+    modules, _, tracking, _ = _rpo_spaceagora_settings(scenario, config)
+    return RPOTimingAwareProxyPSOObjectiveEvaluator(
+        config,
+        tracking,
+        getproperty(modules.guidance, :rpo_prepare_retimed_candidate),
+        getproperty(modules.guidance, :rpo_interpolate_along_path!),
+    )
+end
+
+function (evaluator::RPOTimingAwareProxyPSOObjectiveEvaluator)(
+    control_points_rtn,
+    geometry,
+    pso_config,
+    safe_distance_m::Real,
+    cost_cutoff::Real,
+)
+    prepared = evaluator.prepare_candidate(
+        control_points_rtn,
+        geometry,
+        pso_config;
+        safe_distance_m=Float64(safe_distance_m),
+        retime_dt_s=evaluator.tracking_settings.dt_s,
+        w_len=pso_config.w_len,
+        w_obs=pso_config.w_obs,
+        w_fuel=0.0,
+        compute_fuel_proxy=false,
+        retime_mean_motion_radps=evaluator.tracking_settings.mean_motion_radps,
+        retime_command_limit_mps2=_rpo_guaranteed_acceleration_limit_mps2(
+            evaluator.config,
+            evaluator.tracking_settings.dt_s,
         ),
+    )
+    components = prepared.components
+    violation_count = !_rpo_clearance_is_feasible(
+        components.min_clearance, safe_distance_m, pso_config,
+    ) ?
+        max(1, components.violation_count) : components.violation_count
+    if violation_count > 0
+        penalty = _rpo_original_clearance_penalty(components)
+        return _rpo_pso_objective_components(
+            components;
+            total=penalty,
+            violation_count=Int(violation_count),
+            clearance_penalty=penalty,
+        )
+    end
+    if !isfinite(components.total)
+        return _rpo_pso_objective_components(
+            components; violation_count=Int(violation_count),
+        )
+    end
+    if isfinite(cost_cutoff) && components.total > Float64(cost_cutoff)
+        return _rpo_pso_objective_components(
+            components;
+            violation_count=Int(violation_count),
+            cutoff_exceeded=true,
+        )
+    end
+    prepared.profile === nothing && return _rpo_pso_objective_components(
+        components; violation_count=Int(violation_count),
+    )
+
+    accounting = _stream_retimed_timing_aware_proxy_objective(
+        prepared.profile,
+        evaluator.tracking_settings.mean_motion_radps,
+        pso_config.mass_kg,
+        pso_config.isp_s,
+        pso_config.g0_mps2,
+        components.fuel_ref,
+        pso_config.w_fuel,
+        components.total,
+        Float64(cost_cutoff),
+        evaluator.interpolate_along_path!,
+    )
+    accounting.cutoff_exceeded && return _rpo_pso_objective_components(
+        components;
+        total=Inf,
+        violation_count=Int(violation_count),
+        propellant_used_kg=accounting.propellant_used_kg,
+        normalized_fuel=accounting.normalized_fuel,
+        duration_s=accounting.duration_s,
+        cutoff_exceeded=true,
+    )
+    final_point = view(prepared.profile.samples, :, size(prepared.profile.samples, 2))
+    goal_point = view(control_points_rtn, :, size(control_points_rtn, 2))
+    final_error = norm(final_point - goal_point)
+    feasible = final_error <= evaluator.tracking_settings.final_position_tol_m &&
+        isfinite(accounting.total)
+    return _rpo_pso_objective_components(
+        components;
+        total=feasible ? accounting.total : Inf,
+        violation_count=Int(violation_count),
+        propellant_used_kg=accounting.propellant_used_kg,
+        normalized_fuel=accounting.normalized_fuel,
+        duration_s=accounting.duration_s,
+        feasible=feasible,
     )
 end
 
@@ -435,8 +615,11 @@ function sample_rpo_hypr_rl_scenario(base::RPOHyPRRLScenario, sigma_m::Real,
         goal = base.goal_rtn .+ sigma .* randn(rng, 3)
         start_clearance = _rpo_endpoint_clearance_m(start, base.geometry)
         goal_clearance = _rpo_endpoint_clearance_m(goal, base.geometry)
-        if start_clearance + 1.0e-9 >= safe_distance &&
-           goal_clearance + 1.0e-9 >= safe_distance
+        if _rpo_clearance_is_feasible(
+               start_clearance, safe_distance, base.pso_config,
+           ) && _rpo_clearance_is_feasible(
+               goal_clearance, safe_distance, base.pso_config,
+           )
             return RPOHyPRRLScenario(
                 start_rtn=start,
                 goal_rtn=goal,
@@ -472,7 +655,9 @@ function rpo_hypr_rl_seed_path(scenario::RPOHyPRRLScenario,
     modules, pso_config, _, rrt = _rpo_spaceagora_settings(scenario, config)
     for (label, point) in (("start", scenario.start_rtn), ("goal", scenario.goal_rtn))
         clearance = _rpo_endpoint_clearance_m(point, scenario.geometry)
-        clearance + 1.0e-9 >= config.safe_distance_m || throw(ArgumentError(
+        _rpo_clearance_is_feasible(
+            clearance, config.safe_distance_m, pso_config,
+        ) || throw(ArgumentError(
             "RPO $label endpoint clearance $clearance m is below the " *
             "required $(config.safe_distance_m) m",
         ))
@@ -495,53 +680,259 @@ function rpo_hypr_rl_seed_path(scenario::RPOHyPRRLScenario,
     )
 end
 
-function _allocate_thrusters(desired_force_body::AbstractVector{<:Real},
-                             config::RPOHyPRRLConfig)
+struct _RPOThrusterAllocator
+    directions::Matrix{Float64}
+    maximum_thrust_n::Vector{Float64}
+    force_to_pair_command::Matrix{Float64}
+    fallback_projection::Matrix{Float64}
+    impulse_to_propellant::Vector{Float64}
+    wheel_energy_reference_j::Float64
+    paired_axes::Bool
+end
+
+"""Per-thruster pulse-residual state carried between MPC updates."""
+mutable struct _RPOThrusterPulseScheduler
+    residual_impulse_ns::Vector{Float64}
+    continuously_on::BitVector
+end
+
+function _rpo_thruster_pulse_scheduler(config::RPOHyPRRLConfig)
+    n_thrusters = length(config.thruster_max_thrust_n)
+    return _RPOThrusterPulseScheduler(
+        zeros(n_thrusters), falses(n_thrusters),
+    )
+end
+
+"""Delivered impulse for a completed linearly opening and closing valve pulse."""
+@inline function _rpo_completed_pulse_impulse(maximum_thrust::Float64,
+                                               commanded_on_time_s::Float64,
+                                               config::RPOHyPRRLConfig)
+    return maximum_thrust * (
+        commanded_on_time_s - 0.5 * config.thruster_opening_time_s +
+        0.5 * config.thruster_closing_time_s
+    )
+end
+
+"""Commanded valve-on duration that realizes a completed requested impulse."""
+@inline function _rpo_pulse_on_time_for_impulse(requested_impulse_ns::Float64,
+                                                 maximum_thrust::Float64,
+                                                 config::RPOHyPRRLConfig)
+    return requested_impulse_ns / maximum_thrust +
+        0.5 * (
+            config.thruster_opening_time_s - config.thruster_closing_time_s
+        )
+end
+
+function _rpo_thruster_allocator(config::RPOHyPRRLConfig)
     directions = config.thruster_directions_body
+    axes = directions[:, [1, 3, 5]]
+    paired_axes = all(isapprox(
+        directions[:, 2 * axis], -directions[:, 2 * axis - 1];
+        atol=1.0e-12, rtol=1.0e-12,
+    ) for axis in 1:3) && isapprox(
+        transpose(axes) * axes, Matrix{Float64}(I, 3, 3);
+        atol=1.0e-12, rtol=1.0e-12,
+    )
+    pair_projection = paired_axes ? inv(axes) : zeros(3, 3)
     gram = directions * transpose(directions) + 1.0e-12I
-    thrust = max.(0.0, transpose(directions) * (gram \ Vector{Float64}(desired_force_body)))
-    thrust = min.(thrust, config.thruster_max_thrust_n)
-    step = 0.9 / max(opnorm(directions)^2, eps(Float64))
-    for _ in 1:12
-        residual = directions * thrust - desired_force_body
-        thrust .= clamp.(thrust .- step .* (transpose(directions) * residual),
-                         0.0, config.thruster_max_thrust_n)
+    fallback_projection = transpose(directions) / gram
+    impulse_to_propellant = 1.0 ./
+        (config.thruster_isp_s .* config.g0_mps2)
+    wheel_energy_reference = sum(
+        config.reaction_wheel_max_momentum_nms^2 / (2.0 * inertia)
+        for inertia in config.reaction_wheel_inertia_kgm2
+    )
+    return _RPOThrusterAllocator(
+        directions,
+        config.thruster_max_thrust_n,
+        pair_projection,
+        fallback_projection,
+        impulse_to_propellant,
+        wheel_energy_reference,
+        paired_axes,
+    )
+end
+
+"""Conservative acceleration available in every direction for one complete pulse."""
+function _rpo_guaranteed_acceleration_limit_mps2(
+    config::RPOHyPRRLConfig,
+    dt_s::Real,
+    allocator::_RPOThrusterAllocator=_rpo_thruster_allocator(config),
+)
+    allocator.paired_axes || throw(ArgumentError(
+        "hard retiming acceleration constraints require opposing orthonormal thruster pairs",
+    ))
+    dt = Float64(dt_s)
+    dt > 0.0 || throw(ArgumentError("retiming time step must be positive"))
+    valve_fraction = clamp(
+        1.0 - (config.thruster_opening_time_s +
+               config.thruster_closing_time_s) / (2.0 * dt),
+        0.0,
+        1.0,
+    )
+    paired_force_limit = minimum(
+        min(
+            allocator.maximum_thrust_n[2 * axis - 1],
+            allocator.maximum_thrust_n[2 * axis],
+        ) for axis in 1:3
+    )
+    limit = valve_fraction * paired_force_limit / config.mass_kg
+    limit > 0.0 || throw(ArgumentError(
+        "thruster and valve settings provide no guaranteed acceleration",
+    ))
+    return limit
+end
+
+function _allocate_thrusters!(thrust::Vector{Float64},
+                              desired_force_body::AbstractVector{<:Real},
+    allocator::_RPOThrusterAllocator)
+    if allocator.paired_axes
+        @inbounds for axis in 1:3
+            positive_index = 2 * axis - 1
+            negative_index = 2 * axis
+            value = allocator.force_to_pair_command[axis, 1] * desired_force_body[1] +
+                allocator.force_to_pair_command[axis, 2] * desired_force_body[2] +
+                allocator.force_to_pair_command[axis, 3] * desired_force_body[3]
+            thrust[positive_index] = clamp(
+                max(value, 0.0), 0.0, allocator.maximum_thrust_n[positive_index],
+            )
+            thrust[negative_index] = clamp(
+                max(-value, 0.0), 0.0, allocator.maximum_thrust_n[negative_index],
+            )
+        end
+    else
+        mul!(thrust, allocator.fallback_projection, desired_force_body)
+        @inbounds for index in eachindex(thrust)
+            thrust[index] = clamp(
+                thrust[index], 0.0, allocator.maximum_thrust_n[index],
+            )
+        end
     end
     return thrust
 end
 
+function _allocate_thrusters(desired_force_body::AbstractVector{<:Real},
+                             config::RPOHyPRRLConfig)
+    allocator = _rpo_thruster_allocator(config)
+    return _allocate_thrusters!(zeros(6), desired_force_body, allocator)
+end
+
 function _thruster_translation_step(command_rtn, attitude_rtn_to_body, dt_s,
-                                    config::RPOHyPRRLConfig)
+                                    config::RPOHyPRRLConfig,
+                                    allocator::_RPOThrusterAllocator,
+                                    scheduler::_RPOThrusterPulseScheduler)
     dt = Float64(dt_s)
     rotation_rtn_to_body = _quat_rotation_matrix(attitude_rtn_to_body)
     desired_acceleration = Vector{Float64}(command_rtn)
     desired_force_body = config.mass_kg .* rotation_rtn_to_body * desired_acceleration
-    commanded_thrust = _allocate_thrusters(desired_force_body, config)
+    commanded_thrust = _allocate_thrusters!(
+        zeros(6), desired_force_body, allocator,
+    )
+    allocated_force_body = allocator.directions * commanded_thrust
+    hard_saturated = norm(allocated_force_body - desired_force_body) /
+        config.mass_kg > 1.0e-9
     impulse = zeros(6)
     for thruster_index in 1:6
         maximum_thrust = config.thruster_max_thrust_n[thruster_index]
-        if maximum_thrust <= 0.0 || commanded_thrust[thruster_index] <= 0.0
+        if maximum_thrust <= 0.0
             continue
         end
-        on_time = commanded_thrust[thruster_index] / maximum_thrust * dt
-        on_time = clamp(max(on_time, config.thruster_min_firing_time_s), 0.0, dt)
-        impulse[thruster_index] = maximum_thrust * on_time
+        requested_impulse = scheduler.residual_impulse_ns[thruster_index] +
+            commanded_thrust[thruster_index] * dt
+        maximum_impulse = maximum_thrust * dt
+        minimum_on_time = min(config.thruster_min_firing_time_s, dt)
+        minimum_impulse = _rpo_completed_pulse_impulse(
+            maximum_thrust, minimum_on_time, config,
+        )
+
+        if scheduler.continuously_on[thruster_index]
+            # A valve that was already open either holds nominal thrust or
+            # closes during this update.  The latter includes its finite
+            # closing-tail impulse; no off-time dwell is introduced.
+            maximum_closing_impulse = maximum_thrust * (
+                dt - 0.5 * config.thruster_closing_time_s
+            )
+            if requested_impulse > maximum_closing_impulse + 1.0e-12
+                impulse[thruster_index] = maximum_impulse
+                scheduler.residual_impulse_ns[thruster_index] =
+                    requested_impulse - maximum_impulse
+                continue
+            end
+            held_on_time = clamp(
+                requested_impulse / maximum_thrust -
+                0.5 * config.thruster_closing_time_s,
+                0.0, dt - config.thruster_closing_time_s,
+            )
+            impulse[thruster_index] = maximum_thrust * (
+                held_on_time + 0.5 * config.thruster_closing_time_s
+            )
+            scheduler.residual_impulse_ns[thruster_index] =
+                requested_impulse - impulse[thruster_index]
+            scheduler.continuously_on[thruster_index] = false
+            continue
+        end
+
+        available_on_time = max(0.0, dt - config.thruster_closing_time_s)
+        maximum_completed_impulse = _rpo_completed_pulse_impulse(
+            maximum_thrust, available_on_time, config,
+        )
+        if requested_impulse > maximum_completed_impulse + 1.0e-12
+            # Leave the valve open at the update boundary rather than
+            # reserving a closing tail in every saturated update.
+            impulse[thruster_index] = maximum_thrust * (
+                dt - 0.5 * config.thruster_opening_time_s
+            )
+            scheduler.residual_impulse_ns[thruster_index] =
+                requested_impulse - impulse[thruster_index]
+            scheduler.continuously_on[thruster_index] = true
+            continue
+        end
+        requested_on_time = _rpo_pulse_on_time_for_impulse(
+            requested_impulse, maximum_thrust, config,
+        )
+        can_fire = requested_impulse + 1.0e-12 >= minimum_impulse &&
+                   requested_on_time + 1.0e-12 >= minimum_on_time &&
+                   available_on_time + 1.0e-12 >= minimum_on_time
+        if can_fire
+            on_time = min(requested_on_time, available_on_time)
+            impulse[thruster_index] = _rpo_completed_pulse_impulse(
+                maximum_thrust, on_time, config,
+            )
+            scheduler.residual_impulse_ns[thruster_index] =
+                requested_impulse - impulse[thruster_index]
+        else
+            scheduler.residual_impulse_ns[thruster_index] = requested_impulse
+        end
     end
     average_thrust = impulse ./ dt
-    realized_force_body = config.thruster_directions_body * average_thrust
+    realized_force_body = allocator.directions * average_thrust
     realized_acceleration = transpose(rotation_rtn_to_body) * realized_force_body /
                             config.mass_kg
-    propellant = sum(
-        impulse[index] / (config.thruster_isp_s[index] * config.g0_mps2)
-        for index in 1:6
-    )
+    propellant = dot(impulse, allocator.impulse_to_propellant)
     error = norm(realized_acceleration - desired_acceleration)
     return (
         realized_acceleration_rtn=realized_acceleration,
         propellant_used_kg=propellant,
         thruster_impulse_ns=impulse,
         allocation_error_mps2=error,
-        saturated=error > 1.0e-5,
+        saturated=hard_saturated,
+    )
+end
+
+function _thruster_translation_step(command_rtn, attitude_rtn_to_body, dt_s,
+                                    config::RPOHyPRRLConfig,
+                                    allocator::_RPOThrusterAllocator)
+    return _thruster_translation_step(
+        command_rtn, attitude_rtn_to_body, dt_s, config, allocator,
+        _rpo_thruster_pulse_scheduler(config),
+    )
+end
+
+function _thruster_translation_step(command_rtn, attitude_rtn_to_body, dt_s,
+                                    config::RPOHyPRRLConfig)
+    return _thruster_translation_step(
+        command_rtn, attitude_rtn_to_body, dt_s, config,
+        _rpo_thruster_allocator(config),
     )
 end
 
@@ -561,6 +952,8 @@ function _account_thruster_and_attitude_history(u_hist::AbstractMatrix{<:Real},
     attitude = _quat_normalize(scenario.initial_attitude_rtn_to_body)
     angular_rate = zeros(3)
     dt = Float64(dt_s)
+    allocator = _rpo_thruster_allocator(config)
+    scheduler = _rpo_thruster_pulse_scheduler(config)
     for step_index in 1:n_steps
         desired_attitude = view(q_reference, :, min(step_index, size(q_reference, 2)))
         attitude, angular_rate, torque = _integrate_attitude(
@@ -572,7 +965,7 @@ function _account_thruster_and_attitude_history(u_hist::AbstractMatrix{<:Real},
 
         desired_acceleration_rtn = Vector{Float64}(view(u_hist, :, step_index))
         actuation = _thruster_translation_step(
-            desired_acceleration_rtn, attitude, dt, config,
+            desired_acceleration_rtn, attitude, dt, config, allocator, scheduler,
         )
         impulse .+= actuation.thruster_impulse_ns
         propellant += actuation.propellant_used_kg
@@ -588,6 +981,250 @@ function _account_thruster_and_attitude_history(u_hist::AbstractMatrix{<:Real},
         wheel_peak_momentum_nms=wheel_peak,
         final_attitude_rtn_to_body=attitude,
         final_angular_rate_radps=angular_rate,
+    )
+end
+
+"""
+Integrate ideal continuous-thrust fuel from a geometry-retimed HCW reference.
+
+The geometric cost is retained from baseline HyPR, while the proxy-fuel term
+uses the actual retimed positions, velocities, duration, and control timestep.
+Endpoint velocities are zero, so the first and last intervals include departure
+acceleration and terminal braking, respectively.
+"""
+function _stream_retimed_timing_aware_proxy_objective(
+    profile,
+    mean_motion_radps::Real,
+    mass_kg::Real,
+    isp_s::Real,
+    g0_mps2::Real,
+    fuel_reference_kg::Real,
+    fuel_weight::Real,
+    geometric_cost::Real,
+    cost_cutoff::Float64,
+    interpolate_along_path!,
+)
+    n_reference = length(profile.s_ref)
+    n_steps = max(n_reference - 1, 0)
+    dt = Float64(profile.dt_s)
+    mean_motion = Float64(mean_motion_radps)
+    fuel_scale = Float64(mass_kg) * dt /
+        max(Float64(isp_s) * Float64(g0_mps2), 1.0e-12)
+    fuel_reference = max(Float64(fuel_reference_kg), 1.0e-12)
+    local_fuel_weight = Float64(fuel_weight)
+    base_cost = Float64(geometric_cost)
+
+    current_position = zeros(3)
+    next_position = zeros(3)
+    following_position = zeros(3)
+    current_velocity = zeros(3)
+    next_velocity = zeros(3)
+    propellant = 0.0
+
+    if n_steps > 0
+        interpolate_along_path!(
+            current_position, profile.samples, profile.s_samples, profile.s_ref[1],
+        )
+        interpolate_along_path!(
+            next_position, profile.samples, profile.s_samples, profile.s_ref[2],
+        )
+        # Initial relative velocity is zero, matching the materialized reference.
+    end
+
+    cutoff_exceeded = false
+    completed_steps = 0
+    for step_index in 1:n_steps
+        if step_index < n_steps
+            interpolate_along_path!(
+                following_position,
+                profile.samples,
+                profile.s_samples,
+                profile.s_ref[step_index + 2],
+            )
+            @inbounds for axis in 1:3
+                next_velocity[axis] =
+                    (following_position[axis] - next_position[axis]) / dt
+            end
+        else
+            next_velocity .= 0.0
+        end
+
+        @inbounds begin
+            ax = (next_velocity[1] - current_velocity[1]) / dt -
+                (3.0 * mean_motion^2 * current_position[1] +
+                 2.0 * mean_motion * current_velocity[2])
+            ay = (next_velocity[2] - current_velocity[2]) / dt +
+                2.0 * mean_motion * current_velocity[1]
+            az = (next_velocity[3] - current_velocity[3]) / dt +
+                mean_motion^2 * current_position[3]
+            propellant += fuel_scale * sqrt(ax * ax + ay * ay + az * az)
+        end
+        completed_steps = step_index
+
+        normalized_fuel = propellant / fuel_reference
+        partial_cost = base_cost + local_fuel_weight * normalized_fuel
+        if isfinite(cost_cutoff) && partial_cost > cost_cutoff
+            cutoff_exceeded = true
+            break
+        end
+
+        if step_index < n_steps
+            current_position .= next_position
+            next_position .= following_position
+            current_velocity .= next_velocity
+        end
+    end
+
+    normalized_fuel = propellant / fuel_reference
+    return (
+        total=base_cost + local_fuel_weight * normalized_fuel,
+        normalized_fuel=normalized_fuel,
+        propellant_used_kg=propellant,
+        duration_s=completed_steps * dt,
+        cutoff_exceeded=cutoff_exceeded,
+    )
+end
+
+
+function _stream_retimed_feedforward_objective(
+    profile,
+    tracking,
+    initial_attitude_rtn_to_body::Vector{Float64},
+    final_attitude_rtn_to_body::Vector{Float64},
+    config::RPOHyPRRLConfig,
+    allocator::_RPOThrusterAllocator,
+    fuel_reference_kg::Real,
+    cost_cutoff::Float64,
+    interpolate_along_path!,
+    ;
+    optimize_pointing::Bool=false,
+)
+    n_reference = length(profile.s_ref)
+    n_steps = max(n_reference - 1, 0)
+    dt = Float64(profile.dt_s)
+    mean_motion = Float64(tracking.mean_motion_radps)
+    fuel_reference = max(Float64(fuel_reference_kg), 1.0e-12)
+    wheel_reference = max(allocator.wheel_energy_reference_j, 1.0e-12)
+
+    current_position = zeros(3)
+    next_position = zeros(3)
+    following_position = zeros(3)
+    current_velocity = zeros(3)
+    next_velocity = zeros(3)
+    command = zeros(3)
+    impulse = zeros(6)
+    attitude = _quat_normalize(initial_attitude_rtn_to_body)
+    angular_rate = zeros(3)
+    wheel_momentum = zeros(3)
+    propellant = 0.0
+    allocation_error = 0.0
+    saturated_steps = 0
+    wheel_energy = 0.0
+    wheel_peak = 0.0
+    scheduler = _rpo_thruster_pulse_scheduler(config)
+
+    if n_steps > 0
+        interpolate_along_path!(
+            current_position, profile.samples, profile.s_samples, profile.s_ref[1],
+        )
+        interpolate_along_path!(
+            next_position, profile.samples, profile.s_samples, profile.s_ref[2],
+        )
+        # Initial relative velocity is zero, matching the materialized reference.
+    end
+
+    cutoff_exceeded = false
+    completed_steps = 0
+    for step_index in 1:n_steps
+        if step_index < n_steps
+            interpolate_along_path!(
+                following_position,
+                profile.samples,
+                profile.s_samples,
+                profile.s_ref[step_index + 2],
+            )
+            @inbounds for axis in 1:3
+                next_velocity[axis] =
+                    (following_position[axis] - next_position[axis]) / dt
+            end
+        else
+            next_velocity .= 0.0
+        end
+
+        @inbounds begin
+            command[1] = (next_velocity[1] - current_velocity[1]) / dt -
+                (3.0 * mean_motion^2 * current_position[1] +
+                 2.0 * mean_motion * current_velocity[2])
+            command[2] = (next_velocity[2] - current_velocity[2]) / dt +
+                2.0 * mean_motion * current_velocity[1]
+            command[3] = (next_velocity[3] - current_velocity[3]) / dt +
+                mean_motion^2 * current_position[3]
+        end
+
+        attitude_denominator = optimize_pointing ? n_steps - 1 : n_steps
+        attitude_fraction = (step_index - 1) / max(attitude_denominator, 1)
+        baseline_attitude = _quat_slerp(
+            initial_attitude_rtn_to_body,
+            final_attitude_rtn_to_body,
+            attitude_fraction,
+        )
+        desired_attitude = optimize_pointing ?
+            _rpo_fuel_optimal_pointing_attitude(
+                attitude,
+                baseline_attitude,
+                command,
+                attitude_fraction,
+                config,
+            ) : baseline_attitude
+        attitude, angular_rate, torque = _integrate_attitude(
+            attitude, angular_rate, desired_attitude, dt, config,
+        )
+        wheel_momentum .-= torque .* dt
+        wheel_peak = max(wheel_peak, maximum(abs, wheel_momentum))
+        wheel_energy += abs(dot(torque, angular_rate)) * dt
+
+        actuation = _thruster_translation_step(
+            command, attitude, dt, config, allocator, scheduler,
+        )
+        impulse .+= actuation.thruster_impulse_ns
+        propellant += actuation.propellant_used_kg
+        allocation_error += actuation.allocation_error_mps2 * dt
+        saturated_steps += actuation.saturated ? 1 : 0
+        completed_steps = step_index
+
+        normalized_fuel = propellant / fuel_reference
+        normalized_wheel_energy = wheel_energy / wheel_reference
+        partial_cost = config.fuel_weight * normalized_fuel +
+            config.wheel_weight * normalized_wheel_energy
+        if isfinite(cost_cutoff) && partial_cost > cost_cutoff
+            cutoff_exceeded = true
+            break
+        end
+
+        if step_index < n_steps
+            current_position .= next_position
+            next_position .= following_position
+            current_velocity .= next_velocity
+        end
+    end
+
+    normalized_fuel = propellant / fuel_reference
+    normalized_wheel_energy = wheel_energy / wheel_reference
+    total = config.fuel_weight * normalized_fuel +
+        config.wheel_weight * normalized_wheel_energy
+    return (
+        total=total,
+        normalized_fuel=normalized_fuel,
+        normalized_wheel_energy=normalized_wheel_energy,
+        propellant_used_kg=propellant,
+        allocation_error_impulse_mps=allocation_error,
+        saturation_fraction=completed_steps > 0 ?
+            saturated_steps / completed_steps : 0.0,
+        thruster_impulse_ns=impulse,
+        wheel_energy_j=wheel_energy,
+        wheel_peak_momentum_nms=wheel_peak,
+        duration_s=completed_steps * dt,
+        cutoff_exceeded=cutoff_exceeded,
     )
 end
 
@@ -657,29 +1294,34 @@ function evaluate_rpo_training_candidate(
 )
     try
         modules, pso_config, tracking, _ = _rpo_spaceagora_settings(scenario, config)
-        components = Base.invokelatest(
-            getproperty(modules.guidance, :rpo_normalized_path_cost_components),
+        prepared = Base.invokelatest(
+            getproperty(modules.guidance, :rpo_prepare_retimed_candidate),
             control_points_rtn, scenario.geometry, pso_config;
             safe_distance_m=config.safe_distance_m,
+            retime_dt_s=tracking.dt_s,
+            w_len=0.0,
+            w_fuel=0.0,
+            compute_fuel_proxy=false,
+            retime_mean_motion_radps=tracking.mean_motion_radps,
+            retime_command_limit_mps2=
+                _rpo_guaranteed_acceleration_limit_mps2(config, tracking.dt_s),
         )
+        components = prepared.components
         if !isfinite(components.total) || !isfinite(components.min_clearance)
             return _failed_rpo_evaluation(reason=:nonfinite_path_cost)
         end
-        if components.violation_count > 0 ||
-           components.min_clearance + 1.0e-9 < config.safe_distance_m
+        if components.violation_count > 0 || !_rpo_clearance_is_feasible(
+               components.min_clearance, config.safe_distance_m, pso_config,
+           )
             return _rpo_infeasible_path_evaluation(
                 scenario, control_points_rtn, components,
             )
         end
-        retime_config = Base.invokelatest(
-            getproperty(modules.guidance, :rpo_pso_config), pso_config;
-            retime_dt_s=tracking.dt_s, mass_kg=tracking.mass_kg,
-            isp_s=tracking.isp_s, g0_mps2=tracking.g0_mps2,
-        )
+        prepared.profile === nothing &&
+            return _failed_rpo_evaluation(reason=:missing_retiming_profile)
         t_ref, r_ref, v_ref = Base.invokelatest(
-            getproperty(modules.guidance, :rpo_reference_from_path),
-            control_points_rtn, scenario.geometry, retime_config;
-            safe_distance_m=config.safe_distance_m,
+            getproperty(modules.guidance, :rpo_reference_from_profile),
+            prepared.profile,
         )
         commands = _rpo_feedforward_acceleration_history(
             r_ref, v_ref, tracking.mean_motion_radps, tracking.dt_s,
@@ -732,7 +1374,8 @@ end
 function _coupled_rpo_tracking(modules, t_ref, r_ref, v_ref, goal_rtn,
                                attitude_progress, attitude_quaternions,
                                tracking, scenario::RPOHyPRRLScenario,
-                               config::RPOHyPRRLConfig)
+                               config::RPOHyPRRLConfig;
+                               optimize_pointing::Bool=false)
     Q = Diagonal(vcat(fill(tracking.q_pos, 3), fill(tracking.q_vel, 3)))
     R = Diagonal(fill(tracking.r_accel, 3))
     Qf = Diagonal(vcat(fill(tracking.qf_pos, 3), fill(tracking.qf_vel, 3)))
@@ -747,11 +1390,16 @@ function _coupled_rpo_tracking(modules, t_ref, r_ref, v_ref, goal_rtn,
     total_steps = n_plan_steps + settle_steps
     control_progress = total_steps == 0 ? Float64[] :
         collect(range(0.0, 1.0; length=total_steps))
-    desired_attitudes = _attitude_reference(
+    baseline_attitudes = _attitude_reference(
         attitude_progress, attitude_quaternions, control_progress,
     )
+    desired_attitude_history = zeros(4, total_steps)
 
     state = vcat(Vector{Float64}(r_ref[:, 1]), Vector{Float64}(v_ref[:, 1]))
+    plant = Base.invokelatest(
+        getproperty(modules.guidance, :rpo_init_two_body_plant),
+        state, tracking.mean_motion_radps,
+    )
     state_history = zeros(6, total_steps + 1)
     command_history = zeros(3, total_steps)
     realized_history = zeros(3, total_steps)
@@ -770,6 +1418,8 @@ function _coupled_rpo_tracking(modules, t_ref, r_ref, v_ref, goal_rtn,
     min_clearance = Inf
     keepout_violations = 0
     dt = Float64(tracking.dt_s)
+    allocator = _rpo_thruster_allocator(config)
+    scheduler = _rpo_thruster_pulse_scheduler(config)
 
     for step_index in 1:total_steps
         reference_index = min(step_index, size(r_ref, 2))
@@ -781,26 +1431,43 @@ function _coupled_rpo_tracking(modules, t_ref, r_ref, v_ref, goal_rtn,
             getproperty(modules.control, :rpo_lqmpc_control),
             controller, state, preview,
         ))
+        baseline_attitude = view(baseline_attitudes, :, step_index)
+        desired_attitude = optimize_pointing ?
+            _rpo_fuel_optimal_pointing_attitude(
+                attitude,
+                baseline_attitude,
+                command,
+                control_progress[step_index],
+                config,
+            ) : baseline_attitude
+        desired_attitude_history[:, step_index] .= desired_attitude
         attitude, angular_rate, torque = _integrate_attitude(
-            attitude, angular_rate, view(desired_attitudes, :, step_index), dt, config,
+            attitude, angular_rate, desired_attitude, dt, config,
         )
         wheel_momentum .-= torque .* dt
         wheel_peak = max(wheel_peak, maximum(abs, wheel_momentum))
         wheel_energy += abs(dot(torque, angular_rate)) * dt
 
-        actuation = _thruster_translation_step(command, attitude, dt, config)
+        actuation = _thruster_translation_step(
+            command, attitude, dt, config, allocator, scheduler,
+        )
         realized_acceleration = actuation.realized_acceleration_rtn
         impulse .+= actuation.thruster_impulse_ns
         propellant += actuation.propellant_used_kg
         allocation_error += actuation.allocation_error_mps2 * dt
         saturated_steps += actuation.saturated ? 1 : 0
-        state .= controller.Ad * state .+ controller.Bd * realized_acceleration
+        state .= Base.invokelatest(
+            getproperty(modules.guidance, :rpo_step_two_body!),
+            plant, realized_acceleration, dt,
+        )
         clearance = Float64(Base.invokelatest(
-            getproperty(modules.navigation, :rpo_clearance_distance_to_station),
-            view(state, 1:3), scenario.geometry,
+            getproperty(modules.navigation, :rpo_capsule_clearance_to_station),
+            view(state_history, 1:3, step_index), view(state, 1:3), scenario.geometry,
         ))
         min_clearance = min(min_clearance, clearance)
-        keepout_violations += clearance + 1.0e-9 < config.safe_distance_m ? 1 : 0
+        keepout_violations += _rpo_clearance_is_feasible(
+            clearance, config.safe_distance_m, scenario.pso_config,
+        ) ? 0 : 1
         state_history[:, step_index + 1] .= state
         command_history[:, step_index] .= command
         realized_history[:, step_index] .= realized_acceleration
@@ -826,6 +1493,7 @@ function _coupled_rpo_tracking(modules, t_ref, r_ref, v_ref, goal_rtn,
         command_history=command_history,
         realized_acceleration_history=realized_history,
         actual_attitude_history=actual_attitude_history,
+        desired_attitude_history=desired_attitude_history,
         final_attitude_rtn_to_body=attitude,
         final_angular_rate_radps=angular_rate,
     )
@@ -833,43 +1501,66 @@ end
 
 """
 Evaluate a translation/attitude candidate after path retiming and LQ-MPC
-tracking. Translation is allocated through all six fixed body thrusters; the
+tracking with nonlinear two-body orbital propagation. Translation is allocated
+through all six fixed body thrusters; the
 attitude is tracked using reaction-wheel torque and momentum limits.
 """
 function evaluate_rpo_candidate(scenario::RPOHyPRRLScenario,
                                 config::RPOHyPRRLConfig,
                                 control_points_rtn::AbstractMatrix{<:Real},
                                 attitude_progress::AbstractVector{<:Real},
-                                attitude_quaternions::AbstractMatrix{<:Real})
+                                attitude_quaternions::AbstractMatrix{<:Real};
+                                optimize_pointing::Bool=false)
     try
         modules, pso_config, tracking, _ = _rpo_spaceagora_settings(scenario, config)
-        components = Base.invokelatest(
-            getproperty(modules.guidance, :rpo_normalized_path_cost_components),
+        prepared = Base.invokelatest(
+            getproperty(modules.guidance, :rpo_prepare_retimed_candidate),
             control_points_rtn, scenario.geometry, pso_config;
             safe_distance_m=config.safe_distance_m,
+            retime_dt_s=tracking.dt_s,
+            w_len=0.0,
+            w_fuel=0.0,
+            compute_fuel_proxy=false,
+            retime_mean_motion_radps=tracking.mean_motion_radps,
+            retime_command_limit_mps2=
+                _rpo_guaranteed_acceleration_limit_mps2(config, tracking.dt_s),
         )
+        components = prepared.components
         if components.violation_count > 0 || !isfinite(components.total)
             return _failed_rpo_evaluation(reason=:path_infeasible)
         end
-        retime_config = Base.invokelatest(
-            getproperty(modules.guidance, :rpo_pso_config), pso_config;
-            retime_dt_s=tracking.dt_s, mass_kg=tracking.mass_kg,
-            isp_s=tracking.isp_s, g0_mps2=tracking.g0_mps2,
-        )
+        prepared.profile === nothing &&
+            return _failed_rpo_evaluation(reason=:missing_retiming_profile)
         t_ref, r_ref, v_ref = Base.invokelatest(
-            getproperty(modules.guidance, :rpo_reference_from_path),
-            control_points_rtn, scenario.geometry, retime_config;
-            safe_distance_m=config.safe_distance_m,
+            getproperty(modules.guidance, :rpo_reference_from_profile),
+            prepared.profile,
         )
         coupled = _coupled_rpo_tracking(
             modules, t_ref, r_ref, v_ref, scenario.goal_rtn,
             attitude_progress, attitude_quaternions, tracking, scenario, config,
+            optimize_pointing=optimize_pointing,
         )
-        reference_progress = isempty(t_ref) ? Float64[] :
-            collect(range(0.0, 1.0; length=length(t_ref)))
-        q_reference = _attitude_reference(
-            attitude_progress, attitude_quaternions, reference_progress,
-        )
+        q_reference = if optimize_pointing && !isempty(t_ref)
+            reference = zeros(4, length(t_ref))
+            reference[:, 1] .= _quat_normalize(
+                scenario.initial_attitude_rtn_to_body,
+            )
+            @inbounds for column in 2:length(t_ref)
+                step_index = min(
+                    column - 1, size(coupled.desired_attitude_history, 2),
+                )
+                reference[:, column] .= view(
+                    coupled.desired_attitude_history, :, step_index,
+                )
+            end
+            reference
+        else
+            reference_progress = isempty(t_ref) ? Float64[] :
+                collect(range(0.0, 1.0; length=length(t_ref)))
+            _attitude_reference(
+                attitude_progress, attitude_quaternions, reference_progress,
+            )
+        end
         objective = _rpo_fuel_wheel_objective(
             components, coupled.propellant_used_kg,
             coupled.wheel_energy_j, config,
@@ -890,6 +1581,7 @@ function evaluate_rpo_candidate(scenario::RPOHyPRRLScenario,
             coupled.thruster_impulse_ns,
             (
                 evaluator_mode=:full_lqmpc,
+                propagation_model=:nonlinear_two_body,
                 path_components=components,
                 objective_components=objective,
                 coupled_tracking_success=coupled.success,
@@ -899,6 +1591,8 @@ function evaluate_rpo_candidate(scenario::RPOHyPRRLScenario,
                 command_history=coupled.command_history,
                 realized_acceleration_history=coupled.realized_acceleration_history,
                 actual_attitude_history=coupled.actual_attitude_history,
+                desired_attitude_history=coupled.desired_attitude_history,
+                pointing_optimized=optimize_pointing,
                 final_attitude_rtn_to_body=coupled.final_attitude_rtn_to_body,
                 final_angular_rate_radps=coupled.final_angular_rate_radps,
             ),

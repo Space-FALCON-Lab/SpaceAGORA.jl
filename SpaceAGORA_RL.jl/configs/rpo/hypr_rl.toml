@@ -58,3 +58,5 @@ hypr_comparison_output_directory = "SpaceAGORA_RL.jl/outputs/hypr_rl/evaluation_
 hypr_baseline_particles = 100
 hypr_baseline_iterations = 60
 hypr_baseline_waypoints = 5
+hypr_curve_type = "bezier"
+hypr_clearance_feasibility_tol_m = 0.001

@@ -232,14 +232,18 @@ end
         via_helper = SM.rpo_pso_config(configurator; pso_particles=11)
         @test via_helper.n_particles == 11
 
-        @test GH.rpo_hypr_sampling_density_m(SM.RPOPSOConfig(sample_ds_m=0.5), 0.2) == 0.2
-        @test GH.rpo_hypr_sampling_density_m(SM.rpo_pso_config(; safe_distance_m=0.3)) == 0.3
+        @test GH.rpo_hypr_sampling_density_m(SM.RPOPSOConfig(sample_ds_m=0.5), 0.2) == 0.5
+        @test GH.rpo_hypr_sampling_density_m(SM.rpo_pso_config(; safe_distance_m=0.3)) == 0.05
         @test GH.rpo_hypr_sampling_density_m(SM.RPOPSOConfig(sample_ds_m=0.5), 0.0) == 0.5
-        @test GH.rpo_hypr_refinement_sampling_density_m(SM.RPOPSOConfig(), 0.2) == 0.2
-        @test GH.rpo_hypr_refinement_sampling_density_m(SM.rpo_pso_config(; safe_distance_m=0.3)) == 0.3
-        @test GH.rpo_hypr_refinement_sampling_density_m(SM.RPOPSOConfig(refinement_sample_ds_m=0.04), 0.0) == 0.04
+        @test GH.rpo_hypr_refinement_sampling_density_m(SM.RPOPSOConfig(), 0.2) == 0.025
+        @test GH.rpo_hypr_refinement_sampling_density_m(SM.rpo_pso_config(; safe_distance_m=0.3)) == 0.025
+        @test GH.rpo_hypr_refinement_sampling_density_m(
+            SM.RPOPSOConfig(sample_ds_m=0.04, refinement_sample_ds_m=0.01), 0.0,
+        ) == 0.01
 
         @test_throws ArgumentError SM.rpo_pso_config(; n_particles=0)
+        @test SM.rpo_pso_config(; curve_type=:cubic_bezier).curve_type ==
+            :cubic_bezier
         @test_throws ArgumentError SM.rpo_pso_config(; curve_type=:spline)
         @test_throws ArgumentError SM.rpo_pso_config(; retime_dt_s=0.0)
         @test_throws ArgumentError SM.rpo_pso_config(; sample_ds_m=-1.0)
@@ -272,7 +276,21 @@ end
         @test resampled[:, 2] ≈ elbow[:, 2]
         @test size(GH.rpo_resample_polyline_points(elbow, 1), 2) == 2  # clamps to at least 2 samples
 
+        cubic = GH.rpo_sample_path_cubic_bezier(elbow, 0.5)
+        @test cubic[:, 1] ≈ elbow[:, 1]
+        @test cubic[:, end] ≈ elbow[:, end]
+        @test !any(column -> column ≈ elbow[:, 2], eachcol(cubic))
+        @test any(column -> column[1] < 1.0 && column[2] > 0.0,
+                  eachcol(cubic))
+        @test all((0.0 .<= cubic[1, :]) .& (cubic[1, :] .<= 1.0))
+        @test all((0.0 .<= cubic[2, :]) .& (cubic[2, :] .<= 1.0))
+        crossing = [-1.0 1.0; 1.0 1.0; 0.0 0.0]
+        @test GH.rpo_cubic_bezier_minimum_clearance(crossing, geom) ≈
+            1.0 - geom.station.keepout_radius_m -
+            norm(geom.chaser.half_extents_body)
+
         @test GH.rpo_sample_path(line, 0.5; curve_type=:bezier) ≈ bez
+        @test GH.rpo_sample_path(elbow, 0.5; curve_type=:cubic_bezier) ≈ cubic
         @test GH.rpo_sample_path(elbow, 0.5; curve_type=:polyline) ≈ poly
         @test_throws ArgumentError GH.rpo_sample_path(line, 0.5; curve_type=:spline)
 
@@ -394,7 +412,7 @@ end
 
         # Step-count exhaustion still forces the endpoint into the result.
         cfg_short = _probe_tiny_cfg(; sample_ds_m=0.5, retime_max_steps=2, retime_speed_scale=0.05)
-        matm, sm, vm = @test_logs (:warn, r"maximum step count") match_mode = :any GH.rpo_retime_path(path, far_geom, cfg_short)
+        matm, sm, vm = GH.rpo_retime_path(path, far_geom, cfg_short)
         @test sm[end] ≈ 4.0 atol = 1.0e-9
         @test matm[:, end] ≈ path[:, 2] atol = 1.0e-9
 
@@ -403,7 +421,50 @@ end
         @test length(t_ref) == size(r_ref, 2) == size(v_ref, 2)
         @test t_ref[1] == 0.0
         @test all(diff(t_ref) .≈ cfg.retime_dt_s)
-        @test v_ref[:, end] ≈ v_ref[:, end - 1]
+        @test iszero(v_ref[:, 1])
+        @test iszero(v_ref[:, end])
+
+        # Fused geometry/retiming preparation reuses the same samples and
+        # materializes the same reference as the public path entry point.
+        prepared = GH.rpo_prepare_retimed_candidate(
+            path, far_geom, cfg; safe_distance_m=0.0,
+        )
+        @test prepared.profile isa GH.RPORetimingProfile
+        @test prepared.components.violation_count == 0
+        prepared_t, prepared_r, prepared_v =
+            GH.rpo_reference_from_profile(prepared.profile)
+        @test prepared_t == t_ref
+        @test prepared_r ≈ r_ref
+        @test prepared_v ≈ v_ref
+
+        bezier_cfg = SM.rpo_pso_config(
+            cfg;
+            curve_type=:bezier,
+            sample_ds_m=0.5,
+            retime_dt_s=0.1,
+            retime_a_max_mps2=0.00625,
+            retime_max_speed_mps=0.25,
+            retime_max_steps=20_000,
+        )
+        curved_path = [
+            0.0 1.0 3.0 4.0
+            0.0 2.0 2.0 0.0
+            0.0 0.0 0.0 0.0
+        ]
+        constrained_prepared = GH.rpo_prepare_retimed_candidate(
+            curved_path,
+            far_geom,
+            bezier_cfg;
+            safe_distance_m=0.0,
+            retime_mean_motion_radps=0.0011,
+            retime_command_limit_mps2=0.00865,
+        )
+        @test constrained_prepared.profile isa GH.RPORetimingProfile
+        @test size(constrained_prepared.profile.samples, 2) >
+            size(GH.rpo_sample_path(curved_path, 0.5; curve_type=:bezier), 2)
+        @test GH.rpo_hcw_feedforward_max_acceleration(
+            constrained_prepared.profile, 0.0011,
+        ) <= bezier_cfg.retime_a_max_mps2 * (1.0 + 1.0e-8) + 1.0e-12
     end
 
     @testset "RPO replanning spheres and config" begin
@@ -651,6 +712,8 @@ end
         @test retimer.replanning_persistence_count == 1
         @test GH.maybe_update_rpo_replanning!(retimer, u, 1.0)
         @test retimer.retime_count == 1
+        @test retimer.replanning_phase == :tracking
+        @test retimer.safe_hold_count == 0
         @test retimer.plan_buffer.updated_at_s == 1.0
         @test retimer.plan_buffer.plan.diagnostics.replanning_action == :retime
         @test retimer.replanning_events[end].action == :retime
@@ -679,13 +742,21 @@ end
         )
         GH.update_rpo_plan_buffer!(replanner.plan_buffer, _probe_straight_plan(-2.0, 2.0), 0.0)
         @test GH.maybe_update_rpo_replanning!(replanner, u, 5.0)
+        @test replanner.replanning_phase == :braking
+        @test replanner.replan_count == 0
+        @test !GH.maybe_update_rpo_replanning!(replanner, u, 5.0)
+        @test replanner.replanning_phase == :planning
+        ready = replanner.pending_replan.available_at_s
+        @test ready > 5.0
+        @test !GH.maybe_update_rpo_replanning!(replanner, u, 5.0)
+        @test GH.maybe_update_rpo_replanning!(replanner, u, ready)
         @test replanner.replan_count == 1
         @test replanner.goal_rtn == SVector{3, Float64}(3.0, 0.0, 0.0)
         @test replanner.plan_buffer.plan.diagnostics.planned_at_s == 5.0
         @test replanner.replanning_events[end].action == :replan
         @test replanner.replanning_events[end].reason == :goal_changed
 
-        # Replan failure keeps the old plan and restores the original goal.
+        # Replan failure retains the hold, never the unsafe old trajectory.
         failer = GM.RPOGuidanceModel(
             goal_rtn=SVector{3, Float64}(2.0, 0.0, 0.0),
             geometry=geom,
@@ -694,13 +765,117 @@ end
         )
         old_plan = _probe_straight_plan(-2.0, 2.0)
         GH.update_rpo_plan_buffer!(failer.plan_buffer, old_plan, 0.0)
-        result = @test_logs (:warn, r"RPO replanning failed") match_mode = :any GH.maybe_update_rpo_replanning!(failer, u, 6.0)
+        @test GH.maybe_update_rpo_replanning!(failer, u, 6.0)
+        hold_plan = failer.plan_buffer.plan
+        @test hold_plan !== old_plan
+        @test !GH.maybe_update_rpo_replanning!(failer, u, 6.0)
+        result = @test_logs (:warn, r"RPO replanning failed") match_mode = :any GH.maybe_update_rpo_replanning!(failer, u, failer.pending_replan.available_at_s)
         @test !result
         @test failer.replan_failure_count == 1
         @test failer.replan_count == 0
         @test failer.goal_rtn == SVector{3, Float64}(2.0, 0.0, 0.0)
-        @test failer.plan_buffer.plan === old_plan
+        @test failer.plan_buffer.plan === hold_plan
+        @test failer.replanning_phase == :hold_failed
+        @test !GH.maybe_update_rpo_replanning!(failer, u, 100.0)
         @test failer.replanning_events[end].action == :replan_failed
+    end
+
+    @testset "RPO physical braking and delayed release" begin
+        settings = GH.RPOLQMPCTrackingSettings(horizon=20, dt_s=0.1)
+        for delay in (0.25, 3.657, 8.0)
+            geom = _probe_far_geometry()
+            model = GM.RPOGuidanceModel(geometry=geom, pso_config=_probe_tiny_cfg(),
+                goal_rtn=SVector(2.0, 0.0, 0.0),
+                replanning_config=GH.RPOReplanningConfig(safe_distance_m=0.05))
+            decision = (action=:replan, reason=:unsafe_remaining_path, min_clearance=0.0,
+                spheres=GH.RPOReplanningSphere[], geometry=geom)
+            x = [-2.0, 0.0, 0.0, 0.06, 0.0, 0.0]
+            GH._rpo_begin_replanning_hold!(model, x[1:3], decision, 0.0)
+            hold_plan = model.plan_buffer.plan
+            ctrl = GH.rpo_tracking_controller(settings)
+            plant = GH.rpo_init_two_body_plant(x, settings.mean_motion_radps)
+            calls = 0
+            launched_at = NaN
+            max_displacement = 0.0
+            hold_steps = 0
+            build = function (m, start, geometry, t; kwargs...)
+                calls += 1
+                @test norm(x[4:6]) <= m.hold_speed_tolerance_mps
+                @test norm(start - hold_plan.r_ref_rtn[:, 1]) <= m.hold_position_tolerance_m
+                return GH.RPOPlan(valid=true, t_ref_s=[0.0, 1.0],
+                    r_ref_rtn=hcat(start, m.goal_rtn), v_ref_rtn=zeros(3, 2))
+            end
+            t = 0.0
+            for k in 1:1200
+                previous_phase = model.replanning_phase
+                GH._rpo_advance_replanning_hold!(model, x, t; planner=build)
+                if previous_phase == :braking && model.replanning_phase == :planning
+                    launched_at = t
+                    model.pending_replan = merge(model.pending_replan,
+                        (runtime_s=delay, available_at_s=t + delay))
+                end
+                if model.replanning_phase == :tracking
+                    @test t >= launched_at + delay
+                    break
+                end
+                @test model.plan_buffer.plan === hold_plan
+                ref = SM.ControlHooks.rpo_ref_preview(hold_plan, t, settings.dt_s, settings.horizon)
+                accel = SM.ControlHooks.rpo_lqmpc_control(ctrl, x, ref)
+                k == 1 && (@test accel[1] < 0.0)
+                @test all(abs.(accel) .<= settings.u_max_mps2 .+ 2.0e-4)
+                x .= GH.rpo_step_two_body!(plant, accel, settings.dt_s)
+                max_displacement = max(max_displacement, norm(x[1:3] - [-2.0, 0.0, 0.0]))
+                hold_steps += model.replanning_phase == :planning
+                t += settings.dt_s
+            end
+            @test calls == 1
+            @test launched_at > 0.0
+            @test max_displacement > 0.01 # Braking is propagated, not a state reset.
+            @test hold_steps >= ceil(Int, delay / settings.dt_s)
+            @test model.replanning_phase == :tracking
+            @test model.replan_count == 1
+        end
+
+        # A result that becomes obstructed while planning must never replace the hold.
+        model = GM.RPOGuidanceModel(geometry=_probe_far_geometry(), pso_config=_probe_tiny_cfg(),
+            replanning_config=GH.RPOReplanningConfig(safe_distance_m=0.05,
+                spheres=[(center=(0.0, 0.0, 0.0), radius=0.5, appear_time=1.0)]))
+        decision = (action=:replan, reason=:goal_changed, min_clearance=Inf,
+            spheres=GH.RPOReplanningSphere[], geometry=model.geometry)
+        x = [-2.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        GH._rpo_begin_replanning_hold!(model, x[1:3], decision, 0.0)
+        build = (args...; kwargs...) -> _probe_straight_plan(-2.0, 2.0)
+        GH._rpo_advance_replanning_hold!(model, x, 0.0; planner=build)
+        hold_plan = model.plan_buffer.plan
+        @test_logs (:warn, r"RPO replanning failed") GH._rpo_advance_replanning_hold!(
+            model, x, max(2.0, model.pending_replan.available_at_s); planner=build)
+        @test model.replanning_phase == :hold_failed
+        @test model.plan_buffer.plan === hold_plan
+
+        # Neither ignore/continue nor retiming commands a hold for a moving spacecraft.
+        moving = _probe_fake_state((-2.0, 0.0, 0.0), SVector(0.06, 0.0, 0.0))
+        live = GM.RPOGuidanceModel(geometry=_probe_far_geometry(), pso_config=_probe_tiny_cfg(),
+            replanning_config=GH.RPOReplanningConfig())
+        original = _probe_straight_plan(-2.0, 2.0)
+        GH.update_rpo_plan_buffer!(live.plan_buffer, original, 0.0)
+        @test !GH.maybe_update_rpo_replanning!(live, moving, 1.0)
+        @test live.plan_buffer.plan === original
+        live.replanning_config = GH.RPOReplanningConfig(tracking_error_retime_m=0.01)
+        displaced = _probe_fake_state((-2.0, 0.1, 0.0), SVector(0.06, 0.0, 0.0))
+        @test GH.maybe_update_rpo_replanning!(live, displaced, 2.0)
+        @test live.retime_count == 1
+        @test live.replanning_phase == :tracking
+        @test live.safe_hold_count == 0
+        continuation = GH.RPOPlan(valid=true, t_ref_s=[0.0, 0.1, 0.2],
+            r_ref_rtn=[-2.0 -1.994 -1.988; 0.0 0.0 0.0; 0.0 0.0 0.0],
+            v_ref_rtn=[0.06 0.06 0.06; 0.0 0.0 0.0; 0.0 0.0 0.0])
+        moving_x = [-2.0, 0.0, 0.0, 0.06, 0.0, 0.0]
+        continued = GH.rpo_track_retimed_path_lqmpc(continuation.r_ref_rtn,
+            continuation.r_ref_rtn[:, end], live.geometry, live.pso_config, settings;
+            initial_state_rtn=moving_x, reference_plan=continuation)
+        @test continued.x_hist[:, 1] == moving_x
+        @test continued.v_ref_rtn == continuation.v_ref_rtn
+        @test continued.x_hist[1, 2] > moving_x[1]
     end
 
     @testset "RPO calcGuidanceEffect!" begin
@@ -719,15 +894,17 @@ end
         @test model.plan_buffer.updated_at_s == 0.0
         @test model.plan_buffer.plan.diagnostics.planned_at_s == 0.0
 
-        # force_replan rebuilds even with a valid buffer and then clears itself.
+        # force_replan enters braking even without an automatic replanning config.
         model.force_replan = true
         @test GH.calcGuidanceEffect!(model, u, nothing, 5.0, 1) === nothing
         @test !model.force_replan
         @test model.plan_buffer.updated_at_s == 5.0
+        @test model.replanning_phase == :braking
 
-        # Valid buffer without a replanning config falls through the maybe-update path.
+        # A subsequent settled update starts planning while the hold stays installed.
         before = model.plan_buffer.updated_at_s
         @test GH.calcGuidanceEffect!(model, u, nothing, 6.0, 1) === nothing
         @test model.plan_buffer.updated_at_s == before
+        @test model.replanning_phase == :planning
     end
 end

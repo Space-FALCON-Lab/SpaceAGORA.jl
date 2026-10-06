@@ -76,19 +76,19 @@ const _SV3 = SVector{3, Float64}
 
         # Free corridor: only the smooth clearance term contributes.
         c_free = GH.rpo_estimate_geometry_complexity((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), far)
-        @test c_free ≈ 0.3 / (1.0 + 98.99) atol = 1.0e-9
+        @test c_free ≈ 0.3 / (1.0 + 99.0 - norm(far.chaser.half_extents_body)) atol = 1.0e-9
         # Corridor through the keepout sphere saturates to full complexity.
         c_hit = GH.rpo_estimate_geometry_complexity((-1.0, 0.0, 0.0), (1.0, 0.0, 0.0), blocked)
         @test c_hit == 1.0
         # Positive clearance below the safety buffer adds the buffer term.
         c_buf = GH.rpo_estimate_geometry_complexity(
             (-1.0, 0.6, 0.0), (1.0, 0.6, 0.0), blocked; safe_distance_m=0.2)
-        @test c_buf ≈ 0.7 + 0.3 / (1.0 + (0.6 - 0.51)) atol = 1.0e-9
+        @test c_buf ≈ 0.7 + 0.3 / (1.0 + (0.6 - 0.5 - norm(blocked.chaser.half_extents_body))) atol = 1.0e-9
         @test 0.0 <= c_buf <= 1.0
 
         ok = GH.rpo_probe_geometry_metrics((-1.0, 0.6, 0.0), (1.0, 0.6, 0.0), blocked)
         @test ok.detour_ratio == 1.0
-        @test ok.min_clearance ≈ 0.6 - 0.51 atol = 1.0e-9
+        @test ok.min_clearance ≈ 0.6 - 0.5 - norm(blocked.chaser.half_extents_body) atol = 1.0e-9
         @test ok.violation_fraction == 0.0
         @test ok.success  # safe_distance defaults to zero
         tight = GH.rpo_probe_geometry_metrics((-1.0, 0.6, 0.0), (1.0, 0.6, 0.0), blocked; safe_distance_m=0.2)
@@ -165,11 +165,13 @@ const _SV3 = SVector{3, Float64}
         @test refine_cfg.sample_ds_m == 0.1
         @test refine_cfg.refinement_sample_ds_m == 0.1
 
-        better = (J_obs=0.0, total=1.0)
-        worse = (J_obs=0.0, total=2.0)
+        better = (J_obs=0.0, total=1.0, violation_count=0)
+        worse = (J_obs=0.0, total=2.0, violation_count=0)
+        infeasible = (J_obs=0.0, total=0.5, violation_count=1)
         @test GH.rpo_refinement_better(better, worse, cfg)
         @test !GH.rpo_refinement_better(worse, better, cfg)
         @test !GH.rpo_refinement_better(better, better, cfg)  # zero improvement fails thresholds
+        @test !GH.rpo_refinement_better(infeasible, worse, cfg)
         obs_worse = (J_obs=5.0, total=0.1)
         @test !GH.rpo_refinement_better(obs_worse, worse, cfg)  # obstacle regression vetoes
 

@@ -137,6 +137,27 @@ Related scripts:
 - `Robot_Arm_Planner_Cloth_Demo.jl`
 - `Solar_Panel_Cloth_Deployment_Demo.jl`
 
+The replanning example brakes into a fixed RTN position hold before requesting a
+new route. MPC tracks the trigger position with zero relative velocity; planning
+starts only within 0.02 m position error and 0.002 m/s relative speed. The planner
+runs synchronously, then its measured wall-clock duration is replayed as a delay
+in simulation time with the nonlinear plant and hold controller still advancing.
+Release occurs on a guidance/control update after that delay, provided the vehicle
+is settled and the new route passes clearance checks against the current map.
+Planning exceptions or rejected routes retain the hold; runtime guidance retries
+only on an explicit `force_replan`. Retiming updates the active reference live,
+and ignore/continue retains the existing reference, without entering hold.
+
+The replanning CSV includes braking duration, simulated planning delay, total
+brake/hold duration, hold clearance violations, and fuel use including braking
+and holding. The runner prints the mean and maximum simulated planning delay
+(rounded up to control updates). Cases that fail to settle within 120 s beyond
+the measured planning duration are reported as failures. Passing now requires
+successful tracking and no brake/hold clearance violations, as well as a feasible
+replacement route. The 0.25 s retiming reaction allowance is not a planner deadline
+or a separately injected reaction delay. Regression tests exercise injected
+planning delays of 0.25, 3.657, and 8.0 s (mean 3.969 s; maximum 8.0 s).
+
 ## Full script list
 
 | Group | Scripts |

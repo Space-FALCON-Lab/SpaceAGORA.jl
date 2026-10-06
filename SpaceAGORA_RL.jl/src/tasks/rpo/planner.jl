@@ -100,7 +100,13 @@ function _evaluate_hypr_pso_case(config::RPOHyPRRLConfig,
                                  modules,
                                  pso_config;
                                  planner::Symbol,
-                                 objective_evaluator=nothing)
+                                 objective_evaluator=nothing,
+                                 optimize_terminal_pointing::Bool=
+                                     objective_evaluator !== nothing,
+                                 edit_evaluator_mode::Symbol=
+                                     objective_evaluator === nothing ?
+                                     :original_hypr_proxy_pso :
+                                     :retimed_feedforward_pointing_optimized_pso)
     planner_keywords = objective_evaluator === nothing ?
         (
             safe_distance_m=config.safe_distance_m,
@@ -130,24 +136,28 @@ function _evaluate_hypr_pso_case(config::RPOHyPRRLConfig,
         initial_attitude_rtn_to_body=scenario.initial_attitude_rtn_to_body,
         final_attitude_rtn_to_body=scenario.final_attitude_rtn_to_body,
     )
-    terminal_runtime_s = @elapsed evaluation = evaluate_rpo_candidate(
+    uses_retimed_objective = objective_evaluator !== nothing
+    terminal_runtime_s = @elapsed evaluation = Base.invokelatest(
+        evaluate_rpo_candidate,
         terminal_scenario,
         config,
         plan_result.path,
         progress,
         quaternions,
+        optimize_pointing=optimize_terminal_pointing,
     )
     seed_cost = isempty(plan_result.cost_history) ? plan_result.cost :
         first(plan_result.cost_history)
-    uses_retimed_objective = objective_evaluator !== nothing
     edit_feasible = uses_retimed_objective ? Bool(get(
         plan_result.components, :retimed_feasible, false,
     )) :
         plan_result.components.violation_count == 0 &&
-        plan_result.components.min_clearance + 1.0e-9 >= config.safe_distance_m &&
+        _rpo_clearance_is_feasible(
+            plan_result.components.min_clearance,
+            config.safe_distance_m,
+            plan_result.config,
+        ) &&
         isfinite(plan_result.cost)
-    edit_evaluator_mode = uses_retimed_objective ?
-        :retimed_feedforward_pso : :original_hypr_proxy_pso
     plan = RPOHyPRRLPlan(
         evaluation.feasible,
         Matrix{Float64}(plan_result.path),
@@ -207,7 +217,6 @@ function evaluate_hypr_original_baseline_case(config::RPOHyPRRLConfig,
     pso_config = Base.invokelatest(
         getproperty(modules.guidance, :rpo_pso_config),
         pso_config;
-        curve_type=:bezier,
         safe_distance_m=config.safe_distance_m,
     )
     return _evaluate_hypr_pso_case(
@@ -217,6 +226,7 @@ function evaluate_hypr_original_baseline_case(config::RPOHyPRRLConfig,
         modules,
         pso_config;
         planner=:hypr_pso_original_proxy,
+        optimize_terminal_pointing=true,
     )
 end
 
@@ -236,11 +246,42 @@ function evaluate_hypr_pso_baseline_case(config::RPOHyPRRLConfig,
     )
 end
 
+"""Evaluate HyPR with baseline geometry and retimed continuous-thrust proxy fuel."""
+function evaluate_hypr_timing_aware_proxy_case(config::RPOHyPRRLConfig,
+                                                scenario::RPOHyPRRLScenario,
+                                                seed::Integer)
+    modules = _spaceagora_rpo_modules()
+    pso_config = scenario.pso_config === nothing ?
+        Base.invokelatest(
+            getproperty(modules.guidance, :rpo_740_mpc_final_pso_config);
+            safe_distance_m=config.safe_distance_m,
+        ) : scenario.pso_config
+    pso_config = Base.invokelatest(
+        getproperty(modules.guidance, :rpo_pso_config),
+        pso_config;
+        safe_distance_m=config.safe_distance_m,
+    )
+    return _evaluate_hypr_pso_case(
+        config,
+        scenario,
+        seed,
+        modules,
+        pso_config;
+        planner=:hypr_pso_timing_aware_proxy,
+        objective_evaluator=RPOTimingAwareProxyPSOObjectiveEvaluator(
+            config, scenario,
+        ),
+        optimize_terminal_pointing=true,
+        edit_evaluator_mode=:retimed_timing_aware_proxy_pso,
+    )
+end
 
-"""Evaluate original and retimed-fuel HYPR on one paired scenario and PSO seed."""
+
+"""Evaluate original HYPR and the selected retimed objective on one paired case."""
 function evaluate_hypr_pso_comparison_case(config::RPOHyPRRLConfig,
                                            scenario::RPOHyPRRLScenario,
-                                           seed::Integer)
+                                           seed::Integer,
+                                           comparison_mode::Symbol=:retimed_fuel)
     failure(error) = (
         plan=nothing,
         runtime_s=NaN,
@@ -253,8 +294,14 @@ function evaluate_hypr_pso_comparison_case(config::RPOHyPRRLConfig,
     catch error
         failure(error)
     end
+    comparison_mode in (:retimed_fuel, :timing_aware_proxy) ||
+        throw(ArgumentError(
+            "comparison mode must be :retimed_fuel or :timing_aware_proxy",
+        ))
     retimed_fuel = try
-        evaluate_hypr_pso_baseline_case(config, scenario, seed)
+        comparison_mode == :timing_aware_proxy ?
+            evaluate_hypr_timing_aware_proxy_case(config, scenario, seed) :
+            evaluate_hypr_pso_baseline_case(config, scenario, seed)
     catch error
         failure(error)
     end

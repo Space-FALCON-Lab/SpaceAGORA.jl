@@ -17,4 +17,8 @@ Base.@kwdef mutable struct RPOGuidanceModel <: AbstractGuidanceModel
     last_replanning_time_s::Float64 = -Inf
     last_replanning_signature::UInt = UInt(0)
     replanning_persistence_count::Int = 0
+    replanning_phase::Symbol = :tracking
+    pending_replan::Any = nothing
+    hold_position_tolerance_m::Float64 = 0.02
+    hold_speed_tolerance_mps::Float64 = 0.002
 end

@@ -187,14 +187,16 @@ function rpo_chomp_obstacle_potential(clearance, safe_distance, margin)
     return 0.0
 end
 
-"""Accumulate soft obstacle cost over sampled trajectory points."""
+"""Accumulate soft obstacle cost from continuous capsule segment clearances."""
 function rpo_soft_obstacle_cost_from_samples(samples, geometry; safe_distance_m, obstacle_margin_m)
     n_samples = size(samples, 2)
     n_samples == 0 && return 0.0
 
     acc = 0.0
     for i in 1:n_samples
-        clearance = rpo_clearance_distance_to_station(samples[:, i], geometry)
+        clearance = rpo_capsule_clearance_to_station(
+            view(samples, :, max(1, i - 1)), view(samples, :, i), geometry,
+        )
         acc += rpo_chomp_obstacle_potential(clearance, safe_distance_m, obstacle_margin_m)
     end
     return acc / n_samples
@@ -367,7 +369,10 @@ function rpo_stomp_waypoint_state_cost(
 )
     point_idx = internal_idx + 1
     p = points[:, point_idx]
-    clearance = rpo_clearance_distance_to_station(p, geometry)
+    clearance = min(
+        rpo_capsule_clearance_to_station(view(points, :, point_idx - 1), p, geometry),
+        rpo_capsule_clearance_to_station(p, view(points, :, point_idx + 1), geometry),
+    )
     obs = rpo_chomp_obstacle_potential(clearance, safe_distance_m, obstacle_margin_m)
     local_len = norm(p - points[:, point_idx - 1]) + norm(points[:, point_idx + 1] - p)
     d2 = points[:, point_idx - 1] .- 2.0 .* p .+ points[:, point_idx + 1]

@@ -38,10 +38,15 @@ function hypr_bezier_point!(out, work, points, t::Float64)
     work[:, 1:n] .= points
     @inbounds for r in 1:(n - 1)
         for j in 1:(n - r)
-            work[:, j] .= (1 - t) .* work[:, j] .+ t .* work[:, j + 1]
+            for axis in axes(work, 1)
+                work[axis, j] =
+                    (1.0 - t) * work[axis, j] + t * work[axis, j + 1]
+            end
         end
     end
-    out .= work[:, 1]
+    @inbounds for axis in axes(work, 1)
+        out[axis] = work[axis, 1]
+    end
     return out
 end
 

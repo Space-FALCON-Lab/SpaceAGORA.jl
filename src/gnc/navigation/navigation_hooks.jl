@@ -5,7 +5,7 @@ module NavigationHooks
     export calcNavigationEffect!
     export RPOStationGeometry, RPOCubeSatGeometry, RPOReferenceGeometry
     export nearest_station_distance_sq, nearest_station_point
-    export rpo_clearance_distance_to_station, rpo_clearance_to_station, rpo_path_clearance_stats
+    export rpo_clearance_distance_to_station, rpo_clearance_to_station, rpo_path_clearance_stats, rpo_capsule_clearance_to_station
     export rpo_surface_normal_from_pointcloud, rpo_goal_standoff_point
 
     """

@@ -21,8 +21,14 @@ function rpo_probe_geometry_metrics(start_rtn, goal_rtn, geometry; sample_ds_m::
     )
 end
 
-"""Adjust an RPO PSO config based on quick geometry-probe metrics."""
-function rpo_adaptive_pso_config(base::RPOPSOConfig, start_rtn, goal_rtn, geometry; safe_distance_m::Real=0.0)
+"""Adjust an RPO PSO config using RRT detour and accumulated search iterations."""
+function rpo_adaptive_pso_config(
+    base::RPOPSOConfig, start_rtn, goal_rtn, geometry;
+    safe_distance_m::Real=0.0,
+    rrt_path=nothing,
+    rrt_diagnostics=nothing,
+    rng=Random.default_rng(),
+)
     dist = norm(SVector{3, Float64}(goal_rtn) - SVector{3, Float64}(start_rtn))
     if !base.adaptive_enable
         return validate_rpo_pso_config(base), (distance_m=dist, complexity=0.0, explore=0.0, enabled=false)
@@ -35,10 +41,27 @@ function rpo_adaptive_pso_config(base::RPOPSOConfig, start_rtn, goal_rtn, geomet
         sample_ds_m=base.sample_ds_m,
         safe_distance_m=safe_distance_m,
     )
-    dist_norm = clamp(dist / max(base.cost_ref_distance_m, 1.0e-6), 0.0, 1.0)
-    weight_sum = max(base.adaptive_complexity_weight + base.adaptive_distance_weight, 1.0e-9)
+    if rrt_diagnostics === nothing || !rrt_diagnostics.attempted
+        # Probe once when no warm-start result is available, even if seeding is disabled.
+        probe_cfg = rpo_pso_config(base; rrt_warmstart_enable=true)
+        rrt_path, rrt_diagnostics = rpo_pso_rrt_warmstart_path(
+            start_rtn, goal_rtn, geometry, probe_cfg, safe_distance_m, rng,
+        )
+    end
+    detour_ratio = if rrt_diagnostics.path_found
+        path_length = rpo_path_length(rrt_path)
+        max(1.0, path_length / max(dist, 1.0e-6))
+    else
+        Inf
+    end
+    detour = clamp(detour_ratio - 1.0, 0.0, 1.0)
+    # Each iteration adds a fixed fraction of the remaining headroom. The
+    # 100-iteration scale is independent of the RRT termination budget.
+    search_effort = rrt_diagnostics.path_found ?
+        -expm1(-max(rrt_diagnostics.iterations, 0) / 100.0) : 1.0
+    weight_sum = max(base.adaptive_detour_weight + base.adaptive_search_effort_weight, 1.0e-9)
     explore = clamp(
-        (base.adaptive_complexity_weight * complexity + base.adaptive_distance_weight * dist_norm) / weight_sum,
+        (base.adaptive_detour_weight * detour + base.adaptive_search_effort_weight * search_effort) / weight_sum,
         0.0,
         1.0,
     )
@@ -62,7 +85,7 @@ function rpo_adaptive_pso_config(base::RPOPSOConfig, start_rtn, goal_rtn, geomet
         (base.adaptive_effort_max_fraction - base.adaptive_effort_min_fraction) * explore
     cfg = rpo_pso_config(
         base;
-        n_waypoints=clamp(Int(round(base.n_waypoints + base.adaptive_waypoint_gain * complexity)), n_waypoints_min, n_waypoints_max),
+        n_waypoints=clamp(Int(round(base.n_waypoints + base.adaptive_waypoint_gain * explore)), n_waypoints_min, n_waypoints_max),
         n_particles=clamp(Int(round(base.n_particles * effort_scale)), n_particles_min, n_particles_max),
         n_iters=clamp(Int(round(base.n_iters * effort_scale)), n_iters_min, n_iters_max),
         w_len=clamp(base.w_len * (1.25 - 0.5 * complexity), base.adaptive_w_len_min, base.adaptive_w_len_max),
@@ -72,5 +95,8 @@ function rpo_adaptive_pso_config(base::RPOPSOConfig, start_rtn, goal_rtn, geomet
         c2=clamp(1.2 + 0.8 * explore, base.adaptive_c2_min, base.adaptive_c2_max),
         spread_scale=clamp(base.spread_scale * (0.75 + explore), base.adaptive_spread_scale_min, base.adaptive_spread_scale_max),
     )
-    return validate_rpo_pso_config(cfg), (distance_m=dist, complexity=complexity, explore=explore, enabled=true)
+    return validate_rpo_pso_config(cfg), (
+        distance_m=dist, complexity=complexity, explore=explore, enabled=true,
+        detour_ratio=detour_ratio, detour=detour, search_effort=search_effort,
+    )
 end

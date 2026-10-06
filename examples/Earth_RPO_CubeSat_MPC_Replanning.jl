@@ -45,6 +45,60 @@ function _rpo_replanning_progress_line!(label::AbstractString, completed::Intege
     return nothing
 end
 
+"""
+Scenario generation for the replanning runner (defaults below may be overridden).
+Events are constructed separately from each planner's initial reference. Let
+T = max(reference duration, retiming time step), s = safe_distance_m (runner
+default 0.25 m), and b = station keepout radius + maximum chaser half-extent.
+All added obstacles are stationary spheres of radius 0.22 m. Path fractions
+select rounded indices in the spatially sampled path, not fractions of time.
+Except for directly_ahead, centers are offset along a deterministic local path
+normal until min_j(norm(path[:, j] - center) - 0.22 - b) equals the clearance
+below. Appearance times are fixed fractions of T, not random draws:
+
+| Scenario | Path fraction | Appears at | Target buffered clearance |
+|:--|:--|:--|:--|
+| far_obstacle | 0.40 | 0.20 T | s + 5.10 m |
+| near_path_feasible | 0.45 | 0.20 T | s + 0.08 m |
+| partial_block | 0.45 | 0.20 T | 0.20 s |
+| behind_vehicle | 0.12 | 0.55 T | 0 m |
+| sensor_noise_false_positive | 0.42 | 0.18 T | -0.05 m |
+
+The false positive disappears at 0.20 T; other spheres persist. directly_ahead
+appears at 0.12 T, centered on the first path sample at/after fraction 0.25
+whose distance from the reference position at fraction 0.25 is at least
+0.22 + b + s + 0.15 m (last sample if none qualifies). All sphere centers are
+then adjusted if needed to preserve obstacle_endpoint_clearance_m (default s)
+from both original endpoints; this can change the target path clearance.
+Decisions are evaluated at 0.25 T, except behind_vehicle (0.58 T), the false
+positive (0.21 T), the goal change (0.46 T), and displacements (0.30 T).
+
+The changed goal uses MersenneTwister(case_seed + 10_000): choose a Gateway CAD
+triangle proportional to area, sample uniformly on it, and offset along its
+outward normal by b + U(s + 0.05, 1.0) m (default shell 0.30--1.0 m).
+Reject insufficient station clearance and surrounded endpoints (2 m test
+radius); require at least 5 m from both the original start and original goal.
+Thus the goal-change magnitude is at least 5 m by default, with no explicit
+upper bound; the station geometry and sampling shell bound it. The runner
+passes these limits explicitly, overriding the sampling helper's defaults.
+
+At reference-sample fraction 0.30, displacement cases request offsets of
+0.95 m (retime) or 1.35 m (replan). A deterministic search tries 24 magnitudes
+from that value down to zero along geometry-derived outward/normal directions,
+requiring station clearance >= s + 1e-6 m and nearest-reference-sample distance
+> 0.75 or 1.10 m, respectively. If unattainable, it keeps the safe candidate
+with greatest tracking error (or the original reference position), and the
+runner lowers the corresponding trigger to 95% of the achieved error.
+These are requested offsets, not fixed achieved displacements or random draws.
+
+Distance convention: obstacle feasibility uses the minimum Euclidean distance
+from sampled chaser-center positions to the obstacle center, minus sphere
+radius and b: clearance from the inflated obstacle boundary. A 0.5 m value
+of safe_distance_m would mean 0.5 m beyond that boundary, not distance traveled
+or distance from the goal; the current runner default is 0.25 m. There is no
+separate "feasible replan distance" parameter. Tracking-error thresholds instead
+measure current chaser-center distance to the nearest reference position sample.
+"""
 function rpo_replanning_scenario_specs()
     return [
         (id=:baseline_static_map, label="Baseline static map", expected_action=:none),
@@ -148,6 +202,17 @@ function _rpo_replanning_endpoint_safe_center(demo, center, radius, safe_distanc
         end
         adjusted += (target - min_clearance) .* (direction ./ max(norm(direction), 1.0e-9))
     end
+    # Alternating endpoint corrections can stall when their exclusion regions overlap.
+    # A perpendicular offset from the midpoint is at least this far from both endpoints.
+    midpoint = 0.5 .* (endpoints[1] + endpoints[2])
+    tangent = endpoints[2] - endpoints[1]
+    norm(tangent) < 1.0e-9 && (tangent = SVector{3, Float64}(1.0, 0.0, 0.0))
+    tangent = tangent ./ norm(tangent)
+    axis = abs(tangent[3]) < 0.9 ? SVector{3, Float64}(0.0, 0.0, 1.0) : SVector{3, Float64}(0.0, 1.0, 0.0)
+    normal = normalize(cross(tangent, axis))
+    dot(adjusted - midpoint, normal) < 0.0 && (normal = -normal)
+    adjusted = midpoint + (Float64(radius) + _rpo_replanning_endpoint_buffer(demo) + target) .* normal
+    @assert all(_rpo_replanning_sphere_endpoint_clearance(demo, adjusted, radius, endpoint) >= safe_distance_m for endpoint in endpoints)
     return adjusted
 end
 
@@ -298,10 +363,13 @@ function rpo_replanning_case_config(
     demo,
     spec;
     safe_distance_m=0.1,
+    obstacle_endpoint_clearance_m=safe_distance_m,
     desired_goal_rtn=nothing,
     tracking_error_retime_m_override=nothing,
     tracking_error_replan_m_override=nothing,
 )
+    isfinite(obstacle_endpoint_clearance_m) && obstacle_endpoint_clearance_m >= safe_distance_m ||
+        throw(ArgumentError("obstacle_endpoint_clearance_m must be finite and >= safe_distance_m."))
     radius = 0.22
     retime_clearance = safe_distance_m + 0.10
     near_feasible_clearance = safe_distance_m + 0.80 * (retime_clearance - safe_distance_m)
@@ -363,7 +431,7 @@ function rpo_replanning_case_config(
     tracking_error_retime_m_override !== nothing && (tracking_error_retime_m = Float64(tracking_error_retime_m_override))
     tracking_error_replan_m_override !== nothing && (tracking_error_replan_m = Float64(tracking_error_replan_m_override))
 
-    spheres = [_rpo_replanning_endpoint_safe_sphere(demo, sphere, safe_distance_m) for sphere in spheres]
+    spheres = [_rpo_replanning_endpoint_safe_sphere(demo, sphere, obstacle_endpoint_clearance_m) for sphere in spheres]
 
     return RPO_HYPR.RPOReplanningConfig(
         enabled=true,
@@ -475,8 +543,9 @@ function _rpo_replanning_changed_path(
     elseif decision.action == :replan
         target_goal = _rpo_replanning_target_goal(demo, config)
         rng = MersenneTwister(Int(case_seed) + 1009 * Int(planner_index))
-        if planner == :hypr
+        if planner in (:hypr, :pso_unrefined)
             replan_cfg = RPO_HYPR.rpo_pso_config(demo.pso_config; rrt_warmstart_enable=true)
+            planner == :pso_unrefined && (replan_cfg = RPO_HYPR.rpo_pso_config(replan_cfg; refinement_enable=false))
             result = RPO_HYPR.rpo_pso_plan_path(
                 SVector{3, Float64}(current),
                 target_goal,
@@ -493,9 +562,10 @@ function _rpo_replanning_changed_path(
                 planner_iteration_count=length(result.cost_history),
                 planner_cost=result.cost,
             )
-        elseif planner == :rrt_connect
-            replan_cfg = RPO_HYPR.rpo_pso_config(demo.pso_config; curve_type=:polyline)
-            result = RPO_HYPR.rpo_rrt_connect_plan_path(
+        elseif planner in (:rrt_connect, :rrt_connect_bezier)
+            replan_cfg = RPO_HYPR.rpo_pso_config(demo.pso_config; curve_type=planner == :rrt_connect_bezier ? :bezier : :polyline)
+            plan_path = planner == :rrt_connect_bezier ? RPO_HYPR.rpo_rrt_connect_bezier_plan_path : RPO_HYPR.rpo_rrt_connect_plan_path
+            result = plan_path(
                 SVector{3, Float64}(current),
                 target_goal,
                 decision.geometry,
@@ -543,13 +613,69 @@ function _rpo_replanning_changed_path(
     )
 end
 
-function _rpo_replanning_tracking_metrics(demo, config, decision, target_goal, path; tracking_settings, goal_tolerance_m::Real)
+"""Propagate braking and station keeping, including measured planner latency, before release."""
+function _rpo_replanning_hold(demo, config, decision, x, t_eval, tracking, planner)
+    model = SimulationModel.GuidanceModels.RPOGuidanceModel(
+        goal_rtn=SVector{3, Float64}(_rpo_replanning_target_goal(demo, config)),
+        geometry=demo.geometry, pso_config=demo.pso_config, replanning_config=config)
+    RPO_HYPR._rpo_begin_replanning_hold!(model, x[1:3], decision, t_eval)
+    ctrl = RPO_HYPR.rpo_tracking_controller(tracking)
+    plant = RPO_HYPR.rpo_init_two_body_plant(x, tracking.mean_motion_radps)
+    x = Vector{Float64}(x)
+    elapsed = 0.0
+    fuel_used = 0.0
+    min_clearance = Inf
+    violations = 0
+    planning_delay = 0.0
+    braking_duration = NaN
+    geometry = decision.geometry
+    signature = RPO_HYPR.rpo_replanning_signature(decision.spheres)
+    # A failure to settle is a failed case, never a teleport to a stationary state.
+    while model.replanning_phase in (:braking, :planning)
+        t = t_eval + elapsed
+        RPO_HYPR._rpo_advance_replanning_hold!(model, x, t; planner=planner)
+        if model.replanning_phase == :planning && isnan(braking_duration)
+            braking_duration = elapsed
+            planning_delay = model.pending_replan.runtime_s
+        end
+        model.replanning_phase in (:tracking, :hold_failed) && break
+        if elapsed > 120.0 + planning_delay
+            model.replanning_phase = :hold_failed
+            break
+        end
+        ref = RPO_HYPR._control_module().rpo_ref_preview(model.plan_buffer.plan,
+            t - model.plan_buffer.updated_at_s, tracking.dt_s, tracking.horizon)
+        accel = RPO_HYPR._control_module().rpo_lqmpc_control(ctrl, x, ref)
+        before = copy(x[1:3])
+        x .= RPO_HYPR.rpo_step_two_body!(plant, accel, tracking.dt_s)
+        elapsed += tracking.dt_s
+        fuel_used += tracking.mass_kg * sum(abs, accel) * tracking.dt_s / (tracking.isp_s * tracking.g0_mps2)
+        spheres = RPO_HYPR.rpo_active_replanning_spheres(config, t_eval + elapsed)
+        next_signature = RPO_HYPR.rpo_replanning_signature(spheres)
+        if next_signature != signature
+            geometry = RPO_HYPR.rpo_geometry_with_replanning_spheres(demo.geometry, spheres;
+                sphere_surface_samples=config.sphere_surface_samples)
+            signature = next_signature
+        end
+        clearance = RPO_HYPR.rpo_capsule_clearance_to_station(before, x[1:3], geometry)
+        min_clearance = min(min_clearance, clearance)
+        violations += clearance + demo.pso_config.clearance_feasibility_tol_m < config.safe_distance_m
+    end
+    return (state=x, elapsed_s=elapsed, braking_duration_s=braking_duration,
+        planning_delay_s=planning_delay, fuel_used=fuel_used, min_clearance=min_clearance,
+        keepout_violations=violations, released=model.replanning_phase == :tracking,
+        plan=model.plan_buffer.plan)
+end
+
+function _rpo_replanning_tracking_metrics(demo, config, decision, target_goal, path; tracking_settings, goal_tolerance_m::Real, initial_state_rtn=nothing, reference_plan=nothing)
     size(path, 2) > 0 || return (
         success=false,
         fuel_used=NaN,
         fuel_used_pct=NaN,
         planned_travel_duration=NaN,
         actual_travel_duration=NaN,
+        keepout_violations=0,
+        min_clearance=Inf,
     )
     tracking = RPO_HYPR.RPOLQMPCTrackingSettings(
         dt_s=tracking_settings.dt_s,
@@ -575,6 +701,8 @@ function _rpo_replanning_tracking_metrics(demo, config, decision, target_goal, p
         demo.pso_config,
         tracking;
         safe_distance_m=config.safe_distance_m,
+        initial_state_rtn=initial_state_rtn,
+        reference_plan=reference_plan,
     )
 end
 
@@ -591,8 +719,9 @@ function _rpo_replanning_baseline_for_planner(
     start = SVector{3, Float64}(demo.initial_relative_state_rtn[1:3])
     goal = SVector{3, Float64}(demo.goal_rtn)
     rng = MersenneTwister(Int(case_seed) + 50_000 + 1009 * Int(planner_index))
-    if planner == :hypr
+    if planner in (:hypr, :pso_unrefined)
         base_cfg = RPO_HYPR.rpo_pso_config(demo.pso_config)
+        planner == :pso_unrefined && (base_cfg = RPO_HYPR.rpo_pso_config(base_cfg; refinement_enable=false))
         runtime_s = @elapsed result = RPO_HYPR.rpo_pso_plan_path(
             start,
             goal,
@@ -603,9 +732,10 @@ function _rpo_replanning_baseline_for_planner(
         )
         path_found = true
         iteration_count = length(result.cost_history)
-    elseif planner == :rrt_connect
-        base_cfg = RPO_HYPR.rpo_pso_config(demo.pso_config; curve_type=:polyline)
-        runtime_s = @elapsed result = RPO_HYPR.rpo_rrt_connect_plan_path(
+    elseif planner in (:rrt_connect, :rrt_connect_bezier)
+        base_cfg = RPO_HYPR.rpo_pso_config(demo.pso_config; curve_type=planner == :rrt_connect_bezier ? :bezier : :polyline)
+        plan_path = planner == :rrt_connect_bezier ? RPO_HYPR.rpo_rrt_connect_bezier_plan_path : RPO_HYPR.rpo_rrt_connect_plan_path
+        runtime_s = @elapsed result = plan_path(
             start,
             goal,
             demo.geometry,
@@ -925,16 +1055,17 @@ function _run_rpo_cubesat_mpc_replanning_cases(;
     print_pso_costs::Bool=false,
     pso_iteration_runtime_limit_s::Real=_rpo_replanning_env_float("SPACEAGORA_RPO_REPLANNING_PSO_ITERATION_LIMIT", 10.0),
     safe_distance_m::Real=RPO_HYPR.RPO_PLANNER_COMPARISON_SAFE_DISTANCE_M,
+    obstacle_endpoint_clearance_m::Real=safe_distance_m,
     endpoint_clearance_margin_m::Real=_rpo_replanning_env_float("SPACEAGORA_RPO_COMPARISON_ENDPOINT_CLEARANCE_MARGIN", 0.05),
     endpoint_max_clearance_m::Real=_rpo_replanning_env_float("SPACEAGORA_RPO_COMPARISON_ENDPOINT_MAX_CLEARANCE", 1.0),
-    min_separation_m::Real=_rpo_replanning_env_float("SPACEAGORA_RPO_COMPARISON_MIN_SEPARATION", 1.5),
+    min_separation_m::Real=_rpo_replanning_env_float("SPACEAGORA_RPO_COMPARISON_MIN_SEPARATION", 5.0),
     surrounded_max_distance_m::Real=_rpo_replanning_env_float("SPACEAGORA_RPO_COMPARISON_SURROUNDED_MAX_DISTANCE", 2.0),
     max_sampling_tries::Integer=_rpo_replanning_env_int("SPACEAGORA_RPO_COMPARISON_MAX_SAMPLING_TRIES", 4000),
     goal_tolerance_m::Real=_rpo_replanning_env_float("SPACEAGORA_RPO_REPLANNING_GOAL_TOL", _rpo_replanning_smoke_mode() ? 0.75 : _rpo_replanning_env_float("SPACEAGORA_RPO_COMPARISON_MPC_FINAL_TOL", 0.25)),
     planners=RPO_REPLANNING_DEFAULT_PLANNERS,
-    rrt_connect_iters::Integer=_rpo_replanning_smoke_mode() ? 25 : _rpo_replanning_env_int("SPACEAGORA_RPO_COMPARISON_RRT_CONNECT_ITERS", 1000),
+    rrt_connect_iters::Integer=_rpo_replanning_smoke_mode() ? 25 : _rpo_replanning_env_int("SPACEAGORA_RPO_COMPARISON_RRT_CONNECT_ITERS", 25_000),
     rrt_connect_step_size_m::Real=_rpo_replanning_env_float("SPACEAGORA_RPO_COMPARISON_RRT_CONNECT_STEP_SIZE", 0.75),
-    rrt_star_iters::Integer=_rpo_replanning_smoke_mode() ? 25 : _rpo_replanning_env_int("SPACEAGORA_RPO_COMPARISON_RRT_STAR_ITERS", rrt_connect_iters),
+    rrt_star_iters::Integer=_rpo_replanning_smoke_mode() ? 25 : _rpo_replanning_env_int("SPACEAGORA_RPO_COMPARISON_RRT_STAR_ITERS", 1000),
     rrt_star_step_size_m::Real=_rpo_replanning_env_float("SPACEAGORA_RPO_COMPARISON_RRT_STAR_STEP_SIZE", rrt_connect_step_size_m),
     rrt_star_neighbor_radius_m::Real=_rpo_replanning_env_float("SPACEAGORA_RPO_COMPARISON_RRT_STAR_NEIGHBOR_RADIUS", 2.0),
     planner_runtime_limit_s::Real=_rpo_replanning_env_float("SPACEAGORA_RPO_COMPARISON_RUNTIME_LIMIT_S", 30.0),
@@ -949,6 +1080,8 @@ function _run_rpo_cubesat_mpc_replanning_cases(;
     mpc_settle_time_s::Real=_rpo_replanning_smoke_mode() ? 2.0 : _rpo_replanning_env_float("SPACEAGORA_RPO_COMPARISON_MPC_SETTLE_TIME", 30.0),
 )
     n_cases >= 1 || throw(ArgumentError("n_cases must be >= 1."))
+    isfinite(obstacle_endpoint_clearance_m) && obstacle_endpoint_clearance_m >= safe_distance_m ||
+        throw(ArgumentError("obstacle_endpoint_clearance_m must be finite and >= safe_distance_m."))
     planner_symbols = _rpo_replanning_planner_symbols(planners)
     if match_hypr_runtime && (:hypr in planner_symbols)
         planner_symbols = vcat([:hypr], [planner for planner in planner_symbols if planner != :hypr])
@@ -1088,7 +1221,7 @@ function _run_rpo_cubesat_mpc_replanning_cases(;
                         max_sampling_tries=max_sampling_tries,
                     ) :
                     nothing
-                config = rpo_replanning_case_config(planner_demo, spec; safe_distance_m=safe_distance_m, desired_goal_rtn=desired_goal)
+                config = rpo_replanning_case_config(planner_demo, spec; safe_distance_m=safe_distance_m, obstacle_endpoint_clearance_m=obstacle_endpoint_clearance_m, desired_goal_rtn=desired_goal)
                 current, t_eval = _rpo_replanning_eval_state(planner_demo, spec; safe_distance_m=config.safe_distance_m)
                 tracking_error = RPO_HYPR.rpo_reference_tracking_error(planner_demo.initial_plan, current)
                 tracking_error_retime_m_override = nothing
@@ -1103,6 +1236,7 @@ function _run_rpo_cubesat_mpc_replanning_cases(;
                         planner_demo,
                         spec;
                         safe_distance_m=safe_distance_m,
+                        obstacle_endpoint_clearance_m=obstacle_endpoint_clearance_m,
                         desired_goal_rtn=desired_goal,
                         tracking_error_retime_m_override=tracking_error_retime_m_override,
                         tracking_error_replan_m_override=tracking_error_replan_m_override,
@@ -1129,11 +1263,44 @@ function _run_rpo_cubesat_mpc_replanning_cases(;
                     planner_cost=NaN,
                 )
                 changed_path_time_s = 0.0
+                velocity_idx = clamp(searchsortedlast(planner_demo.initial_plan.t_ref_s, t_eval), 1,
+                    size(planner_demo.initial_plan.v_ref_rtn, 2))
+                tracking_state = vcat(current, planner_demo.initial_plan.v_ref_rtn[:, velocity_idx])
+                hold = nothing
+                tracking_plan = nothing
                 effective_planner_runtime_limit_s = planner_runtime_limit_s
                 if decision.action == :replan && match_hypr_runtime && planner != :hypr && isfinite(hypr_replan_runtime_s)
                     effective_planner_runtime_limit_s = hypr_replan_runtime_s
                 end
-                if decision.action in (:retime, :replan)
+                if decision.action == :replan
+                    build_held_plan = function (model, start, geometry, t; kwargs...)
+                        update = merge(update, (planner_executed=true, planner_path_found=false))
+                        held_decision = merge(decision, (geometry=geometry,))
+                        update = _rpo_replanning_changed_path(
+                            planner_demo, config, held_decision, start, t, case_seed;
+                            planner=planner, planner_index=planner_index,
+                            pso_iteration_callback=pso_replan_callback,
+                            rrt_connect_settings=rrt_connect_settings,
+                            rrt_star_settings=rrt_star_settings,
+                            planner_runtime_limit_s=effective_planner_runtime_limit_s)
+                        update.planner_path_found || error("Planner did not find a replacement path.")
+                        return RPO_HYPR.rpo_plan_from_path(update.path, geometry,
+                            RPO_HYPR.rpo_pso_config(planner_demo.pso_config;
+                                retime_dt_s=tracking_settings.dt_s, curve_type=:polyline),
+                            config.safe_distance_m, t)
+                    end
+                    hold = _rpo_replanning_hold(planner_demo, config, decision, tracking_state,
+                        t_eval, tracking_settings, build_held_plan)
+                    changed_path_time_s = hold.planning_delay_s
+                    tracking_state = hold.state
+                    current = tracking_state[1:3]
+                    t_eval += hold.elapsed_s
+                    spheres = RPO_HYPR.rpo_active_replanning_spheres(config, t_eval)
+                    decision = merge(decision, (spheres=spheres,
+                        geometry=RPO_HYPR.rpo_geometry_with_replanning_spheres(planner_demo.geometry,
+                            spheres; sphere_surface_samples=config.sphere_surface_samples)))
+                    tracking_plan = hold.released ? hold.plan : nothing
+                elseif decision.action == :retime
                     changed_path_time_s = @elapsed update = _rpo_replanning_changed_path(
                         planner_demo,
                         config,
@@ -1153,6 +1320,14 @@ function _run_rpo_cubesat_mpc_replanning_cases(;
                     hypr_replan_runtime_s = changed_path_time_s
                 end
                 changed_path = update.path
+                if decision.action == :none
+                    # Continue the original reference from the trigger epoch, without a rest-to-rest rebuild.
+                    original = planner_demo.initial_plan
+                    tracking_plan = RPO_HYPR.RPOPlan(valid=true,
+                        t_ref_s=original.t_ref_s[velocity_idx:end] .- original.t_ref_s[velocity_idx],
+                        r_ref_rtn=original.r_ref_rtn[:, velocity_idx:end],
+                        v_ref_rtn=original.v_ref_rtn[:, velocity_idx:end])
+                end
                 result_metrics = _rpo_replanning_result_metrics(
                     planner_demo,
                     config,
@@ -1166,10 +1341,16 @@ function _run_rpo_cubesat_mpc_replanning_cases(;
                     config,
                     decision,
                     target_goal,
-                    result_metrics.path;
+                    hold !== nothing && !hold.released ? zeros(3, 0) : result_metrics.path;
                     tracking_settings=tracking_settings,
                     goal_tolerance_m=goal_tolerance_m,
+                    initial_state_rtn=tracking_state,
+                    reference_plan=tracking_plan,
                 )
+                hold_ok = hold === nothing || (hold.released && hold.keepout_violations == 0)
+                passed = result_metrics.passed && tracking_metrics.success && hold_ok
+                hold_fuel = hold === nothing ? 0.0 : hold.fuel_used
+                total_fuel = hold_fuel + tracking_metrics.fuel_used
                 plot_time_s = 0.0
                 plot_path = ""
                 if save_path_plots
@@ -1228,22 +1409,30 @@ function _run_rpo_cubesat_mpc_replanning_cases(;
                     result_min_clearance_m=result_metrics.min_result_clearance_m,
                     result_keepout_violations=result_metrics.result_keepout_violations,
                     result_goal_error_m=result_metrics.result_goal_error_m,
-                    safety_ok=result_metrics.safety_ok,
+                    safety_ok=result_metrics.safety_ok && tracking_metrics.keepout_violations == 0 && hold_ok,
                     goal_reached=result_metrics.goal_reached,
                     active_spheres=length(decision.spheres),
                     decision_runtime_s=decision_time_s,
                     changed_path_runtime_s=changed_path_time_s,
                     planner_runtime_s=changed_path_time_s,
+                    braking_duration_s=hold === nothing ? 0.0 : hold.braking_duration_s,
+                    simulated_planning_delay_s=hold === nothing || isnan(hold.braking_duration_s) ?
+                        0.0 : hold.elapsed_s - hold.braking_duration_s,
+                    brake_hold_duration_s=hold === nothing ? 0.0 : hold.elapsed_s,
+                    hold_released=hold === nothing || hold.released,
+                    hold_min_clearance_m=hold === nothing ? Inf : hold.min_clearance,
+                    hold_keepout_violations=hold === nothing ? 0 : hold.keepout_violations,
+                    hold_fuel_used_kg=hold_fuel,
                     planner_runtime_limit_s=effective_planner_runtime_limit_s,
                     match_hypr_runtime=match_hypr_runtime,
-                    fuel_used_kg=tracking_metrics.fuel_used,
-                    fuel_used_pct=tracking_metrics.fuel_used_pct,
+                    fuel_used_kg=total_fuel,
+                    fuel_used_pct=RPO_HYPR.rpo_lqmpc_tracking_fuel_used_pct(total_fuel, tracking_settings),
                     updated_path_duration_s=tracking_metrics.planned_travel_duration,
-                    actual_path_duration_s=tracking_metrics.actual_travel_duration,
-                    success_rate=result_metrics.passed ? 1.0 : 0.0,
+                    actual_path_duration_s=tracking_metrics.actual_travel_duration + (hold === nothing ? 0.0 : hold.elapsed_s),
+                    success_rate=passed ? 1.0 : 0.0,
                     plot_runtime_s=plot_time_s,
                     plot_path=plot_path,
-                    passed=result_metrics.passed,
+                    passed=passed,
                 ))
                 completed_rows += 1
                 show_progress && _rpo_replanning_progress_line!("RPO replanning cases", completed_rows, total_rows)
@@ -1253,6 +1442,11 @@ function _run_rpo_cubesat_mpc_replanning_cases(;
     mkpath(results_directory)
     df = DataFrame(rows)
     CSV.write(joinpath(results_directory, "rpo_replanning_cases.csv"), df)
+    delays = [row.simulated_planning_delay_s for row in rows if row.action == "replan" && row.simulated_planning_delay_s > 0.0]
+    if !isempty(delays)
+        @printf("\nSimulated planning delays: mean %.6f s, maximum %.6f s (%d replans).\n",
+            sum(delays) / length(delays), maximum(delays), length(delays))
+    end
     return (cases=cases, demos=demos, results=df, csv_path=joinpath(results_directory, "rpo_replanning_cases.csv"))
 end
 

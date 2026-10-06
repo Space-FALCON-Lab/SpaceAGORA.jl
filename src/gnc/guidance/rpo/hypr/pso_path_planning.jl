@@ -58,7 +58,7 @@ function rpo_pso_cull_swarm!(
     n_replace = min(cfg.n_particles - 1, floor(Int, cfg.cull_fraction_max * cfg.n_particles))
     n_replace <= 0 && return 0
     worst = sortperm(pbest_cost; rev=true)[1:n_replace]
-    if cfg.curve_type != :bezier || n_waypoints <= 0
+    if !(cfg.curve_type in (:bezier, :cubic_bezier)) || n_waypoints <= 0
         @inbounds for pidx in worst
             for d in axes(positions, 1)
                 span = hi_rep[d] - lo_rep[d]
@@ -180,7 +180,13 @@ end
     return accepted ? 0 : Int(count)
 end
 
-"""Run the RPO HYPR PSO planner and return the best path, cost, and diagnostics."""
+"""
+Run the RPO HYPR PSO planner and return the best path, cost, and diagnostics.
+`record_particle_mean=true` disables objective cost cutoffs and records the mean
+of all evaluated current particle costs before culling/replacement, including
+non-finite costs. This adds evaluation work; no swarm history exists for the
+zero-waypoint fast path. Partial evaluations on timeout retain `Inf` entries.
+"""
 function rpo_pso_plan_path(
     start_rtn,
     goal_rtn,
@@ -189,29 +195,71 @@ function rpo_pso_plan_path(
     safe_distance_m=nothing,
     rng=Random.default_rng(),
     iteration_callback=nothing,
+    swarm_callback=nothing,
+    record_particle_mean::Bool=false,
     objective_evaluator=nothing,
+    initial_path=nothing,
 )
     adaptive_safe_distance = safe_distance_m === nothing ||
         (Float64(safe_distance_m) == 0.0 && base_cfg.safe_distance_m > 0.0) ?
         base_cfg.safe_distance_m :
         Float64(safe_distance_m)
     base_cfg = rpo_pso_config(base_cfg; safe_distance_m=adaptive_safe_distance)
-    cfg, adaptive = rpo_adaptive_pso_config(base_cfg, start_rtn, goal_rtn, geometry; safe_distance_m=adaptive_safe_distance)
-    effective_safe_distance = rpo_pso_effective_safe_distance(cfg, safe_distance_m)
-    cfg = rpo_pso_config(cfg; safe_distance_m=effective_safe_distance)
+    effective_safe_distance = rpo_pso_effective_safe_distance(base_cfg, safe_distance_m)
+    cfg = rpo_pso_config(base_cfg; safe_distance_m=effective_safe_distance)
 
     start = SVector{3, Float64}(start_rtn)
     goal = SVector{3, Float64}(goal_rtn)
     current_n_waypoints = max(0, cfg.n_waypoints)
-    warmstart_path, warmstart = current_n_waypoints > 0 ?
-        rpo_pso_rrt_warmstart_path(start, goal, geometry, cfg, effective_safe_distance, rng) :
-        (nothing, rpo_pso_empty_warmstart_diagnostics(cfg))
-    if warmstart_path !== nothing && cfg.curve_type == :bezier
+    if current_n_waypoints == 0 && !cfg.adaptive_enable
+        warmstart_path, warmstart =
+            nothing, rpo_pso_empty_warmstart_diagnostics(cfg)
+    elseif initial_path === nothing
+        warmstart_path, warmstart = rpo_pso_rrt_warmstart_path(
+            start, goal, geometry, cfg, effective_safe_distance, rng,
+        )
+    else
+        warmstart_path = Matrix{Float64}(initial_path)
+        size(warmstart_path, 1) == 3 || throw(DimensionMismatch(
+            "initial_path must have three rows",
+        ))
+        size(warmstart_path, 2) >= 2 || throw(DimensionMismatch(
+            "initial_path must contain at least start and goal",
+        ))
+        warmstart_path[:, 1] .= start
+        warmstart_path[:, end] .= goal
+        warmstart = (
+            enabled=true,
+            attempted=true,
+            path_found=true,
+            iterations=0,
+            cost=NaN,
+            raw_cost=NaN,
+            n_points=size(warmstart_path, 2),
+        )
+    end
+    cfg, adaptive = rpo_adaptive_pso_config(
+        cfg, start, goal, geometry;
+        safe_distance_m=effective_safe_distance,
+        rrt_path=warmstart_path,
+        rrt_diagnostics=warmstart,
+        rng=rng,
+    )
+    current_n_waypoints = max(0, cfg.n_waypoints)
+    if warmstart_path !== nothing && cfg.curve_type in (:bezier, :cubic_bezier)
         warmstart_waypoints = max(0, size(warmstart_path, 2) - 2)
-        warmstart_cap = cfg.reexplore_max_waypoints > 0 ?
-            max(current_n_waypoints, cfg.reexplore_max_waypoints) :
-            max(current_n_waypoints, warmstart_waypoints)
-        current_n_waypoints = min(max(current_n_waypoints, warmstart_waypoints), warmstart_cap)
+        if cfg.curve_type == :cubic_bezier
+            # Retain the collision-free RRT guide knots. The cubic sampler
+            # rounds each corner only as far as its keepout clearance allows.
+            current_n_waypoints = max(current_n_waypoints, warmstart_waypoints)
+        else
+            warmstart_cap = cfg.reexplore_max_waypoints > 0 ?
+                max(current_n_waypoints, cfg.reexplore_max_waypoints) :
+                max(current_n_waypoints, warmstart_waypoints)
+            current_n_waypoints = min(
+                max(current_n_waypoints, warmstart_waypoints), warmstart_cap,
+            )
+        end
         cfg = rpo_pso_config(cfg; n_waypoints=current_n_waypoints)
     end
     if current_n_waypoints == 0
@@ -237,8 +285,13 @@ function rpo_pso_plan_path(
             iteration_timeout_iter=0,
             iteration_timeout_phase=:none,
             iteration_timeout_events=NamedTuple[],
+            warmstart_path=warmstart_path,
+            initial_seed_path=path,
             warmstart=warmstart,
             cost_history=[comps.total],
+            particle_mean_cost_history=Float64[],
+            particle_finite_mean_cost_history=Float64[],
+            particle_invalid_fraction_history=Float64[],
         )
     end
 
@@ -255,7 +308,12 @@ function rpo_pso_plan_path(
     gbest = zeros(dim)
     gbest_cost = Inf
     gbest_components = nothing
+    best_feasible_path = nothing
+    best_feasible_cost = Inf
     cost_history = Float64[]
+    particle_mean_cost_history = Float64[]
+    particle_finite_mean_cost_history = Float64[]
+    particle_invalid_fraction_history = Float64[]
     early_stop_best_cost = Inf
     early_stop_stale_iters = 0
     early_stop_iter = 0
@@ -279,6 +337,17 @@ function rpo_pso_plan_path(
     # Record the global-best cost and invoke the optional iteration callback.
     function record_iteration!(iter)
         push!(cost_history, gbest_cost)
+        if record_particle_mean
+            finite_costs = filter(isfinite, curr_cost)
+            push!(particle_mean_cost_history, sum(curr_cost) / length(curr_cost))
+            push!(particle_finite_mean_cost_history,
+                isempty(finite_costs) ? NaN : sum(finite_costs) / length(finite_costs))
+            push!(particle_invalid_fraction_history, 1.0 - length(finite_costs) / length(curr_cost))
+        end
+        swarm_callback !== nothing && swarm_callback(
+            iter, pbest, pbest_cost, gbest, gbest_cost, start, goal,
+            current_n_waypoints, cfg,
+        )
         iteration_callback !== nothing && iteration_callback(iter, gbest_cost, gbest_components)
         return nothing
     end
@@ -317,7 +386,38 @@ function rpo_pso_plan_path(
             samples = seed_curve_type == :bezier ?
                 rpo_sample_path(seed_points, local_cfg.sample_ds_m; curve_type=:bezier) :
                 rpo_sample_path_polyline(seed_points, local_cfg.sample_ds_m)
-            seeded = rpo_fit_bezier_fixed_endpoints(samples, n_waypoints + 2, local_cfg)
+            if seed_curve_type == :bezier
+                seeded = rpo_fit_bezier_fixed_endpoints(
+                    samples, n_waypoints + 2, local_cfg,
+                )
+            else
+                repaired = rpo_fit_bezier_clearance_preserving(
+                    samples,
+                    n_waypoints + 2,
+                    geometry,
+                    local_cfg;
+                    safe_distance_m=effective_safe_distance,
+                )
+                seeded = repaired.path
+            end
+        elseif local_cfg.curve_type == :cubic_bezier
+            if seed_curve_type == :cubic_bezier
+                samples = rpo_sample_path(
+                    seed_points,
+                    local_cfg,
+                    geometry;
+                    safe_distance_m=effective_safe_distance,
+                    base_ds_m=local_cfg.sample_ds_m,
+                    curve_type=:cubic_bezier,
+                )
+                seeded = rpo_resample_polyline_points(samples, n_waypoints + 2)
+            elseif size(seed_points, 2) == n_waypoints + 2
+                seeded = Matrix{Float64}(seed_points)
+            else
+                seeded = rpo_resample_polyline_points(
+                    seed_points, n_waypoints + 2,
+                )
+            end
         else
             seeded = rpo_resample_polyline_points(seed_points, n_waypoints + 2)
         end
@@ -341,9 +441,6 @@ function rpo_pso_plan_path(
             rpo_pso_warmstart_bounds(seed_points, local_cfg) :
             rpo_pso_bounds(start, goal, local_cfg)
         dim = 3 * current_n_waypoints
-        lo_rep = repeat(collect(lo), current_n_waypoints)
-        hi_rep = repeat(collect(hi), current_n_waypoints)
-        span_rep = hi_rep .- lo_rep
         positions = zeros(dim, cfg.n_particles)
         velocities = zeros(dim, cfg.n_particles)
         pbest = zeros(dim, cfg.n_particles)
@@ -362,6 +459,16 @@ function rpo_pso_plan_path(
             base[offset + 2] = seeded[2, j + 1]
             base[offset + 3] = seeded[3, j + 1]
         end
+        lo_rep = repeat(collect(lo), current_n_waypoints)
+        hi_rep = repeat(collect(hi), current_n_waypoints)
+        if use_warmstart_bounds && local_cfg.curve_type == :bezier
+            margin = local_cfg.rrt_warmstart_box_margin_m
+            @inbounds for d in 1:dim
+                lo_rep[d] = min(lo_rep[d], base[d] - margin)
+                hi_rep[d] = max(hi_rep[d], base[d] + margin)
+            end
+        end
+        span_rep = hi_rep .- lo_rep
         @inbounds for pidx in 1:cfg.n_particles
             for d in 1:dim
                 if pidx == 1
@@ -387,16 +494,16 @@ function rpo_pso_plan_path(
             geometry,
             cfg;
             safe_distance_m=effective_safe_distance,
-            cost_cutoff=cost_cutoff,
+            cost_cutoff=record_particle_mean ? Inf : cost_cutoff,
             objective_evaluator=objective_evaluator,
         )
     end
 
-    # Update particle-best and global-best state from one candidate evaluation.
-    function update_swarm_best_from_components!(pidx, comps)
+    # Keep the evaluated position and its components paired when updating best state.
+    function update_swarm_best_from_components!(pidx, evaluated_position, comps)
         if comps.total < pbest_cost[pidx]
             for d in 1:dim
-                pbest[d, pidx] = positions[d, pidx]
+                pbest[d, pidx] = evaluated_position[d]
             end
             pbest_cost[pidx] = comps.total
             pbest_obs[pidx] = comps.J_obs
@@ -406,10 +513,18 @@ function rpo_pso_plan_path(
         end
         if comps.total < gbest_cost
             for d in 1:dim
-                gbest[d] = positions[d, pidx]
+                gbest[d] = evaluated_position[d]
             end
             gbest_cost = comps.total
             gbest_components = comps
+        end
+        feasible = comps.violation_count == 0 && isfinite(comps.total) &&
+            (!hasproperty(comps, :retimed_feasible) || comps.retimed_feasible)
+        if feasible && comps.total < best_feasible_cost
+            best_feasible_path = rpo_position_to_path(
+                evaluated_position, start, goal, current_n_waypoints,
+            )
+            best_feasible_cost = comps.total
         end
         return nothing
     end
@@ -418,27 +533,30 @@ function rpo_pso_plan_path(
     function evaluate_swarm!(; iter_start_ns=nothing)
         curr_cost = fill(Inf, cfg.n_particles)
         curr_obs = fill(Inf, cfg.n_particles)
-        curr_components = Vector{Any}(undef, cfg.n_particles)
         if iter_start_ns !== nothing && isfinite(cfg.iteration_runtime_limit_s) && cfg.iteration_runtime_limit_s > 0.0
             @inbounds for pidx in 1:cfg.n_particles
                 iteration_timed_out(iter_start_ns) && return curr_cost, curr_obs, true
-                comps = evaluate_position(view(positions, :, pidx); cost_cutoff=pbest_cost[pidx])
+                evaluated_position = Vector{Float64}(view(positions, :, pidx))
+                comps = evaluate_position(evaluated_position; cost_cutoff=pbest_cost[pidx])
                 curr_cost[pidx] = comps.total
                 curr_obs[pidx] = comps.J_obs
-                curr_components[pidx] = comps
-                update_swarm_best_from_components!(pidx, comps)
+                update_swarm_best_from_components!(pidx, evaluated_position, comps)
             end
             return curr_cost, curr_obs, iteration_timed_out(iter_start_ns)
         end
+        evaluations = Vector{Any}(undef, cfg.n_particles)
         @threads for pidx in 1:cfg.n_particles
-            comps = evaluate_position(view(positions, :, pidx); cost_cutoff=pbest_cost[pidx])
+            evaluated_position = Vector{Float64}(view(positions, :, pidx))
+            comps = evaluate_position(evaluated_position; cost_cutoff=pbest_cost[pidx])
             curr_cost[pidx] = comps.total
             curr_obs[pidx] = comps.J_obs
-            curr_components[pidx] = comps
+            evaluations[pidx] = (position=evaluated_position, components=comps)
         end
         @inbounds for pidx in 1:cfg.n_particles
-            comps = curr_components[pidx]
-            update_swarm_best_from_components!(pidx, comps)
+            evaluation = evaluations[pidx]
+            update_swarm_best_from_components!(
+                pidx, evaluation.position, evaluation.components,
+            )
         end
         return curr_cost, curr_obs, false
     end
@@ -474,32 +592,24 @@ function rpo_pso_plan_path(
                 for d in block
                     candidate[d] = gbest[d]
                 end
-                comps = evaluate_position(candidate; cost_cutoff=curr_cost[pidx])
+                evaluated_position = copy(candidate)
+                comps = evaluate_position(
+                    evaluated_position; cost_cutoff=curr_cost[pidx],
+                )
                 improves_cost = comps.total + 1.0e-9 < curr_cost[pidx]
                 obstacle_nonworse = comps.J_obs <= curr_obs[pidx] + 1.0e-9
                 if improves_cost && obstacle_nonworse
                     for d in 1:dim
-                        positions[d, pidx] = candidate[d]
+                        positions[d, pidx] = evaluated_position[d]
                     end
                     for d in block
                         velocities[d, pidx] = 0.0
                     end
                     curr_cost[pidx] = comps.total
                     curr_obs[pidx] = comps.J_obs
-                    if comps.total < pbest_cost[pidx]
-                        for d in 1:dim
-                            pbest[d, pidx] = candidate[d]
-                        end
-                        pbest_cost[pidx] = comps.total
-                        pbest_obs[pidx] = comps.J_obs
-                    end
-                    if comps.total < gbest_cost
-                        for d in 1:dim
-                            gbest[d] = candidate[d]
-                        end
-                        gbest_cost = comps.total
-                        gbest_components = comps
-                    end
+                    update_swarm_best_from_components!(
+                        pidx, evaluated_position, comps,
+                    )
                     accepted = true
                     break
                 end
@@ -517,6 +627,9 @@ function rpo_pso_plan_path(
         seed_points=warmstart_path,
         seed_curve_type=:polyline,
         use_warmstart_bounds=warmstart_path !== nothing,
+    )
+    initial_seed_path = rpo_position_to_path(
+        view(positions, :, 1), start, goal, current_n_waypoints,
     )
     curr_cost, curr_obs, _ = evaluate_swarm!()
 
@@ -633,6 +746,38 @@ function rpo_pso_plan_path(
         safe_distance_m=effective_safe_distance,
         objective_evaluator=objective_evaluator,
     )
+    if final_cfg.curve_type == :cubic_bezier &&
+       rpo_cubic_bezier_minimum_clearance(
+           refined, geometry; safe_distance_m=effective_safe_distance,
+       ) + final_cfg.clearance_feasibility_tol_m <
+       effective_safe_distance
+
+        best_safe_path = nothing
+        best_safe_cost = Inf
+        for candidate in (path, best_feasible_path, initial_seed_path, warmstart_path)
+            candidate === nothing && continue
+            rpo_cubic_bezier_minimum_clearance(
+                candidate, geometry; safe_distance_m=effective_safe_distance,
+            ) + final_cfg.clearance_feasibility_tol_m >=
+                effective_safe_distance || continue
+            candidate_components = rpo_path_objective_components(
+                candidate,
+                geometry,
+                final_cfg;
+                safe_distance_m=effective_safe_distance,
+                objective_evaluator=objective_evaluator,
+            )
+            if candidate_components.total < best_safe_cost
+                best_safe_path = Matrix{Float64}(candidate)
+                best_safe_cost = candidate_components.total
+            end
+        end
+        if best_safe_path !== nothing
+            refined = best_safe_path
+            refined_cost = best_safe_cost
+            improved = false
+        end
+    end
     comps = rpo_path_objective_components(
         refined,
         geometry,
@@ -640,6 +785,27 @@ function rpo_pso_plan_path(
         safe_distance_m=effective_safe_distance,
         objective_evaluator=objective_evaluator,
     )
+    final_feasible = comps.violation_count == 0 && isfinite(comps.total) &&
+        (!hasproperty(comps, :retimed_feasible) || comps.retimed_feasible)
+    if !final_feasible && best_feasible_path !== nothing
+        fallback_components = rpo_path_objective_components(
+            best_feasible_path,
+            geometry,
+            final_cfg;
+            safe_distance_m=effective_safe_distance,
+            objective_evaluator=objective_evaluator,
+        )
+        fallback_feasible = fallback_components.violation_count == 0 &&
+            isfinite(fallback_components.total) &&
+            (!hasproperty(fallback_components, :retimed_feasible) ||
+             fallback_components.retimed_feasible)
+        if fallback_feasible
+            refined = Matrix{Float64}(best_feasible_path)
+            comps = fallback_components
+            improved = false
+        end
+    end
+    refined_cost = comps.total
     return (
         path=refined,
         cost=refined_cost,
@@ -653,7 +819,12 @@ function rpo_pso_plan_path(
         iteration_timeout_iter=iteration_timeout_iter,
         iteration_timeout_phase=iteration_timeout_phase,
         iteration_timeout_events=iteration_timeout_events,
+        warmstart_path=warmstart_path,
+        initial_seed_path=initial_seed_path,
         warmstart=warmstart,
         cost_history=cost_history,
+        particle_mean_cost_history=particle_mean_cost_history,
+        particle_finite_mean_cost_history=particle_finite_mean_cost_history,
+        particle_invalid_fraction_history=particle_invalid_fraction_history,
     )
 end

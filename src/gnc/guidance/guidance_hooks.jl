@@ -7,12 +7,13 @@ module GuidanceHooks
     using ..GuidanceModels: ApoapsisTargetPeriapsisRaiseGuidanceModel
     using ..GuidanceModels: RPOGuidanceModel, RPOPlan, RPOPlanBuffer, update_rpo_plan_buffer!
     using ..NavigationHooks: RPOReferenceGeometry, RPOStationGeometry
-    using ..NavigationHooks: rpo_clearance_distance_to_station, rpo_clearance_to_station, rpo_path_clearance_stats
+    using ..NavigationHooks: rpo_clearance_distance_to_station, rpo_clearance_to_station, rpo_path_clearance_stats, rpo_capsule_clearance_to_station
     using ..CommandTypes: PropulsiveManeuverCommand, AerobrakingControlCommand
     using ..EphemeridesModels: planet_frame_lpi
     using ..GravityEffectors: aerobraking_gravity_force_ii
     using ..AerobrakingPolicy: AbstractAerobrakingPolicySelector, AerobrakingPolicyConfig, E_EDG, T_EDG, select_strategy
     using ..ReferenceSystems
+    using ..Planets: Earth
     using ..LinearAlgebra
     using ..StaticArrays
     using ..Kinematics
@@ -42,7 +43,9 @@ module GuidanceHooks
     export RPOPSOProbeSettings, RPOPSOReexploreSettings, RPOPSORefinementSettings
     export RPOPSORetimingSettings, RPOPSOScheduleSettings, RPOPSOSwarmSettings
     export RPOPSORRTConnectWarmstartSettings, RPOPSOStagnationSettings, rpo_pso_config
-    export rpo_path_objective_components, rpo_pso_plan_path, rpo_reference_from_path
+    export RPORetimingProfile, rpo_interpolate_along_path!, rpo_prepare_retimed_candidate
+    export rpo_path_objective_components, rpo_pso_plan_path
+    export rpo_reference_from_path, rpo_reference_from_profile, rpo_retime_path_from_profile
     export RPOReplanningConfig, RPOReplanningSphere
     export rpo_active_replanning_spheres, rpo_geometry_with_replanning_spheres
     export rpo_reference_tracking_error, rpo_remaining_reference_path

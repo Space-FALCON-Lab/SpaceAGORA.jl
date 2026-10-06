@@ -6,6 +6,10 @@ end
 
 """Compare candidate and current objective components under refinement tolerances."""
 function rpo_refinement_better(candidate, current, cfg::RPOPSOConfig)
+    candidate.violation_count == 0 || return false
+    isfinite(candidate.total) || return false
+    hasproperty(candidate, :retimed_feasible) &&
+        !candidate.retimed_feasible && return false
     candidate.J_obs <= current.J_obs + 1.0e-9 || return false
     abs_improvement = current.total - candidate.total
     rel_improvement = abs_improvement / max(abs(current.total), 1.0e-12)
@@ -62,7 +66,7 @@ function rpo_refinement_segment_is_safe(a, b, geometry, cfg::RPOPSOConfig; safe_
         geometry,
         required_clearance,
     )
-    return stats.min_clearance + 1.0e-9 >= required_clearance
+    return stats.min_clearance + cfg.clearance_feasibility_tol_m >= required_clearance
 end
 
 """Try shortcutting sampled path points while preserving collision safety."""
@@ -148,6 +152,98 @@ function rpo_fit_bezier_fixed_endpoints(samples, n_control::Int, cfg::RPOPSOConf
     return rpo_refinement_clamp_path(controls, cfg)
 end
 
+"""Fit a global Bezier seed and project its handles onto the RRT guide's safe side."""
+function rpo_fit_bezier_clearance_preserving(
+    samples,
+    n_control::Int,
+    geometry,
+    cfg::RPOPSOConfig;
+    safe_distance_m::Real=cfg.safe_distance_m,
+)
+    guide_points = Matrix{Float64}(samples)
+    controls = rpo_fit_bezier_fixed_endpoints(
+        guide_points, n_control, cfg,
+    )
+    safe = max(0.0, Float64(safe_distance_m))
+    safe <= 0.0 && return (
+        path=controls, min_clearance=Inf, feasible=true, passes=0,
+    )
+
+    repair_ds = min(0.05, max(0.01, 0.1 * safe))
+    validation_ds = min(0.02, repair_ds)
+    target_clearance = safe + min(0.02, 0.1 * safe)
+    n_grid = max(
+        101,
+        Int(ceil(rpo_path_length(guide_points) / repair_ds)) + 1,
+    )
+    guide = rpo_resample_polyline_points(guide_points, n_grid)
+    degree = size(controls, 2) - 1
+    max_passes = 32
+    completed_passes = 0
+
+    @inbounds for pass in 1:max_passes
+        corrections = 0
+        for sample_index in 2:(n_grid - 1)
+            u = (sample_index - 1) / (n_grid - 1)
+            point = rpo_bezier_point(controls, u)
+            clearance = rpo_clearance_distance_to_station(point, geometry)
+            clearance + 1.0e-9 >= target_clearance && continue
+
+            guide_point = SVector{3, Float64}(view(guide, :, sample_index))
+            guide_info = rpo_clearance_to_station(guide_point, geometry)
+            guide_info.distance > eps(Float64) || continue
+            normal = (guide_point - guide_info.nearest_point) /
+                guide_info.distance
+            obstacle_radius = guide_info.distance - guide_info.clearance
+            deficit = obstacle_radius + target_clearance -
+                dot(normal, point - guide_info.nearest_point)
+
+            if deficit <= 0.0
+                point_info = rpo_clearance_to_station(point, geometry)
+                point_info.distance > eps(Float64) || continue
+                normal = (point - point_info.nearest_point) /
+                    point_info.distance
+                obstacle_radius = point_info.distance - point_info.clearance
+                deficit = obstacle_radius + target_clearance -
+                    dot(normal, point - point_info.nearest_point)
+            end
+            deficit > 0.0 || continue
+
+            basis_norm_sq = 0.0
+            for control_index in 1:(degree - 1)
+                basis = rpo_refinement_bernstein(
+                    degree, control_index, u,
+                )
+                basis_norm_sq += basis * basis
+            end
+            basis_norm_sq > 1.0e-14 || continue
+            for control_index in 1:(degree - 1)
+                basis = rpo_refinement_bernstein(
+                    degree, control_index, u,
+                )
+                controls[:, control_index + 1] .+=
+                    (deficit * basis / basis_norm_sq) .* normal
+            end
+            corrections += 1
+        end
+        completed_passes = pass
+        corrections == 0 && break
+    end
+
+    validation_samples = rpo_sample_path_bezier(
+        controls, validation_ds,
+    )
+    stats = rpo_clearance_stats_from_samples(
+        validation_samples, geometry, safe,
+    )
+    return (
+        path=controls,
+        min_clearance=stats.min_clearance,
+        feasible=stats.min_clearance + cfg.clearance_feasibility_tol_m >= safe,
+        passes=completed_passes,
+    )
+end
+
 """Project a point onto a segment during handle-tightening refinement."""
 function rpo_refinement_project_to_segment(q, a, b)
     qv = SVector{3, Float64}(q)
@@ -202,7 +298,8 @@ function rpo_refine_shortcut_refit(
     )
     shortcut = rpo_refinement_shortcut_samples(samples, geometry, cfg; safe_distance_m=safe_distance_m)
     size(shortcut, 2) == size(samples, 2) && return Matrix{Float64}(path), current_components, false
-    candidate = rpo_fit_bezier_fixed_endpoints(shortcut, size(path, 2), cfg)
+    candidate = cfg.curve_type == :cubic_bezier ? shortcut :
+        rpo_fit_bezier_fixed_endpoints(shortcut, size(path, 2), cfg)
     return rpo_try_accept_refinement(
         candidate,
         geometry,
@@ -273,6 +370,8 @@ function rpo_refine_lower_degree(
     objective_evaluator=nothing,
 )
     current = Matrix{Float64}(path)
+    cfg.curve_type == :cubic_bezier &&
+        return current, current_components, false
     size(current, 2) <= 3 && return current, current_components, false
     improved = false
     dense = rpo_sample_path(

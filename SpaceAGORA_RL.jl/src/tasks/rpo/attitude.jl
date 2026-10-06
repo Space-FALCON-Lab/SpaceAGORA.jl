@@ -46,6 +46,77 @@ function _quat_rotation_matrix(q)
     ]
 end
 
+"""Return the minimum-rotation quaternion that maps one direction onto another."""
+function _quat_between_directions(from, to)
+    source = Vector{Float64}(from)
+    target = Vector{Float64}(to)
+    source_norm = norm(source)
+    target_norm = norm(target)
+    source_norm > eps(Float64) || return [0.0, 0.0, 0.0, 1.0]
+    target_norm > eps(Float64) || return [0.0, 0.0, 0.0, 1.0]
+    source ./= source_norm
+    target ./= target_norm
+    alignment = clamp(dot(source, target), -1.0, 1.0)
+    alignment >= 1.0 - 1.0e-12 && return [0.0, 0.0, 0.0, 1.0]
+    if alignment <= -1.0 + 1.0e-12
+        helper = abs(source[1]) <= abs(source[2]) &&
+                 abs(source[1]) <= abs(source[3]) ?
+            [1.0, 0.0, 0.0] :
+            (abs(source[2]) <= abs(source[3]) ?
+                [0.0, 1.0, 0.0] : [0.0, 0.0, 1.0])
+        axis = cross(source, helper)
+        axis ./= norm(axis)
+        return vcat(axis, 0.0)
+    end
+    return _quat_normalize(vcat(cross(source, target), 1.0 + alignment))
+end
+
+"""
+Point the nearest available body thruster along the requested RTN acceleration.
+
+For the configured equal-Isp, orthogonal thruster pairs this minimizes
+instantaneous translation impulse while requiring the smallest attitude slew.
+The smooth endpoint weight keeps the prescribed initial and final attitudes.
+"""
+function _rpo_fuel_optimal_pointing_attitude(
+    attitude_rtn_to_body,
+    baseline_attitude_rtn_to_body,
+    command_rtn,
+    progress::Real,
+    config::RPOHyPRRLConfig,
+)
+    baseline = _quat_normalize(baseline_attitude_rtn_to_body)
+    fraction = clamp(Float64(progress), 0.0, 1.0)
+    (fraction <= 0.0 || fraction >= 1.0) && return baseline
+
+    command = Vector{Float64}(command_rtn)
+    command_norm = norm(command)
+    command_norm > 1.0e-12 || return baseline
+    current = _quat_normalize(attitude_rtn_to_body)
+    force_body = _quat_rotation_matrix(current) * (command ./ command_norm)
+
+    best_index = 0
+    best_alignment = -Inf
+    @inbounds for index in axes(config.thruster_directions_body, 2)
+        config.thruster_max_thrust_n[index] > 0.0 || continue
+        direction = view(config.thruster_directions_body, :, index)
+        direction_norm = norm(direction)
+        direction_norm > 1.0e-12 || continue
+        alignment = dot(force_body, direction) / direction_norm
+        if alignment > best_alignment
+            best_alignment = alignment
+            best_index = index
+        end
+    end
+    best_index > 0 || return baseline
+
+    target_direction = view(config.thruster_directions_body, :, best_index)
+    delta = _quat_between_directions(force_body, target_direction)
+    aligned = _quat_normalize(_quat_multiply(delta, current))
+    pointing_weight = sinpi(fraction)^2
+    return _quat_slerp(baseline, aligned, pointing_weight)
+end
+
 function _attitude_reference(progress, quaternions, sample_progress)
     n = length(sample_progress)
     result = zeros(4, n)

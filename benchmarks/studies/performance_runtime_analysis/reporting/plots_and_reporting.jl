@@ -224,7 +224,7 @@ function _paper_figure_external_data(spec::ProfileSpec)
 end
 
 function _sorted_orbit_groups(df::DataFrame, metric::Symbol)
-    multiplier_col = :mission_time_multiplier in names(df) ? :mission_time_multiplier : :orbit_count
+    multiplier_col = :mission_time_multiplier in propertynames(df) ? :mission_time_multiplier : :orbit_count
     groups = collect(groupby(df, :scenario))
     sort!(groups; by=g -> begin
         local_df = DataFrame(g)
@@ -682,8 +682,8 @@ function generate_runtime_plots(
     end
 
     orbit_required_cols = (:samples_success, :total_time_mean_s, :orbits_per_wall_second_mean, :time_per_orbit_mean_s)
-    orbit_valid = if nrow(orbit_summary_df) > 0 && all(col -> col in names(orbit_summary_df), orbit_required_cols)
-        sweep_multiplier_col = :mission_time_multiplier in names(orbit_summary_df) ? :mission_time_multiplier : :orbit_count
+    orbit_valid = if nrow(orbit_summary_df) > 0 && all(col -> col in propertynames(orbit_summary_df), orbit_required_cols)
+        sweep_multiplier_col = :mission_time_multiplier in propertynames(orbit_summary_df) ? :mission_time_multiplier : :orbit_count
         orbit_summary_df[
             (orbit_summary_df.samples_success .> 0) .&
             .!ismissing.(orbit_summary_df[!, sweep_multiplier_col]), :
@@ -695,8 +695,8 @@ function generate_runtime_plots(
     # 13) Mission-time sweep runtime scaling.
     orbit_scaling_df = nrow(orbit_valid) > 0 ? orbit_valid[.!ismissing.(orbit_valid.total_time_mean_s), :] : DataFrame()
     if nrow(orbit_scaling_df) > 0
-        multiplier_col = :mission_time_multiplier in names(orbit_scaling_df) ? :mission_time_multiplier : :orbit_count
-        time_per_unit_col = :time_per_baseline_period_mean_s in names(orbit_scaling_df) ? :time_per_baseline_period_mean_s : :time_per_orbit_mean_s
+        multiplier_col = :mission_time_multiplier in propertynames(orbit_scaling_df) ? :mission_time_multiplier : :orbit_count
+        time_per_unit_col = :time_per_baseline_period_mean_s in propertynames(orbit_scaling_df) ? :time_per_baseline_period_mean_s : :time_per_orbit_mean_s
         plt = Plots.plot(;
             title="Mission-Time Sweep Runtime Scaling",
             xlabel="Mission-Time Multiplier [x baseline period]",
@@ -716,8 +716,8 @@ function generate_runtime_plots(
     # 14) Mission-time sweep efficiency scaling.
     orbit_eff_df = nrow(orbit_valid) > 0 ? orbit_valid[.!ismissing.(orbit_valid.orbits_per_wall_second_mean), :] : DataFrame()
     if nrow(orbit_eff_df) > 0
-        multiplier_col = :mission_time_multiplier in names(orbit_eff_df) ? :mission_time_multiplier : :orbit_count
-        throughput_col = :baseline_periods_per_wall_second_mean in names(orbit_eff_df) ? :baseline_periods_per_wall_second_mean : :orbits_per_wall_second_mean
+        multiplier_col = :mission_time_multiplier in propertynames(orbit_eff_df) ? :mission_time_multiplier : :orbit_count
+        throughput_col = :baseline_periods_per_wall_second_mean in propertynames(orbit_eff_df) ? :baseline_periods_per_wall_second_mean : :orbits_per_wall_second_mean
         plt = Plots.plot(;
             title="Mission-Time Sweep Efficiency Scaling",
             xlabel="Mission-Time Multiplier [x baseline period]",
@@ -737,8 +737,8 @@ function generate_runtime_plots(
     # 15) Mission-time sweep time heatmap.
     heat_df = nrow(orbit_valid) > 0 ? orbit_valid[.!ismissing.(orbit_valid.time_per_orbit_mean_s), :] : DataFrame()
     if nrow(heat_df) > 0
-        multiplier_col = :mission_time_multiplier in names(heat_df) ? :mission_time_multiplier : :orbit_count
-        heat_value_col = :time_per_baseline_period_mean_s in names(heat_df) ? :time_per_baseline_period_mean_s : :time_per_orbit_mean_s
+        multiplier_col = :mission_time_multiplier in propertynames(heat_df) ? :mission_time_multiplier : :orbit_count
+        heat_value_col = :time_per_baseline_period_mean_s in propertynames(heat_df) ? :time_per_baseline_period_mean_s : :time_per_orbit_mean_s
         scenario_names = unique(String.(heat_df.scenario))
         scenario_order = sort(scenario_names; by=sc -> begin
             vals = [
@@ -775,14 +775,14 @@ function generate_runtime_plots(
 
     # 16) Entry-duration sweep trends (separate from per-orbit mission-time sweep).
     if nrow(entry_duration_summary_df) > 0 &&
-       (:entry_run_role in names(entry_duration_summary_df)) &&
-       (:entry_atmospheric_interface_count in names(entry_duration_summary_df))
+       (:entry_run_role in propertynames(entry_duration_summary_df)) &&
+       (:entry_atmospheric_interface_count in propertynames(entry_duration_summary_df))
         entry_measured = entry_duration_summary_df[
             (entry_duration_summary_df.entry_run_role .== "measured") .&
             .!ismissing.(entry_duration_summary_df.entry_atmospheric_interface_count), :
         ]
         if nrow(entry_measured) > 0
-            if :passage_duration_mean_s in names(entry_measured)
+            if :passage_duration_mean_s in propertynames(entry_measured)
                 passage_df = entry_measured[.!ismissing.(entry_measured.passage_duration_mean_s), :]
                 if nrow(passage_df) > 0
                     plt = Plots.plot(;
@@ -802,7 +802,7 @@ function generate_runtime_plots(
                 end
             end
 
-            if :wall_time_per_passage_mean_s in names(entry_measured)
+            if :wall_time_per_passage_mean_s in propertynames(entry_measured)
                 wall_df = entry_measured[.!ismissing.(entry_measured.wall_time_per_passage_mean_s), :]
                 if nrow(wall_df) > 0
                     plt = Plots.plot(;
@@ -822,7 +822,7 @@ function generate_runtime_plots(
                 end
             end
 
-            if :event_time_abs_error_mean_s in names(entry_measured)
+            if :event_time_abs_error_mean_s in propertynames(entry_measured)
                 error_df = entry_measured[.!ismissing.(entry_measured.event_time_abs_error_mean_s), :]
                 if nrow(error_df) > 0
                     plt = Plots.plot(;

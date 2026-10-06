@@ -110,11 +110,25 @@ end
 
 @inline _auto_stiff_smooth_gravity_tsit5_enabled(cfg::SolverConfig)::Bool = cfg.auto_stiff_gravity_tsit5
 
+# Solar radiation pressure belongs here with the gravity models: its
+# acceleration is a smooth function of position everywhere except at the umbra
+# and penumbra boundaries of the conical shadow model (`eclipse_area_calc`),
+# where the shadow fraction has a kink rather than a discontinuity. An explicit
+# integrator crosses that with step rejections at worst, which is cheaper than
+# what excluding it costs -- a 256-spacecraft harmonics + SRP + third-body
+# constellation was committing AutoTsit5 to Rodas5P and paying 5.58x the
+# derivative evaluations plus the whole Rosenbrock W path for dynamics that are
+# not stiff (docs/architecture/third_body_cost.md). A configuration that does
+# need the implicit solver still gets it by setting
+# `SolverConfig.auto_stiff_gravity_tsit5=false`
+# (`SPACEAGORA_AUTO_STIFF_GRAVITY_TSIT5=0`), which disables this whole fast
+# path.
 @inline function _auto_stiff_smooth_gravity_effector(effector)::Bool
     return effector isa SimulationModel.InverseSquaredGravityModel ||
            effector isa SimulationModel.InverseSquaredJ2GravityModel ||
            effector isa SimulationModel.GravitationalHarmonicsModel ||
-           effector isa SimulationModel.NBodyGravityModel
+           effector isa SimulationModel.NBodyGravityModel ||
+           effector isa SimulationModel.SolarRadiationPressureModel
 end
 
 @inline function _auto_stiff_smooth_gravity_reject_reason(cfg::SolverConfig, args)::Union{Nothing, String}
@@ -130,7 +144,12 @@ end
         _auto_stiff_smooth_gravity_effector(effector) || return "$(nameof(typeof(effector))) is not a supported smooth-gravity effector."
         req = SimulationModel.environment_requirements(effector)
         req.atmosphere && return "$(nameof(typeof(effector))) requires atmosphere samples."
-        req.solar && return "$(nameof(typeof(effector))) requires solar samples."
+        # The solar sample is the Sun's position, which SRP is the effector
+        # that consumes it: rejecting on `req.solar` would re-disqualify the
+        # effector this list just admitted. Any other smooth-gravity effector
+        # asking for solar samples is still unexpected here and still rejects.
+        req.solar && !(effector isa SimulationModel.SolarRadiationPressureModel) &&
+            return "$(nameof(typeof(effector))) requires solar samples."
     end
     return nothing
 end
@@ -226,7 +245,30 @@ end
 # representative constellation run), so the solve is what counts and KLU wins
 # it. Measuring factorize+solve as a unit is what makes block LU look 3.4x
 # faster; that ratio does not survive contact with the integrator's actual mix.
-@inline _sparse_linsolve_or_default(sparse_jac::Bool) = sparse_jac ? KLUFactorization() : nothing
+# OrdinaryDiffEq forwards its componentwise ODE tolerances to LinearSolve at
+# initialization, but LinearSolve 5 stores scalar linear-system tolerances.
+# Adapt that boundary on an owned type: keep the ODE's tolerance arrays intact,
+# retain the existing dense/default or sparse/KLU backend, and return its real
+# cache so reinitialization and subsequent solves use the normal library path.
+struct _ComponentToleranceLinearSolver{A} <: SciMLBase.AbstractLinearAlgorithm
+    algorithm::A
+end
+
+LinearSolve.needs_concrete_A(::_ComponentToleranceLinearSolver) = true
+
+_linear_system_tolerance(tol::Number) = tol
+_linear_system_tolerance(tol::AbstractArray) = minimum(tol)
+
+function SciMLBase.init(prob::SciMLBase.LinearProblem, alg::_ComponentToleranceLinearSolver;
+                        reltol=LinearSolve.default_tol(real(eltype(prob.b))),
+                        abstol=LinearSolve.default_tol(real(eltype(prob.b))), kwargs...)
+    return SciMLBase.init(prob, alg.algorithm;
+        reltol=_linear_system_tolerance(reltol),
+        abstol=_linear_system_tolerance(abstol), kwargs...)
+end
+
+@inline _sparse_linsolve_or_default(sparse_jac::Bool) =
+    _ComponentToleranceLinearSolver(sparse_jac ? KLUFactorization() : nothing)
 
 """Return whether a problem component function carries a sparse Jacobian prototype."""
 @inline function _has_sparse_jac_prototype(f)::Bool
@@ -241,7 +283,9 @@ end
 @inline function _split_imex_solver_spec(cfg::SolverConfig, sparse_jac::Bool=false)
     mode = cfg.split_imex_solver
     ls = _sparse_linsolve_or_default(sparse_jac)
-    mode === :kencarp4  && return (alg=KenCarp4(autodiff=AutoFiniteDiff(), linsolve=ls),  label="KenCarp4")
+    # KenCarp4 reuse defaults lose accuracy in nonlinear atmospheric passes
+    # across tested trajectories. Keep other algorithms on their established policies.
+    mode === :kencarp4  && return (alg=KenCarp4(autodiff=AutoFiniteDiff(), linsolve=ls, nlsolve=NLNewton(always_new=true)),  label="KenCarp4")
     mode === :kencarp47 && return (alg=KenCarp47(autodiff=AutoFiniteDiff(), linsolve=ls), label="KenCarp47")
     mode === :kencarp58 && return (alg=KenCarp58(autodiff=AutoFiniteDiff(), linsolve=ls), label="KenCarp58")
     throw(ArgumentError(
@@ -349,12 +393,53 @@ end
     return raw in ("1", "true", "yes", "on")
 end
 
-@inline function _solve_with_explicit_solver(prob, cfg::SolverConfig, args, alg, reltol_tol, abstol_tol;
+# Newer libraries store automatically specialized callbacks in erased vectors.
+# Rebuild that container from this run's closures, but reuse its event cache only
+# when the original callback layout and vector lengths are unchanged.
+function _callbacks_for_cached_integrator(integrator, callbacks)
+    previous = integrator.opts.callback
+    original = get(integrator.sol.prob.kwargs, :callback, CallbackSet())
+    for field in (:continuous_callbacks, :discrete_callbacks)
+        old_callbacks = getproperty(original, field)
+        new_callbacks = getproperty(callbacks, field)
+        length(old_callbacks) == length(new_callbacks) || return nothing
+        for (old, new) in zip(old_callbacks, new_callbacks)
+            typeof(old) === typeof(new) || return nothing
+            hasproperty(new, :len) && old.len != new.len && return nothing
+            # Discontinuity bracketing retains the original condition.
+            # Reuse it only when that condition is the identical object.
+            if hasproperty(new, :maybe_discontinuity)
+                old.maybe_discontinuity == new.maybe_discontinuity || return nothing
+                new.maybe_discontinuity && old.condition !== new.condition && return nothing
+            end
+        end
+    end
+    if previous.continuous_callbacks isa AbstractVector && previous.discrete_callbacks isa AbstractVector
+        return CallbackSet(collect(Any, callbacks.continuous_callbacks),
+            collect(Any, callbacks.discrete_callbacks))
+    end
+    return callbacks
+end
+
+# Keep the solver choice behind a dispatch boundary. Inferring every algorithm
+# into the policy caller causes excessive compilation with OrdinaryDiffEq 7.
+# The selected integrator still specializes normally inside the solver library.
+@noinline Base.@nospecializeinfer function _solve_with_explicit_solver(
+    @nospecialize(prob), cfg::SolverConfig, @nospecialize(args), @nospecialize(alg), reltol_tol, abstol_tol;
     dtmax_override::Union{Nothing, Float64}=nothing,
     solver_cache::Union{Nothing, SolverIntegratorCache}=nothing,
     needs_full_solution::Bool=true)
     maxiters = _solver_maxiters(cfg)
     dtmax_use = isnothing(dtmax_override) ? args.integration_tolerances.dt_max_orbit : dtmax_override
+    # Plain manufactured ODEs have no spacecraft phase. Explicit subsolve caps
+    # retain their supplied tolerances and initial cap (multirate contract).
+    # As before, an installed crossing callback can subsequently change them.
+    refresh_callbacks = dtmax_override === nothing && prob.p isa SimulationModel.ODEParams
+    if refresh_callbacks &&
+       SimulationModel.SimulationCallbacks._requires_density_callback(args.dynamics_model.dynamic_effectors, args)
+        dtmax_use, reltol_tol, abstol_tol =
+            SimulationModel.SimulationCallbacks._active_phase_solver_settings(prob.p, reltol_tol, abstol_tol)
+    end
     dtmax_use > 0.0 || throw(ArgumentError("Solver dtmax must be > 0.0, got $dtmax_use."))
     # When nothing reads the trajectory (return_solution=false, results=false, no
     # solver metadata), skip per-step solution/dense storage — it is the dominant
@@ -371,17 +456,38 @@ end
     save_start = _solver_bool_env("SPACEAGORA_SOLVER_SAVE_START", true)
     save_end = _solver_bool_env("SPACEAGORA_SOLVER_SAVE_END", true)
 
+    callbacks = refresh_callbacks ? get(prob.kwargs, :callback, CallbackSet()) : nothing
+    if refresh_callbacks && solver_cache !== nothing && solver_cache.integrator !== nothing
+        callbacks = _callbacks_for_cached_integrator(solver_cache.integrator, callbacks)
+    end
+    callback_type_matches = !refresh_callbacks || solver_cache === nothing ||
+        solver_cache.integrator === nothing ||
+        typeof(solver_cache.integrator.opts.callback) === typeof(callbacks)
+
     # Reuse the cached integrator only when it was init'ed with the same save
     # options this call resolved; otherwise fall through and re-init the cache.
-    if solver_cache !== nothing && solver_cache.integrator !== nothing &&
+    if solver_cache !== nothing && solver_cache.integrator !== nothing && callback_type_matches &&
        _solver_cache_options_match(solver_cache, save_everystep, save_on, save_start, save_end, dtmax_use)
         integ = solver_cache.integrator
         integ.p = prob.p
-        SciMLBase.reinit!(integ, prob.u0;
-            t0=Float64(first(prob.tspan)),
-            tf=Float64(last(prob.tspan)),
-            erase_sol=true,
-            reinit_callbacks=false)
+        # Crossing callbacks mutate these options. Restore this run's settings
+        # before reinit! selects its initial step from the new state/tolerances.
+        integ.opts.dtmax = dtmax_use
+        integ.opts.reltol = reltol_tol
+        integ.opts.abstol = abstol_tol
+        if refresh_callbacks
+            # Refresh captured run state and initialize housekeeping before the
+            # initial-step estimate, in the same order as a fresh integrator.
+            integ.opts.callback = callbacks
+            SciMLBase.reinit!(integ, prob.u0;
+                t0=Float64(first(prob.tspan)), tf=Float64(last(prob.tspan)),
+                erase_sol=true, reset_dt=false, reinit_callbacks=true)
+            SciMLBase.auto_dt_reset!(integ)
+        else
+            SciMLBase.reinit!(integ, prob.u0;
+                t0=Float64(first(prob.tspan)), tf=Float64(last(prob.tspan)),
+                erase_sol=true, reinit_callbacks=false)
+        end
         return DiffEqBase.solve!(integ)
     end
 
@@ -444,6 +550,17 @@ end
 end
 
 function _solve_with_multirate_solver(prob, cfg::SolverConfig, args, reltol_tol, abstol_tol)
+    # Strang subsolves revisit overlapping time intervals, and cached subsolves
+    # skip callback initialization. Refuse a captured perturbation callback here,
+    # before any subsolve can clone or advance a walk, rather than relying on its
+    # checkpoint-continuation guard to notice the time reversal.
+    perturbation_mode = SimulationModel.SimulationCallbacks._gram_density_perturbation_callback_mode(
+        get(prob.kwargs, :callback, nothing))
+    perturbation_mode === :off || throw(ArgumentError(
+        "SPACEAGORA_SOLVER_MODE=multirate does not support " *
+        "SPACEAGORA_GRAM_DENSITY_PERTURBATION=$(perturbation_mode): its overlapping subsolves " *
+        "do not preserve the perturbation history. Use another solver mode or turn density perturbations off."
+    ))
     if !(hasproperty(prob.f, :f1) && hasproperty(prob.f, :f2))
         throw(ArgumentError("SolverConfig.solver_mode=:multirate requires a split problem with f1/f2 components."))
     end

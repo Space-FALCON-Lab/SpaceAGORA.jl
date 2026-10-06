@@ -3,10 +3,17 @@ __precompile__(true)
 module SpaceAGORA
 
 ## 1. Include package modules
+# Internal contract only; runtime guidance still uses its existing path.
+include(joinpath(@__DIR__, "gnc", "interfaces", "rpo_planner.jl"))
+include(joinpath(@__DIR__, "gnc", "interfaces", "simulation_lifecycle.jl"))
 include(joinpath(@__DIR__, "parallel", "routing", "parallel_profiles.jl"))
 include(joinpath(@__DIR__, "parallel", "process", "parallel_process.jl"))
 include(joinpath(@__DIR__, "simulation", "runtime_services.jl"))
 include(joinpath(@__DIR__, "core", "simulation_model.jl"))
+include(joinpath(@__DIR__, "gnc", "direct_rpo", "direct_rpo_planner.jl"))
+include(joinpath(@__DIR__, "gnc", "hypr", "rpo_planner_adapter.jl"))
+include(joinpath(@__DIR__, "gnc", "guidance", "rpo", "rpo_planner_module.jl"))
+include(joinpath(@__DIR__, "gnc", "hypr", "services.jl"))
 include(joinpath(@__DIR__, "simulation", "engine", "simulation_engine.jl"))
 include(joinpath(@__DIR__, "simulation", "campaigns", "simulation_campaigns.jl"))
 include(joinpath(@__DIR__, "analysis", "verification", "telemetry_verification.jl"))
@@ -16,13 +23,74 @@ include(joinpath(@__DIR__, "analysis", "visualization", "rpo", "rpo_visualizatio
 include(joinpath(@__DIR__, "cli", "spaceagora_cli.jl"))
 
 
+
+# Opt-in public RPO planner pilot.
+using .RPOPlannerInterfaces: AbstractRPOPlanner, RPOPlanningConstraints, RPOValidationSettings, RPOPlanningRequest, RPOReference, RPOPlanningResult, RPOPlannerCapabilities, RPOValidationResult, RPOPlanningHeadroom, planner_capabilities, initialize_planner, plan_rpo!, retime_rpo!, validate_rpo_result, validate_rpo_capabilities, rpo_reference_is_current
+using .DirectRPOPlanning: DirectRPOPlanner
+using .HYPRRPOPlanning: HYPRRPOPlanner
+using .SimulationModel.HYPRSupport: HYPRUnavailableError, hypr_available
+export HYPRUnavailableError, hypr_available
+@doc (@doc SimulationModel.HYPRSupport.hypr_available) hypr_available
+@doc (@doc SimulationModel.HYPRSupport.HYPRUnavailableError) HYPRUnavailableError
+using .SimulationModel: RPOPSOConfig, rpo_pso_config, SimulationSettings
+export SimulationSettings
+# --- Simulation setup API: `using SpaceAGORA` alone is enough to configure a run ---
+using .SimulationModel: SimulationConfiguration, MissionConfiguration, MissionType, MissionTime, MissionOrbits, EnvironmentModel, DynamicsModel, GuidanceModel, NavigationModel, ControlModel, SpacecraftModel, Link, Joint, InitialCondition, CartesianInitialCondition, InitialTime, IntegrationTolerances, SaveField, default_save_fields, MaxwellianHeat, InverseSquaredGravityModel, InverseSquaredJ2GravityModel, NBodyGravityModel, make_example_config, make_three_body_spacecraft
+export SimulationConfiguration, MissionConfiguration, MissionType, MissionTime, MissionOrbits, EnvironmentModel, DynamicsModel, GuidanceModel, NavigationModel, ControlModel, SpacecraftModel, Link, Joint, InitialCondition, CartesianInitialCondition, InitialTime, IntegrationTolerances, SaveField, default_save_fields, MaxwellianHeat, InverseSquaredGravityModel, InverseSquaredJ2GravityModel, NBodyGravityModel, make_example_config, make_three_body_spacecraft
+@doc (@doc SimulationModel.ExampleConfiguration.make_example_config) make_example_config
+@doc (@doc SimulationModel.ExampleConfiguration.make_three_body_spacecraft) make_three_body_spacecraft
+@doc """Dynamics model of a run: the spacecraft list and the tuple of force/torque effectors, `DynamicsModel([spacecraft], effectors)`.""" DynamicsModel
+@doc """Initial orbit of a spacecraft from Keplerian elements (`ra`, `rp`, `i`, `ω`, `Ω`, `ν`).""" InitialCondition
+@doc """Complete one-run scenario: simulation settings, mission configuration, environment, dynamics, guidance, navigation and control models, initial time, and integration tolerances. Pass it to `run_simulation`.""" SimulationConfiguration
+@doc """Mission length and bookkeeping: `mission_type` (`MissionTime` or `MissionOrbits`), `mission_time`, `number_of_orbits`, `keplerian`, `orientation_sim`, and `num_steps_to_save`.""" MissionConfiguration
+@doc """Enum selecting how a mission ends: `MissionTime` (fixed duration) or `MissionOrbits` (fixed orbit count).""" MissionType
+@doc """`MissionType` value: the mission ends after `MissionConfiguration.mission_time` seconds.""" MissionTime
+@doc """`MissionType` value: the mission ends after `MissionConfiguration.number_of_orbits` orbits.""" MissionOrbits
+@doc """Planet, atmosphere density model, ephemerides model, thermal model, entry-interface altitude `EI` (km), and topography/wind switches for a run.""" EnvironmentModel
+@doc """Guidance effectors and their update rates for a run (`guidance_effectors`, `guidance_rates`).""" GuidanceModel
+@doc """Navigation effectors and their update rates for a run (`navigation_effectors`, `navigation_rates`).""" NavigationModel
+@doc """Control effectors and their update rates for a run (`control_effectors`, `control_rates`).""" ControlModel
+@doc """Multi-link spacecraft: joints, links, root link, mass properties, propellant mass, initial condition, and id. Build the links with `Link` and `Joint`, or use `make_three_body_spacecraft`.""" SpacecraftModel
+@doc """One rigid body of a `SpacecraftModel`: mass, dimensions, reference area, offset `r`, attitude `q`, and reflection coefficient. Exported at the root; note that other packages may also export a `Link` name.""" Link
+@doc """Articulated connection between two `Link`s of a `SpacecraftModel`. Exported at the root; note that other packages may also export a `Joint` name.""" Joint
+@doc """Initial spacecraft state given as a Cartesian position and velocity.""" CartesianInitialCondition
+@doc """Epoch at which a simulation starts (calendar date and time).""" InitialTime
+@doc """ODE solver tolerances and maximum step sizes for the orbit and atmosphere phases (`reltol_*`, `abstol_*`, `dt_max_*`).""" IntegrationTolerances
+@doc """Declaration of one quantity written to the saved results.""" SaveField
+@doc """    default_save_fields(config::SimulationConfiguration)
+
+Return the default `SaveField`s for `config`.""" default_save_fields
+@doc """Free-molecular heating model with a thermal accommodation factor (`thermal_accomodation_factor`) for a given planet.""" MaxwellianHeat
+@doc """Point-mass (inverse-square) gravity effector.""" InverseSquaredGravityModel
+@doc """Point-mass gravity with the J2 oblateness term.""" InverseSquaredJ2GravityModel
+@doc """Third-body gravity effector using ephemerides for the listed bodies.""" NBodyGravityModel
+@doc "Output and checkpoint settings for a simulation. The opt-in RPO pilot refuses checkpoint writing and resume." SimulationSettings
+@doc """
+    RPOPSOConfig(; kwargs...)
+
+Existing HYPR configuration, exported for explicit `HYPRRPOPlanner` assembly.
+It controls swarm counts, geometric cost/search, adaptation and reference retiming.
+The adapter copies it, maps the request's clearance/interval, applies the declared
+planning reserve, and retains optimizer-returned settings. The public pilot example
+shows a deterministic bounded configuration; its numerical limits are not defaults
+for arbitrary missions. Existing internal constructors retain their behavior.
+""" RPOPSOConfig
+@doc """
+    rpo_pso_config(config; overrides...)
+
+Copy the existing HYPR configuration with explicit field overrides. This root alias
+preserves the existing configuration owner and calculations; pass the result to
+`HYPRRPOPlanner`. Request-owned limits and interval still apply at planning time.
+""" rpo_pso_config
+
+using .RPOPlannerLifecycle: RPOPlanningEvent, RPOPlanningError, make_rpo_configuration, rpo_run_report
+export AbstractRPOPlanner, RPOPlanningConstraints, RPOValidationSettings, RPOPlanningRequest, RPOReference, RPOPlanningResult, RPOPlannerCapabilities, RPOValidationResult, RPOPlanningHeadroom, planner_capabilities, initialize_planner, plan_rpo!, retime_rpo!, validate_rpo_result, validate_rpo_capabilities, rpo_reference_is_current, DirectRPOPlanner, HYPRRPOPlanner, RPOPSOConfig, rpo_pso_config, RPOPlanningEvent, RPOPlanningError, make_rpo_configuration, rpo_run_report
+
 ## 2. Bring needed names from package modules into the scope of SpaceAGORA.jl
 # 2.1. Parallel Profiles
-using .ParallelProfiles: ParallelProfile, ParallelProfileConfig
-using .ParallelProfiles: parse_parallel_profile, parallel_profile_name, profile_config, profile_env_pairs, with_parallel_profile
-using .ParallelProfiles: OuterRouteFeatures, OuterRouteTuning, OuterRouteState
-using .ParallelProfiles: reset_outer_route_state!, outer_route_signature, outer_route_stats_snapshot
-using .ParallelProfiles: default_outer_route, outer_route_candidates, select_outer_route!, record_outer_route_feedback!
+# The R0-R7 profiles and the outer-route bandit are internal and benchmark
+# machinery, reachable qualified as `SpaceAGORA.ParallelProfiles.<name>`. The
+# supported way to parallelize is `SolverConfig(parallel=true)`.
 
 # 2.2. Parallel Process
 using .ParallelProcess: ProcessPool, campaign_process_pool, ensure_process_workers!, shutdown_process_pool!, adopt_process_workers!
@@ -30,6 +98,7 @@ using .ParallelProcess: ProcessPool, campaign_process_pool, ensure_process_worke
 ## 2.3. Simulation Engine
 using .SimulationEngine: ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 using .SimulationEngine: simulation_engine_config_from_env
+using .SimulationEngine: SimulationResults
 using .SimulationEngine: prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
 run_simulation(args...; kwargs...) = SimulationEngine.run_simulation(args...; kwargs...)
 
@@ -37,7 +106,6 @@ run_simulation(args...; kwargs...) = SimulationEngine.run_simulation(args...; kw
 using .SimulationCampaigns: MonteCarloSpec, MonteCarloSampleResult, MonteCarloResult, run_monte_carlo
 using .SimulationCampaigns: run_constellation_ensemble
 using .SimulationCampaigns: run_monte_carlo_visualization
-using .SimulationCampaigns: campaign_route_features, campaign_outer_route_state
 
 ## 2.5. Simulation Model
 using .SimulationModel: StateAnchor, get_state_anchor_callback
@@ -75,7 +143,7 @@ using .SimulationModel: init_robot_arm_joint_mpc, robot_arm_joint_mpc_reference_
 using .SimulationModel: robot_arm_joint_mpc_control, robot_arm_measured_joint_state
 using .SimulationModel: NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosphereModel
 using .SimulationModel: PolynomialFitAtmosphereModel
-using .SimulationModel: GRAMGridAtmosphereModel
+using .SimulationModel: GRAMGridAtmosphereModel, GRAMNearSurfaceAtmosphereModel, CombinedAtmosphereModel
 using .SimulationModel.EnvironmentModels: SurrogatePresetResolution, available_surrogate_presets, resolve_surrogate_preset, surrogate_preset_model, atmosphere_provenance
 using .SimulationModel: NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
 using .SimulationModel: SimpleEphemeridesModel
@@ -99,6 +167,7 @@ using .SimulationModel: ks_j2_acceleration_si, ks_drag_acceleration_si, ks_rhs!,
 using .SimulationModel: ks_kinematics_jacobians, ks_j2_acceleration_jacobian_si, ks_density_value_gradient
 using .SimulationModel: ks_rhs_jacobians, ks_rhs_jacobian
 using .SimulationModel: ks_implicit_midpoint_step, ks_implicit_midpoint_linearization, ks_step_jacobian
+using .SimulationLifecycle: bind_spacecraft
 using .SimulationModel: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 using .SimulationModel: AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 using .SimulationModel: SolarPanelAngleOfAttackControlModel
@@ -167,6 +236,7 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationEngine.ArtifactConfig) ArtifactConfig
 @doc (@doc SimulationEngine.SimulationEngineConfig) SimulationEngineConfig
 @doc (@doc SimulationEngine.simulation_engine_config_from_env) simulation_engine_config_from_env
+@doc (@doc SimulationEngine.SimulationResults) SimulationResults
 @doc (@doc SimulationEngine.run_simulation) run_simulation
 @doc (@doc SimulationEngine.prewarm_nbody_ephemeris_cache) prewarm_nbody_ephemeris_cache
 @doc (@doc SimulationEngine.load_nbody_ephemeris_cache!) load_nbody_ephemeris_cache!
@@ -177,8 +247,6 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationCampaigns.MonteCarloResult) MonteCarloResult
 @doc (@doc SimulationCampaigns.run_monte_carlo) run_monte_carlo
 @doc (@doc SimulationCampaigns.run_constellation_ensemble) run_constellation_ensemble
-@doc (@doc SimulationCampaigns.campaign_route_features) campaign_route_features
-@doc (@doc SimulationCampaigns.campaign_outer_route_state) campaign_outer_route_state
 
 # 3.3. Simulation Model
 @doc (@doc SimulationModel.AerobrakingEnergyDepletionConfig) AerobrakingEnergyDepletionConfig
@@ -279,6 +347,8 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.ExponentialAtmosphereModel) ExponentialAtmosphereModel
 @doc (@doc SimulationModel.PiecewiseExponentialAtmosphereModel) PiecewiseExponentialAtmosphereModel
 @doc (@doc SimulationModel.GRAMGridAtmosphereModel) GRAMGridAtmosphereModel
+@doc (@doc SimulationModel.GRAMNearSurfaceAtmosphereModel) GRAMNearSurfaceAtmosphereModel
+@doc (@doc SimulationModel.CombinedAtmosphereModel) CombinedAtmosphereModel
 @doc (@doc SimulationModel.NRLMSISE00AtmosphereModel) NRLMSISE00AtmosphereModel
 @doc (@doc SimulationModel.DescentPhaseTargets) DescentPhaseTargets
 @doc (@doc SimulationModel.apollo11_descent_targets) apollo11_descent_targets
@@ -382,25 +452,6 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.SceneVisualization.export_ensemble_visualization) export_ensemble_visualization
 @doc (@doc SimulationCampaigns.run_monte_carlo_visualization) run_monte_carlo_visualization
 
-# 3.5. Parallel Profiles
-@doc (@doc ParallelProfiles.ParallelProfile) ParallelProfile
-@doc (@doc ParallelProfiles.ParallelProfileConfig) ParallelProfileConfig
-@doc (@doc ParallelProfiles.parse_parallel_profile) parse_parallel_profile
-@doc (@doc ParallelProfiles.parallel_profile_name) parallel_profile_name
-@doc (@doc ParallelProfiles.profile_config) profile_config
-@doc (@doc ParallelProfiles.profile_env_pairs) profile_env_pairs
-@doc (@doc ParallelProfiles.with_parallel_profile) with_parallel_profile
-@doc (@doc ParallelProfiles.OuterRouteFeatures) OuterRouteFeatures
-@doc (@doc ParallelProfiles.OuterRouteTuning) OuterRouteTuning
-@doc (@doc ParallelProfiles.OuterRouteState) OuterRouteState
-@doc (@doc ParallelProfiles.reset_outer_route_state!) reset_outer_route_state!
-@doc (@doc ParallelProfiles.outer_route_signature) outer_route_signature
-@doc (@doc ParallelProfiles.outer_route_stats_snapshot) outer_route_stats_snapshot
-@doc (@doc ParallelProfiles.default_outer_route) default_outer_route
-@doc (@doc ParallelProfiles.outer_route_candidates) outer_route_candidates
-@doc (@doc ParallelProfiles.select_outer_route!) select_outer_route!
-@doc (@doc ParallelProfiles.record_outer_route_feedback!) record_outer_route_feedback!
-
 # 3.6. Parallel Process
 @doc (@doc ParallelProcess.ProcessPool) ProcessPool
 @doc (@doc ParallelProcess.campaign_process_pool) campaign_process_pool
@@ -424,11 +475,6 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 
 
 ## 4. Declare exports
-export ParallelProfile, ParallelProfileConfig
-export parse_parallel_profile, parallel_profile_name, profile_config, profile_env_pairs, with_parallel_profile
-export OuterRouteFeatures, OuterRouteTuning, OuterRouteState
-export reset_outer_route_state!, outer_route_signature, outer_route_stats_snapshot
-export default_outer_route, outer_route_candidates, select_outer_route!, record_outer_route_feedback!
 export ProcessPool, campaign_process_pool, ensure_process_workers!, shutdown_process_pool!, adopt_process_workers!
 export ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 export orbital_elements_to_cartesian
@@ -436,7 +482,6 @@ export simulation_engine_config_from_env
 export prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
 export MonteCarloSpec, MonteCarloSampleResult, MonteCarloResult, run_monte_carlo
 export run_constellation_ensemble
-export campaign_route_features, campaign_outer_route_state
 export StateAnchor, get_state_anchor_callback
 export AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel, AbstractControlEffectorModel
 export AbstractEphemeridesModel, AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel
@@ -468,7 +513,7 @@ export AbstractTerrainModel, NoTerrainModel, DEMGrid, DEMTerrainModel
 export terrain_height, terrain_radius, load_dem_grid, load_site_terrain, dem_grid_covers
 export NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosphereModel
 export PolynomialFitAtmosphereModel
-export GRAMGridAtmosphereModel
+export GRAMGridAtmosphereModel, GRAMNearSurfaceAtmosphereModel, CombinedAtmosphereModel
 export SurrogatePresetResolution, available_surrogate_presets, resolve_surrogate_preset, surrogate_preset_model, atmosphere_provenance
 export NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
 export SimpleEphemeridesModel
@@ -490,6 +535,7 @@ export ks_j2_acceleration_si, ks_drag_acceleration_si, ks_rhs!, ks_rhs
 export ks_kinematics_jacobians, ks_j2_acceleration_jacobian_si, ks_density_value_gradient
 export ks_rhs_jacobians, ks_rhs_jacobian
 export ks_implicit_midpoint_step, ks_implicit_midpoint_linearization, ks_step_jacobian
+export bind_spacecraft
 export AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 export AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 export SolarPanelAngleOfAttackControlModel
@@ -511,7 +557,7 @@ export cumulative_mpc_heat_load, propagate_ks_mpc_plan
 export mpc_control_save_fields
 export ApoapsisTargetPeriapsisRaiseGuidanceModel
 export VerificationRequest, VerificationResult
-export run_verification, run_verification_cli, run_study, run_simulation
+export run_verification, run_verification_cli, run_study, run_simulation, SimulationResults
 export station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
 export VisualizationScene, PlanetSpec, SpacecraftGeometry, LinkBox, AtmosphereSpec, atmosphere_spec, ArmGeometry, arm_geometry
 export load_model_triangles, model_bounding_box, sample_model_pointcloud, articulate_triangles, articulation_payload
@@ -531,27 +577,15 @@ export AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_
 using PrecompileTools: @compile_workload, @setup_workload
 include(joinpath(@__DIR__, "precompile_workload.jl"))
 
-# The Monte Carlo dispatchers compile on their first campaign in a process --
-# the job channel, the feeders and local consumers of the mixed dispatcher, the
-# sample wrapper, the steady-cost estimator. Measured on the paper harness
-# (L12, independent_1sat_1hr, 64 samples): the runner's first pool campaign
-# cost 3.1-3.2 s against 1.8-2.2 s for the static pool path's own cold start
-# on both machines, and 0.2-0.6 s warm. A production process pays that once;
-# the harness pays it on the first repeat of every point. Exercised with a
-# trivial sample so the generic machinery is in the pkgimage; the user's sample
-# closure itself still specialises on first call. The body lives in
-# `SimulationCampaigns._warm_campaign_dispatchers` so the test suite can run
-# the same code at run time.
-@compile_workload begin
-	SimulationCampaigns._warm_campaign_dispatchers()
-end
-
 ## 6. Runtime Initialization
 # Runtime wiring that must not be baked into the precompiled image: these Refs
 # hold closures over EnvironmentModels functions, so assigning them at include
 # time would serialize a closure from an earlier world age. __init__ runs on
 # every load of the cached image, which is what this needs.
 function __init__()
+	# Nothing measured about the precompiling host may stand in for this one
+	# (see `_reset_process_local_state!` in precompile_workload.jl).
+	_reset_process_local_state!()
 	try
 		SimulationModel.SimulationCallbacks._install_density_service_hooks!()
 	catch err

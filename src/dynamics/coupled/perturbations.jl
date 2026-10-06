@@ -55,12 +55,60 @@ const _THIRD_BODY_MU = Dict{String, Float64}(
 
 @inline _canonical_spice_name(name::String) = replace(lowercase(strip(name)), ' ' => '_')
 @inline _mu_lookup_name(name::String) = replace(_canonical_spice_name(name), "_barycenter" => "")
-@inline function _spice_query_name(name::String)
+
+@inline function _spice_query_name_uncached(name::String)::String
     key = _canonical_spice_name(name)
     if endswith(key, "_barycenter")
         return key
     end
     return key in _SPICE_FORCE_BARYCENTER_BODIES ? key * "_barycenter" : key
+end
+
+# Canonical SPICE body names are resolved on the RHS hot path: the per-satellite
+# environment sample asks for one per third body per spacecraft per derivative
+# evaluation (simulation/engine/effector_sampling.jl), and `strip`, `lowercase`
+# and `replace` each allocate a fresh short string every time. At 256
+# spacecraft, degree-50 harmonics and a Sun/Moon third body, that name
+# resolution was 741 of the 7606 profile samples taken inside the constellation
+# RHS -- ~10% of the derivative evaluation spent lowercasing "Sun" and "Moon"
+# once per spacecraft -- and 706 of the 1457 sampled allocation events.
+#
+# The names come from a handful of model and planet fields and never change
+# during a run, so the resolved form is interned and the hot path becomes one
+# dictionary read with no allocation.
+#
+# Publication is copy-on-write behind a lock: a reader takes the table by an
+# atomic load and that table is never mutated afterwards, so a reader can never
+# observe a rehash in progress even though the RHS resolves names from many
+# threads. The interned value is exactly the String the uncached expression
+# produces, so every downstream comparison, dictionary key and SPICE query is
+# unchanged.
+mutable struct _SpiceQueryNameIntern
+    @atomic table::Dict{String, String}
+end
+
+const _SPICE_QUERY_NAME_INTERN = _SpiceQueryNameIntern(Dict{String, String}())
+const _SPICE_QUERY_NAME_INTERN_LOCK = ReentrantLock()
+
+@noinline function _intern_spice_query_name(name::String)::String
+    return lock(_SPICE_QUERY_NAME_INTERN_LOCK) do
+        current = @atomic :acquire _SPICE_QUERY_NAME_INTERN.table
+        existing = get(current, name, nothing)
+        existing === nothing || return existing
+        resolved = _spice_query_name_uncached(name)
+        # Copy-on-write: publish a table that no reader is walking.
+        updated = copy(current)
+        updated[name] = resolved
+        @atomic :release _SPICE_QUERY_NAME_INTERN.table = updated
+        return resolved
+    end
+end
+
+@inline function _spice_query_name(name::String)::String
+    table = @atomic :acquire _SPICE_QUERY_NAME_INTERN.table
+    cached = get(table, name, nothing)
+    cached === nothing || return cached
+    return _intern_spice_query_name(name)
 end
 @inline function _resolve_third_body_mu(name::String)::Float64
     key = _mu_lookup_name(name)
@@ -427,12 +475,20 @@ end
 # BIT-IDENTICAL to `_harmonics_scalar_force_ii` by construction. Two properties
 # make that true and both are load-bearing:
 #
-#   1. No `@turbo`, `@fastmath` or `@simd`. Those license reassociation and FMA
-#      contraction, which is what made the previous batched kernel round
-#      differently from the scalar one. Plain `@inbounds` loops leave every
-#      floating-point operation where the scalar kernel puts it; LLVM can still
-#      vectorise the batch loops, because their iterations are independent and
-#      proving that needs no fast-math.
+#   1. No `@turbo` or `@fastmath`, and `@simd ivdep` only on the three
+#      per-degree batch loops (`b = 1:B`), never across `l` or `j`. `@turbo`
+#      and `@fastmath` license reassociation and FMA contraction, which is
+#      what made the previous batched kernel round differently from the
+#      scalar one; `@simd ivdep` licenses neither on its own, it only tells
+#      LLVM the iterations don't alias. That is true here regardless of batch
+#      size: each `b` writes only its own workspace slot and reads no other
+#      iteration's, so there is no loop-carried dependency to reorder and no
+#      reduction for the annotation to reassociate — the per-satellite
+#      floating-point operations stay exactly where the scalar kernel puts
+#      them. Plain `@inbounds` on the other loops leaves LLVM to prove
+#      vectorisability on its own, which it does above a batch-size threshold
+#      only; `@simd ivdep` makes the same vectorisation unconditional (see
+#      `git log -1 cd212833aa`).
 #   2. The nesting is degree, then order, then batch. For any one satellite the
 #      sum1..sum4 accumulations therefore run in exactly the scalar kernel's
 #      sequence. Hoisting the batch loop outwards, or reducing across the batch,
@@ -1517,6 +1573,87 @@ end
     return _srp_total_acceleration_ii(model, env.planet, x.pos_ii, pos_primary_sun, x.mass_kg)
 end
 
+"""
+    FacetSolarRadiationPressureModel(; AU_m=149_597_870_700.0, p_srp_1au=4.56e-6)
+
+Per-facet solar radiation pressure on the flat plates attached to each link with
+[`add_facet!`](@ref) (`link.SRP_facets`). For an illuminated facet of area `A`,
+unit normal `n̂`, specular coefficient `δ` and diffuse coefficient `ρ`,
+
+    F = -P A cosθ [(1 - δ) ŝ + 2 (ρ/3 + δ cosθ) n̂] · ν,    cosθ = n̂ · ŝ > 0,
+
+where `ŝ` points from the spacecraft to the Sun, `P` is `p_srp_1au` scaled to the
+spacecraft's distance from the Sun, and `ν` is the shadow fraction from
+`eclipse_area_calc` (Montenbruck and Gill, *Satellite Orbits*, Sec. 3.4). This is
+the facet model of the former `srp!`, now evaluated through the `wrench` hook.
+
+Each facet's force acts at its centre of pressure (`facet.cp`, link frame), so the
+model also returns the torque about the root body's centre of mass in the root
+body frame. Facets are oriented by the propagated attitude; without one
+(`orientation_sim = false`) the body axes are taken as J2000 and no torque is
+returned. A spacecraft with no facets feels no force from this model.
+"""
+struct FacetSolarRadiationPressureModel <: AbstractForceTorqueModel
+    AU_m::Float64
+    p_srp_1au::Float64
+    function FacetSolarRadiationPressureModel(AU_m::Real, p_srp_1au::Real)
+        AU_f, p_f = Float64(AU_m), Float64(p_srp_1au)
+        (isfinite(AU_f) && AU_f > 0.0) || throw(ArgumentError("FacetSolarRadiationPressureModel.AU_m must be > 0 m, got $AU_f."))
+        (isfinite(p_f) && p_f >= 0.0) || throw(ArgumentError("FacetSolarRadiationPressureModel.p_srp_1au must be >= 0 N/m^2, got $p_f."))
+        return new(AU_f, p_f)
+    end
+end
+FacetSolarRadiationPressureModel(; AU_m::Real=149_597_870_700.0, p_srp_1au::Real=4.56e-6) =
+    FacetSolarRadiationPressureModel(AU_m, p_srp_1au)
+
+@inline environment_requirements(::FacetSolarRadiationPressureModel) = EffectorEnvironmentRequirements(solar=true)
+
+@inline function wrench(
+    model::FacetSolarRadiationPressureModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64,
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    zero3 = SVector{3, Float64}(0.0, 0.0, 0.0)
+    spacecraft = x.spacecraft
+    spacecraft === nothing && return zero3, zero3
+    solar = env.solar
+    solar === nothing && throw(ArgumentError("FacetSolarRadiationPressureModel wrench requires env.solar."))
+    sun_pos_ii = solar.sun_pos_ii
+    r_sc_sun = sun_pos_ii - x.pos_ii
+    d_sun = norm(r_sc_sun)
+    (isfinite(d_sun) && d_sun > 0.0) || return zero3, zero3
+    shadow = eclipse_area_calc(x.pos_ii, sun_pos_ii, env.planet.Rp_e)
+    shadow == 0.0 && return zero3, zero3
+    s_hat = r_sc_sun / d_sun
+    P = model.p_srp_1au * (model.AU_m / d_sun)^2 * shadow
+    has_attitude = x.q_ib !== nothing
+    R_ib = has_attitude ? rot(x.q_ib) : SMatrix{3, 3, Float64}(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+
+    force_ii = zero3
+    torque_body = zero3
+    @inbounds for link in spacecraft.links
+        isempty(link.SRP_facets) && continue
+        # Link frame -> root body frame (the aero wrench's convention).
+        R_root_link = link.root ? SMatrix{3, 3, Float64}(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0) :
+            rot(SVector{4, Float64}(link.q...))'
+        for facet in link.SRP_facets
+            n_link = rot(SVector{4, Float64}(facet.attitude))' * SVector{3, Float64}(facet.normal_vector)
+            n_ii = normalize(R_ib' * (R_root_link * n_link))
+            cosθ = dot(n_ii, s_hat)
+            cosθ > 0.0 || continue
+            F_ii = -P * facet.area * cosθ * ((1.0 - facet.δ) * s_hat + 2.0 * (facet.ρ / 3.0 + facet.δ * cosθ) * n_ii)
+            force_ii += F_ii
+            if has_attitude
+                cp = SVector{3, Float64}(facet.cp)
+                lever_root = link.root ? cp : SVector{3, Float64}(link.r) + R_root_link * cp
+                torque_body += cross(lever_root, R_ib * F_ii)
+            end
+        end
+    end
+    return force_ii, torque_body
+end
+
 @inline function _srp_sun_position_from_spice_j2000_m(
     et::Float64,
     primary_body_name::String,
@@ -2103,10 +2240,10 @@ share one unit contract.
     alt_m::Float64,
 )::SVector{3, Float64}
     if model.field_model === :igrf
-        # show_warnings=false: the library's reduced-accuracy warning for
+        # show_warnings=Val(false): the library's reduced-accuracy warning for
         # epochs past 2030 has no maxlog and this runs once per RHS call;
         # the model constructors emit it once instead.
-        B_ned_nT = igrf(model.igrf_year, alt_m, lat_rad, lon_rad, Val(:geodetic); show_warnings=false)
+        B_ned_nT = igrf(model.igrf_year, alt_m, lat_rad, lon_rad, Val(:geodetic); show_warnings=Val(false))
         B_pp_nT = ned_to_ecef(B_ned_nT, lat_rad, lon_rad, alt_m)
         return SVector{3, Float64}(l_pi' * B_pp_nT) .* 1e-9
     end

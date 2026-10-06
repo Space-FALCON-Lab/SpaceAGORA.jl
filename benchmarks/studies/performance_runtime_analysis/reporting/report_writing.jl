@@ -27,7 +27,7 @@ function write_report(
     hw_default = _runtime_hardware_snapshot()
 
     function _first_nonmissing(df::DataFrame, col::Symbol, fallback)
-        if !(col in names(df))
+        if !(col in propertynames(df))
             return fallback
         end
         vals = [v for v in df[!, col] if !(v isa Missing)]
@@ -50,7 +50,7 @@ function write_report(
     orbit_stage_s = missing
     entry_duration_stage_s = missing
     total_stage_s = missing
-    if !(stage_timing_df === nothing) && (:stage in names(stage_timing_df)) && (:elapsed_s in names(stage_timing_df))
+    if !(stage_timing_df === nothing) && (:stage in propertynames(stage_timing_df)) && (:elapsed_s in propertynames(stage_timing_df))
         for row in eachrow(stage_timing_df)
             stage_name = String(row.stage)
             if stage_name == "run_benchmarks"
@@ -162,7 +162,7 @@ function write_report(
     split_pass_count = 0
     split_total = 0
     split_any_fail = false
-    if !(split_gate_df === nothing) && (:pass_all in names(split_gate_df))
+    if !(split_gate_df === nothing) && (:pass_all in propertynames(split_gate_df))
         split_total = nrow(split_gate_df)
         split_pass_count = count(Bool.(split_gate_df.pass_all))
         split_any_fail = split_pass_count < split_total
@@ -171,7 +171,7 @@ function write_report(
     multirate_pass_count = 0
     multirate_total = 0
     multirate_any_fail = false
-    if !(multirate_gate_df === nothing) && (:pass_all in names(multirate_gate_df))
+    if !(multirate_gate_df === nothing) && (:pass_all in propertynames(multirate_gate_df))
         multirate_total = nrow(multirate_gate_df)
         multirate_pass_count = count(Bool.(multirate_gate_df.pass_all))
         multirate_any_fail = multirate_pass_count < multirate_total
@@ -250,6 +250,7 @@ function write_report(
         println(io, "- Failed attempts: `$(total_samples - total_success)/$(total_samples)` (`$(_fmt(solve_failure_rate))%`).")
         println(io, "- Retry overhead: `$(retries_total)` retries across `$(requested_runs)` requested runs (`$(_fmt(retry_count_mean_all_runs))` retries/requested run).")
         println(io, "- Robustness-adjusted expected wall time (all attempts): `$(_fmt(penalized_expected_wall_time_all_runs)) s/requested run`.")
+        println(io, "- Counts and success/failure rates describe recorded attempts. Recorded copy-plus-solve costs exclude warmups, worker startup, explicit GC and later processing; they are not complete campaign wall time.")
         println(io, "- Mean fallback count across all attempts: `$(_fmt(fallback_count_mean_all_attempts_global))`.")
         if !(spice_peak === nothing)
             println(
@@ -493,7 +494,7 @@ function write_report(
         if entry_duration_summary_df === nothing || nrow(entry_duration_summary_df) == 0
             println(io, "- No entry-duration sweep rows were produced.")
         else
-            measured_df = if :entry_run_role in names(entry_duration_summary_df)
+            measured_df = if :entry_run_role in propertynames(entry_duration_summary_df)
                 entry_duration_summary_df[entry_duration_summary_df.entry_run_role .== "measured", :]
             else
                 entry_duration_summary_df

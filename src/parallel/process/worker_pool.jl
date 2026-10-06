@@ -15,14 +15,41 @@ Each worker is started with `--threads=1`: process workers do not share the
 coordinator's Julia thread pool, so inner thread-based parallelism inside a
 worker's own `run_simulation` call is unaffected by (and does not contend
 with) how many process workers are active.
+
+# The dispatch cache
+
+The `dispatch_*` fields are storage for the campaign layer's per-dispatch
+closure cache; the policy that fills and drops them lives with the dispatcher
+that uses them (`_acquire_dispatch_runner` in
+`src/simulation/campaigns/monte_carlo.jl`), because when a cached closure may
+be reused is a property of the dispatch, not of the pool.
+
+What they hold is one `CachingPool` over `dispatch_workers`, the campaign
+function `dispatch_f` it was built for, and the per-sample wrapper closure
+`dispatch_runner` that `CachingPool` keys its worker-side cache on. A campaign
+that dispatches the same `f` to the same workers reuses all three instead of
+building a pool, re-serializing the closure to every worker, and clearing it
+again -- the shape a Monte Carlo campaign run repeatedly in one session has.
+
+Retention is bounded, which the per-dispatch `clear!` used to do on its own:
+the cached closure (and whatever configuration state it captures) stays alive
+on the coordinator and on every worker until a campaign dispatches a different
+`f`, until the worker set changes, or until [`shutdown_process_pool!`](@ref)
+runs. It is one campaign's closure at a time, never an accumulation.
 """
 mutable struct ProcessPool
     workers::Vector{Int}
     project_path::String
     lock::ReentrantLock
+    dispatch_pool::Union{Nothing, CachingPool}
+    dispatch_f::Any
+    dispatch_runner::Any
+    dispatch_workers::Vector{Int}
+    dispatch_busy::Bool
 end
 
-ProcessPool(project_path::AbstractString) = ProcessPool(Int[], String(project_path), ReentrantLock())
+ProcessPool(project_path::AbstractString) = ProcessPool(
+    Int[], String(project_path), ReentrantLock(), nothing, nothing, nothing, Int[], false)
 
 const _CAMPAIGN_PROCESS_POOL = ProcessPool(Base.active_project())
 
@@ -36,8 +63,85 @@ precompilation cost) are reused rather than respawned per campaign.
 """
 campaign_process_pool()::ProcessPool = _CAMPAIGN_PROCESS_POOL
 
-@inline function _process_worker_exeflags(project_path::AbstractString)::Cmd
-    return Cmd(["--threads=1", "--startup-file=no", "--project=$(project_path)"])
+# Default per-worker GC heap-size-hint. DERIVED from a P6p diagnostic on
+# TRX50 (4096 one-satellite native-GRAM samples, process route, job
+# 20260923-111926-55080, memory sampled every 5 s, 200 GB cgroup cap): at the
+# 8-worker rung, during the predictive mode's campaigns, system memory went
+# from 107 GB to 181 GB to 211 GB across three consecutive 10 s samples, with
+# thirteen Julia processes totaling 103/174/203 GB and the largest single
+# process reaching 13/24/30 GB, before the cap killed the job. Nothing handed
+# any worker's collector a size to aim for, so nothing bounded its growth
+# toward the whole machine.
+#
+# The default hint is a SHARE of the machine's total memory split
+# (pool_size + 1) ways -- the pool's `pool_size` workers plus the coordinator
+# process sharing the same machine -- floored and capped so the formula
+# degenerates sensibly at both ends of the pool-size range.
+#
+# The share matters on its own, separately from the per-process split: a
+# heap-size-hint is a soft target a process can overshoot, and
+# total_memory ÷ (pool_size + 1) alone hints every process at its exact
+# equal share of the WHOLE machine, so the pool plus the coordinator are
+# together hinted at 100% of physical memory with nothing held back for the
+# native GRAM images, MERRA2 buffers, the OS, or another job sharing the
+# machine. At TRX50's ~250 GB and 16 workers that was 17 processes hinted at
+# 14.7 GiB each -- 250 GiB in aggregate, none of it headroom.
+const _POOL_WORKER_HEAP_HINT_FLOOR_BYTES = 2 * 1024^3    # 2 GiB. ASSUMED: below this a hint would fight a single sample's own working set (GRAM tables, harmonics buffers) rather than bound growth across many samples.
+const _POOL_WORKER_HEAP_HINT_CEIL_BYTES = 64 * 1024^3    # 64 GiB. ASSUMED: comfortably above every per-process peak (<=30 GB) the diagnostic observed, so it only engages for a small pool on a very large machine, where it adds no protection anyway.
+# ASSUMED: half the machine's memory is budgeted for Julia worker heaps in
+# aggregate; the other half is headroom for native images, the OS, and
+# anything else sharing the machine. Overridable, not re-derived per host,
+# since how much headroom a given machine needs is a deployment choice this
+# formula cannot see (concurrent non-Julia jobs, native library footprint,
+# page cache pressure, ...).
+const _POOL_WORKER_HEAP_HINT_SHARE_DEFAULT = 0.5
+
+@inline function _pool_worker_heap_hint_share()::Float64
+    raw = strip(get(ENV, "SPACEAGORA_POOL_WORKER_HEAP_HINT_SHARE", ""))
+    isempty(raw) && return _POOL_WORKER_HEAP_HINT_SHARE_DEFAULT
+    parsed = tryparse(Float64, raw)
+    (parsed === nothing || parsed <= 0.0) ? _POOL_WORKER_HEAP_HINT_SHARE_DEFAULT : parsed
+end
+
+@inline function _default_pool_worker_heap_hint_bytes(pool_size::Int)::Int
+    budget = Float64(Sys.total_memory()) * _pool_worker_heap_hint_share()
+    per_worker = floor(Int, budget / max(1, pool_size + 1))
+    return clamp(per_worker, _POOL_WORKER_HEAP_HINT_FLOOR_BYTES, _POOL_WORKER_HEAP_HINT_CEIL_BYTES)
+end
+
+@inline function _format_heap_size_hint(bytes::Integer)::String
+    # Julia's --heap-size-hint takes a byte count with an optional unit
+    # suffix (K/M/G/T); whole-GiB keeps the flag readable in a process listing.
+    return string(round(bytes / 1024^3; digits=2), "G")
+end
+
+"""
+    _pool_worker_heap_size_hint(pool_size::Int)::Union{Nothing, String}
+
+Resolve the `--heap-size-hint` argument for a process-pool worker, where
+`pool_size` is the pool's target worker count (see
+[`_default_pool_worker_heap_hint_bytes`](@ref) for the derivation).
+
+`SPACEAGORA_POOL_WORKER_HEAP_SIZE_HINT` overrides the computed default:
+`"off"` (case-insensitive) disables the hint entirely (returns `nothing`, so
+no `--heap-size-hint` flag is added at all); any other non-empty value is
+passed through verbatim as the flag's argument. Unset (the default) uses the
+derived value.
+"""
+function _pool_worker_heap_size_hint(pool_size::Int)::Union{Nothing, String}
+    raw = strip(get(ENV, "SPACEAGORA_POOL_WORKER_HEAP_SIZE_HINT", ""))
+    if !isempty(raw)
+        lowercase(raw) == "off" && return nothing
+        return raw
+    end
+    return _format_heap_size_hint(_default_pool_worker_heap_hint_bytes(pool_size))
+end
+
+@inline function _process_worker_exeflags(project_path::AbstractString, pool_size::Int=1)::Cmd
+    flags = String["--threads=1", "--startup-file=no", "--project=$(project_path)"]
+    hint = _pool_worker_heap_size_hint(pool_size)
+    hint === nothing || push!(flags, "--heap-size-hint=$(hint)")
+    return Cmd(flags)
 end
 
 # Distributed inherits the coordinator's LOAD_PATH unless JULIA_LOAD_PATH is
@@ -53,9 +157,9 @@ function _process_worker_load_path()::String
     return join(["@"; rest], pathsep)
 end
 
-@inline function _spawn_process_workers(n::Int, project_path::AbstractString)::Vector{Int}
+@inline function _spawn_process_workers(n::Int, project_path::AbstractString, pool_size::Int=n)::Vector{Int}
     return addprocs(n;
-        exeflags=_process_worker_exeflags(project_path),
+        exeflags=_process_worker_exeflags(project_path, pool_size),
         env=["JULIA_LOAD_PATH" => _process_worker_load_path()])
 end
 
@@ -75,6 +179,7 @@ end
 # resolve against.
 function _bootstrap_process_worker!(worker::Int, project_path::String)::Nothing
     Distributed.remotecall_eval(Main, [worker], :(using SpaceAGORA))
+    _preload_worker_packages!(worker)
     # GRAMSuite is a weak/optional dependency (only in [weakdeps]/[extras]),
     # so plain `using GRAMSuite` doesn't resolve even on the coordinator
     # without first pushing its vendored path onto LOAD_PATH (see
@@ -100,6 +205,44 @@ function _bootstrap_process_worker!(worker::Int, project_path::String)::Nothing
         @warn "Process worker $(worker) could not load GRAMSuite; campaigns using a GRAM density model will fail on this worker." exception=(err, catch_backtrace())
     end
     _furnish_default_spice_kernels!(worker)
+    return nothing
+end
+
+# Packages named in SPACEAGORA_PROCESS_WORKER_PRELOAD (comma-separated), each
+# loaded into a new worker's Main right after SpaceAGORA. For a package whose
+# only purpose is its precompiled code -- the paper benchmark harness's
+# precompile workload (benchmarks/studies/paper_parallelization_benchmarks/
+# workload) is one -- loading it is what makes a fresh worker's first sample
+# skip compilation. The worker resolves the name through its own load path,
+# which `_process_worker_load_path` builds from the coordinator's. Only a name
+# that is already precompiled for the worker's environment is loaded: a stale
+# image would otherwise be rebuilt inside the worker, in the middle of a
+# campaign, once per worker. Best-effort, like the GRAMSuite load below.
+function _process_worker_preload_names()::Vector{String}
+    raw = strip(get(ENV, "SPACEAGORA_PROCESS_WORKER_PRELOAD", ""))
+    isempty(raw) && return String[]
+    return String[strip(s) for s in split(raw, ",") if !isempty(strip(s))]
+end
+
+function _preload_worker_packages!(worker::Int)::Nothing
+    for name in _process_worker_preload_names()
+        Base.isidentifier(name) || continue
+        try
+            loaded = Distributed.remotecall_eval(Main, worker, quote
+                let id = Base.identify_package($name)
+                    if id !== nothing && Base.isprecompiled(id)
+                        Base.require(id)
+                        true
+                    else
+                        false
+                    end
+                end
+            end)
+            loaded || @warn "Process worker $(worker) skipped preloading $(name): not found or not precompiled for this environment."
+        catch err
+            @warn "Process worker $(worker) could not preload $(name)." exception=(err, catch_backtrace())
+        end
+    end
     return nothing
 end
 
@@ -214,7 +357,10 @@ function ensure_process_workers!(pool::ProcessPool, n::Int; warmup_fn=nothing)::
     lock(pool.lock) do
         shortfall = desired - length(pool.workers)
         if shortfall > 0
-            new_workers = _spawn_process_workers(shortfall, pool.project_path)
+            # pool_size is `desired` (the pool's target total), not `shortfall`:
+            # the heap-size-hint share is per member of the final pool, not per
+            # newly spawned worker.
+            new_workers = _spawn_process_workers(shortfall, pool.project_path, desired)
             for w in new_workers
                 _bootstrap_process_worker!(w, pool.project_path)
             end
@@ -262,9 +408,24 @@ end
 Remove every worker currently in `pool` via `rmprocs` and clear it. Mainly
 useful for tests; campaign code leaves the process-global pool warm across
 calls by design.
+
+Also drops the dispatch cache (see [`ProcessPool`](@ref)): the cached closure
+is held for the sake of workers that no longer exist, and the pool must not
+outlive its own workers holding a reference to a campaign's configuration.
 """
 function shutdown_process_pool!(pool::ProcessPool)::Nothing
     lock(pool.lock) do
+        # Unconditional, and before the worker check: a pool whose workers were
+        # adopted and then removed elsewhere still has a cache to drop.
+        # `_drop_dispatch_cache!` in monte_carlo.jl is the same three lines on
+        # the campaign side; neither module can call the other's (see the
+        # `ProcessPool` docstring on where the policy lives).
+        pool.dispatch_pool === nothing || Distributed.clear!(pool.dispatch_pool)
+        pool.dispatch_pool = nothing
+        pool.dispatch_f = nothing
+        pool.dispatch_runner = nothing
+        empty!(pool.dispatch_workers)
+        pool.dispatch_busy = false
         isempty(pool.workers) && return nothing
         rmprocs(pool.workers)
         empty!(pool.workers)

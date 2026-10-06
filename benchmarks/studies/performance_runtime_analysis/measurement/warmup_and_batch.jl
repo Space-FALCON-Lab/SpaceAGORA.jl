@@ -532,9 +532,10 @@ function _run_case_batch_core!(
         last_row = nothing
         for attempt in 1:spec.max_attempts
             row = measure_case(case, spec.name, rep; attempt=attempt, plan=plan, solver_cache=solver_cache)
+            row = merge(row, (is_terminal_attempt=row.solve_success || attempt == spec.max_attempts,))
+            push!(rows, row)
             last_row = row
             if row.solve_success
-                push!(rows, row)
                 println("  repeat $(rep)/$(repeat_count) attempt $(attempt)/$(spec.max_attempts): total=$(round(row.total_time_s; digits=3)) s, solve=$(round(row.solve_time_s; digits=3)) s")
                 flush(stdout)
                 break
@@ -543,7 +544,6 @@ function _run_case_batch_core!(
             flush(stdout)
         end
         if !(last_row === nothing) && !last_row.solve_success
-            push!(rows, last_row)
             println("  repeat $(rep)/$(repeat_count): failed after $(spec.max_attempts) attempts, retcode=$(last_row.solve_retcode)")
             flush(stdout)
         end

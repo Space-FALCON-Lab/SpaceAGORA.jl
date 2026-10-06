@@ -195,7 +195,11 @@ julia --project=. scripts/assets/check_assets.jl
 For the supported Odyssey guidance/control exercise, use the
 [public surrogate workflow](tutorials/odyssey_surrogate.md). Its dedicated
 `examples/odyssey_surrogate_env` environment retrieves a pinned public GRAMSuite
-wrapper; native GRAM and private repositories are unnecessary.
+wrapper; native GRAM and private repositories are unnecessary. The published
+preset grids and payloads are CC BY 4.0: cite the preset by name and version and credit NASA's
+GRAM Suite (Mars-GRAM). The near-surface payload also holds Mars-GRAM's MOLA terrain values
+at its lattice nodes; credit NASA MOLA as its archive README states. Scenario assets keep
+their original NAIF and gravity-data terms.
 
 ```sh
 julia --project=examples/odyssey_surrogate_env src/cli/main.jl assets list
@@ -203,7 +207,7 @@ julia --project=examples/odyssey_surrogate_env src/cli/main.jl assets fetch --pr
 julia --project=examples/odyssey_surrogate_env src/cli/main.jl assets check --preset=odyssey_p20_frozen_v1 --version=1.0.0
 ```
 
-`fetch` installs and verifies the exact grid bytes. `check` stays offline and
+`fetch` installs and verifies the exact payload bytes. `check` stays offline and
 also validates its schema, coordinates and generation metadata. Normal example
 startup performs the same retrieval automatically. A supplied `--file` must
 match the named preset and never falls back to a download. Missing files, LFS
@@ -212,7 +216,15 @@ Julia artifacts handle concurrent installation; a corrupt managed artifact or
 override must be repaired explicitly. User-supplied files are never replaced.
 
 A named version fixes the atmosphere's epoch and domain. Changing the simulation
-date does not evolve the grid. Only the bounded P20 preset is currently listed;
-other planets and epochs require separately generated and validated presets.
+date does not evolve it. Three presets are listed, all frozen at the P20 instant
+(see [atmosphere models](user/atmosphere_models.md)):
+- the bounded Odyssey preset;
+- `mars_global_upper_p20_frozen_v1`, a global Mars grid from 80 to 365 km;
+- `mars_global_near_surface_p20_frozen_v1`, a near-surface Mars atmosphere from 5 m above the surface, with no winds. Version 1.0.0 reaches 75 km; version 1.1.0 reaches 81 km areoid height, above the global preset's 80 km floor everywhere.
+
+The same `fetch` and `check` commands take `--preset=mars_global_upper_p20_frozen_v1 --version=1.0.0`,
+whose archive is about 230 MB, or `--preset=mars_global_near_surface_p20_frozen_v1 --version=1.1.0` (or
+`--version=1.0.0`), whose archives are about 17 MB and 15 MB. Other planets and epochs require separately
+generated and validated presets.
 The ordinary results-bundle manifest includes an `atmosphere` section identifying
 the backend, preset/version, payload/catalog hashes and frozen-domain contract.

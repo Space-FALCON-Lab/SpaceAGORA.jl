@@ -16,14 +16,29 @@ end
     return nothing
 end
 
+# The parallel flag a run under `config` resolves to: an explicit
+# `args.solver_config` wins, exactly as it does for every other solver field;
+# otherwise the engine config's own `SolverConfig`.
+@inline _effective_parallel_flag(config::SimulationEngineConfig, args::SimulationConfiguration)::Bool =
+    args.solver_config === nothing ? config.solver.parallel : args.solver_config.parallel
+
+function _run_simulation_with_engine_config(config::SimulationEngineConfig, args::SimulationConfiguration; kwargs...)
+    flag = _effective_parallel_flag(config, args)
+    applies = _parallel_flag_applies(flag)
+    applies && _parallel_flag_prepare!()
+    run = flag ? (() -> with(() -> run_simulation(args; kwargs...), _PARALLEL_FLAG_RESOLVED => true)) :
+                 (() -> run_simulation(args; kwargs...))
+    return _with_engine_env_overrides(config, run; parallel_flag=applies)
+end
+
 function run_simulation(config::SimulationEngineConfig, args::SimulationConfiguration; kwargs...)
-    return _with_engine_env_overrides(config, () -> run_simulation(args; kwargs...))
+    return _run_simulation_with_engine_config(config, args; kwargs...)
 end
 
 function run_simulation(config::SimulationEngineConfig, args; kwargs...)
     _depwarn_untyped_run_simulation(args)
     typed_args = _require_simulation_configuration(args)
-    return _with_engine_env_overrides(config, () -> run_simulation(typed_args; kwargs...))
+    return _run_simulation_with_engine_config(config, typed_args; kwargs...)
 end
 
 function run_simulation(args; kwargs...)

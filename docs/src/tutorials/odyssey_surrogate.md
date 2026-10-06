@@ -15,6 +15,13 @@ julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate_env/se
 julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl
 ```
 
+After pulling a newer SpaceAGORA, run the setup script again. It moves the
+environment to the GRAMSuite revision the checkout now pins, which a plain
+`Pkg.instantiate()` of an earlier setup would not do.
+
+The first setup downloads and compiles several hundred packages, so it can take
+from a few minutes to much longer on a busy machine; later setups reuse them.
+
 Each command-line run starts a new Julia process, which compiles the example
 before its first passage; expect a pause of a few minutes. An interactive
 session compiles once and reuses the code for later runs. When the comparison
@@ -38,7 +45,7 @@ The trailing semicolon keeps the REPL from printing the returned tables. Give
 each run a new directory; the examples on this page use directories under
 `output/`, which git ignores.
 
-The preset resolver installs the identified atmosphere once, and the scenario helper supplies the four identified public SPICE kernels and Mars gravity coefficients. Each first installation prints one line naming its source and one confirming that its SHA256 checksums match. The files, about 224 MB in total (a 47 MB grid and 176 MB of kernels and coefficients), are stored in the `artifacts/` folder of your Julia depot, by default `~/.julia/artifacts`. Subsequent runs reuse installed files. An offline run requires these assets to be installed already:
+The preset resolver installs the identified atmosphere once, and the scenario helper supplies the four identified public SPICE kernels and Mars gravity coefficients. Each first installation prints one line naming its source and one confirming that its SHA256 checksums match. The files, about 224 MB in total (a 47 MB grid and 176 MB of kernels and coefficients), are stored in the `artifacts/` folder of your Julia depot, by default `~/.julia/artifacts`. The atmosphere grid is published under CC BY 4.0: cite it by preset name and version, and credit NASA's GRAM Suite (Mars-GRAM) as the source model. The scenario assets keep the original terms of the NAIF kernels and gravity coefficients (see the [GRAMSuite.jl repository](https://github.com/Space-FALCON-Lab/GRAMSuite.jl)). To list, prefetch or check presets without running the example, use the commands in [Named surrogate data](../cli.md#Named-surrogate-data). Subsequent runs reuse installed files. An offline run requires these assets to be installed already:
 
 ```sh
 julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl --offline --output=output/odyssey_offline
@@ -92,6 +99,67 @@ This is a prescribed panel-cap exercise. Its thermal threshold is infinite, and 
 
 `configure_case` in the example shows how to replace the guidance and control configuration while retaining the atmosphere and scenario. The unchanged P20 regression remains a separate reference with guidance and control disabled. Results from this active-control exercise do not inherit a mission-accuracy claim from that reference.
 
+## EDG state between runs and passes
+
+A fresh `run_simulation` initializes EDG state, including its counters. The
+paired guidance and controller must share one `AerobrakingEnergyDepletionState`
+with one entry per spacecraft and matching configurations. Default simulation
+isolation preserves this pairing in the run-owned copy. Reusing a configuration
+starts a fresh run; `isolate_state=false` also resets EDG state, while leaving
+ownership of all other mutable configuration to the caller.
+
+Atmospheric entry and exit use the simulator's existing boundary events. Each
+changed spacecraft loses its cached bracket, switch times and mode flags.
+Repeated delivery of the same crossing does not clear a new plan, and ordinary
+callbacks within a pass retain their cache. Bracketing counts accumulate within
+a run; last-command telemetry remains until the next control update. Propagated
+physical heat loads and panel geometry are not cleared by this reset.
+
+Startup and crossing reconciliation share one boundary convention: within
+64 floating-point spacings of the entry-interface radius, outward motion is
+outside and inward or tangential motion is inside. This ensures that a plan
+computed at an exact-boundary outbound start is invalidated on the next entry.
+The startup flag also selects the initial solver phase when the simulation uses
+atmosphere-dependent solver settings. Outbound starts in this band therefore
+begin with orbit-phase settings, including in non-EDG configurations.
+
+A known limit remains for an exact-boundary start with zero radial velocity
+that subsequently rises, such as a periapsis exactly on the entry interface.
+It is classified as inside. In the reviewed witness, the mask stays inside
+through the coast, so a guidance plan computed at time zero survives the next
+entry; atmospheric solver settings can also persist during that coast. The
+outbound-start correction does not fix this tangential-start case. Its boundary
+classification and test expectations are retained; acceleration-based tangency
+handling requires a separate reviewed change.
+
+EDG enables the existing crossing pipeline even when both solver phases have
+identical settings. That pipeline also enables staged density updates when the dynamics require density,
+exit-time thruster scheduling (which may call guidance), and phase-setting
+reapplication. Added root-finding stops can change the integration path;
+unchanged guidance formulas do not imply bitwise-identical trajectories.
+
+At exit, invalidating the old mode makes the next control update use the
+fresh-pass default for the configured modes: minimum angle for targeting-only
+EDG, or maximum angle when maximum depletion is configured. The effect relative
+to retaining the previous pass's command depends on whether its switch occurred:
+
+| Configuration | Previous pass's switch | Before exit invalidation | After exit invalidation |
+| --- | --- | --- | --- |
+| Targeting only | Completed | Minimum | Minimum, unchanged |
+| Targeting only | Still ahead | Maximum | Minimum |
+| Targeting plus maximum depletion | Completed | Minimum | Maximum |
+| Targeting plus maximum depletion | Still ahead | Maximum | Maximum, unchanged |
+
+These between-pass commands can affect forces above the entry interface when
+density, solar pressure or attitude coupling remains active. The reset itself
+does not change panel geometry.
+
+Maximum-depletion control may be configured without guidance. Targeting control
+requires paired guidance to establish its bracket. EDG checkpoint writing and
+resume are refused before output creation because the checkpoint format does
+not preserve EDG pass state. The stored `switch_recompute_interval_s` setting
+remains inactive; this lifecycle rule does not introduce periodic re-solving.
+
 ## Inspect the result
 
 Unless you pass `--output=DIR` (or `output_dir` in Julia), the comparison writes
@@ -110,6 +178,13 @@ velocity in m/s: the columns `x_m`, `y_m`, `z_m`, `vx_m_s`, `vy_m_s` and
 state, and each `summary.toml` records it as `state_frame`. In the same table,
 `height_km` is ellipsoidal height, `latitude_deg` geodetic latitude and
 `longitude_deg` east longitude, the conventions of the preset's domain.
+
+The atmosphere provenance in `summary.toml` describes how the published preset
+was made. Its `generation_provenance.runtime_wrapper_revision` is the GRAMSuite
+revision used to generate and publish the grid, not necessarily the one running
+now. The revision your session runs is pinned in
+`examples/odyssey_surrogate_env/Project.toml` and recorded in that folder's
+`Manifest.toml`.
 
 Each run stops at its outbound 250 km ellipsoidal-height crossing, so
 `solver_retcode = "Terminated"` in `summary.toml` is the normal result. The common-time comparison avoids confusing a control effect with a difference in the exit event's timing. The example's small nonzero effect checks establish that the selected setting is active. They are not accuracy tolerances or release requirements.
@@ -156,4 +231,4 @@ orbit/atmosphere relative tolerance `1e-7` and absolute tolerance `1e-9`.
 This is an independent usability exercise, not a replay of the reference's
 automatic stiff-solver configuration.
 
-This frozen snapshot is useful for repeatable algorithm development. It does not model other dates, uncertain forcing, atmospheric variability or the accuracy of a flight mission. For advanced atmospheric investigations, configure native GRAM explicitly, or generate and validate a new mission-specific snapshot before using it in repeated runs. Application-specific accuracy and robustness requirements remain separate from this example.
+This frozen snapshot is useful for repeatable algorithm development. It does not model other dates, uncertain forcing, atmospheric variability or the accuracy of a flight mission. For advanced atmospheric investigations, configure native GRAM explicitly ([Compare a surrogate with native GRAM](../user/atmosphere_models.md#Compare-a-surrogate-with-native-GRAM)), or generate and validate a new mission-specific snapshot before using it in repeated runs ([Prepare another frozen snapshot](../user/atmosphere_models.md#Prepare-another-frozen-snapshot)). Application-specific accuracy and robustness requirements remain separate from this example.

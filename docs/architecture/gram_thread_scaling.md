@@ -1,0 +1,569 @@
+# Native GRAM under threads: the global lock and the isolated pool
+
+Native GRAM is single-threaded. Every density query in a process is serialized,
+by default, on one lock (`RuntimeServices.GRAM_LOCK`, which is the same object as
+`SPICE_LOCK` — GRAM's statically linked CSPICE exports the same internal symbols
+as SpaceAGORA's own SPICE bindings, so the two cannot be separated). A threaded
+constellation therefore does not scale on a GRAM atmosphere: the threads queue.
+
+`SPACEAGORA_GRAM_ISOLATED_POOL` is the alternative introduced after its
+SPICE-corruption crash was root-caused and fixed. It now defaults to `auto`
+with the wind-history guard described below. It
+replaces the one shared `GRAMAtmosphereModel` with `workers` independent
+`deepcopy`ed models, each behind its own `ReentrantLock`, and evaluates a batch
+of satellites across them. Nothing had measured it, and nothing had checked that
+two GRAM instances return the same number.
+
+This page records what the measurement found. The scripts are in
+`benchmarks/studies/gram_thread_scaling/`; the committed CSVs under its
+`results/` are the rows these tables are read from.
+
+## Is the pool bit-identical to the locked path?
+
+The retained identity comparisons cover nominal winds. They do not establish
+identity under perturbed winds. Native density and temperature read the mean
+field, but perturbed winds follow a random walk over each instance's query
+history. The pinned GRAMSuite wrapper resolves its default `auto` wind mode to
+`perturbed`, not `nominal`.
+
+Automatic pooling declines any wind-requesting batch whose core reports
+history-dependent winds, before constructing or warming worker models. Both the
+density callback and look-ahead cache then fall back to the locked batch route.
+This also preserves stored wind diagnostics when a caller requests winds that
+the force model does not use. Nominal winds and queries with `wind=false` retain
+the existing pool eligibility. Unknown raw cores are treated conservatively.
+
+Explicit `SPACEAGORA_GRAM_ISOLATED_POOL=on` bypasses this wind-history guard:
+it opts into separate instance histories and can change winds and trajectories
+with pool width or thread count. It is not a reproducibility-preserving speed
+switch under perturbed winds. No atmosphere mode or seed is changed by routing.
+
+Three retained nominal-wind comparisons use exact `reinterpret`ed bits,
+never a tolerance:
+
+| Check | What it compares | Result |
+|---|---|---|
+| `density_grid_parity.jl`, replay control | the locked batch call run twice on the same grid | identical |
+| `density_grid_parity.jl`, per instance | each pool instance's serial evaluation of the whole grid against the locked reference | identical: 4 instances over 256 states, then 2 and 8 instances over 2048 states |
+| `density_grid_parity.jl`, batch | the shipped `getDensityBatch!` against the shipped `_gram_isolated_pool_batch_eval!`, threaded | identical for density, temperature and all three wind components |
+
+and on whole trajectories, via `dump_states.jl` (every saved time and every
+component of every spacecraft, raw `Float64`, `cmp`ed byte for byte):
+
+| Dump | Bytes | `cmp` |
+|---|---|---|
+| 64 spacecraft, look-ahead, locked vs pool width 4, 4 threads | 98 496 | identical |
+| 64 spacecraft, freeze-per-step, locked vs pool width 4, 4 threads | 98 496 | identical |
+| 64 spacecraft, look-ahead, locked vs pool width 2, 8 threads | 98 496 | identical |
+| 64 spacecraft, look-ahead, locked vs pool width 8, 8 threads | 98 496 | identical |
+| the WS11 reference case (`ppc_constellation`, EI 120 km), locked vs pool width 4 | 98 496 | identical |
+
+The retained locked dump also matches between 4 and 8 threads for those
+nominal-wind cases. This does not establish perturbed-wind identity.
+
+One real difference was found and fixed, and it was not a rounding difference.
+The locked scalar path floors altitude at `-30.0` m before calling GRAM
+(`EM.getDensity(::GRAMAtmosphereModel, ...)` and `EM._gram_point_density`);
+the pool's `_gram_isolated_pool_density_state` did not. Native GRAM rejects a
+height below −31 m with *"Height below -31 meters. This is an unrecoverable
+error."*, so below that altitude the locked path returned a density and the
+pooled path aborted the solve. A run that reaches the surface — an entry, a
+landing — completed with the pool off and died with it on. The pool now applies
+the same floor. `src/simulation/callbacks/density_callbacks/gram_process_batch.jl`
+sends unclamped altitudes to the process-backed density service the same way and
+has not been changed here.
+
+At the time of the clamp correction the pool default was off. The retained
+dumps above were compared before and after that correction with the pool both
+off and on. The current automatic default additionally obeys the wind-history
+guard described above.
+
+## Is the pool faster?
+
+At 1024 spacecraft and four threads or more, yes, by up to 1.90x. At 256 it
+loses at every thread count and every width, by as much as a factor of two. The
+axis that decides is how many native GRAM calls a single callback makes, and the
+threshold sits between those two sizes.
+
+All of it on the workstation (12 physical cores, 24 threads), one thread count
+per process, each group solved back to back in one process state with the arms
+alternating across three repeats and the minimum taken. Ratios only:
+locked ÷ pool, so above 1 means the pool is faster. Lock hold and wait are the
+`gram_density` site's, over the locked run. Raw rows in
+`benchmarks/studies/gram_thread_scaling/results/`.
+
+| threads | spacecraft | density path | locked (s) | pool 2 | pool 4 | pool 8 | locked lock hold (s) | locked lock wait (s) | pool 8 acquisitions |
+|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 256 | freeze | 0.42 | 1.00 | 1.00 | 0.99 | 0.16 | 0.00 | 6144 |
+| 1 | 256 | lookahead | 0.66 | 1.01 | 0.99 | 0.99 | 0.33 | 0.00 | 11520 |
+| 1 | 1024 | freeze | 1.81 | 0.99 | 1.01 | 0.99 | 0.55 | 0.00 | 24576 |
+| 1 | 1024 | lookahead | 3.23 | 1.15 | 1.01 | 1.15 | 1.24 | 0.00 | 46080 |
+| 2 | 256 | freeze | 0.31 | 0.90 | 0.91 | 0.84 | 0.16 | 0.00 | 0 |
+| 2 | 256 | lookahead | 0.54 | 0.86 | 0.89 | 0.89 | 0.36 | 0.10 | 5120 |
+| 2 | 1024 | freeze | 1.20 | 0.96 | 0.93 | 1.02 | 0.54 | 0.00 | 0 |
+| 2 | 1024 | lookahead | 2.05 | 1.06 | 0.96 | 0.85 | 1.24 | 0.37 | 20480 |
+| 4 | 256 | freeze | 0.25 | 0.88 | 0.67 | 0.71 | 0.17 | 0.00 | 0 |
+| 4 | 256 | lookahead | 0.51 | 0.92 | 0.81 | 0.80 | 0.36 | 0.33 | 5120 |
+| 4 | 1024 | freeze | 0.83 | 1.37 | 1.65 | 1.41 | 0.55 | 0.00 | 0 |
+| 4 | 1024 | lookahead | 1.76 | 1.17 | 1.29 | 1.10 | 1.35 | 1.34 | 20480 |
+| 8 | 256 | freeze | 0.21 | 0.83 | 0.69 | 0.49 | 0.16 | 0.00 | 0 |
+| 8 | 256 | lookahead | 0.52 | 0.90 | 0.79 | 0.68 | 0.42 | 1.78 | 5120 |
+| 8 | 1024 | freeze | 0.88 | 1.64 | 1.90 | 1.76 | 0.55 | 0.00 | 0 |
+| 8 | 1024 | lookahead | 1.76 | 1.13 | 1.27 | 1.20 | 1.32 | 3.76 | 20480 |
+
+The one-thread block is the null control and reads as one. The pool needs at
+least two workers, so at one thread it declines and both arms are the same code:
+the acquisition counts are identical to the unit, and the ratios come back within
+1 % of unity — except the 1024-spacecraft look-ahead row, whose wall time is
+bimodal between about 2.80 s and 3.23 s in *both* arms. That 15 % spread is the
+resolution floor for that one cell, and nothing smaller should be read out of it.
+
+Above one thread the pool engages, and the acquisition counts say exactly how
+far it reaches. In freeze-per-step the shared lock's `gram_density` count goes to
+zero: every native GRAM call has moved to a per-worker instance behind a
+per-worker lock. In look-ahead mode it falls from 11 520 to 5 120 and from 46 080
+to 20 480 — the callback's share moves, and the look-ahead cache's own knot
+queries stay on the shared lock, because `_build_vacuum_gram_cache!` runs them
+scalar on the shared model.
+
+### The lock was not the problem where the pool helps
+
+The most useful column is the one that is zero. In freeze-per-step the locked
+path's lock *wait* is 0.00 s at every thread count and both sizes, against a hold
+of 0.16–0.55 s. There is no queueing: `getDensityBatch!` evaluates the whole
+batch from the one thread that entered the callback, so the shared lock is taken
+6 144 or 24 576 times and never contended. What the pool buys there is not lock
+relief, it is parallelism over work that was simply serial.
+
+And where the lock *is* contended, the pool does not reach it. In look-ahead mode
+the locked wait grows with the thread count — 0.10, 0.33, 1.78 s at 256
+spacecraft, 0.37, 1.34, 3.76 s at 1024 — and the pooled arms carry the same wait
+or more (up to 4.39 s), because the calls doing the waiting are the look-ahead
+cache's, which the pool never touches. That is the honest reading of the
+look-ahead column: its 1.13–1.29x is the callback's share being parallelized
+while the contended path underneath is unchanged.
+
+### Why 256 loses, and it is not the build cost
+
+Every pooled solve constructs its own instances, so the obvious explanation for
+the 256-spacecraft loss is a fixed build that a 100 s mission cannot amortize.
+The mission-length control says otherwise:
+
+| mission (s) | spacecraft | density path | threads | locked (s) | pool 4 |
+|---:|---:|---|---:|---:|---:|
+| 100 | 256 | freeze | 8 | 0.24 | 0.68 |
+| 100 | 256 | lookahead | 8 | 0.50 | 0.75 |
+| 1000 | 256 | freeze | 8 | 1.64 | 0.80 |
+| 1000 | 256 | lookahead | 8 | 2.08 | 0.88 |
+
+Ten times the mission moves the ratio from 0.68 to 0.80 and from 0.75 to 0.88 —
+better, and still a loss. Meanwhile four times the constellation moves it from
+0.69 to 1.90 at the same thread count. So the governing quantity is the native
+GRAM work inside one callback invocation, not the number of invocations: the
+threaded fan-out has a fixed per-invocation cost, and at 256 spacecraft the
+0.17 s of native GRAM spread across the whole run is not enough to cover it.
+
+### What ships
+
+`SPACEAGORA_GRAM_ISOLATED_POOL` now defaults to `auto` rather than `off`, at a
+threshold of 1024 and a width capped at 4, subject to the wind-history guard.
+Each of those three numbers is
+SOURCED from the table above and argued where it is defined, in
+`density_callbacks/config.jl`: 1024 because 256 loses in every cell measured and
+1024 wins at 4 and 8 threads in both density paths; 4 because it is the fastest
+width in all four winning cells and each further instance is another native GRAM
+image resident in the process.
+
+Two changes were needed to make that default mean anything.
+
+The first is the width. The pool asks for its width with `lock_free=true`, which
+routes it past the `:density_callback` source's 16-thread minimum budget — the
+floor described in the next section, which exists because native GRAM is
+serialized on the shared lock and therefore does not apply to workers that each
+hold their own instance. Without this the default would be inert on any machine
+with fewer than 16 threads, including the one it was measured on.
+
+The second is a guard, and it came out of measuring a case the sweep does not
+cover. A constellation that is *configured* with a GRAM atmosphere but never
+reaches it — 1024 spacecraft above the entry interface on a non-keplerian run —
+was **1.83x slower** with the pool on (0.19 s locked against 0.35 s pooled at 8
+threads), because `_ensure_gram_isolated_pool!` builds its four native GRAM
+models before the per-item gate ever runs and then nothing calls them.
+`_gram_isolated_pool_native_count` now counts, in one pass over the staged
+altitudes, how many items would really reach GRAM, and the threshold is applied
+to that rather than to the spacecraft count. With the guard that case is 0.96x,
+within the run-to-run spread, and the 1024-spacecraft in-atmosphere win is
+unchanged at 1.77x and 1.19x.
+
+The retained nominal-wind default comparisons were bit-identical: a 1024-spacecraft freeze-per-step run and a
+1024-spacecraft look-ahead run, each dumped with the pool explicitly off and then
+with nothing set at all, are byte for byte the same (1 573 056 bytes each), and
+so is the 64-spacecraft reference case, which the new threshold leaves on the
+locked path.
+
+## The interlock that makes the pool unreachable below 16 threads
+
+This is the single most load-bearing thing to know before touching this path.
+
+`_gram_isolated_pool_batch_eval!` takes its width from
+
+```
+_density_callback_thread_decision(p, args, num_sats; heavy_work=true).allotment
+```
+
+(`src/simulation/callbacks/density_callbacks/runtime.jl`), and that decision goes
+through `ParallelPolicy.auto_thread_min_budget(:density_callback)`
+(`src/parallel/policy/env_config.jl`), which is **16**. On any process with fewer
+than 16 threads the decision returns `allotment = 1`, the pooled call fails its
+own `workers > 1` guard, returns `false`, and the run takes the locked path —
+with no warning, whatever `SPACEAGORA_GRAM_ISOLATED_POOL` is set to. Measured
+directly on a 24-thread workstation at 4 threads and 64 spacecraft: the decision
+returns `(use_threads = false, allotment = 1)`, and the locked and pooled arms
+record the same `gram_density` lock-acquisition count to the unit.
+
+The floor's own comment says it exists because "native/point GRAM is serialized
+behind a process-wide lock, so oversubscribing it below a reasonably high thread
+count wastes cycles fighting for that lock". That reasoning is sound for the
+locked path and circular for the pool: the lock is why the gate exists, and the
+pool is what removes the lock. The study runs both arms with
+`SPACEAGORA_DENSITY_CALLBACK_AUTO_THREAD_MIN_BUDGET=1` so there is something to
+measure; in the locked arm that setting can only widen the kinematics pre-fill,
+never the GRAM evaluation, which `getDensityBatch!` performs serially at any
+width.
+
+`test/unit/environment/gram_isolated_pool_tests.jl` pins the floor so a change to
+it is a deliberate act rather than a silent one.
+
+## Which paths the pool can actually reach
+
+Worth stating plainly, because three of the four plausible answers are wrong.
+
+* **The density callback's batch route** (`density_callbacks/runtime.jl`) is the
+  one place the pool evaluates GRAM. It is taken when the batch route is
+  selected and the *track* cache is off.
+* **The vacuum-predicted look-ahead cache** (`density_callbacks/vacuum_predicted_gram.jl`,
+  `SPACEAGORA_VACUUM_GRAM_CACHE`) never reaches the pool *for its own knots*:
+  `_build_vacuum_gram_cache!` queries them through scalar `getDensity` on the
+  shared model, under the global lock, one satellite at a time. Turning the
+  look-ahead cache on does not turn the pool off, though, because the staged
+  density callback still takes the batch route — its route selection consults
+  the *track* cache, not this one. So in look-ahead mode the pool evaluates the
+  callback's staged densities while the RHS reads the spline, and the two are
+  produced by different mechanisms. Measured on a 64-spacecraft,
+  300-480 km band, 10 s run at 4 threads: enabling the pool at width 4 moved 384 of
+  1664 `gram_density` lock acquisitions off the shared lock, and 384 is exactly
+  what the same run's freeze-per-step arm takes in total — that is, the
+  callback's whole share and nothing else.
+* **The GRAM track cache** (`callbacks/gram_track_cache/refresh.jl`,
+  `SPACEAGORA_GRAM_TRACK_CACHE`) reaches `_gram_isolated_pool_batch_eval!` only
+  on its fallback branch, the one taken when the native driver does not expose
+  `generate_trajectory`. The vendored GRAM Suite 2.0 does expose it, so on this
+  repository's own GRAM that branch is dead and every refresh is one locked
+  native `generate_trajectory` call.
+* **The constellation RHS aero path** samples through
+  `_density_model_for_sat(p, sat_idx)`, i.e. the per-satellite instance vector
+  (`SPACEAGORA_GRAM_PER_SAT_INSTANCES`), not the pool.
+
+## The pool is not the only instance-isolation mechanism in the tree
+
+Three switches share the same premise — that independent native GRAM instances
+may be called concurrently as long as each single instance is serialized — and
+they apply it in three different places. They are easy to confuse and they do
+not compose the way the names suggest.
+
+* `SPACEAGORA_GRAM_ISOLATED_POOL` builds per-*worker* instances inside the
+  density callback's batch call, and hands each one its own lock explicitly. It
+  therefore ignores `SPACEAGORA_GRAM_LOCK_SCOPE` entirely: the pool's calls
+  never reach `_gram_call_lock`, so they are off the shared lock whatever that
+  variable says.
+* `SPACEAGORA_GRAM_PER_SAT_INSTANCES` builds per-*satellite* instances
+  (`_initialize_density_model_instances!` in `simulation/engine/setup.jl`), and
+  those are what the constellation RHS aero path actually samples through. They
+  are the pool's natural counterpart for the RHS, and they were the path whose
+  fresh clones hit CSPICE concurrently; `setup.jl` now gives them the same
+  single-threaded warm-up the pool build uses.
+* `SPACEAGORA_GRAM_LOCK_SCOPE=model` changes which lock the *scalar* call sites
+  take, from the shared one to the wrapper's own `instance_lock`. On its own it
+  buys nothing, because one shared model still serializes on its own lock; it is
+  only useful in combination with per-satellite or per-sample instances. Its
+  occupancy is also deliberately not recorded in the native-lock counters, so a
+  run using it reads as having almost no GRAM lock time — which is correct but
+  easy to misread as a speedup.
+
+## Two configuration traps in the existing benchmark cases
+
+Both were found while building this study and both change what the P6/S2 GRAM
+traces are understood to measure.
+
+1. `ppc_constellation(planet, n)` places member *i* at `540 + 2(i-1)` km
+   apoapsis altitude. At `n = 1024` its upper members are above 2000 km, where
+   `getDensity(::GRAMAtmosphereModel, ...)` returns zero *without calling GRAM*.
+   The fraction of the constellation that touches GRAM therefore falls as the
+   size axis is swept, which is the axis a scaling claim is made along.
+2. Every member of that constellation starts far above the 120 km entry
+   interface `ppc_build_config` sets, so `in_atmosphere` is false for all of them
+   and the vacuum-predicted look-ahead cache never builds. The
+   `aero_<N>sat_l50_gram_lookahead_<S>s` case therefore does not exercise the
+   look-ahead cache; it differs from the `gram_process` case only in
+   `SPACEAGORA_DENSITY_FREEZE_PER_STEP`.
+
+`run_scaling_config.jl` builds its own 300–480 km constellation and puts the
+entry interface above it for exactly these two reasons.
+
+### The P6 GRAM traces are redefined; archived P6 GRAM rows must be re-measured
+
+Both traps applied directly to the paper's thread-scaling figure. P6 trace 5
+(`aero_<N>sat_l50_gram_lookahead_100s`) and trace 6
+(`aero_<N>sat_l50_gram_process_100s`) were built on `ppc_constellation` with the
+120 km entry interface. `benchmarks/studies/gram_thread_scaling/p6_case_audit.jl`
+builds both cases exactly as the harness does and counts, per member, whether it
+calls native GRAM and whether it is inside the atmosphere
+(`results/p6_case_audit.csv`):
+
+| Case, N = 4096 | Below 2000 km | `in_atmosphere` | Calling native GRAM |
+|---|---:|---:|---:|
+| trace 5, previous definition | 740 | 0 | 740 |
+| trace 6, previous definition | 4096 | 0 | 4096 |
+| trace 5, current definition | 4096 | 4096 | 4096 |
+| trace 6, current definition | 4096 | 4096 | 4096 |
+
+So the previous trace 5 was mostly not GRAM — 3356 of its 4096 members returned
+vacuum without a native call — and never built the look-ahead cache it is named
+for. The previous trace 6 did call GRAM for every sample, but every sample was
+the same default spacecraft, not trace 5's missions, and none was in the
+atmosphere. At N = 256 every member called GRAM under both definitions; only the
+current one has any member in the atmosphere.
+
+Both cases now use `ppc_p6_gram_constellation` in
+`benchmarks/studies/parallelization_performance/cases.jl`: the 300–480 km band
+above, entry interface `PPC_P6_GRAM_EI_KM` = 600 km, and trace 6's sample *k* is
+member *k* of trace 5's constellation flown alone. The case names are unchanged.
+End to end, trace 5 at 4096 over a 10 s mission makes exactly 7 native GRAM calls
+per member on the freeze-per-step path (one per density callback) and exactly
+27 on the look-ahead path (the same 7 plus the 20 knots of each member's
+look-ahead cache), so every member calls GRAM and every member's cache is built.
+
+Trace 4 (`aero_<N>sat_l50_expatm_100s`, analytic exponential density) has since
+moved to the same constellation and entry interface (commit `be774d5b6`), so
+traces 4, 5 and 6 now differ only in the density model and its access path. The
+audit covers it too:
+
+| Trace 4 | N | Below 2000 km | `in_atmosphere` |
+|---|---:|---:|---:|
+| previous definition | 256 | 256 | 0 |
+| current definition | 256 | 256 | 256 |
+| previous definition | 4096 | 740 | 0 |
+| current definition | 4096 | 4096 | 4096 |
+
+(Its native-GRAM count is 0 in every row by construction.)
+
+The expectation was that the move would make trace 4 slower, because with every
+member inside the entry interface its density callback would now run for all of
+them. It does not, and the reason is in the code: the above-interface shortcut
+in the RHS (`density_vanishes_above_entry_interface`) is true only for
+`NoAtmosphereModel`, so an exponential atmosphere was already evaluated, and drag
+already applied, for every member at every altitude under the previous
+definition. For trace 4 the entry interface gates only the GRAM look-ahead
+cache, which it does not use. Measured at N = 256, 100 s, old against new,
+alternating (`results/p6_trace4_redefinition*.csv`):
+
+| Threads | Repeats | Previous, min / median (s) | Current, min / median (s) | Ratio of minima |
+|---:|---:|---:|---:|---:|
+| 1 | 3 | 0.263 / 0.269 | 0.261 / 0.264 | 0.99 |
+| 8 | 15 | 0.043 / 0.060 | 0.041 / 0.069 | 0.95 |
+
+Both definitions take the same 163 RHS evaluations. Serially the two are the same
+to 1 %. At 8 threads a solve lasts 40–130 ms and the spread inside each arm is
+larger than any difference between them (a first 3-repeat run gave 1.46 on the
+same comparison), so no difference is resolved there either. What does change is
+the physics: the members now fly at 300–480 km instead of 500–2600 km, so the
+drag they see is larger. The cost does not change.
+
+**The P6 density rows in archive run `trx50_ppb_cold_20260922_215638` — trace 4
+(`expatm`), trace 5 (`gram_lookahead`) and trace 6 (`gram_process`) — were
+measured on the previous definitions and must be re-measured.** The same applies
+to any other run of those case names before commit `917ab6aa7` (traces 5 and 6)
+or `be774d5b6` (trace 4).
+
+#### What the redefinition costs, at N = 256
+
+`p6_trace5_redefinition.jl` runs the current trace 5 and a rebuild of the
+previous one back to back, alternating, under the harness's look-ahead
+environment, at N = 256 and a 100 s mission (`results/p6_trace5_redefinition.csv`,
+minimum of three repeats, both run to `Success` with the same 170 RHS
+evaluations):
+
+| Threads | Previous (s) | Current (s) | Current ÷ previous | Native GRAM calls, previous → current |
+|---:|---:|---:|---:|---:|
+| 1 | 2.56 | 0.66 | 0.26 | 93 440 → 11 520 |
+| 8 | 3.17 | 0.51 | 0.16 | 93 440 → 11 520 |
+
+The expectation going in was that the current definition would be the more
+expensive one, because more of its members reach GRAM. At N = 256 that is wrong,
+and the call counts say why. At 256 every member of the previous constellation
+was already below 2000 km, so every one called GRAM (the audit agrees); but none
+was inside the entry interface, so the look-ahead cache never engaged and the
+right-hand side called native GRAM directly at every stage evaluation — 365 calls
+per member, all on the one global lock, which is also why the previous
+definition got *slower* at 8 threads. The current definition builds each
+member's cache once (20 knots) and reads a spline afterward: 45 calls per member.
+So the previous trace 5 was not a cheap version of the look-ahead path; at this
+size it was the uncached direct-GRAM path under a look-ahead label.
+
+At N = 4096 the direction is not measured. There the previous definition had
+only 740 members calling GRAM at all, which pulls its cost down, while each of
+those still paid the uncached per-stage cost, which pulls it up; which effect
+wins was not run on this workstation.
+
+## Refresh de-phasing: not available
+
+`benchmarks/studies/paper_scenarios/FABLE_FINDINGS.md` D5 proposes staggering
+cache horizons per satellite (±10 % jitter) so that expiries de-phase and the
+refreshes stop convoying on the global lock.
+
+That cannot be done without changing the dynamics, so it was not done. The
+horizon sets the knot spacing directly — `h = horizon_s / (n_pts - 1)` in
+`_build_vacuum_gram_cache!`, `Δt = dt_segment / (n - 1)` in the track cache's
+refresh — so jittering it changes which `(altitude, latitude, longitude, time)`
+points GRAM is asked about, which changes the spline, which changes every
+interpolated density the RHS reads. The refresh schedule is part of the
+dynamics.
+
+The other two approaches in the same finding are not ruled out by this argument:
+batching several satellites' track requests into one locked native call, and
+prefetching the next segment before expiry, both leave the sampled points
+untouched. Neither is implemented here.
+
+## Pool-worker memory growth
+
+P6p (trace 6, `aero_4096sat_l50_gram_process_100s`, 4096 one-spacecraft samples
+on the `outer_process` route) was killed twice on TRX50 by its memory cap: in job
+`20260924-040915-1806822` at pool width 16, with 21 Julia processes holding
+233 GB (about 11 GB each), and earlier, with no heap-size hint, at width 8 with
+one process at 30 GB. The pool workers were launched with a
+`--heap-size-hint` (section 5 of `heap_contention.md`; the harness's own
+`addprocs` site, `_ppc_pool_worker_exeflags`, does pass it, and the flag is on
+the worker's command line in the pool run below). The hint did not help, because
+the growth is not on the Julia heap.
+
+### Where the growth comes from
+
+The harness cached one Earth `GRAMAtmosphereModel` per process, built at
+GRAMSuite's default construction epoch, while every harness case flies from
+2020-01-01. `run_simulation` aligns a GRAM model to the run's `initial_time`
+before running (`with_density_model_epoch`), and a model at another epoch is
+rebuilt there. So every sample constructed a fresh native atmosphere, re-reading
+MERRA2, and discarded it at the end of the run. A native atmosphere is freed only
+by its wrapper's finalizer (`GRAM Suite 2.0/Julia/types.jl`, `Atmosphere`), that
+is, only when the Julia collector runs and finds it unreferenced. The collector
+paces itself on the Julia heap, which a discarded atmosphere barely touches, so
+it had no reason to run.
+
+Measured with `benchmarks/studies/gram_thread_scaling/worker_growth.jl`: one
+process running exactly what a pool worker runs per sample (case configuration,
+`outer_process` mode environment, `run_simulation`), one thread, `full` profile,
+under a 16 GiB cgroup cap on this workstation. Growth rates are taken from
+sample 2 to the last sample before the process's first collection; the
+atmosphere count is exact (a counting finalizer on every atmosphere a run
+builds). Result files are `results/worker_growth_before_*.csv` and
+`results/worker_growth_after_*.csv`; in the `before` files, `model=harness`
+means the harness's model as it was then built, at the default epoch.
+
+| Arm (code before the fix) | RSS / sample | GC-live / sample | malloc in use / sample | Outcome |
+|---|---|---|---|---|
+| trace 6, no hint | 105.7 MB | 1.20 MB | 143.9 MB | killed by the 16 GiB cap after sample 204; one collection near sample 77 finalized 77 atmospheres, RSS still 10.2 GB at sample 100 |
+| trace 6, `--heap-size-hint=7.4G` (TRX50's width-16 value) | 106.8 MB | 1.26 MB | 143.9 MB | killed after sample 147 with **no collection at all**; 147 atmospheres alive |
+| trace 6, `--heap-size-hint=2G` | 106.3 MB | 1.26 MB | 143.9 MB | one collection near sample 145 (144 finalized); RSS stayed at 16.7 GB; killed after sample 155 |
+| previous trace-6 definition (500-550 km, 120 km interface), no hint | 106.3 MB | 1.11 MB | 143.8 MB | killed after sample 226 |
+| trace 6, full collection after every sample | 0.001 MB | 0.000 MB | 0.26 MB | 400 samples, RSS flat at 1.69 GB; every atmosphere finalized |
+| trace 6, one model built at the run epoch and reused | flat (1.78 GB after 400) | periodic | flat | 400 samples, no atmosphere built |
+
+So, separating the four hypotheses: the growth is native (b), about 106 MB
+resident and 144 MB of malloc per sample, one discarded Earth atmosphere each;
+the Julia heap grows about 1.2 MB per sample and is not the problem (a); nothing
+is retained per sample once the atmospheres are finalized (c), since a full
+collection after each sample keeps RSS flat; and the hint is passed (d) but
+cannot bound memory the collector does not see. Two further observations: the
+glibc arena does not return memory freed by a collection to the system (the
+no-hint and 2G arms kept their resident size after collecting), so collecting
+late does not undo the peak; and with a collection after every sample, malloc
+in use still rises by 0.26 MB per rebuilt atmosphere, a small native residue per
+construction that was not investigated further.
+
+The earlier single-worker record for the previous definition (growth of a few
+MB over 30 samples) came from `worker_rss.jl`, whose `stage!` helper runs
+`GC.gc()` twice every ten samples; those collections finalized the discarded
+atmospheres, which is why it did not see this.
+
+DERIVED, not measured: at width 16 each worker serves about 770 samples of the
+phase (three repeats of 4096 plus warm-up, over 16 workers), and the TRX50
+workers' 11 GB each is what about 100 outstanding Earth atmospheres at 106 MB
+hold. That is consistent with this mechanism; the TRX50 run itself recorded no
+atmosphere counts.
+
+Separately, rebuilding was also most of each sample's cost: median sample wall
+time 40.9 ms rebuilding against 3.6 ms reusing one model.
+
+### What changed
+
+1. The harness builds its cached GRAM model at the harness epoch
+   (`ppc_gram_atmosphere_model` in `parallelization_performance/cases.jl`, with
+   `ppc_initial_time()` shared with `ppc_build_config`), so the epoch alignment
+   returns the cached model and no sample builds an atmosphere.
+2. The GRAM extension counts native atmospheres it constructs and those
+   finalized, and `run_simulation` calls
+   `collect_unreferenced_gram_atmospheres!()` after every run, successful or
+   not. It runs one full collection once `SPACEAGORA_GRAM_NATIVE_COLLECT_LIMIT`
+   (default 8; `0` or `off` disables) more atmospheres are alive than right after
+   its previous collection. This covers any other caller that discards a GRAM
+   model per run (a changed epoch, or `isolate_state=true`, whose `deepcopy`
+   builds a new native atmosphere). The default is DERIVED from an ASSUMED budget
+   of about 1 GB of discarded atmospheres per process at the measured 106 MB
+   each.
+
+Neither changes what a run computes. Full state histories (every step time and
+state, `worker_growth.jl --dump-dir`) of all samples are byte-identical across
+arms (`results/worker_growth_byte_identity.csv`):
+
+| Arm | Samples | Identical to reference |
+|---|---|---|
+| reference: before, rebuilt per sample, full collection after every sample | 400 | — |
+| before, rebuilt per sample, no forced collection | 100 | 100 |
+| before, one model at the run epoch reused, forward order | 400 | 400 |
+| before, one model reused, samples in reverse order | 400 | 400 |
+| after, harness model | 400 | 400 |
+| after, rebuilt per sample, collection limit 8 | 400 | 400 |
+
+The reverse-order arm is the check that a reused native atmosphere carries no
+state from one sample into the next: every sample follows a different
+predecessor than in the forward arm and matches the reference byte for byte.
+
+### After the fix (measured)
+
+| Arm | RSS at sample 2 → last (peak) | Per-sample elapsed | Median sample wall |
+|---|---|---|---|
+| trace 6, 400 samples | 1774 → 1803 MB (1880) | 4.37 ms | 3.6 ms |
+| trace 6, `--heap-size-hint=7.4G`, 400 samples | 1830 → 1800 MB (1845) | 5.29 ms | 3.6 ms |
+| previous definition, 400 samples | 1784 → 1783 MB (1813) | 4.84 ms | 3.3 ms |
+| rebuilt per sample, collection limit 8, 400 samples | 1933 → 2510 MB (2533) | 82.6 ms | 30.7 ms |
+| rebuilt per sample, collection off, 100 samples | 1937 → 9402 MB | 44.4 ms | 40.8 ms |
+
+Through the harness's real pool path (`heap_contention/pool_rss_probe.jl`, one
+`outer_process` worker, 1500 trace-6 samples; `results/worker_growth_pool_after.csv`),
+the worker ran with `--heap-size-hint=4.0G` and its RSS went from 1883 MB at the
+start of the batch to 1887 MB at the end; the batch took 6.378 s, 4.25 ms per
+sample.
+
+Wall time, samples 2-100 of the same process shape: 42.82 ms per sample before
+(`worker_growth_before_dump_rebuild_nogc.csv`), 4.74 ms after
+(`worker_growth_after_harness.csv`), a ratio of 9.0. This changes what P6p trace
+6 measures: its samples no longer pay a native atmosphere construction and a
+MERRA2 read each, so trace-6 rows taken before this change are not comparable
+with rows taken after it.
+
+The collection limit is a safety net, not free: a full collection took 387 to
+409 ms (median 394 ms) in this process, so a caller that does discard an
+atmosphere per run pays up to about 49 ms per run at the default limit (394 ms
+over 8 runs, derived; the measured difference above is 81.8 against 44.4 ms per
+sample, samples 2-100). Raising the limit trades that time for
+memory at about 106 MB per Earth atmosphere.

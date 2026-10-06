@@ -65,7 +65,7 @@ _heur_entry(; votes, solve_ns, sweep_ns, honoured_ns) = Dict{String, Any}(
     end
 end
 
-@testset "an unconfirmed heuristic verdict follows the same budget; a reproduced one is honoured outright" begin
+@testset "every heuristic verdict follows the same budget, reproduced or not" begin
     long = 2.0e9
     _with_entry(_heur_entry(votes = 1, solve_ns = long, sweep_ns = 0.5e9, honoured_ns = 0.0)) do
         @test SEng._rhs_calib_cached_verdict("sig", true) === :heuristic
@@ -73,7 +73,14 @@ end
     _with_entry(_heur_entry(votes = 1, solve_ns = long, sweep_ns = 0.5e9, honoured_ns = 10.0e9)) do
         @test SEng._rhs_calib_cached_verdict("sig", true) === nothing
     end
+    # A reproduced verdict used to be honoured outright from here on, with no
+    # path back to a sweep. It spends the same budget as every other verdict
+    # now; see _rhs_calib_cached_verdict and the R6 cached-verdict testsets in
+    # policy_v2_tests.
     _with_entry(_heur_entry(votes = 3, solve_ns = long, sweep_ns = 0.5e9, honoured_ns = 10.0e9)) do
+        @test SEng._rhs_calib_cached_verdict("sig", true) === nothing
+    end
+    _with_entry(_heur_entry(votes = 3, solve_ns = long, sweep_ns = 0.5e9, honoured_ns = 0.0)) do
         @test SEng._rhs_calib_cached_verdict("sig", true) === :heuristic
     end
 end

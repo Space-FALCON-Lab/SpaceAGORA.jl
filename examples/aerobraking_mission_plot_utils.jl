@@ -9,6 +9,9 @@ using LinearAlgebra
 using Logging
 using Dates
 
+include(joinpath(@__DIR__, "support", "aerobraking_result_tables.jl"))
+include(joinpath(@__DIR__, "support", "aerobraking_plot_errors.jl"))
+
 Base.@kwdef struct AerobrakingMissionSpiceConfig
     mission_name::String
     target::String
@@ -219,10 +222,6 @@ function _mars_odyssey_initial_condition_from_spice(initial_time::InitialTime, s
     return _spice_initial_condition_from_config(initial_time, spice_path, MARS_ODYSSEY_SPICE_CONFIG)
 end
 
-function _require_float_column(df::DataFrame, name::Symbol)::Vector{Float64}
-    return Float64.(df[!, name])
-end
-
 function _correction_reset_times_for_results(csv_path::String)::Vector{Float64}
     summary_path = joinpath(dirname(dirname(csv_path)), "leg_summary.csv")
     isfile(summary_path) || return Float64[]
@@ -247,9 +246,7 @@ function _interval_touches_correction(t0::Float64, t1::Float64, correction_times
 end
 
 function _derive_orbit_extrema_from_results(csv_path::String, planet)
-    isfile(csv_path) || throw(ArgumentError("Simulation results CSV not found at $(abspath(csv_path))."))
-
-    df = CSV.read(csv_path, DataFrame)
+    df = _read_simulation_results(csv_path)
     nrow(df) >= 3 || throw(ArgumentError("Need at least 3 saved samples to derive periapsis/apoapsis extrema."))
 
     time_s = _require_float_column(df, :time)
@@ -942,9 +939,8 @@ end
 function _save_drag_along_velocity_plot(args::SimulationConfiguration)
     results_dir = args.simulation_settings.results_directory
     csv_path = joinpath(results_dir, "simulation_results.csv")
-    isfile(csv_path) || throw(ArgumentError("Simulation results CSV not found at $(abspath(csv_path))."))
 
-    df = CSV.read(csv_path, DataFrame)
+    df = _read_simulation_results(csv_path)
     altitude_m = _require_float_column(df, :sc1_altitude)
     vel_x = _require_float_column(df, :sc1_vel_1)
     vel_y = _require_float_column(df, :sc1_vel_2)
@@ -1000,9 +996,8 @@ end
 function _save_aero_sideways_components_plot(args::SimulationConfiguration)
     results_dir = args.simulation_settings.results_directory
     csv_path = joinpath(results_dir, "simulation_results.csv")
-    isfile(csv_path) || throw(ArgumentError("Simulation results CSV not found at $(abspath(csv_path))."))
 
-    df = CSV.read(csv_path, DataFrame)
+    df = _read_simulation_results(csv_path)
     altitude_m = _require_float_column(df, :sc1_altitude)
     vel_x = _require_float_column(df, :sc1_vel_1)
     vel_y = _require_float_column(df, :sc1_vel_2)
@@ -1074,32 +1069,6 @@ function _save_aero_sideways_components_plot(args::SimulationConfiguration)
     savefig(p, plot_path)
     println("Saved periapsis aero sideways-component plot to $(abspath(plot_path))")
     return plot_path
-end
-
-function _simulation_position_samples(args::SimulationConfiguration)
-    results_dir = args.simulation_settings.results_directory
-    csv_path = joinpath(results_dir, "simulation_results.csv")
-    isfile(csv_path) || throw(ArgumentError("Simulation results CSV not found at $(abspath(csv_path))."))
-
-    df = CSV.read(csv_path, DataFrame)
-    time_s = _require_float_column(df, :time)
-    sim_x_km = _require_float_column(df, :sc1_pos_1) ./ 1e3
-    sim_y_km = _require_float_column(df, :sc1_pos_2) ./ 1e3
-    sim_z_km = _require_float_column(df, :sc1_pos_3) ./ 1e3
-    return time_s, sim_x_km, sim_y_km, sim_z_km
-end
-
-function _simulation_velocity_samples(args::SimulationConfiguration)
-    results_dir = args.simulation_settings.results_directory
-    csv_path = joinpath(results_dir, "simulation_results.csv")
-    isfile(csv_path) || throw(ArgumentError("Simulation results CSV not found at $(abspath(csv_path))."))
-
-    df = CSV.read(csv_path, DataFrame)
-    time_s = _require_float_column(df, :time)
-    sim_vx_kms = _require_float_column(df, :sc1_vel_1) ./ 1e3
-    sim_vy_kms = _require_float_column(df, :sc1_vel_2) ./ 1e3
-    sim_vz_kms = _require_float_column(df, :sc1_vel_3) ./ 1e3
-    return time_s, sim_vx_kms, sim_vy_kms, sim_vz_kms
 end
 
 function _orbital_elements_from_state_samples(
@@ -1286,8 +1255,7 @@ end
 function _trajectory_marker_times(args::SimulationConfiguration)
     results_dir = args.simulation_settings.results_directory
     csv_path = joinpath(results_dir, "simulation_results.csv")
-    isfile(csv_path) || throw(ArgumentError("Simulation results CSV not found at $(abspath(csv_path))."))
-    df = CSV.read(csv_path, DataFrame)
+    df = _read_simulation_results(csv_path)
     time_s = _require_float_column(df, :time)
     altitude_m = _require_float_column(df, :sc1_altitude)
 
@@ -1322,41 +1290,6 @@ function _add_vertical_markers!(p, marker_times)
         vline!(p, marker_times.atmosphere_exit_s ./ 3600.0; label="Atmosphere Exit", color=:seagreen4, linestyle=:dashdot, linewidth=1.6, alpha=0.8)
     end
     return p
-end
-
-function _rtn_error_components(
-    err_x::AbstractVector{<:Real},
-    err_y::AbstractVector{<:Real},
-    err_z::AbstractVector{<:Real},
-    ref_x::AbstractVector{<:Real},
-    ref_y::AbstractVector{<:Real},
-    ref_z::AbstractVector{<:Real},
-    ref_vx::AbstractVector{<:Real},
-    ref_vy::AbstractVector{<:Real},
-    ref_vz::AbstractVector{<:Real}
-)
-    n = length(err_x)
-    err_r = Vector{Float64}(undef, n)
-    err_t = Vector{Float64}(undef, n)
-    err_n = Vector{Float64}(undef, n)
-    @inbounds for i in 1:n
-        r_ref = SVector{3, Float64}(ref_x[i], ref_y[i], ref_z[i])
-        v_ref = SVector{3, Float64}(ref_vx[i], ref_vy[i], ref_vz[i])
-        err = SVector{3, Float64}(err_x[i], err_y[i], err_z[i])
-        r_mag = norm(r_ref)
-        h_vec = cross(r_ref, v_ref)
-        h_mag = norm(h_vec)
-        if r_mag <= eps(Float64) || h_mag <= eps(Float64)
-            throw(ArgumentError("Cannot construct RTN frame at sample $i: degenerate reference position/angular momentum."))
-        end
-        r_hat = r_ref / r_mag
-        n_hat = h_vec / h_mag
-        t_hat = cross(n_hat, r_hat)
-        err_r[i] = max(abs(dot(err, r_hat)), eps(Float64))
-        err_t[i] = max(abs(dot(err, t_hat)), eps(Float64))
-        err_n[i] = max(abs(dot(err, n_hat)), eps(Float64))
-    end
-    return err_r, err_t, err_n
 end
 
 function _save_trajectory_comparison_plot(args::SimulationConfiguration, planet, initial_time::InitialTime, spice_path::String)

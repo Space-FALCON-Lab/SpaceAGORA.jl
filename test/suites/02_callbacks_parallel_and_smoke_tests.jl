@@ -109,7 +109,7 @@
     orbit_cb.condition(out_orbit, u_orbit, 0.0, integrator_orbit)
     @test isfinite(out_orbit[1])
     orbit_count_before = p_orbit.orbit_counter[1]
-    orbit_cb.affect!(integrator_orbit, 1)
+    orbit_cb.affect!(integrator_orbit, Int8[1])
     @test p_orbit.orbit_counter[1] == orbit_count_before + 1
 
     args_impact = build_config_multi(
@@ -139,8 +139,10 @@
     impact_out = zeros(2)
     impact_cb.condition(impact_out, u_impact, 0.0, integrator_impact)
     @test all(impact_out .> 0.0)
-    @test impact_cb.affect! === nothing
-    impact_cb.affect_neg!(integrator_impact, 1)
+    # The unified handler ignores upcrossings before handling an impact.
+    impact_cb.affect!(integrator_impact, Int8[1, 0])
+    @test all(p_impact.is_active)
+    impact_cb.affect!(integrator_impact, Int8[-1, 0])
     @test p_impact.is_active[1] == false
     @test p_impact.is_active[2] == true
 
@@ -180,7 +182,7 @@
     drag_output = ""
     mktemp() do path, io
         redirect_stdout(io) do
-            drag_cb.affect!(integrator_drag, 1)
+            drag_cb.affect!(integrator_drag, Int8[1])
         end
         flush(io)
         seekstart(io)
@@ -845,10 +847,10 @@ end
         0.0,
         false
     )
-    orbit_cb_multi.affect!(orbit_integrator, 1)
+    orbit_cb_multi.affect!(orbit_integrator, Int8[1, 0])
     @test orbit_integrator.terminated == false
     p_orbit_multi.orbit_counter .= [2, 2]
-    orbit_cb_multi.affect!(orbit_integrator, 1)
+    orbit_cb_multi.affect!(orbit_integrator, Int8[1, 0])
     @test orbit_integrator.terminated == true
 end
 
@@ -1876,7 +1878,7 @@ end
 
             parsed = TOML.parsefile(calib_path)
             @test haskey(parsed, "calibrations")
-            @test parsed["schema_version"] == 1
+            @test parsed["schema_version"] == SimulationEngine._RHS_CALIB_STORE_SCHEMA == 2
             rows = parsed["calibrations"]
             @test any(r -> get(r, "signature", "") == sig_disk, rows)
             disk_row = only(filter(r -> get(r, "signature", "") == sig_disk, rows))

@@ -71,6 +71,10 @@ end
 end
 
 @inline function _requires_drag_state_callback(effectors::Tuple, args::SimulationConfiguration)::Bool
+    # Stateful guidance/control needs crossings even when both solver phases
+    # use equal tolerances or the configured density is identically zero.
+    any(SimulationLifecycle.requires_atmosphere_events, args.guidance_model.guidance_effectors) && return true
+    any(SimulationLifecycle.requires_atmosphere_events, args.control_model.control_effectors) && return true
     if !_requires_density_callback(effectors, args)
         return false
     end
@@ -133,6 +137,32 @@ function _callback_tolerances_for_phase(template_reltol, template_abstol, args::
     return reltol_new, abstol_new
 end
 
+# An integrator advances every active spacecraft with one cap/tolerance set.
+# Keep the atmospheric phase until the last active member leaves it.
+@inline function _active_atmospheric_phase(p)::Bool
+    return any(i -> p.is_active[i] && p.shared_buffers.in_atmosphere[i], eachindex(p.is_active))
+end
+
+function _active_phase_solver_settings(p, reltol, abstol)
+    inside = _active_atmospheric_phase(p)
+    tol = p.args.integration_tolerances
+    cap = inside ? tol.dt_max_atmosphere : tol.dt_max_orbit
+    reltol, abstol = _callback_tolerances_for_phase(reltol, abstol, p.args, inside)
+    return cap, reltol, abstol
+end
+
+function _apply_active_phase_solver_settings!(integrator)
+    p = integrator.p
+    _requires_density_callback(p.args.dynamics_model.dynamic_effectors, p.args) || return nothing
+    # Fixed-step symplectic/backbone drivers retain their prescribed step.
+    hasproperty(integrator.opts, :adaptive) && !integrator.opts.adaptive && return nothing
+    cap, reltol, abstol = _active_phase_solver_settings(p, integrator.opts.reltol, integrator.opts.abstol)
+    integrator.opts.dtmax = cap
+    integrator.opts.reltol = reltol
+    integrator.opts.abstol = abstol
+    return nothing
+end
+
 @inline _append_callback(callbacks::Tuple, callback) = (callbacks..., callback)
 @inline _append_callback(callbacks::Tuple, ::Nothing) = callbacks
 @inline _append_callbacks(callbacks::Tuple, extra::Tuple) = (callbacks..., extra...)
@@ -144,7 +174,8 @@ function get_callbacks(
     args::SimulationConfiguration;
     saved_values=nothing,
     save_fields=nothing,
-    extra_callbacks=()
+    extra_callbacks=(),
+    record_saved_values::Bool=false
 )::CallbackSet
     save_fields_resolved = _resolve_save_fields(save_fields, args)
     backbone_mode = _simulation_engine_module()._solver_policy_mode() == :gravity_backbone_split
@@ -162,6 +193,13 @@ function get_callbacks(
     end
 
     has_touchdown && (callbacks = _append_callback(callbacks, get_touchdown_callback(touchdown_specs)))
+
+    # Opt-in GRAM perturbed density (off by default -> nothing appended). Placed
+    # before every callback that stages or reads density, so a factor updated at
+    # an accepted step is the one those callbacks see at that step.
+    if !backbone_mode
+        callbacks = _append_callback(callbacks, get_gram_density_perturbation_callback(num_sats, args))
+    end
 
     if !backbone_mode && _requires_staged_density_callback(effectors, args)
         callbacks = _append_callback(callbacks, get_density_callback(num_sats, effectors, args))
@@ -192,7 +230,12 @@ function get_callbacks(
         callbacks = _append_callback(callbacks, get_quaternion_projection_callback(num_sats, args))
     end
     callbacks = _append_callback(callbacks, get_plume_callback(args))
-    if !backbone_mode && args.simulation_settings.results
+    engine = _simulation_engine_module()
+    output_solver_mode = args.solver_config === nothing ? engine._solver_policy_mode() :
+        engine._solver_policy_mode(args.solver_config)
+    callbacks = _append_callback(callbacks,
+        get_initial_force_output_callback(effectors; solver_mode=output_solver_mode))
+    if !backbone_mode && (args.simulation_settings.results || record_saved_values)
         callbacks = _append_callback(callbacks, get_data_saving_callback(num_sats, args, save_fields_resolved, saved_values))
     end
     callbacks = _append_callbacks(callbacks, extra_callbacks)

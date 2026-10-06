@@ -5,10 +5,69 @@ using Base.Docs
 export PUBLIC_API_SECTIONS, public_api_specs, render_public_api_markdown, undocumented_public_api_specs
 
 const PUBLIC_API_SECTIONS = [
+    (title = "RPO planner pilot", items = [
+        (owner = :SpaceAGORA, symbol = :hypr_available, rendered = "SpaceAGORA.hypr_available"),
+        (owner = :SpaceAGORA, symbol = :HYPRUnavailableError, rendered = "SpaceAGORA.HYPRUnavailableError"),
+        (owner = :SpaceAGORA, symbol = :AbstractRPOPlanner, rendered = "SpaceAGORA.AbstractRPOPlanner"),
+        (owner = :SpaceAGORA, symbol = :RPOPlanningConstraints, rendered = "SpaceAGORA.RPOPlanningConstraints"),
+        (owner = :SpaceAGORA, symbol = :RPOValidationSettings, rendered = "SpaceAGORA.RPOValidationSettings"),
+        (owner = :SpaceAGORA, symbol = :RPOPlanningRequest, rendered = "SpaceAGORA.RPOPlanningRequest"),
+        (owner = :SpaceAGORA, symbol = :RPOReference, rendered = "SpaceAGORA.RPOReference"),
+        (owner = :SpaceAGORA, symbol = :RPOPlanningResult, rendered = "SpaceAGORA.RPOPlanningResult"),
+        (owner = :SpaceAGORA, symbol = :RPOPlannerCapabilities, rendered = "SpaceAGORA.RPOPlannerCapabilities"),
+        (owner = :SpaceAGORA, symbol = :RPOValidationResult, rendered = "SpaceAGORA.RPOValidationResult"),
+        (owner = :SpaceAGORA, symbol = :RPOPlanningHeadroom, rendered = "SpaceAGORA.RPOPlanningHeadroom"),
+        (owner = :SpaceAGORA, symbol = :planner_capabilities, rendered = "SpaceAGORA.planner_capabilities"),
+        (owner = :SpaceAGORA, symbol = :initialize_planner, rendered = "SpaceAGORA.initialize_planner"),
+        (owner = :SpaceAGORA, symbol = :plan_rpo!, rendered = "SpaceAGORA.plan_rpo!"),
+        (owner = :SpaceAGORA, symbol = :retime_rpo!, rendered = "SpaceAGORA.retime_rpo!"),
+        (owner = :SpaceAGORA, symbol = :validate_rpo_result, rendered = "SpaceAGORA.validate_rpo_result"),
+        (owner = :SpaceAGORA, symbol = :validate_rpo_capabilities, rendered = "SpaceAGORA.validate_rpo_capabilities"),
+        (owner = :SpaceAGORA, symbol = :rpo_reference_is_current, rendered = "SpaceAGORA.rpo_reference_is_current"),
+        (owner = :SpaceAGORA, symbol = :DirectRPOPlanner, rendered = "SpaceAGORA.DirectRPOPlanner"),
+        (owner = :SpaceAGORA, symbol = :HYPRRPOPlanner, rendered = "SpaceAGORA.HYPRRPOPlanner"),
+        (owner = :SpaceAGORA, symbol = :RPOPSOConfig, rendered = "SpaceAGORA.RPOPSOConfig"),
+        (owner = :SpaceAGORA, symbol = :rpo_pso_config, rendered = "SpaceAGORA.rpo_pso_config"),
+        (owner = :SpaceAGORA, symbol = :RPOPlanningEvent, rendered = "SpaceAGORA.RPOPlanningEvent"),
+        (owner = :SpaceAGORA, symbol = :RPOPlanningError, rendered = "SpaceAGORA.RPOPlanningError"),
+        (owner = :SpaceAGORA, symbol = :make_rpo_configuration, rendered = "SpaceAGORA.make_rpo_configuration"),
+        (owner = :SpaceAGORA, symbol = :rpo_run_report, rendered = "SpaceAGORA.rpo_run_report"),
+    ]),
+    (
+        title = "Simulation Setup",
+        items = [
+            (owner = :SpaceAGORA, symbol = :SimulationConfiguration, rendered = "SpaceAGORA.SimulationConfiguration"),
+            (owner = :SpaceAGORA, symbol = :MissionConfiguration, rendered = "SpaceAGORA.MissionConfiguration"),
+            (owner = :SpaceAGORA, symbol = :MissionType, rendered = "SpaceAGORA.MissionType"),
+            (owner = :SpaceAGORA, symbol = :MissionTime, rendered = "SpaceAGORA.MissionTime"),
+            (owner = :SpaceAGORA, symbol = :MissionOrbits, rendered = "SpaceAGORA.MissionOrbits"),
+            (owner = :SpaceAGORA, symbol = :EnvironmentModel, rendered = "SpaceAGORA.EnvironmentModel"),
+            (owner = :SpaceAGORA, symbol = :DynamicsModel, rendered = "SpaceAGORA.DynamicsModel"),
+            (owner = :SpaceAGORA, symbol = :GuidanceModel, rendered = "SpaceAGORA.GuidanceModel"),
+            (owner = :SpaceAGORA, symbol = :NavigationModel, rendered = "SpaceAGORA.NavigationModel"),
+            (owner = :SpaceAGORA, symbol = :ControlModel, rendered = "SpaceAGORA.ControlModel"),
+            (owner = :SpaceAGORA, symbol = :SpacecraftModel, rendered = "SpaceAGORA.SpacecraftModel"),
+            (owner = :SpaceAGORA, symbol = :Link, rendered = "SpaceAGORA.Link"),
+            (owner = :SpaceAGORA, symbol = :Joint, rendered = "SpaceAGORA.Joint"),
+            (owner = :SpaceAGORA, symbol = :InitialCondition, rendered = "SpaceAGORA.InitialCondition"),
+            (owner = :SpaceAGORA, symbol = :CartesianInitialCondition, rendered = "SpaceAGORA.CartesianInitialCondition"),
+            (owner = :SpaceAGORA, symbol = :InitialTime, rendered = "SpaceAGORA.InitialTime"),
+            (owner = :SpaceAGORA, symbol = :IntegrationTolerances, rendered = "SpaceAGORA.IntegrationTolerances"),
+            (owner = :SpaceAGORA, symbol = :SaveField, rendered = "SpaceAGORA.SaveField"),
+            (owner = :SpaceAGORA, symbol = :default_save_fields, rendered = "SpaceAGORA.default_save_fields"),
+            (owner = :SpaceAGORA, symbol = :MaxwellianHeat, rendered = "SpaceAGORA.MaxwellianHeat"),
+            (owner = :SpaceAGORA, symbol = :InverseSquaredGravityModel, rendered = "SpaceAGORA.InverseSquaredGravityModel"),
+            (owner = :SpaceAGORA, symbol = :InverseSquaredJ2GravityModel, rendered = "SpaceAGORA.InverseSquaredJ2GravityModel"),
+            (owner = :SpaceAGORA, symbol = :NBodyGravityModel, rendered = "SpaceAGORA.NBodyGravityModel"),
+            (owner = :SpaceAGORA, symbol = :make_example_config, rendered = "SpaceAGORA.make_example_config"),
+            (owner = :SpaceAGORA, symbol = :make_three_body_spacecraft, rendered = "SpaceAGORA.make_three_body_spacecraft")
+        ]
+    ),
     (
         title = "Simulation",
         items = [
             (owner = :SpaceAGORA, symbol = :run_simulation, rendered = "SpaceAGORA.run_simulation"),
+            (owner = :SpaceAGORA, symbol = :SimulationResults, rendered = "SpaceAGORA.SimulationResults"),
             (owner = :SpaceAGORA, symbol = :StateAnchor, rendered = "SpaceAGORA.StateAnchor"),
             (owner = :SpaceAGORA, symbol = :get_state_anchor_callback, rendered = "SpaceAGORA.get_state_anchor_callback"),
             (owner = :SpaceAGORA, symbol = :prewarm_nbody_ephemeris_cache, rendered = "SpaceAGORA.prewarm_nbody_ephemeris_cache"),
@@ -17,14 +76,13 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SimulationCampaigns, symbol = :MonteCarloSampleResult, rendered = "SpaceAGORA.MonteCarloSampleResult"),
             (owner = :SimulationCampaigns, symbol = :MonteCarloResult, rendered = "SpaceAGORA.MonteCarloResult"),
             (owner = :SimulationCampaigns, symbol = :run_monte_carlo, rendered = "SpaceAGORA.run_monte_carlo"),
-            (owner = :SimulationCampaigns, symbol = :run_constellation_ensemble, rendered = "SpaceAGORA.run_constellation_ensemble"),
-            (owner = :SimulationCampaigns, symbol = :campaign_route_features, rendered = "SpaceAGORA.campaign_route_features"),
-            (owner = :SimulationCampaigns, symbol = :campaign_outer_route_state, rendered = "SpaceAGORA.campaign_outer_route_state")
+            (owner = :SimulationCampaigns, symbol = :run_constellation_ensemble, rendered = "SpaceAGORA.run_constellation_ensemble")
         ]
     ),
     (
         title = "Runtime Configuration",
         items = [
+            (owner = :SpaceAGORA, symbol = :SimulationSettings, rendered = "SpaceAGORA.SimulationSettings"),
             (owner = :SimulationEngine, symbol = :ParallelConfig, rendered = "SpaceAGORA.ParallelConfig"),
             (owner = :SimulationEngine, symbol = :SolverConfig, rendered = "SpaceAGORA.SolverConfig"),
             (owner = :SimulationEngine, symbol = :RuntimePolicyConfig, rendered = "SpaceAGORA.RuntimePolicyConfig"),
@@ -58,6 +116,8 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :ExponentialAtmosphereModel, rendered = "SpaceAGORA.ExponentialAtmosphereModel"),
             (owner = :SpaceAGORA, symbol = :PiecewiseExponentialAtmosphereModel, rendered = "SpaceAGORA.PiecewiseExponentialAtmosphereModel"),
             (owner = :SpaceAGORA, symbol = :GRAMGridAtmosphereModel, rendered = "SpaceAGORA.GRAMGridAtmosphereModel"),
+            (owner = :SpaceAGORA, symbol = :GRAMNearSurfaceAtmosphereModel, rendered = "SpaceAGORA.GRAMNearSurfaceAtmosphereModel"),
+            (owner = :SpaceAGORA, symbol = :CombinedAtmosphereModel, rendered = "SpaceAGORA.CombinedAtmosphereModel"),
             (owner = :SpaceAGORA, symbol = :SurrogatePresetResolution, rendered = "SpaceAGORA.SurrogatePresetResolution"),
             (owner = :SpaceAGORA, symbol = :available_surrogate_presets, rendered = "SpaceAGORA.available_surrogate_presets"),
             (owner = :SpaceAGORA, symbol = :resolve_surrogate_preset, rendered = "SpaceAGORA.resolve_surrogate_preset"),
@@ -148,7 +208,8 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :calcControlEffect!, rendered = "SpaceAGORA.calcControlEffect!"),
             (owner = :SpaceAGORA, symbol = :calcControlForceTorque, rendered = "SpaceAGORA.calcControlForceTorque"),
             (owner = :SpaceAGORA, symbol = :calcControlMassFlowRate, rendered = "SpaceAGORA.calcControlMassFlowRate"),
-            (owner = :SpaceAGORA, symbol = :control_thruster_levels, rendered = "SpaceAGORA.control_thruster_levels")
+            (owner = :SpaceAGORA, symbol = :control_thruster_levels, rendered = "SpaceAGORA.control_thruster_levels"),
+            (owner = :SpaceAGORA, symbol = :bind_spacecraft, rendered = "SpaceAGORA.bind_spacecraft")
         ]
     ),
     (
@@ -281,25 +342,8 @@ const PUBLIC_API_SECTIONS = [
         ]
     ),
     (
-        title = "Parallel Profiles and Routing",
+        title = "Process Workers",
         items = [
-            (owner = :ParallelProfiles, symbol = :ParallelProfile, rendered = "SpaceAGORA.ParallelProfile"),
-            (owner = :ParallelProfiles, symbol = :ParallelProfileConfig, rendered = "SpaceAGORA.ParallelProfileConfig"),
-            (owner = :ParallelProfiles, symbol = :parse_parallel_profile, rendered = "SpaceAGORA.parse_parallel_profile"),
-            (owner = :ParallelProfiles, symbol = :parallel_profile_name, rendered = "SpaceAGORA.parallel_profile_name"),
-            (owner = :ParallelProfiles, symbol = :profile_config, rendered = "SpaceAGORA.profile_config"),
-            (owner = :ParallelProfiles, symbol = :profile_env_pairs, rendered = "SpaceAGORA.profile_env_pairs"),
-            (owner = :ParallelProfiles, symbol = :with_parallel_profile, rendered = "SpaceAGORA.with_parallel_profile"),
-            (owner = :ParallelProfiles, symbol = :OuterRouteFeatures, rendered = "SpaceAGORA.OuterRouteFeatures"),
-            (owner = :ParallelProfiles, symbol = :OuterRouteTuning, rendered = "SpaceAGORA.OuterRouteTuning"),
-            (owner = :ParallelProfiles, symbol = :OuterRouteState, rendered = "SpaceAGORA.OuterRouteState"),
-            (owner = :ParallelProfiles, symbol = :reset_outer_route_state!, rendered = "SpaceAGORA.reset_outer_route_state!"),
-            (owner = :ParallelProfiles, symbol = :outer_route_signature, rendered = "SpaceAGORA.outer_route_signature"),
-            (owner = :ParallelProfiles, symbol = :outer_route_stats_snapshot, rendered = "SpaceAGORA.outer_route_stats_snapshot"),
-            (owner = :ParallelProfiles, symbol = :default_outer_route, rendered = "SpaceAGORA.default_outer_route"),
-            (owner = :ParallelProfiles, symbol = :outer_route_candidates, rendered = "SpaceAGORA.outer_route_candidates"),
-            (owner = :ParallelProfiles, symbol = :select_outer_route!, rendered = "SpaceAGORA.select_outer_route!"),
-            (owner = :ParallelProfiles, symbol = :record_outer_route_feedback!, rendered = "SpaceAGORA.record_outer_route_feedback!"),
             (owner = :ParallelProcess, symbol = :ProcessPool, rendered = "SpaceAGORA.ProcessPool"),
             (owner = :ParallelProcess, symbol = :campaign_process_pool, rendered = "SpaceAGORA.campaign_process_pool"),
             (owner = :ParallelProcess, symbol = :ensure_process_workers!, rendered = "SpaceAGORA.ensure_process_workers!"),

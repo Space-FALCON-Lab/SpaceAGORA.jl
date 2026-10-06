@@ -120,8 +120,8 @@ function get_state_anchor_callback(anchors::AbstractVector{StateAnchor}; verbose
             k += 1
         end
         next[] = k
-        if applicable(DiffEqBase.u_modified!, integrator, true)
-            DiffEqBase.u_modified!(integrator, true)
+        if applicable(DiffEqBase.derivative_discontinuity!, integrator, true)
+            DiffEqBase.derivative_discontinuity!(integrator, true)
         end
         return nothing
     end

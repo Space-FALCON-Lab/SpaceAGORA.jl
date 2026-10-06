@@ -40,6 +40,7 @@ const RETIRED_PATHS = (
     # the browser viewer is top-level viewer/ (interactive_visualization_plan.md)
     joinpath("src", "viewer"),
     # retired source files
+    joinpath("src", "core", "state", "simulation_configuration.jl"),
     joinpath("src", "core", "utils", "typed_example_utils.jl"),
     joinpath("src", "gnc", "control", "effectors.jl"),
     joinpath("src", "gnc", "guidance", "effectors.jl"),
@@ -71,10 +72,18 @@ const RETIRED_PATHS = (
     joinpath("test", "telemetry_odyssey_tuner.jl"),
     joinpath("test", "telemetry_orbit_accuracy_study.jl"),
     joinpath("test", "telemetry_orbit_accuracy_plots.jl"),
+    # completed one-time migrations
+    joinpath("scripts", "dev", "test_reorg_b1.sh"),
 )
 
 # Canonical owner paths that must exist.
 const REQUIRED_PATHS = (
+    joinpath("src", "simulation", "config", "configuration.jl"),
+    joinpath("src", "simulation", "config", "run_settings.jl"),
+    joinpath("src", "simulation", "config", "solver_settings.jl"),
+    joinpath("src", "simulation", "config", "environment_settings.jl"),
+    joinpath("src", "simulation", "config", "constellation_configuration.jl"),
+    joinpath("src", "simulation", "config", "simulation_configuration.jl"),
     joinpath("src", "io", "config", "io_config.jl"),
     joinpath("src", "io", "serialization", "io_serialization.jl"),
     joinpath("src", "io", "outputs", "io_outputs.jl"),

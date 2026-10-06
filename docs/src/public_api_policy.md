@@ -24,6 +24,7 @@ surface.
 ## Stable surface
 
 The generated [Public API](generated/public_api.md) reference and its linked
+[Simulation Setup API](generated/simulation_setup_api.md),
 [Terrain API](generated/terrain_api.md),
 [Mesh Aerodynamics API](generated/mesh_aerodynamics_api.md) and
 [Visualization API](generated/visualization_api.md) pages document the supported
@@ -31,6 +32,9 @@ exported symbols. That surface currently includes:
 
 - simulation entrypoints such as `run_simulation`
 - typed runtime configuration objects
+- simulation setup types and helpers (`SimulationConfiguration`, `SpacecraftModel`,
+  `Link`, `InitialTime`, `make_example_config`, ...), so `using SpaceAGORA` alone
+  is enough to configure a run
 - no-GRAM baseline constructors and builders
 - selected abstract extension interfaces
 - selected extension hook functions
@@ -101,3 +105,13 @@ docs/build/undocumented_public_exports.txt
 
 That report is intentionally scoped to the stable root API, not to internal
 modules.
+
+## Opt-in RPO planner surface
+
+The root exports the neutral planner contracts and extension methods,
+`DirectRPOPlanner`, `HYPRRPOPlanner`, `RPOPSOConfig`, `rpo_pso_config`,
+`RPOPlanningEvent`, `RPOPlanningError`, `make_rpo_configuration` and
+`rpo_run_report`. `SimulationSettings` remains owned by the existing configuration
+module and has a root alias for output settings. The [RPO Planner API](generated/rpo_planner_api.md) lists these symbols. The [pilot guide](user/rpo_planner_pilot.md)
+defines supported truth/static-RTN scope, failure policy and restart refusal.
+Internal lifecycle modules and the full `SimulationModel` are not public interfaces.

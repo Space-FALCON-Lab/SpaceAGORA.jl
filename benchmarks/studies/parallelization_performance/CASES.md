@@ -183,3 +183,20 @@ Full runs:
 | `outer_inner_static` | Outer threaded plus inner parallelism with static policy. |
 | `outer_inner_adaptive` | Outer threaded plus inner parallelism with adaptive policy. |
 | `full_smart` | Adaptive threaded route with persistent policy hints and thermal parallelism enabled. |
+
+## Budget provenance and resume
+
+The equal-core experiment (`SPACEAGORA_PPC_EQUAL_CORE_BUDGET=1`) records a
+`budget_condition` shared by its serial, static and predictive arms. This identity
+includes the controller's resolved core budget, hardware class and CPU-pinning
+request. Each performance row and hardware snapshot separately records the
+worker's effective `core_budget` and `hardware_class`; `effective_env` retains
+the literal launch overrides. Aggregation and serial comparisons keep different
+conditions separate, including the paper harness's aggregate CSVs.
+
+A resume checks every successful performance point before launching new work.
+Changing the equal-core flag, controller budget, hardware class or pinning
+requires a fresh output directory. Historical CSVs without this provenance can
+still be analyzed as `legacy_unrecorded`, but cannot safely be resumed: older
+capped and uncapped files have the same filenames and neither records the cap.
+The flag-off execution policy is unchanged.

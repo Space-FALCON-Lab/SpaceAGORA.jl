@@ -1,4 +1,5 @@
 module GuidanceHooks
+    import ...SimulationLifecycle
     using ..Structure
     using ..Geodesy: geodetic_altitude, ellipsoid_surface_radius, radius_for_geodetic_altitude
 
@@ -72,22 +73,23 @@ module GuidanceHooks
 
     include(joinpath(@__DIR__, "..", "internal", "bridge_helpers.jl"))
     using ..FrameTransforms
-    include(joinpath(@__DIR__, "rpo", "hypr", "pso_parameters.jl"))
-    include(joinpath(@__DIR__, "rpo", "hypr", "path_retiming.jl"))
-    include(joinpath(@__DIR__, "rpo", "hypr", "path_sampling.jl"))
-    include(joinpath(@__DIR__, "rpo", "hypr", "path_costs.jl"))
-    include(joinpath(@__DIR__, "rpo", "hypr", "pso_adaptive_policy.jl"))
-    include(joinpath(@__DIR__, "rpo", "hypr", "pso_helpers.jl"))
-    include(joinpath(@__DIR__, "rpo", "hypr", "pso_refinement.jl"))
-    include(joinpath(@__DIR__, "rpo", "hypr", "rrt_connect.jl"))
-    include(joinpath(@__DIR__, "rpo", "hypr", "pso_path_planning.jl"))
-    include(joinpath(@__DIR__, "rpo", "rpo_reference_trajectory.jl"))
+    # Shared calculations and compatibility types/bindings retain this module.
+    include(joinpath(@__DIR__, "..", "shared", "rpo", "sampling_settings.jl"))
+    include(joinpath(@__DIR__, "..", "hypr", "pso_parameters.jl"))
+    include(joinpath(@__DIR__, "..", "hypr", "execution_contracts.jl"))
+    include(joinpath(@__DIR__, "..", "shared", "rpo", "path_geometry.jl"))
+    include(joinpath(@__DIR__, "..", "shared", "rpo", "profile_evaluation.jl"))
+    include(joinpath(@__DIR__, "..", "shared", "rpo", "path_retiming.jl"))
+    include(joinpath(@__DIR__, "..", "shared", "rpo", "path_sampling.jl"))
+    include(joinpath(@__DIR__, "..", "shared", "rpo", "path_metrics.jl"))
+    include(joinpath(@__DIR__, "..", "rrt", "rrt_connect.jl"))
     include(joinpath(@__DIR__, "rpo", "comparison_methods", "trajectory_optimizers.jl"))
     include(joinpath(@__DIR__, "rpo", "comparison_methods", "planner_comparison.jl"))
     include(joinpath(@__DIR__, "rpo", "hypr_planning", "replanning.jl"))
     include(joinpath(@__DIR__, "rpo", "rpo_guidance_hooks.jl"))
     include(joinpath(@__DIR__, "aerobraking", "interfaces.jl"))
     include(joinpath(@__DIR__, "target_energy_bracketing.jl"))
+    include(joinpath(@__DIR__, "aerobraking", "energy_depletion_lifecycle.jl"))
     include(joinpath(@__DIR__, "aerobraking", "common", "closed_form_solution.jl"))
     include(joinpath(@__DIR__, "aerobraking", "common", "heat_rate_models.jl"))
     include(joinpath(@__DIR__, "aerobraking", "t_edg", "trajectory_predictor.jl"))
@@ -102,4 +104,11 @@ module GuidanceHooks
 
     include(joinpath(@__DIR__, "thruster_guidance", "thruster_guidance_functions.jl"))
     include(joinpath(@__DIR__, "landing", "apollo_descent_guidance.jl"))
+
+    # Per-spacecraft GNC binding (see SimulationLifecycle.bind_spacecraft).
+    function SimulationLifecycle.bind_spacecraft(m::ApolloDescentGuidanceModel, sat_idx::Int)
+        ids = _descent_indices(m.state, (sat_idx,))
+        m.spacecraft_indices == ids && return m
+        return ApolloDescentGuidanceModel(m.config, m.state, m.terrain, ids)
+    end
 end

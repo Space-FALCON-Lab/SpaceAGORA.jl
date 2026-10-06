@@ -6,7 +6,7 @@
 # model. The epoch is a date on which the Sun stays above the station's horizon
 # for the whole relocation.
 #
-#   julia --project=. scripts/dev/viewer_demos/iss_hypr.jl
+#   julia --project=examples/rpo_planner_env scripts/dev/viewer_demos/iss_hypr.jl
 #
 # Environment:
 #   SPACEAGORA_VIEWER_DEMO_OUT       output root (default: output/viewer_demos)

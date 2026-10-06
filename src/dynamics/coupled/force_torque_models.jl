@@ -37,7 +37,7 @@ module DynamicEffectors
     using .AerodynamicEffectors: MeshAeroPanels, MeshAeroSurrogate, AerodynamicCoefficientMeshSurrogate, MESH_AERO_MAX_DEGREE
     using .AerodynamicEffectors: mesh_aero_panels, panel_aero_coefficients, panel_aero_coefficients_split, panel_shadow_mask, panel_projected_area
     using .AerodynamicEffectors: fit_mesh_aero_surrogate, mesh_aero_coefficients, write_mesh_aero_surrogate, read_mesh_aero_surrogate
-    using .PerturbationEffectors: NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
+    using .PerturbationEffectors: NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel, FacetSolarRadiationPressureModel
     using .PerturbationEffectors: MagneticTorqueRodModel, get_magnetic_field_dipole, calculate_magnetic_torque
     using .PerturbationEffectors: EddyCurrentDampingModel, eddy_damping_torque
     using .PerturbationEffectors: LVLHCascadeAttitudeControlModel
@@ -59,7 +59,7 @@ module DynamicEffectors
 
     export ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel
     export GravityGradientTorqueModel
-    export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
+    export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel, FacetSolarRadiationPressureModel
     export aerobraking_gravity_force_ii, srp, srp_cannonball_accel, planetary_albedo_accel, planetary_ir_accel
     export MagneticTorqueRodModel, get_magnetic_field_dipole, calculate_magnetic_torque
     export EddyCurrentDampingModel, eddy_damping_torque

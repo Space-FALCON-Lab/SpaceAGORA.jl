@@ -27,7 +27,7 @@ using Reexport
 export Initial_condition, Aerodynamics, Engines, Model, Cnf, Solution, ODEParams, IntermediateSolution, Mission, InitialParameters
 export SaveCache, SaveData
 export SRPSunEphemerisCache, NBodyEphemerisCache, PlanetFrameEphemerisCache, SpiceRuntimeCounters, SpiceRhsMemo
-export GramTrackCache, VacuumPredictedGRAMCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScratchWorkspace
+export GramTrackCache, VacuumPredictedGRAMCache, GramDensityPerturbationState, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScratchWorkspace
 export PolicyDecisionEnvConfig, GramTrackCacheConfig, CallbackEnvConfig, RhsPlanEnvConfig
 export AbstractPolicyContext
 export RhsEffectorDecision, RhsExecutionPlan
@@ -542,6 +542,49 @@ export RhsEffectorDecision, RhsExecutionPlan
         vac_positions::Vector{SVector{3, Float64}} # vacuum-predicted inertial position at each knot
     end
 
+    # Opt-in GRAM perturbed-density state (SPACEAGORA_GRAM_DENSITY_PERTURBATION;
+    # see SimulationCallbacks gram_density_perturbation.jl). `nothing` in the
+    # SharedBuffers slot below -- the default -- leaves every density path exactly
+    # as it was. When installed, the RHS multiplies GRAM's unperturbed mean
+    # density (below the entry interface only) by a factor r drawn from a
+    # SEPARATE GRAM instance per spacecraft (`walk_models`) that only the
+    # per-accepted-step callback advances, so RHS stage evaluations never move
+    # the walk.
+    mutable struct GramDensityPerturbationState
+        mode::Symbol                          # :step (A), :pass (B), :naive_rhs (negative control)
+        ei_m::Float64                         # entry-interface altitude, m
+        pass_dt_s::Float64                    # B: knot spacing, s
+        pass_max_s::Float64                   # B: prediction horizon cap, s
+        log_path::String                      # diagnostics CSV path ("" = no log)
+        reseed::Bool                          # reseed each walk instance at every atmospheric entry
+        base_seeds::Vector{Int}               # per-spacecraft recipe seed the per-pass seeds derive from
+        walk_models::Vector{Any}              # per-spacecraft walk instance (A/B); empty for naive
+        walk_calls::Vector{Int}               # walk-instance GRAM calls per spacecraft
+        held_r::Vector{Float64}               # A: factor held since the last accepted step
+        in_atm_prev::Vector{Bool}             # last accepted state was at or below EI
+        pass_count::Vector{Int}               # EI down-crossings seen at accepted steps
+        pass_active::Vector{Bool}             # B: an r(t) interpolant is live
+        pass_t0::Vector{Float64}              # B: time of the first knot
+        pass_r::Vector{Vector{Float64}}       # B: r at the knots
+        pass_alt::Vector{Vector{Float64}}     # B: predicted altitude at the knots, m
+        # Diagnostics, one row per walk sample (A), knot (B), applied factor at an
+        # accepted step (B), or mean-instance read at an accepted step (naive).
+        log_kind::Vector{Int8}                # 1 A-sample, 2 B-knot, 3 B-applied, 4 naive-read
+        log_sat::Vector{Int}
+        log_pass::Vector{Int}
+        log_t::Vector{Float64}
+        log_alt::Vector{Float64}
+        log_r::Vector{Float64}
+        log_sigma::Vector{Float64}            # GRAM densityStandardDeviation (fraction of mean)
+        log_mean::Vector{Float64}             # GRAM mean density at the sample, kg/m^3
+        log_aux::Vector{Float64}              # A/B: GRAM relativeStepSize; B-applied: predicted-minus-actual altitude, m
+        # Run continuity across checkpoint segments (gram_density_perturbation.jl, `initialize`).
+        owner::Any                            # the ODEParams this state is attached to (`nothing` until attached)
+        t0::Float64                           # time of the solve that started this state
+        last_t::Float64                       # last accepted-step time processed
+        walk_fresh::Vector{Bool}              # the walk's next update is its first after a clone or a reseed
+    end
+
     # Per-link results of the multibody aerodynamic wrench; summed in link order.
     struct AeroScratchWorkspace
         link_force::Vector{SVector{3, Float64}}
@@ -669,6 +712,20 @@ export RhsEffectorDecision, RhsExecutionPlan
         thermal_parallel_mode::Symbol
         thermal_thread_threshold::Int
         thermal_allow_with_outer::Bool
+        # True when the run's density model returns values that depend on the
+        # order of earlier queries on the same instance (native GRAM with
+        # perturbed winds; see EnvironmentModels.density_model_history_dependent).
+        # The density callback then evaluates its satellites serially in index
+        # order. Explicit SPACEAGORA_DENSITY_FREEZE_PER_STEP=auto
+        # resolves `density_freeze_per_step` to true, so that the dynamics'
+        # native queries are the ordered once-per-step ones. Without an explicit
+        # opt-in, per-stage sampling remains enabled and native query order
+        # may depend on thread scheduling. The control
+        # callback has no such guard: a control model that queries the density
+        # model itself (E-EDG) stays ordered because it is not declared
+        # thread-safe, and SPACEAGORA_CONTROL_ASSUME_THREADSAFE would lift
+        # that. False in a snapshot taken without a run (no model to inspect).
+        density_history_dependent::Bool
     end
 
     # Knobs consulted by the per-RHS-call execution-plan routing chain in
@@ -697,6 +754,9 @@ export RhsEffectorDecision, RhsExecutionPlan
         flat_min_thread_budget::Int
         harmonics_batch_enabled::Bool
         harmonics_batch_min_sats_per_worker::Int
+        # Routing only: satellites per worker before the default plan opens a
+        # flat worker team (setup.jl, _rhs_harmonics_flat_min_sats_per_worker).
+        harmonics_flat_min_sats_per_worker::Int
         harmonics_batch_spin_barrier::Bool
         harmonics_batch_allow_with_outer::Bool
         rhs_effector_cost_min_samples::Int
@@ -751,6 +811,7 @@ export RhsEffectorDecision, RhsExecutionPlan
         density_models::Vector{_PerSatDensityModel} = _PerSatDensityModel[]
         gram_density_cache::Vector{Union{Nothing, GramTrackCache}} = _typed_nothing_vector(GramTrackCache, n_sats)
         vacuum_gram_caches::Vector{Union{Nothing, VacuumPredictedGRAMCache}} = _typed_nothing_vector(VacuumPredictedGRAMCache, n_sats)
+        gram_density_perturbation::Base.RefValue{Union{Nothing, GramDensityPerturbationState}} = Ref{Union{Nothing, GramDensityPerturbationState}}(nothing)
         gram_isolated_pool_models::Vector{GRAMAtmosphereModel} = GRAMAtmosphereModel[]
         gram_isolated_pool_locks::Vector{ReentrantLock} = ReentrantLock[]
         harmonics_workspaces::Vector{Union{Nothing, _HarmonicsWorkspaceMap}} = _typed_nothing_vector(_HarmonicsWorkspaceMap, n_sats)
@@ -909,6 +970,13 @@ export RhsEffectorDecision, RhsExecutionPlan
         drag_cache::Vector{SVector{3,Float64}} = []
         lift_cache::Vector{SVector{3,Float64}} = []
         cross_cache::Vector{SVector{3,Float64}} = []
+        # Initial savers run before the solver initializes its RHS. These
+        # destinations are populated once from the first unperturbed RHS at
+        # the initial time, never from a pre-solve calibration probe.
+        initial_force_output_pending::Base.RefValue{Bool} = Ref(false)
+        initial_force_output_time::Base.RefValue{Float64} = Ref(NaN)
+        initial_force_output_state::Base.RefValue{Any} = Ref{Any}(nothing)
+        initial_force_output_destinations::Vector{Tuple{Symbol, Any}} = Tuple{Symbol, Any}[]
         # Add more fields as needed to store the relevant data for saving results
     end
 

@@ -39,7 +39,42 @@ Base.@kwdef struct PPBPhase
     thread_mode::Symbol        = :full_ladder
     worker_ladder::Vector{Int} = Int[]
     budget_grid::Vector{Tuple{Int, Int}} = Tuple{Int, Int}[]
+    # A budget grid the phase sized against the host itself (see the P-series
+    # helpers below), rather than one declared against a 32-core reference box.
+    # `_ppb_budget_grid`'s rescale and `_ppb_cap_worker_counts`'s
+    # product filter both exist to fit a *declared* grid onto a smaller
+    # machine; applied to a grid that was already derived from this machine's
+    # core count they would replace it with divisor pairs of the worker cap and
+    # silently discard the axis the phase is sweeping. Only the per-entry
+    # worker cap still applies, because that one is a memory limit, not a
+    # portability rescale.
+    budget_grid_fixed::Bool    = false
+    # Modes run ONCE at the grid's full budget instead of once per split:
+    # `threads = process_workers = ` the budget (see `_ppb_full_budget`), so the
+    # mode is handed the whole machine and chooses its own split, the way a user
+    # would run it. Every name here must also be in `modes`, which stays the
+    # list of everything the phase runs (the precompile workload and
+    # --lean-modes read it); the per-split runs take `modes` minus these. Empty
+    # for every phase but P5f, and meaningless without a budget_grid.
+    full_budget_modes::Vector{String} = String[]
 end
+
+# A copy of `phase` with the named fields replaced. Every derived phase (lean,
+# preview, caps, floors) is built through this, so a field added to PPBPhase
+# is carried through them rather than silently reset to its default.
+_ppb_phase_with(phase::PPBPhase; kw...) =
+    PPBPhase(; (f => get(kw, f, getfield(phase, f)) for f in fieldnames(PPBPhase))...)
+
+# The per-split modes and the full-budget modes of a phase. A full-budget mode
+# that --lean-modes trimmed from `modes` is not run at all.
+_ppb_full_budget_modes(phase::PPBPhase)::Vector{String} =
+    [m for m in phase.modes if m in phase.full_budget_modes]
+_ppb_split_modes(phase::PPBPhase)::Vector{String} =
+    [m for m in phase.modes if !(m in phase.full_budget_modes)]
+
+# A grid whose entries all spend the same total: every split of one budget.
+_ppb_is_split_grid(grid::Vector{Tuple{Int, Int}})::Bool =
+    !isempty(grid) && allequal(w * t for (w, t) in grid)
 
 Base.@kwdef struct PPBConfig
     phases::Vector{String}  = String[]
@@ -59,7 +94,8 @@ end
 
 # Which static routes have actually won a launch point in this phase, measured.
 #
-# --lean-modes trims each phase's ladder to serial + these + policy_v2, on the
+# --lean-modes trims each phase's ladder to serial + these + the adaptive arms
+# (policy_v2 and predictive), on the
 # reasoning that the shipped profiles are not what is under test any more. Both
 # laptop routing fixes (254957e7 machine-class gate, 0b333ad0 memory-aware
 # process sizing) are gated behind OuterRouteTuning fields that only R6 sets,
@@ -110,7 +146,8 @@ const PPB_BEST_STATIC_WINNERS = Dict{String, Vector{String}}(
 """
     _ppb_lean_phase(phase) -> PPBPhase
 
-Trim `phase.modes` to serial + its measured best-static winners + policy_v2,
+Trim `phase.modes` to serial + its measured best-static winners + the adaptive
+arms (policy_v2 and predictive),
 preserving the phase's own ordering. serial is kept wherever the phase already
 had it: the harness derives speedup, thread/process efficiency and the
 below-noise-floor flag from the serial median, and a phase that drops it loses
@@ -124,23 +161,14 @@ function _ppb_lean_phase(phase::PPBPhase)::PPBPhase
     keep = Set{String}(winners)
     push!(keep, "serial")
     push!(keep, "policy_v2")
+    # R7 is the arm R6 is being compared against, so a lean ladder that kept
+    # policy_v2 and dropped predictive would drop the comparison itself.
+    push!(keep, "predictive")
     modes = [m for m in phase.modes if m in keep]
     isempty(modes) && return phase
     modes == phase.modes && return phase
     println("[paper-benchmarks] phase $(phase.id): lean modes -> $(join(modes, ", "))")
-    return PPBPhase(
-        id            = phase.id,
-        label         = phase.label,
-        cases         = phase.cases,
-        parity_cases  = phase.parity_cases,
-        modes         = modes,
-        mc_samples    = phase.mc_samples,
-        repeats       = phase.repeats,
-        warmup        = phase.warmup,
-        thread_mode   = phase.thread_mode,
-        worker_ladder = phase.worker_ladder,
-        budget_grid   = phase.budget_grid,
-    )
+    return _ppb_phase_with(phase; modes = modes)
 end
 
 # Preview mode: caps N_sat at 64, MC samples at 16, workers at 4, repeats at 2.
@@ -201,20 +229,174 @@ function _ppb_preview_phase(phase::PPBPhase)::PPBPhase
     isempty(samples) && (samples = [1])
     workers = filter(w -> w <= PPB_PREVIEW_MAX_WORKERS, phase.worker_ladder)
     isempty(workers) && !isempty(phase.worker_ladder) && (workers = [1, 2])
-    return PPBPhase(
-        id            = phase.id,
+    return _ppb_phase_with(phase;
         label         = phase.label * " [preview]",
         cases         = cases,
         parity_cases  = parity,
-        modes         = phase.modes,
         mc_samples    = samples,
         repeats       = PPB_PREVIEW_REPEATS,
         warmup        = PPB_PREVIEW_WARMUP,
-        thread_mode   = phase.thread_mode,
         worker_ladder = workers,
-        budget_grid   = filter(p -> p[1] * p[2] <= PPB_PREVIEW_MAX_WORKERS, phase.budget_grid),
+        budget_grid   = _ppb_preview_budget_grid(phase),
     )
 end
+
+# A host-sized split grid (budget_grid_fixed, every entry one split of the same
+# budget: P5, P5f) is kept whole under --preview, and its runs are not held to
+# PPB_PREVIEW_MAX_WORKERS (see `_ppb_preview_caps_workers`). The preview cap
+# exists to fit a grid declared against a 32-core box onto a laptop; this grid
+# is already the host's own budget, and filtering it to products of at most 4
+# emptied it on any host above 4 cores, so the phase ran as one unsplit run
+# that measured none of its axis. Every other grid keeps the preview filter.
+function _ppb_preview_budget_grid(phase::PPBPhase)::Vector{Tuple{Int, Int}}
+    _ppb_preview_keeps_grid(phase) && return phase.budget_grid
+    return filter(p -> p[1] * p[2] <= PPB_PREVIEW_MAX_WORKERS, phase.budget_grid)
+end
+
+_ppb_preview_keeps_grid(phase::PPBPhase)::Bool =
+    phase.budget_grid_fixed && _ppb_is_split_grid(phase.budget_grid)
+
+
+# ── Paper routing figures (P1-P5) ─────────────────────────────────────────────
+#
+# The four comparisons the paper reports, each as "R6 against serial and against
+# the best static route", with raw medians and the ratio to that point's serial
+# baseline:
+#
+#   P1  constellation size scaling at one fixed budget   (1 -> 4096 spacecraft)
+#   P2  thread scaling at one fixed spacecraft count     (4096, budget ladder)
+#   P3  Monte Carlo, one spacecraft per sample, resource ladder (cheap samples)
+#   P4  the same ladder on compute-bound aerobraking samples
+#   P5  Monte Carlo over constellations, one fixed budget, every worker/thread split
+#
+# Sized from the host rather than declared against a reference box, because the
+# same five phases run on both paper machines: every ladder and grid below is
+# derived from PPB_PAPER_BUDGET, and the phases carrying a grid set
+# budget_grid_fixed so the portability rescale leaves them alone.
+#
+# P3/P4 sweep the *budget*, not the split: an entry (b, b) gives every route b
+# units of the resource it actually uses -- b worker processes to the process
+# route, b threads to the thread route -- so at each rung the routes are
+# comparable and R6 is choosing between them at equal cost. That is the axis a
+# Monte Carlo scaling figure needs, and it is the one thing B13's fixed-total
+# split grid cannot express. P5 is the fixed-total split grid, which is the
+# right axis once the samples themselves carry constellations and both levels
+# of parallelism are live at once.
+const PPB_PAPER_BUDGET = let
+    override = tryparse(Int, strip(get(ENV, "SPACEAGORA_PPB_PAPER_BUDGET", "")))
+    cores = _ppc_physical_core_count()
+    budget = override === nothing ? min(cores, PPB_ROUTER_LADDER_MAX_THREADS) : override
+    max(1, budget)
+end
+
+# Geometric rungs from 1 to the budget, the budget itself always included.
+function _ppb_paper_budget_ladder(budget::Int=PPB_PAPER_BUDGET)::Vector{Int}
+    rungs = Int[]
+    b = 1
+    while b < budget
+        push!(rungs, b)
+        b *= 2
+    end
+    push!(rungs, budget)
+    return unique(rungs)
+end
+
+# One (workers, threads) entry per budget rung, each route getting the same
+# number of units of whichever resource it spends.
+_ppb_paper_resource_grid(budget::Int=PPB_PAPER_BUDGET) =
+    [(b, b) for b in _ppb_paper_budget_ladder(budget)]
+
+# Every split of one fixed budget, process-only through thread-only.
+_ppb_paper_split_grid(budget::Int=PPB_PAPER_BUDGET) =
+    [(w, budget ÷ w) for w in 1:budget if budget % w == 0]
+
+# The iso-work L50 ladder from the case catalog: one (spacecraft, mission
+# seconds) pair per rung, each sized so its serial baseline clears the 3 s
+# measurability floor. Generating the case names from that table keeps the phase
+# and the catalog from drifting apart when a duration is recalibrated.
+const PPB_PAPER_SIZE_CASES =
+    ["gravity_$(n)sat_l50_vacuum_$(mission_s)s" for (n, mission_s) in PPC_L50_ISO_MISSION_S]
+
+_ppb_paper_size_case(n::Int) =
+    PPB_PAPER_SIZE_CASES[something(findfirst(p -> p[1] == n, PPC_L50_ISO_MISSION_S), 1)]
+
+# ── P6/P6p: the force-model and atmosphere figure (F2) ───────────────────────
+#
+# One constellation size, six traces, thread ladder 1..32: what happens to
+# constellation thread scaling as the force model and the density path get
+# heavier. Trace 2 is P2's own rung, reused rather than duplicated, so the figure
+# and the P1/P2 tables share a serial baseline.
+#
+#   1  degree 20 harmonics, vacuum                     gravity_<N>sat_l20_vacuum_<S>s
+#   2  degree 50 harmonics, vacuum                     gravity_<N>sat_l50_vacuum_<S>s
+#   3  + solar radiation pressure + Sun/Moon third body  gravity_<N>sat_l50_srp_nbody_vacuum_<S>s
+#   4  degree 50 + analytic exponential atmosphere     aero_<N>sat_l50_expatm_<S>s
+#   5  degree 50 + native GRAM, look-ahead density cache  aero_<N>sat_l50_gram_lookahead_<S>s
+#   6  degree 50 + native GRAM on the process route    aero_<N>sat_l50_gram_process_<S>s
+#
+# WHY TWO PHASES. A phase declares one mode ladder for all of its cases, and the
+# six traces do not share one. Traces 1-5 are single simulations of N spacecraft,
+# where the thing under test is the inner (per-satellite RHS) split, and the
+# process route is a no-op on them -- the harness only spreads *samples* across
+# processes (`uses_process_pool = sample_count > 1 && mode.backend == "process"`,
+# execution.jl), so outer_process on a one-sample constellation case degenerates
+# to one in-process solve and would contribute six identical rows per case.
+# Trace 6 is the same spacecraft-missions arranged as N one-spacecraft samples,
+# which is the only arrangement the process route can spread, and running *it*
+# under inner_only would be N sequential solves with the pool idle. Splitting
+# them is what keeps every point in this figure a measurement; both phases are
+# the same figure and are archived together.
+#
+# SIZE. 4096 spacecraft, and the native-GRAM traces fit there too -- which is not
+# what the router's own memory model predicts. `native_gram_worker_extra_bytes`
+# charges 90 MB per spacecraft for a native GRAM constellation (~360 GB at 4096,
+# more than the benchmark box has), but the measured resident memory of a live
+# GRAM constellation on that box is 1.7 GB plus ~1.0 MB per spacecraft, i.e.
+# ~5.9 GB at 4096; the process trace's 32 workers at 128 samples each is the
+# binding case at ~174 GB against 250 GB installed. Both figures are fitted from
+# measurement in FIGURE_RUNS.md, which names the CSV behind each one. The
+# discrepancy with the 90 MB constant is recorded there; it is not resolved here.
+#
+# MISSION LENGTH IS PER TRACE. See the ppc_single_config branches and
+# FIGURE_RUNS.md: a shared duration puts the light traces under the 3 s
+# measurability floor and the GRAM traces into the hours, so each one is sized
+# against trace 2's measured serial baseline instead, and the duration is a
+# column of the figure's table. These are per-machine predictions -- recalibrate
+# with `bash paper_figure_runs.sh calibrate-p6` before a paper run on a host they
+# were not derived for.
+const PPB_P6_N_SAT              = 4096
+const PPB_P6_L20_MISSION_S      = 19700
+const PPB_P6_VACUUM_MISSION_S   = 5800
+const PPB_P6_AERO_MISSION_S     = 100
+
+_ppb_p6_l20_case(n::Int=PPB_P6_N_SAT)   = "gravity_$(n)sat_l20_vacuum_$(PPB_P6_L20_MISSION_S)s"
+_ppb_p6_nbody_case(n::Int=PPB_P6_N_SAT) = "gravity_$(n)sat_l50_srp_nbody_vacuum_$(PPB_P6_VACUUM_MISSION_S)s"
+_ppb_p6_aero_case(variant::String, n::Int=PPB_P6_N_SAT) =
+    "aero_$(n)sat_l50_$(variant)_$(PPB_P6_AERO_MISSION_S)s"
+
+# ── P7: one spacecraft, short missions ───────────────────────────────────────
+#
+# The only one-spacecraft, one-simulation point in P1-P6 is P1's bottom rung, a
+# 4 150 000 s pure-gravity mission sized to clear the 3 s floor, and there every
+# route resolved to serial execution. P7 is the other end: one spacecraft, about
+# one orbit, the full thread budget, so a route's fixed setup (planning, the
+# campaign machinery, calibration probes) is a large share of the wall time and
+# the table reads as "what does choosing a route cost when there is nothing to
+# parallelize". Its serial baselines are under the floor by design; the absolute
+# difference from serial in seconds is the result, not the speedup ratio.
+#
+# Three rows, one force model each, iso-mission (PPC_P7_MISSION_S, derived in
+# cases.jl from the orbit P1's spacecraft flies): P1's degree-50 vacuum physics,
+# P6 trace 3's degree 50 + SRP + third body, and P6 trace 4's degree 50 +
+# exponential-atmosphere aero on an orbit inside the atmosphere. The case
+# catalog's P7 block says why the aero row keeps this duration instead of trace
+# 4's 100 s.
+const PPB_P7_MISSION_S = PPC_P7_MISSION_S
+const PPB_P7_CASES = [
+    "gravity_1sat_l50_vacuum_$(PPB_P7_MISSION_S)s",
+    "gravity_1sat_l50_srp_nbody_vacuum_$(PPB_P7_MISSION_S)s",
+    "aero_1sat_l50_expatm_$(PPB_P7_MISSION_S)s",
+]
 
 # ── Phase catalog ─────────────────────────────────────────────────────────────
 
@@ -981,6 +1163,350 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         repeats      = 5,
         warmup       = 1,
         budget_grid  = [(1, 12), (2, 6), (12, 1)],
+    ),
+
+    # ── Paper routing figures ────────────────────────────────────────────────
+    # See the P-series block above the phase catalog for what these four
+    # comparisons are and why their grids are host-sized.
+    PPBPhase(
+        id    = "P1",
+        label = "Paper — Constellation Size Scaling at a Fixed Budget",
+        cases = PPB_PAPER_SIZE_CASES,
+        # One parity case for the whole P-series: the routes have to produce the
+        # same trajectory for a timing comparison between them to mean anything,
+        # and 256 spacecraft is the largest rung where checking that is cheap.
+        parity_cases = [_ppb_paper_size_case(256)],
+        modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "policy_v2", "predictive"],
+        mc_samples   = [1],
+        repeats      = 3,
+        warmup       = 1,
+        thread_mode  = :max_only,
+    ),
+    PPBPhase(
+        id    = "P2",
+        label = "Paper — Thread Scaling at 4096 Spacecraft",
+        # P1's top rung, so the two phases cross-check each other at the point
+        # they share (4096 spacecraft at the full thread budget) and the serial
+        # baseline is the same number in both tables.
+        cases        = [_ppb_paper_size_case(4096)],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "policy_v2", "predictive"],
+        mc_samples   = [1],
+        repeats      = 3,
+        warmup       = 1,
+        thread_mode  = :full_ladder,
+    ),
+    PPBPhase(
+        id    = "P3",
+        label = "Paper — Monte Carlo Resource Ladder, One Spacecraft per Sample",
+        cases        = ["independent_1sat_1hr"],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "outer_process", "policy_v2", "predictive"],
+        # 256 samples, matching B12's campaign size: at 64 the serial baseline is
+        # ~2.4 s, under the 3 s measurability floor, so the point would be
+        # reported as unmeasurable routing rather than as a scaling result. The
+        # samples are independent solves, so the baseline scales with the count.
+        mc_samples   = [256],
+        # Five repeats on every Monte Carlo phase, as in L8-L15: an adaptive
+        # point's repeats are cold, then exploratory, then exploiting, so three
+        # repeats put the median on an exploration campaign by construction.
+        repeats      = 5,
+        warmup       = 1,
+        budget_grid  = _ppb_paper_resource_grid(),
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "P4",
+        label = "Paper — Monte Carlo Resource Ladder, Compute-Bound Samples",
+        # Same ladder as P3 on samples that are ~1 s of integration each rather
+        # than ~40 ms, so the pair separates routing overhead from routing
+        # throughput. 32 samples keeps the serial baseline above the floor at
+        # every rung without paying 64 aerobraking arcs per repeat.
+        cases        = ["montecarlo_heavy_aerobraking"],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "outer_process", "policy_v2", "predictive"],
+        mc_samples   = [32],
+        repeats      = 5,
+        warmup       = 1,
+        budget_grid  = _ppb_paper_resource_grid(),
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "P4g",
+        label = "Paper — Dispersed MarsGRAM Aerobraking Samples at the Full Budget",
+        # P4's samples flown through MarsGRAM, each with its own seed and the
+        # per-pass perturbed density: the campaign the paper's question names. A
+        # native GRAM campaign is offered only the pool and serial by the policy,
+        # so the process pool is the static route it is compared with; outer
+        # threads, serialized by the shared GRAM lock, are left out to keep the
+        # run to about half its length. One rung, the full budget. Repeats and
+        # warm-up are declared here (11 and 2) rather than raised by
+        # SPACEAGORA_PPB_MIN_*, so P4gs below can run fewer.
+        #
+        # Serial is P4gs: its full baseline (11 repeats) was measured at
+        # aaa2df00b, before the precompile-workload fix, and P4gs re-times it at
+        # the current commit to check the two agree.
+        cases        = ["montecarlo_heavy_aerobraking_gram"],
+        parity_cases = String[],
+        modes        = ["outer_process", "predictive"],
+        mc_samples   = [32],
+        repeats      = 11,
+        warmup       = 2,
+        budget_grid  = [(PPB_PAPER_BUDGET, PPB_PAPER_BUDGET)],
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "P4gs",
+        label = "Paper — Dispersed MarsGRAM Aerobraking Samples, Serial Spot Check",
+        cases        = ["montecarlo_heavy_aerobraking_gram"],
+        parity_cases = String[],
+        modes        = ["serial"],
+        mc_samples   = [32],
+        repeats      = 3,
+        warmup       = 1,
+        budget_grid  = [(PPB_PAPER_BUDGET, PPB_PAPER_BUDGET)],
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "P5",
+        label = "Paper — Monte Carlo over Constellations, Worker/Thread Split at a Fixed Budget",
+        # Two aspect ratios of the same 128 spacecraft-hour total, so the rungs
+        # are the same work reshaped: wide constellations with few samples, and
+        # many samples of narrow ones.
+        cases        = ["mcgrid_16sat_8mc", "mcgrid_8sat_16mc"],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "outer_process", "outer_inner_static", "policy_v2", "predictive"],
+        mc_samples   = [1],
+        repeats      = 5,
+        warmup       = 1,
+        budget_grid  = _ppb_paper_split_grid(),
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "P5f",
+        label = "Paper — Monte Carlo over Constellations, Full Machine",
+        # P5 runs every mode once per split, so its adaptive arms were always
+        # told the split and chose only a route within it. P5f asks the other
+        # question: handed the whole budget and no split, does R7 land within
+        # the criterion of the best static allocation over every route AND every
+        # split? The static modes run exactly as in P5 (every split of the same
+        # budget); predictive runs once per case at the full budget, with
+        # --threads and --process-workers both set to it (`_ppb_full_budget`).
+        # policy_v2 is not run here: R6 is scored against its given split in P5.
+        cases        = ["mcgrid_16sat_8mc", "mcgrid_8sat_16mc"],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "outer_process", "outer_inner_static", "predictive"],
+        full_budget_modes = ["predictive"],
+        mc_samples   = [1],
+        # Declared here rather than raised by SPACEAGORA_PPB_MIN_REPEATS, as P7
+        # does: the full-budget row is one median per case with nothing beside
+        # it, so the phase should not depend on the launcher remembering the
+        # floor. The warm-up is P5's, and SPACEAGORA_PPB_MIN_WARMUP raises it
+        # the same way.
+        repeats      = 11,
+        warmup       = 1,
+        budget_grid  = _ppb_paper_split_grid(),
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "P6",
+        label = "Paper — Thread Scaling at 4096 Spacecraft, Force-Model and Atmosphere Variants",
+        # Traces 1-5. Trace 2 comes from _ppb_paper_size_case so the rung is the
+        # same object P1 and P2 use and cannot drift from PPC_L50_ISO_MISSION_S.
+        cases = [
+            _ppb_p6_l20_case(),
+            _ppb_paper_size_case(PPB_P6_N_SAT),
+            _ppb_p6_nbody_case(),
+            _ppb_p6_aero_case("expatm"),
+            _ppb_p6_aero_case("gram_lookahead"),
+        ],
+        # No parity case, for P2's reason and one more: a parity run is 512
+        # sampled trajectory points per mode at the top thread count, and at 4096
+        # spacecraft against live native GRAM that is the most expensive single
+        # thing this catalog can be asked to do. P1 carries the P-series parity
+        # check at 256 spacecraft, and the force models here are the ones B10 and
+        # B11 already parity-check at their own sizes.
+        parity_cases = String[],
+        # inner_only (R2) is the route this figure is about: one simulation, the
+        # split inside the RHS across satellites, no outer split to confound it.
+        # serial supplies the speedup denominator -- the controller runs it at the
+        # bottom rung only, which is the one place it is not redundant. predictive
+        # (R7) is the adaptive arm; it runs the whole ladder rather than only the
+        # top rung because a phase cannot restrict one mode to one thread count,
+        # and the extra rungs roughly double the phase's cost.
+        modes        = ["serial", "inner_only", "predictive"],
+        mc_samples   = [1],
+        repeats      = 3,
+        warmup       = 1,
+        thread_mode  = :full_ladder,
+    ),
+    PPBPhase(
+        id    = "P6p",
+        label = "Paper — Process Route at 4096 Spacecraft, Native GRAM",
+        # Trace 6. Same spacecraft-missions as trace 5, arranged as one-spacecraft
+        # samples so the process route has something to spread; see the phase
+        # comment above the P6 constants for why this cannot live in P6.
+        cases        = [_ppb_p6_aero_case("gram_process")],
+        parity_cases = String[],
+        modes        = ["serial", "outer_process", "predictive"],
+        # Must equal the case name's spacecraft count: the trace only means "the
+        # same constellation, propagated as independent members" if every member
+        # is a sample. The case also carries this in default_samples, which the
+        # harness honours only for the joint_routing family, so the phase states
+        # it too.
+        mc_samples   = [PPB_P6_N_SAT],
+        repeats      = 3,
+        warmup       = 1,
+        # Worker count per rung, threads pinned at 1: each Distributed worker is
+        # its own --threads=1 process with its own native GRAM instance, which is
+        # the whole point of the trace and also its memory cost. The ladder is the
+        # host-sized budget ladder, the same axis P6's thread ladder sweeps, so
+        # the two traces can be plotted against one x axis. budget_grid_fixed
+        # because the ladder is already derived from this host -- see
+        # PPBPhase.budget_grid_fixed.
+        budget_grid  = [(w, 1) for w in _ppb_paper_budget_ladder()],
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "P7",
+        label = "Paper — Single Satellite, Short Missions",
+        # See the P7 block above the phase catalog.
+        cases        = PPB_P7_CASES,
+        # No parity case: P1 carries the P-series parity check, and these force
+        # models are parity-checked at their own sizes by B10 and B11.
+        parity_cases = String[],
+        # P1's modes and thread axis exactly, so a P7 row and P1's one-spacecraft
+        # row are the same comparison at a different amount of work.
+        modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "policy_v2", "predictive"],
+        mc_samples   = [1],
+        # Eleven here rather than P1's three raised by SPACEAGORA_PPB_MIN_REPEATS:
+        # a sub-second point is the one most exposed to scheduler noise, and the
+        # phase should not depend on the launcher remembering the floor. The
+        # floor only raises a count, so it leaves this one alone.
+        repeats      = 11,
+        warmup       = 1,
+        thread_mode  = :max_only,
+    ),
+    PPBPhase(
+        id    = "P6s",
+        label = "Paper — Static Routes at 4096 Spacecraft, Full Thread Budget",
+        # P6's five traces at the top rung only, with every thread route pinned,
+        # so the adaptive policy can be scored against the best static route
+        # there. P6 pins inner_only alone, which is not a best static route.
+        # P1's thread axis and P1's modes except policy_v2, which P1 and P7 run
+        # and P6s does not.
+        cases = [
+            _ppb_p6_l20_case(),
+            _ppb_paper_size_case(PPB_P6_N_SAT),
+            _ppb_p6_nbody_case(),
+            _ppb_p6_aero_case("expatm"),
+            _ppb_p6_aero_case("gram_lookahead"),
+        ],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "predictive"],
+        mc_samples   = [1],
+        repeats      = 11,
+        warmup       = 1,
+        thread_mode  = :max_only,
+    ),
+    PPBPhase(
+        id    = "P6ps",
+        label = "Paper — Static Routes at 4096 Spacecraft, Native GRAM Samples",
+        # P6p's case at the full budget with the thread route added beside the
+        # process route. Two points: (32, 32) gives each route 32 units of the
+        # resource it spends, as P3 and P4 do, and (32, 1) repeats P6p's own
+        # full-budget point, where the adaptive policy has workers only.
+        cases        = [_ppb_p6_aero_case("gram_process")],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "outer_process", "predictive"],
+        mc_samples   = [PPB_P6_N_SAT],
+        repeats      = 11,
+        warmup       = 1,
+        budget_grid  = [(PPB_PAPER_BUDGET, PPB_PAPER_BUDGET), (PPB_PAPER_BUDGET, 1)],
+        budget_grid_fixed = true,
+    ),
+
+    # ── Route exploration (2026-10-02) ───────────────────────────────────────
+    # Plans the adaptive policy can reach but never chooses, pinned through the
+    # force_* and rhs_* modes (parallelization_performance/modes.jl) and timed
+    # beside serial, the adaptive policy and the static routes in the same run.
+    # Full budget only. Not paper phases.
+    PPBPhase(
+        id    = "X3",
+        label = "Route exploration — P3 campaign plans at the full budget",
+        cases        = ["independent_1sat_1hr"],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "outer_process", "predictive",
+                        "force_process@w32+l1", "force_process@w32+l2", "force_process@w32+l4",
+                        "force_process@w32+l8", "force_process@w32+l15",
+                        "force_threads@w16+l0+b2", "force_threads@w8+l0+b4",
+                        "force_threads@w4+l0+b8", "force_none@w1+l0+b32"],
+        mc_samples   = [256],
+        repeats      = 11,
+        warmup       = 3,
+        budget_grid  = [(PPB_PAPER_BUDGET, PPB_PAPER_BUDGET)],
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "X4",
+        label = "Route exploration — P4 campaign plans at the full budget",
+        cases        = ["montecarlo_heavy_aerobraking"],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "outer_process", "predictive",
+                        "force_threads@w16+l0+b2", "force_threads@w8+l0+b4",
+                        "force_threads@w4+l0+b8", "force_none@w1+l0+b32"],
+        mc_samples   = [32],
+        repeats      = 11,
+        warmup       = 3,
+        budget_grid  = [(PPB_PAPER_BUDGET, PPB_PAPER_BUDGET)],
+        budget_grid_fixed = true,
+    ),
+    # P5f's static routes at every split; serial, the adaptive policy and the
+    # pinned plans once at the full budget. One phase per grid because the
+    # wider plans differ with the sample count.
+    PPBPhase(
+        id    = "X5a",
+        label = "Route exploration — P5f, 8 samples of 16 spacecraft",
+        cases        = ["mcgrid_16sat_8mc"],
+        parity_cases = String[],
+        modes        = ["outer_threads", "outer_process", "outer_inner_static",
+                        "serial", "predictive", "force_threads@w8+l0+b4",
+                        "force_threads@w4+l0+b8", "force_threads@w2+l0+b16", "force_none@w1+l0+b32"],
+        full_budget_modes = ["serial", "predictive", "force_threads@w8+l0+b4",
+                        "force_threads@w4+l0+b8", "force_threads@w2+l0+b16", "force_none@w1+l0+b32"],
+        mc_samples   = [1],
+        repeats      = 11,
+        warmup       = 3,
+        budget_grid  = _ppb_paper_split_grid(),
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "X5b",
+        label = "Route exploration — P5f, 16 samples of 8 spacecraft",
+        cases        = ["mcgrid_8sat_16mc"],
+        parity_cases = String[],
+        modes        = ["outer_threads", "outer_process", "outer_inner_static",
+                        "serial", "predictive", "force_threads@w16+l0+b2", "force_threads@w8+l0+b4",
+                        "force_threads@w4+l0+b8", "force_threads@w2+l0+b16", "force_none@w1+l0+b32"],
+        full_budget_modes = ["serial", "predictive", "force_threads@w16+l0+b2", "force_threads@w8+l0+b4",
+                        "force_threads@w4+l0+b8", "force_threads@w2+l0+b16", "force_none@w1+l0+b32"],
+        mc_samples   = [1],
+        repeats      = 11,
+        warmup       = 3,
+        budget_grid  = _ppb_paper_split_grid(),
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "X1",
+        label = "Route exploration — P1 RHS plans at 32 threads",
+        cases        = [_ppb_paper_size_case(4096), _ppb_paper_size_case(1024), _ppb_paper_size_case(64)],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "predictive",
+                        "rhs_serial", "rhs_satellite", "rhs_per_satellite", "rhs_flat"],
+        mc_samples   = [1],
+        repeats      = 11,
+        warmup       = 3,
+        thread_mode  = :max_only,
     ),
 ]
 

@@ -52,7 +52,7 @@ function run_once()
                 config_args; threads=outer_workers, return_solution=true, return_solver_metadata=true
             )
         else
-            tuning = OuterRouteTuning(
+            tuning = SpaceAGORA.ParallelProfiles.OuterRouteTuning(
                 mc_process_min_samples=1,
                 mc_process_min_mission_s=0.0,
                 process_max_workers=outer_workers,
@@ -60,7 +60,7 @@ function run_once()
             SpaceAGORA.run_constellation_ensemble(
                 config_args;
                 threads=:auto,
-                route_state=OuterRouteState(),
+                route_state=SpaceAGORA.ParallelProfiles.OuterRouteState(),
                 route_tuning=tuning,
                 return_solution=true,
                 return_solver_metadata=true

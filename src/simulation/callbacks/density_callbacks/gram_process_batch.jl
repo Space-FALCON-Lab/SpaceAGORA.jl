@@ -48,8 +48,25 @@ end
 """
     _gram_process_pool_mode() -> Symbol
 
-`off` (default), `on`, or `auto`. `auto` engages at or above the batch-size
-threshold, since below it the round-trip cost is not amortised.
+`SPACEAGORA_GRAM_PROCESS_POOL`: `off` (default), `auto` or `on`.
+
+- `off`: never used.
+- `auto`: used at or above the batch-size threshold, since below it the
+  round-trip cost is not amortized, and only when the batch's winds do not
+  depend on native call history. Each worker process runs its own native GRAM
+  instance, and GRAM's perturbed winds are a random walk over each instance's
+  own calls, so workers cannot reproduce the single locked instance's winds.
+  A batch that requests winds while
+  `EnvironmentModels._gram_core_wind_is_history_dependent(core)` holds (the
+  pinned wrapper's default `SPACEAGORA_GRAM_WIND_MODE=auto` selects perturbed
+  winds) keeps the in-process path. Density-only batches, including every
+  batch of a run with `EnvironmentModel.wind = false`, and nominal-wind batches
+  stay eligible. Same rule as the isolated pool
+  (`_gram_pool_declines_history_dependent_winds`).
+- `on`: used for any batch size, including history-dependent winds. This is an
+  explicit opt-in to separate stochastic histories: with perturbed winds the
+  winds, and therefore the trajectory, change and can depend on the worker
+  count.
 """
 @inline function _gram_process_pool_mode()::Symbol
     return ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_GRAM_PROCESS_POOL"; default="off")
@@ -96,7 +113,8 @@ end
 Answer a whole batch of density queries from the distributed density service.
 
 Returns `true` if the batch was served and the output arrays are filled, `false`
-if the service declined (disabled, below threshold, nested inside an outer
+if the service declined (disabled, below threshold, history-dependent winds
+under `auto` (see `_gram_process_pool_mode`), nested inside an outer
 process split, no live workers, a non-native-GRAM model, an unknown recipe, or a
 recipe the service is remembered as unable to serve), in which case the caller
 must fall through to its existing path. Never throws on a service-level failure:
@@ -128,6 +146,9 @@ function _gram_process_pool_batch_eval!(
     density_model.constructor_kwargs === nothing && return false
     n = length(hs)
     _gram_process_pool_enabled(n) || return false
+    _gram_pool_declines_history_dependent_winds(
+        _gram_process_pool_mode(), wind, density_model
+    ) && return false
 
     recipe = deepcopy(density_model.constructor_kwargs)
     ParallelProcess.density_service_failed(recipe) && return false
@@ -196,6 +217,9 @@ service for this solve.
 Checked once per prefill pass, before the planet-frame loop, so the decision is
 uniform across satellites within a derivative evaluation.
 
+It also applies the process pool's wind-history rule
+(`_gram_process_pool_mode`) to the run's `EnvironmentModel.wind`.
+
 The track-cache guard matters: `_density_state_from_kinematics!` keeps
 per-satellite interpolation state when the GRAM track cache is on, and a batched
 query has no way to advance it. Track cache defaults to `off`, so the common
@@ -207,6 +231,11 @@ native-GRAM configuration is eligible.
     model = p.args.environment_model.density_model
     model isa EnvironmentModels.GRAMAtmosphereModel || return false
     model.constructor_kwargs === nothing && return false
+    # Same wind-history rule the batch evaluator applies, checked here so a
+    # run whose winds exclude the service does not stage a batch every RHS.
+    _gram_pool_declines_history_dependent_winds(
+        _gram_process_pool_mode(), EnvironmentModels._environment_wind_enabled(p), model
+    ) && return false
     ParallelProcess.density_service_failed(model.constructor_kwargs) && return false
     cb_env = _callback_env_config(p)
     _gram_track_cache_enabled(cb_env.gram_track_cache, model) && return false
@@ -217,6 +246,11 @@ native-GRAM configuration is eligible.
     # the service builds one instance per worker from one recipe and cannot
     # reproduce a heterogeneous set.
     isempty(p.shared_buffers.density_models) || return false
+    # The naive perturbation control reads the coordinator's own mean instance
+    # after its last update, which a worker-served query never makes, so that mode
+    # cannot be represented here and keeps the per-satellite path. The step and
+    # pass factors are applied to the served results (_rhs_density_service_fill!).
+    _installed_gram_perturbation_mode(p) === :naive_rhs && return false
     return true
 end
 
@@ -292,7 +326,7 @@ function _rhs_density_service_fill!(
     served = _gram_process_pool_batch_eval!(
         rhos, Ts, winds,
         p.args.environment_model.density_model,
-        q_alt, q_lat, q_lon, t, true, p,
+        q_alt, q_lat, q_lon, t, EnvironmentModels._environment_wind_enabled(p), p,
     )
     # Partial credit is not available: satellites handled locally above already
     # have their buffers written, but those writes are identical to what the
@@ -300,8 +334,12 @@ function _rhs_density_service_fill!(
     # them is correct, just redundant for a few.
     served || return false
 
+    # The workers return mean states; give them the same opt-in perturbation
+    # factor the per-satellite path applies (unchanged values when no mode is
+    # installed, and above the entry interface).
     @inbounds for (j, i) in enumerate(gram_idx)
-        _write_density_buffers!(p, i, rhos[j], Ts[j], winds[j], t)
+        rho_i, T_i, wind_i = _apply_gram_density_perturbation(p, i, t, alts[i], rhos[j], Ts[j], winds[j])
+        _write_density_buffers!(p, i, rho_i, T_i, wind_i, t)
     end
     return true
 end

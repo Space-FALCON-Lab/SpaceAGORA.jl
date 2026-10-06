@@ -147,7 +147,7 @@ let
         et = et_fn()
         stamp = slew_epoch_utc(et)
         jd = 2451545.0 + (et - deltet(et, "ET")) / 86400.0
-        prop = sgp4_init(tle; sgp4c=sgp4c_wgs84)
+        prop = sgp4_init(tle; sgp4c=SGP4C_WGS84)
         r_teme, v_teme = sgp4!(prop, (jd - jd_tle) * 1440.0)
         rot_teme = SMatrix{3, 3, Float64}(r_eci_to_eci(TEME(), J2000(), jd))
         rs = rot_teme * SVector{3, Float64}(r_teme .* 1000.0)

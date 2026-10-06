@@ -141,6 +141,7 @@ remote_runs/
 # MERRA-2 native model-level granules for the EDL aerocapture GP study.
 # ~2.1 GB per day, fetched with a NASA Earthdata login; never committed.
 data/merra2_native/
+__pycache__/
 # Viewer development payload written by write_viewer_dev_payload
 viewer/dev_data.js
 
@@ -155,3 +156,16 @@ examples/odyssey_surrogate_env/Manifest.toml
 
 # Optional CYGNSS development Python environment
 .venv-cygnss/
+
+# Benchmark study outputs stay local; the studies' docs describe how to regenerate them.
+benchmarks/studies/aero_batch/results/
+benchmarks/studies/gram_memory_footprint/results/
+benchmarks/studies/gram_thread_scaling/results/
+benchmarks/studies/heap_contention/results/
+benchmarks/studies/paper_parallelization_benchmarks/workload/results/
+benchmarks/studies/rhs_heuristic_defaults/results/
+benchmarks/studies/small_wins/results/
+
+# Generated optional HYPR example environment; Project.template.toml is tracked.
+/examples/rpo_planner_env/Project.toml
+/examples/rpo_planner_env/Manifest.toml

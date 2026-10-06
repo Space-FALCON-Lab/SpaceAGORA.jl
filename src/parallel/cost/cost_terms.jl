@@ -344,6 +344,10 @@ Base.@kwdef struct MachineConstants
     llc_bytes::Float64 = 0.0
     fingerprint::String = ""
     schema_version::Int = 1
+    # `Threads.nthreads()` of the session that measured the speedup ladders
+    # (`parallel_speedup`, the USL fit, the dispatch widths); 0 when unknown
+    # (a file written before this was recorded).
+    measured_threads::Int = 0
 end
 
 """

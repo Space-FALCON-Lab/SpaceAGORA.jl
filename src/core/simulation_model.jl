@@ -11,6 +11,9 @@ using Reexport
 isdefined(parentmodule(@__MODULE__), :RuntimeServices) ||
     Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "simulation", "runtime_services.jl"))
 
+isdefined(parentmodule(@__MODULE__), :SimulationLifecycle) ||
+    Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "gnc", "interfaces", "simulation_lifecycle.jl"))
+
 # --- Utils ---
 include(joinpath(@__DIR__, "..", "core", "numerics", "quaternion_utils.jl"))
 using .QuaternionMath
@@ -30,6 +33,7 @@ include(joinpath(@__DIR__, "..", "core", "types", "effector_sampling.jl"))
 include(joinpath(@__DIR__, "..", "gnc", "command_types.jl"))
 @reexport using .CommandTypes
 
+include(joinpath(@__DIR__, "..", "gnc", "hypr", "support.jl"))
 include(joinpath(@__DIR__, "..", "gnc", "hypr", "hypr_utils.jl"))
 
 include(joinpath(@__DIR__, "..", "vehicle", "robotics", "robotics.jl"))
@@ -97,7 +101,7 @@ include(joinpath(@__DIR__, "..", "vehicle", "structure", "structure_models.jl"))
 @reexport using .Structure
 
 # --- Config types ---
-include(joinpath(@__DIR__, "..", "core", "state", "simulation_configuration.jl"))
+include(joinpath(@__DIR__, "..", "simulation", "config", "configuration.jl"))
 @reexport using .SimConfig
 
 # --- Physical Models ---
@@ -173,4 +177,6 @@ include(joinpath(@__DIR__, "..", "analysis", "visualization", "scene", "scene_vi
 @reexport using .SceneVisualization
 include(joinpath(@__DIR__, "..", "simulation", "callbacks", "callbacks.jl"))
 @reexport using .SimulationCallbacks
+include(joinpath(@__DIR__, "..", "simulation", "config", "example_configuration.jl"))
+@reexport using .ExampleConfiguration
 end # module SimulationModel

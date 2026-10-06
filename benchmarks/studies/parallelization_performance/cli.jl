@@ -14,6 +14,47 @@ using Sockets
 using StaticArrays
 using Statistics
 
+# Startup trace: with SPACEAGORA_PPC_STARTUP_TRACE=1 a worker prints one line
+# per startup milestone (files loaded, first solve returned, first timed repeat
+# started), stamped with wall-clock time(), which is how the precompile
+# workload's validation (paper_parallelization_benchmarks/workload/
+# validate_workload.jl) splits a point's startup into import and compilation.
+# Each label is printed once per process. Off by default; one ENV read when on.
+const _PPC_STARTUP_TRACED = Set{String}()
+const _PPC_STARTUP_TRACE_LOCK = ReentrantLock()
+function ppc_startup_trace(label::String)
+    get(ENV, "SPACEAGORA_PPC_STARTUP_TRACE", "") == "1" || return nothing
+    first_time = lock(_PPC_STARTUP_TRACE_LOCK) do
+        label in _PPC_STARTUP_TRACED && return false
+        push!(_PPC_STARTUP_TRACED, label)
+        return true
+    end
+    first_time || return nothing
+    println("PPC_STARTUP_TRACE $(label) $(getpid()) $(Distributed.myid()) $(time())")
+    flush(stdout)
+    return nothing
+end
+
+# The paper harness's precompile workload
+# (benchmarks/studies/paper_parallelization_benchmarks/workload). The controller
+# sets SPACEAGORA_PPC_WORKLOAD=1 on a worker it launches with the workload's
+# environment on JULIA_LOAD_PATH (see ppc_workload_env in execution.jl), and
+# Distributed pool workers inherit both. Loading the package only brings its
+# precompiled specializations into this process; it defines nothing the harness
+# calls. Only an image that is already built and current is loaded -- a stale
+# one would otherwise be rebuilt here, inside a benchmark point. Skipped when
+# this file is included by the workload package itself.
+const PPC_WORKLOAD_PACKAGE = "SpaceAGORAPaperWorkload"
+if @__MODULE__() === Main && get(ENV, "SPACEAGORA_PPC_WORKLOAD", "") == "1"
+    let id = Base.identify_package(PPC_WORKLOAD_PACKAGE)
+        if id !== nothing && Base.isprecompiled(id)
+            Base.require(id)
+        else
+            @warn "SPACEAGORA_PPC_WORKLOAD=1 but $(PPC_WORKLOAD_PACKAGE) is not built for this environment; running without it."
+        end
+    end
+end
+
 Base.@kwdef struct PPCConfig
     profile::String = "smoke"
     outdir::String = PPC_DEFAULT_OUTDIR
@@ -198,6 +239,37 @@ function _ppc_full_thread_ladder(cpu_threads::Int=_ppc_physical_core_count())::V
         max(1, round(Int, 3 * max_threads / 4)),
         max_threads
     ]))
+end
+
+# The experiment identity is shared by every arm, including its serial baseline.
+# A worker receives the controller's identity before an equal-core override is
+# applied; its effective budget/class are recorded separately from that identity.
+function ppc_budget_context(; cpu_pinning::Vector{Int}=Int[])
+    pp = SpaceAGORA.ParallelProfiles
+    equal = get(ENV, "SPACEAGORA_PPC_EQUAL_CORE_BUDGET", "0") == "1"
+    cores, hardware = pp.usable_core_budget(), string(pp._machine_parallel_class())
+    condition = "v1|equal_core=$(equal)|base_cores=$(cores)|" *
+                "base_class=$(hardware)|cpu_pinning=$(join(cpu_pinning, ','))"
+    return (; condition, equal, cores, hardware)
+end
+ppc_budget_condition(; kwargs...) = ppc_budget_context(; kwargs...).condition
+
+function ppc_budget_metadata(; condition::String=get(ENV, "SPACEAGORA_PPC_BUDGET_CONDITION", ""))
+    isempty(condition) && (condition = ppc_budget_condition())
+    return (budget_condition=condition,
+            core_budget=SpaceAGORA.ParallelProfiles.usable_core_budget(),
+            hardware_class=string(SpaceAGORA.ParallelProfiles._machine_parallel_class()))
+end
+
+# Historical CSVs remain readable, but unknown conditions must never combine
+# with newly recorded experiments or supply their serial baselines.
+function ppc_with_budget_columns(df::DataFrame)::DataFrame
+    out = copy(df)
+    for (key, fallback) in ((:budget_condition, "legacy_unrecorded"),
+                            (:core_budget, -1), (:hardware_class, "unknown"))
+        out[!, key] = hasproperty(out, key) ? coalesce.(out[!, key], fallback) : fill(fallback, nrow(out))
+    end
+    return out
 end
 
 function _ppc_defaults(profile::String)::NamedTuple

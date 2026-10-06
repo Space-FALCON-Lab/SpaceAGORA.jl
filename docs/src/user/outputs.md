@@ -37,6 +37,32 @@ The Feather file is always written. The CSV is written when
 `schema_version`, `created_utc`, `mission_time_s`, `steps`,
 `spacecraft_count`, and SHA-256 hashes for each data file.
 
+## Getting the results in memory
+
+Pass `return_results=true` to get a [`SimulationResults`](@ref) back instead of
+reading files. Its `table` is the same `DataFrame` the CSV would contain
+(same columns and values), and it is built even when
+`simulation_settings.results = false`, in which case result files are not written.
+Explicitly enabled checkpoints can still be written; they are listed in `files`
+only when this call writes them. Resuming an already completed checkpoint does
+not report the old checkpoint files as new output.
+`configuration` is the configuration that actually ran: under the default
+`isolate_state=true` that is the deep copy, so controller state and logs, such
+as the RPO command log, are reachable there and not on the object you passed
+in. `files` lists the output files the run wrote, and `solution` holds the ODE
+solution when `return_solution=true` is passed as well (otherwise `nothing`).
+`return_results=true` cannot be combined with `return_solver_metadata=true`.
+
+```julia
+res = run_simulation(args; return_results=true)
+res.table                      # DataFrame, one row per saved step
+res.files                      # e.g. ["output/simulation_results.csv", ...]
+res.configuration              # the (isolated) configuration that ran
+
+res = run_simulation(args; return_results=true, return_solution=true)
+res.solution.t
+```
+
 ## Where the examples write, and how to keep runs apart
 
 Most repository examples build their configuration with `make_example_config`,

@@ -31,7 +31,23 @@ Base.@kwdef struct PPCModeSpec
     # arms that need to isolate one of these knobs. See ppc_mode_env_pairs.
     measured_reward::Union{Nothing, Bool} = nothing
     persistent_override::Union{Nothing, Bool} = nothing
+    # Appended last to the mode's environment. Empty for every shipped mode;
+    # set only by the route-exploration arms below.
+    extra_env::Vector{Pair{String, String}} = Pair{String, String}[]
 end
+
+# Route-exploration arms (2026-10-02). Each is the `predictive` mode with one
+# plan pinned through an environment override, so a plan the adaptive policy
+# never chooses can be timed beside it. Not part of any paper phase.
+#   force_<key>: campaign plan pinned by SPACEAGORA_PREDICTIVE_FORCE_PLAN=<key>
+#   rhs_<mode>:  constellation RHS plan pinned by SPACEAGORA_RHS_EXECUTION_MODE,
+#                with the pre-solve calibration sweep off so nothing overrides it
+const PPC_FORCED_CAMPAIGN_PLANS = [
+    "process@w32+l1", "process@w32+l2", "process@w32+l4", "process@w32+l8", "process@w32+l15",
+    "threads@w16+l0+b2", "threads@w8+l0+b4", "threads@w4+l0+b8", "threads@w2+l0+b16",
+    "none@w1+l0+b32",
+]
+const PPC_FORCED_RHS_PLANS = ["serial", "satellite", "per_satellite", "flat"]
 
 function ppc_mode_specs()::Dict{String, PPCModeSpec}
     serial = PPCModeSpec(
@@ -187,6 +203,43 @@ function ppc_mode_specs()::Dict{String, PPCModeSpec}
             persistent=true,
             allow_inner_with_outer=true
         ),
+
+        # R7: policy_v2 with SPACEAGORA_CAMPAIGN_PLANNER=predictive. Same
+        # construction as policy_v2 above -- profile_config derives R7 from R6's
+        # settings, so every knob in this block is identical by construction and
+        # the planner switch arrives through ppc_mode_env_pairs' call to
+        # profile_env_pairs(mode.profile). The parity gate checks this block
+        # against R7.
+        "predictive" => PPCModeSpec(
+            name="predictive",
+            profile="R7",
+            backend="auto",
+            outer_active=true,
+            policy_adaptive=true,
+            rhs_batch="auto",
+            density="auto",
+            control="auto",
+            thermal="auto",
+            multibody="auto",
+            effector="auto",
+            scheduler="static",
+            persistent=true,
+            allow_inner_with_outer=true
+        ),
+        (("force_" * key) => PPCModeSpec(
+            name="force_" * key, profile="R7", backend="auto", outer_active=true,
+            policy_adaptive=true, rhs_batch="auto", density="auto", control="auto",
+            thermal="auto", multibody="auto", effector="auto", scheduler="static",
+            persistent=true, allow_inner_with_outer=true,
+            extra_env=["SPACEAGORA_PREDICTIVE_FORCE_PLAN" => key])
+         for key in PPC_FORCED_CAMPAIGN_PLANS)...,
+        (("rhs_" * m) => PPCModeSpec(
+            name="rhs_" * m, profile="R7", backend="auto", outer_active=true,
+            policy_adaptive=true, rhs_batch="auto", density="auto", control="auto",
+            thermal="auto", multibody="auto", effector="auto", scheduler="static",
+            persistent=true, allow_inner_with_outer=true, calibrate="off",
+            extra_env=["SPACEAGORA_RHS_EXECUTION_MODE" => m])
+         for m in PPC_FORCED_RHS_PLANS)...,
         # Attribution variants of policy_v2, mirroring the full_smart_* set:
         "policy_v2_nocalib" => PPCModeSpec(
             name="policy_v2_nocalib",
@@ -469,6 +522,9 @@ function ppc_mode_env_pairs(
     if outer_active && mode.backend == "threads" && outer_tasks > 1 &&
        !haskey(merged, "SPACEAGORA_INNER_THREAD_BUDGET")
         put!("SPACEAGORA_INNER_THREAD_BUDGET", string(max(1, fld(Threads.nthreads(), outer_tasks))))
+    end
+    for (k, v) in mode.extra_env
+        put!(k, v)
     end
     return Pair{String, Union{Nothing, String}}[k => merged[k] for k in order]
 end

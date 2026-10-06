@@ -1,3 +1,6 @@
+# Load from the companion environment before common.jl activates the root project.
+# Setup: julia --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
+using SpaceAGORAHYPR
 include(joinpath(@__DIR__, "common.jl"))
 using CSV
 using DataFrames

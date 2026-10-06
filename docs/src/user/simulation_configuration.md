@@ -25,28 +25,52 @@ What to read next:
 ## The top-level struct
 
 `SimulationConfiguration` is the single object passed to `run_simulation`. It
-is composed from several nested structs, all accessed through
-`SpaceAGORA.SimulationModel` (abbreviated `SM` in the examples):
+is composed from several nested structs. The common setup types
+(`SimulationConfiguration`, `MissionConfiguration`, `EnvironmentModel`,
+`DynamicsModel`, `SpacecraftModel`, `Link`, `InitialTime`,
+`IntegrationTolerances`, the inverse-square gravity effectors, and the
+`make_example_config` helper) are exported from the root module, so
+`using SpaceAGORA` alone is enough. Less common types are reached through
+`SpaceAGORA.SimulationModel` (abbreviated `SM` below).
 
 ```julia
 using SpaceAGORA
 const SM = SpaceAGORA.SimulationModel
 
-config = SM.SimulationConfiguration(
+config = SimulationConfiguration(
     file_paths             = SM.FilePaths(),
-    simulation_settings    = SM.SimulationSettings(...),
-    mission_configuration  = SM.MissionConfiguration(...),
-    environment_model      = SM.EnvironmentModel(...),
-    dynamics_model         = SM.DynamicsModel([spacecraft], effectors),
-    guidance_model         = SM.GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
-    navigation_model       = SM.NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
-    control_model          = SM.ControlModel(control_effectors=(), control_rates=Float64[]),
-    initial_time           = SM.InitialTime(year=2024, month=1, day=1, hour=0, minute=0, second=0.0),
-    integration_tolerances = SM.IntegrationTolerances()
+    simulation_settings    = SimulationSettings(...),
+    mission_configuration  = MissionConfiguration(...),
+    environment_model      = EnvironmentModel(...),
+    dynamics_model         = DynamicsModel([spacecraft], effectors),
+    guidance_model         = GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
+    navigation_model       = NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
+    control_model          = ControlModel(control_effectors=(), control_rates=Float64[]),
+    initial_time           = InitialTime(year=2024, month=1, day=1, hour=0, minute=0, second=0.0),
+    integration_tolerances = IntegrationTolerances()
 )
 
 run_simulation(config)
 ```
+
+The guidance, navigation and control models are optional. Leave them out and
+each defaults to an empty model, the same as the zero-argument constructors
+`SM.GuidanceModel()`, `SM.NavigationModel()` and `SM.ControlModel()` (no
+effectors, no rates). The minimal form is:
+
+```julia
+config = SM.SimulationConfiguration(
+    simulation_settings   = SM.SimulationSettings(...),
+    mission_configuration = SM.MissionConfiguration(...),
+    environment_model     = SM.EnvironmentModel(...),
+    dynamics_model        = SM.DynamicsModel([spacecraft], effectors),
+    initial_time          = SM.InitialTime(year=2024, month=1, day=1),
+)
+```
+
+`environment_model`, `dynamics_model` and `initial_time` stay required;
+pass explicit models only when you attach guidance, navigation or control
+effectors.
 
 ## InitialTime
 
@@ -208,6 +232,19 @@ SM.EnvironmentModel(
 )
 ```
 
+`thermal_model` is one of three heating models, each evaluated per thermal
+link (panel) and integrated into that link's heat-load state:
+
+- `SM.MaxwellianHeat(thermal_accomodation_factor, planet)`: free-molecular
+  Maxwellian heat flux, for rarefied aerobraking corridors.
+- `SM.SuttonGravesHeat(planet=planet, nose_radius_m=0.5)`: Sutton–Graves
+  stagnation-point convective heating, `q = k √(ρ/r_n) v³`, with `k` defaulting
+  to the planet's coefficient (`planet.k`).
+- `SM.TabularHeat("aerothermal.csv")`: a vehicle-level flux interpolated from an
+  aerothermal database tabulated on a velocity × density grid (CSV columns
+  `velocity_m_s`, `density_kg_m3`, `heat_rate_W_cm2`), or
+  `SM.TabularHeat(velocities, densities, heat_rates)` from arrays.
+
 `EI` (entry interface) is the altitude at which the integrator switches
 between its orbit and atmosphere step-size/tolerance regimes (see
 `IntegrationTolerances`). It is not a force gate: whenever a non-vacuum
@@ -218,6 +255,16 @@ force becomes negligible.
 Set `wind = true` to request wind vectors from the atmosphere model; note that
 the open-data models (`NoAtmosphereModel`, `ExponentialAtmosphereModel`,
 `PiecewiseExponentialAtmosphereModel`) always return zero wind regardless.
+
+With `wind = false` the simulation treats the atmosphere as co-rotating with the
+planet for every model: density queries are made with `wind=false`, and the
+wind used for the atmosphere-relative velocity in aerodynamics and guidance, and
+recorded in the `wind` output, is zero. This matters for native GRAM, whose own
+`wind=false` query still returns its nominal (mean) winds, and for GRAM grid
+snapshots, which return stored winds either way; the simulation discards those
+values. Density and temperature are unaffected. A density-only run also stays
+eligible for the automatic native-GRAM pools, which otherwise keep perturbed
+wind requests on the locked path (see [Parallel Execution](parallel_execution.md)).
 
 For the supported atmosphere models and their constructors, see
 [Atmosphere Models](atmosphere_models.md).
@@ -371,3 +418,34 @@ root attitudes can give a different incidence without changing the stored
 command. In the Odyssey energy-depletion example, saved maximum-link heat
 columns include the uncontrolled bus, while the controller's panel heat limits
 apply only to its controlled panels.
+
+## Source ownership for contributors
+
+The existing configuration API is assembled by `src/simulation/config/configuration.jl`.
+This is a source-file organization; users still access the same types through
+`SpaceAGORA.SimulationModel`. No new configuration wrapper is required.
+
+| Source file under `src/simulation/config/` | Responsibility |
+| --- | --- |
+| `run_settings.jl` | Epoch, mission duration/orbits, sampling, paths, output and checkpoint settings |
+| `solver_settings.jl` | `SolverConfig` and `IntegrationTolerances` |
+| `environment_settings.jl` | Select and compose environmental models |
+| `constellation_configuration.jl` | Existing `DynamicsModel`: member spacecraft and selected dynamic effectors |
+| `simulation_configuration.jl` | Final container and `_with_configuration` helper |
+
+`constellation_configuration.jl` is included inside the existing `SpacecraftModels`
+module to preserve the identity of `DynamicsModel`; the other definitions remain
+inside `SimConfig`. A one-spacecraft run and a constellation use the same collection.
+The constructor retains the supplied spacecraft vector. It does not generate orbital
+layouts, schedule activities or introduce additional collection validation.
+
+Execution policy remains in `src/simulation/engine/config/`: `SimulationEngineConfig`
+composes parallel, solver, runtime-policy and artifact settings. It uses the same
+`SolverConfig` definition, not a second solver type. Output and checkpoint path
+derivation stays in `src/io/config/`; solver environment settings are parsed in
+`src/simulation/engine/adapters/from_env.jl`. These are distinct responsibilities
+from assembling a scenario.
+
+`_with_configuration` makes a shallow update and preserves unspecified references.
+Runtime state isolation remains the engine's responsibility. Moving the definitions
+changes neither those semantics nor typed-solver precedence over environment settings.

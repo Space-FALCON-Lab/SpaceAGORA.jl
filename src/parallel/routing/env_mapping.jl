@@ -35,7 +35,7 @@ end
 end
 
 @inline function _inner_hint_defaults(cfg::ParallelProfileConfig)::NamedTuple{(:exploration, :min_samples), Tuple{Float64, Int}}
-    if !(cfg.profile in (R5, R6))
+    if !(cfg.profile in (R5, R6, R7))
         return (exploration=1.5, min_samples=2)
     end
     machine_class = _machine_parallel_class()
@@ -152,6 +152,15 @@ function profile_env_pairs(
             _coerce_env_bool(cfg.policy_v2);
             preserve_existing=preserve_existing
         ),
+        # Emitted by every profile, not only by the one that changes it: a
+        # profile that left it unset would inherit whatever the shell already
+        # held, which is how a paired R6/R7 comparison would silently run the
+        # same planner twice.
+        "SPACEAGORA_CAMPAIGN_PLANNER" => _env_or_default(
+            "SPACEAGORA_CAMPAIGN_PLANNER",
+            cfg.campaign_planner;
+            preserve_existing=preserve_existing
+        ),
         "SPACEAGORA_PARALLEL_POLICY_HINT_EXPLORATION" => _env_or_default(
             "SPACEAGORA_PARALLEL_POLICY_HINT_EXPLORATION",
             string(round(hint_defaults.exploration; digits=3));
@@ -200,4 +209,40 @@ function with_parallel_profile(
         preserve_existing=preserve_existing,
         outer_parallel_active=outer_parallel_active
     )
+end
+
+"""
+    PARALLEL_FLAG_PROFILE
+
+The profile `SolverConfig(parallel=true)` runs under: R7, the adaptive inner
+policy (V2) with the predictive campaign planner.
+"""
+const PARALLEL_FLAG_PROFILE = R7
+
+"""
+    parallel_flag_env_pairs() -> Vector{Pair{String,String}}
+
+The complete environment `SolverConfig(parallel=true)` applies around one run or
+campaign: every pair `PARALLEL_FLAG_PROFILE` implies, with
+`preserve_existing=false` so a stale shell value cannot change which planner or
+policy the flag selects.
+"""
+parallel_flag_env_pairs()::Vector{Pair{String, String}} =
+    profile_env_pairs(PARALLEL_FLAG_PROFILE; preserve_existing=false, outer_parallel_active=false)
+
+"""
+    parallel_flag_nested() -> Bool
+
+Whether the current process is already inside an enclosing outer split:
+`SPACEAGORA_OUTER_PARALLEL_ACTIVE` is set true (a threaded split), or this is a
+`Distributed` worker process (a process split; pool workers run one sample at
+a time on `--threads=1`). A nested run or campaign keeps the enclosing split's
+environment instead of applying the flag's profile, so the thread budget the
+split declared is not allocated a second time and a worker never starts a
+machine calibration of its own.
+"""
+function parallel_flag_nested()::Bool
+    Distributed.myid() == 1 || return true
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_OUTER_PARALLEL_ACTIVE", "")))
+    return raw in ("1", "true", "yes", "on")
 end

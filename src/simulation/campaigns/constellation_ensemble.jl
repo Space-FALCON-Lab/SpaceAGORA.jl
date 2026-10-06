@@ -60,11 +60,10 @@ end
 
 """
     run_constellation_ensemble(args::SimulationConfiguration; threads=1, fail_fast=false,
-                               allow_gnc_effectors=false, route_state=nothing,
-                               route_tuning=nothing, run_kwargs...) -> MonteCarloResult
+                               allow_gnc_effectors=false, run_kwargs...) -> MonteCarloResult
 
 Propagate each spacecraft of a multi-satellite `SimulationConfiguration` as an
-independent single-satellite simulation, parallelised across satellites with the
+independent single-satellite simulation, parallelized across satellites with the
 [`run_monte_carlo`](@ref) worker-task runner.
 
 For constellations whose members do not interact dynamically, this outer-level split
@@ -80,9 +79,25 @@ result saving, checkpointing, or checkpoint resume is enabled, each member uses
 per-satellite `sat_<index>_id_<spacecraft id>` subdirectories so members do not read or
 clobber each other's files.
 
-`threads` caps worker tasks exactly as in [`run_monte_carlo`](@ref); Julia must be started
-with at least that many threads. While more than one worker is active the runner sets
-`SPACEAGORA_OUTER_PARALLEL_ACTIVE=1` so inner thread policies yield to the outer split.
+# Parallel execution
+
+When `args.solver_config` is `SolverConfig(parallel=true)`, the ensemble lets the
+predictive planner choose serial, threaded or process-worker execution for its
+members, under the flag's settings for the duration of the call:
+
+```julia
+args = SimulationConfiguration(...; solver_config=SolverConfig(parallel=true))
+result = run_constellation_ensemble(args; return_solution=true)
+solutions = [sample.value for sample in result.successful]
+```
+
+The flag chooses the worker count itself, so combining it with an integer `threads`
+throws an `ArgumentError`. Without the flag the ensemble is serial unless `threads`
+gives a fixed number of worker tasks, exactly as in [`run_monte_carlo`](@ref); Julia
+must be started with at least that many threads. While more than one worker is active
+the runner sets `SPACEAGORA_OUTER_PARALLEL_ACTIVE=1` so inner thread policies yield to
+the outer split, and an ensemble started inside another campaign's worker yields to
+the enclosing split.
 
 Isolation: when more than one worker is active, each member solves a `deepcopy` of its
 configuration taken inside its worker task, because model state such as
@@ -92,36 +107,22 @@ between concurrent members. The copy replaces (not adds to) `run_simulation`'s o
 `isolate_state=false` is ignored under parallel execution. With `threads=1` the
 keyword is forwarded to [`run_simulation`](@ref) unchanged.
 
-Pass `threads=:auto` to let the outer-route bandit choose serial or threaded execution
-from empirical runtime history. Features are built with [`campaign_route_features`](@ref)
-from the ensemble shape (member count as the sample count, one satellite per sample, the
-configuration's density-model family and mission length); the decision comes from
-[`select_outer_route!`](@ref) and per-member success and amortized wall-clock feedback is
-recorded via [`record_outer_route_feedback!`](@ref), so repeated ensembles converge to the
-fastest allocation. History lives in [`campaign_outer_route_state`](@ref) unless an
-isolated [`OuterRouteState`](@ref) is passed as `route_state`; `route_tuning` overrides
-the [`OuterRouteTuning`](@ref). When the adaptive route is threaded, the runner also sets
-`SPACEAGORA_INNER_THREAD_BUDGET` (unless already set) so inner and outer parallelism
-split the thread pool instead of oversubscribing it. Adaptive members are isolated the
-same way as the fixed-thread parallel path, whichever route the bandit selects. If
-`SPACEAGORA_OUTER_PARALLEL_ACTIVE` is already set — the ensemble runs nested inside
-another campaign's worker — the adaptive path yields to the enclosing split: it executes
-serially and records no feedback.
+`threads=:auto`, `route_state` and `route_tuning` drive the internal routing machinery
+the benchmark harness measures (see `SpaceAGORA.ParallelProfiles`); they are not the
+supported way to parallelize an ensemble.
 
-The configuration must be uncoupled: guidance, navigation, and control effector tuples
-must be empty, because effectors that coordinate several satellites cannot act across
-ensemble members. If every configured effector acts on one satellite only, pass
-`allow_gnc_effectors=true` to opt in. Remaining keyword arguments are forwarded to
+The configuration must be uncoupled: configuration-level guidance, navigation, and control
+effector tuples must be empty, because effectors that coordinate several satellites cannot
+act across ensemble members. If every configured effector acts on one satellite only, pass
+`allow_gnc_effectors=true` to opt in; the effectors are passed to every member unchanged,
+so spacecraft indices are not remapped. GNC declared on a `SpacecraftModel` (its `guidance`,
+`navigation` and `control` keywords) always travels with that spacecraft, is bound to index 1
+in its member run, and needs no flag. Remaining keyword arguments are forwarded to
 [`run_simulation`](@ref) (for example `return_solution=true`).
-
-```julia
-result = run_constellation_ensemble(args; threads=8, return_solution=true)
-solutions = [sample.value for sample in result.successful]
-```
 """
 function run_constellation_ensemble(
     args::SimulationConfiguration;
-    threads::Union{Integer, Symbol}=1,
+    threads::Union{Nothing, Integer, Symbol}=nothing,
     fail_fast::Bool=false,
     allow_gnc_effectors::Bool=false,
     route_state::Union{Nothing, OuterRouteState}=nothing,
@@ -139,6 +140,20 @@ function run_constellation_ensemble(
         for (idx, sc) in enumerate(spacecraft)
     ]
 
+    # SolverConfig(parallel=true) on the members: the whole ensemble runs under
+    # the flag's scope with the planner choosing the route (threads=:auto).
+    parallel = _campaign_parallel_flag(member_configs)
+    threads_resolved = _campaign_threads(threads, parallel, "run_constellation_ensemble")
+    parallel || return _run_constellation_members(args, member_configs, threads_resolved, fail_fast,
+                                                  route_state, route_tuning, run_kwargs)
+    return SimulationEngine._with_parallel_flag(true) do
+        _run_constellation_members(args, member_configs, threads_resolved, fail_fast,
+                                   route_state, route_tuning, run_kwargs)
+    end
+end
+
+function _run_constellation_members(args::SimulationConfiguration, member_configs, threads, fail_fast::Bool,
+                                    route_state, route_tuning, run_kwargs)
     if threads isa Symbol
         threads === :auto || throw(ArgumentError(
             "run_constellation_ensemble threads must be a positive integer or :auto; got :$(threads)."

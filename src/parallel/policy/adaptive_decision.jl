@@ -1,3 +1,44 @@
+"""
+How many items one inner thread may be asked to carry when the split is NESTED
+under an active outer split, before V2 declines the split as not worth taking.
+
+`allow_inner_with_outer` grants PERMISSION to thread inside an outer split; it
+was read as an instruction to. On mcgrid_16sat_8mc (samples of a 16-spacecraft
+constellation, an outer split of 8 on 32 threads, so a per-sample inner budget
+of `fld(32, 8) = 4`) the density callback threaded 16 satellites across those 4
+threads on every call, and the split cost more than it returned. That is not an
+adaptive-routing failure: `outer_inner_static` is the same flag with no adaptive
+routing at all and loses by nearly the same margin, which is what says the flag
+is wrong at that point rather than the router.
+
+Reproduced at reduced scale on a 12-core box (3 samples of 16 spacecraft, 12
+threads, outer split 3, so the same inner budget of 4): the pinned pair differs
+only in this flag and measures 7.302 s with it against 4.690 s without
+(9 repeats, medians), with `policy_threads_enabled_total` 825 against 0.
+
+The factor is ASSUMED, not derived from a cost model, and it is the one the
+code already applies to a nested split elsewhere: `_dynamic_effector_decision`
+halves the per-satellite share budget when `outer_active && allow_with_outer`
+(simulation/engine/setup.jl), on the reasoning that a thread nested under an
+outer split is worth about half an un-nested one. The same factor is applied
+here to the gate rather than to the width: a nested split is taken only while
+its budget covers at least half the items it would have to spread.
+
+Two is also the smallest whole number that declines the reproduced loss: the
+density callback's own item count there is 16 on a budget of 4.
+"""
+const NESTED_INNER_MAX_ITEMS_PER_THREAD = 2
+
+"""
+    _nested_inner_split_pays(num_items, budget) -> Bool
+
+Whether an inner split nested under an active outer split can amortize its
+per-item tasking. See `NESTED_INNER_MAX_ITEMS_PER_THREAD`.
+"""
+@inline function _nested_inner_split_pays(num_items::Int, budget::Int)::Bool
+    return num_items <= NESTED_INNER_MAX_ITEMS_PER_THREAD * max(1, budget)
+end
+
 @inline function thread_policy_decision(
     num_items::Int;
     mode::Symbol,
@@ -88,11 +129,20 @@
     # As before, only work is skipped and never a decision: use_threads and
     # allotment are identical either way, because each disjunct below
     # independently pins use_threads false and allotted collapses to 1.
+    # V2 only, so every pinned route this is scored against -- outer_inner_static
+    # included -- keeps the shipped answer and does not move underneath the
+    # comparison.
+    policy_v2 = env !== nothing && env.policy_v2
+    # Permission to thread under an outer split is not an instruction to.
+    # See NESTED_INNER_MAX_ITEMS_PER_THREAD.
+    nested_inner_declined = policy_v2 && outer_active && allow_with_outer &&
+        !_nested_inner_split_pays(num_items, budget)
     decision_forced =
         budget <= 1 || num_items <= 1 ||
         !auto_budget_allowed ||
         num_items < max(1, threshold) ||
         (outer_active && !allow_with_outer) ||
+        nested_inner_declined ||
         (heavy_only && !heavy_work)
     # V2: callback and effector widths come from the static rule,
     # min(items, budget), not from the per-call hint store or AIMD.
@@ -107,7 +157,7 @@
     # (atmo256_gram_surrogate) the static inner_only route is best at both
     # thread counts, with R5 +25% and +8% behind it. The hint and AIMD paths
     # stay reachable with the switch off; R6 simply does not take them.
-    static_width_only = env !== nothing && env.policy_v2
+    static_width_only = policy_v2
     adaptive_active = adaptive_enabled && !decision_forced && !static_width_only
     # The hint layer is consulted only when it pays for itself on this machine;
     # see _hint_layer_pays and hint_work_ratio.
@@ -182,6 +232,8 @@
         elseif mode == :on
             true
         elseif outer_active && !allow_with_outer
+            false
+        elseif nested_inner_declined
             false
         elseif heavy_only && !heavy_work
             false

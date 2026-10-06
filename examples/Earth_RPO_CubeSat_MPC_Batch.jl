@@ -1166,8 +1166,8 @@ function run_rpo_cubesat_mpc_planner_comparison_batch(;
 end
 
 function _rpo_planner_comparison_cli_usage()
-    return "Usage: julia --project=. examples/Earth_RPO_CubeSat_MPC_PlannerComparison.jl [--runs N]\n" *
-        "   or: julia --project=. examples/Earth_RPO_CubeSat_MPC_Batch.jl comparison [--runs N]"
+    return "Usage: julia --project=examples/rpo_planner_env examples/Earth_RPO_CubeSat_MPC_PlannerComparison.jl [--runs N]\n" *
+        "   or: julia --project=examples/rpo_planner_env examples/Earth_RPO_CubeSat_MPC_Batch.jl comparison [--runs N]"
 end
 
 function _parse_rpo_positive_int_cli(value::AbstractString, option::AbstractString)

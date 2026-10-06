@@ -49,3 +49,9 @@ sources under:
 
 That split is intentional: user-facing docs stay task-oriented, while maintainer
 rules remain authoritative and reviewable in their source locations.
+
+## Planner interface development
+
+The [RPO planner contract](rpo_planner_contract.md) describes the internal
+request/reference validation layer, its limits and the remaining integration
+work. Existing runtime planner selection is unchanged.

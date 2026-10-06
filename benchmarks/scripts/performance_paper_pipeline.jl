@@ -366,8 +366,8 @@ function build_mode_overview(artifacts::Vector{ModeRunArtifacts})::DataFrame
     for artifact in artifacts
         raw_df = artifact.raw_df
         summary_df = artifact.summary_df
-        machine_label = (:machine_label in names(raw_df) && nrow(raw_df) > 0) ? string(raw_df.machine_label[1]) : _machine_label()
-        hardware_class = (:hardware_class in names(raw_df) && nrow(raw_df) > 0) ? string(raw_df.hardware_class[1]) : _hardware_class_name()
+        machine_label = (:machine_label in propertynames(raw_df) && nrow(raw_df) > 0) ? string(raw_df.machine_label[1]) : _machine_label()
+        hardware_class = (:hardware_class in propertynames(raw_df) && nrow(raw_df) > 0) ? string(raw_df.hardware_class[1]) : _hardware_class_name()
         failures = count(!, raw_df.solve_success)
         unstable = count(occursin("Unstable"), string.(raw_df.solve_retcode))
         baseline_idx = findfirst(==(PERF_BASELINE_SCENARIO), summary_df.scenario)
@@ -384,7 +384,7 @@ function build_mode_overview(artifacts::Vector{ModeRunArtifacts})::DataFrame
         entry_duration_share = elapsed_total > 0.0 ? (100.0 * entry_duration_elapsed / elapsed_total) : missing
         split_gate_total = 0
         split_gate_pass = 0
-        if !(artifact.split_gate_df === nothing) && (:pass_all in names(artifact.split_gate_df))
+        if !(artifact.split_gate_df === nothing) && (:pass_all in propertynames(artifact.split_gate_df))
             split_gate_total = nrow(artifact.split_gate_df)
             split_gate_pass = count(Bool.(artifact.split_gate_df.pass_all))
         end
@@ -748,12 +748,12 @@ function write_pipeline_report(
     nthreads = Threads.nthreads()
     cpu_threads = Sys.CPU_THREADS
     mode_list = join(string.(config.modes), ", ")
-    unique_hardware = (:hardware_class in names(overview_df)) ? unique(String.(overview_df.hardware_class)) : String[]
-    unique_machines = (:machine_label in names(overview_df)) ? unique(String.(overview_df.machine_label)) : String[]
+    unique_hardware = (:hardware_class in propertynames(overview_df)) ? unique(String.(overview_df.hardware_class)) : String[]
+    unique_machines = (:machine_label in propertynames(overview_df)) ? unique(String.(overview_df.machine_label)) : String[]
     total_split_rows = 0
     total_split_pass = 0
     for artifact in artifacts
-        if !(artifact.split_gate_df === nothing) && (:pass_all in names(artifact.split_gate_df))
+        if !(artifact.split_gate_df === nothing) && (:pass_all in propertynames(artifact.split_gate_df))
             total_split_rows += nrow(artifact.split_gate_df)
             total_split_pass += count(Bool.(artifact.split_gate_df.pass_all))
         end
@@ -804,7 +804,7 @@ function write_pipeline_report(
         else
             println(io, "- Split rollout gate rows: none (gate disabled or not configured).")
         end
-        if :failed_rows in names(overview_df)
+        if :failed_rows in propertynames(overview_df)
             total_failed = sum(Int.(overview_df.failed_rows))
             total_rows = sum(Int.(overview_df.rows_raw))
             println(io, "- Solver-success samples across modes: `$(total_rows - total_failed)/$(total_rows)`.")

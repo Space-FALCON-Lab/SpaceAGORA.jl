@@ -298,7 +298,7 @@ function _stage_elapsed_s(
     orbit_elapsed_s = 0.0
     total_elapsed_s = fallback_total_s
 
-    if :stage in names(stage_df) && :elapsed_s in names(stage_df)
+    if :stage in propertynames(stage_df) && :elapsed_s in propertynames(stage_df)
         for row in eachrow(stage_df)
             stage_name = String(row.stage)
             elapsed = Float64(row.elapsed_s)
@@ -517,7 +517,7 @@ function _aggregate_arm_artifacts(
     hardware_info_path = joinpath(agg_outdir, "runtime_hardware_info_agg_$(config.profile.name)_$(arm.label)_$(stamp).csv")
     split_gate_csv_path = nrow(split_gate_df) > 0 ? joinpath(agg_outdir, "split_rollout_gate_agg_$(config.profile.name)_$(arm.label)_$(stamp).csv") : nothing
     report_path = joinpath(agg_outdir, "runtime_report_agg_$(config.profile.name)_$(arm.label)_$(stamp).md")
-    split_gate_pass_rows = (nrow(split_gate_df) > 0 && (:pass_all in names(split_gate_df))) ? count(Bool.(split_gate_df.pass_all)) : 0
+    split_gate_pass_rows = (nrow(split_gate_df) > 0 && (:pass_all in propertynames(split_gate_df))) ? count(Bool.(split_gate_df.pass_all)) : 0
     split_gate_total_rows = nrow(split_gate_df)
     hw = _runtime_hardware_snapshot()
     hardware_info_df = DataFrame([
@@ -617,7 +617,7 @@ function _write_static_vs_parallel_report(
     split_gate_total_rows = 0
     split_gate_pass_rows = 0
     for artifact in artifacts
-        if !(artifact.split_gate_df === nothing) && (:pass_all in names(artifact.split_gate_df))
+        if !(artifact.split_gate_df === nothing) && (:pass_all in propertynames(artifact.split_gate_df))
             split_gate_total_rows += nrow(artifact.split_gate_df)
             split_gate_pass_rows += count(Bool.(artifact.split_gate_df.pass_all))
         end
@@ -662,10 +662,10 @@ function _write_static_vs_parallel_report(
         println(io, "|---|---|---|---:|---:|")
         for artifact in artifacts
             raw = artifact.raw_df
-            machine = (:machine_label in names(raw) && nrow(raw) > 0) ? string(raw.machine_label[1]) : "n/a"
-            hw_class = (:hardware_class in names(raw) && nrow(raw) > 0) ? string(raw.hardware_class[1]) : "n/a"
-            cpu_t = (:cpu_threads in names(raw) && nrow(raw) > 0) ? string(raw.cpu_threads[1]) : "n/a"
-            julia_t = (:julia_threads in names(raw) && nrow(raw) > 0) ? string(raw.julia_threads[1]) : "n/a"
+            machine = (:machine_label in propertynames(raw) && nrow(raw) > 0) ? string(raw.machine_label[1]) : "n/a"
+            hw_class = (:hardware_class in propertynames(raw) && nrow(raw) > 0) ? string(raw.hardware_class[1]) : "n/a"
+            cpu_t = (:cpu_threads in propertynames(raw) && nrow(raw) > 0) ? string(raw.cpu_threads[1]) : "n/a"
+            julia_t = (:julia_threads in propertynames(raw) && nrow(raw) > 0) ? string(raw.julia_threads[1]) : "n/a"
             println(io, "| $(artifact.mode) | $(machine) | $(hw_class) | $(cpu_t) | $(julia_t) |")
         end
         println(io)

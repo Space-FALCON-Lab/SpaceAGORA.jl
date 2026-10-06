@@ -167,11 +167,11 @@ function summarize_entry_duration_results(entry_raw_df::DataFrame)::DataFrame
         return DataFrame()
     end
 
-    if !(:entry_run_role in names(entry_raw_df))
+    if !(:entry_run_role in propertynames(entry_raw_df))
         entry_raw_df[!, :entry_run_role] = fill("measured", nrow(entry_raw_df))
     end
     for col in (:entry_atmospheric_interface_count, :entry_passage_duration_s, :entry_wall_time_per_passage_s, :entry_event_time_abs_error_s, :entry_reference_terminal_time_s, :terminal_time_s)
-        if !(col in names(entry_raw_df))
+        if !(col in propertynames(entry_raw_df))
             entry_raw_df[!, col] = fill(missing, nrow(entry_raw_df))
         end
     end

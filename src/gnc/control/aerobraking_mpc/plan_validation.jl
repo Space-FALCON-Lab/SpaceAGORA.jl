@@ -137,7 +137,7 @@ function propagate_ks_mpc_plan(
         area = interpolate_mpc_plan(problem.t, area_plan, state[10])
         output = evaluate_ks_mpc_outputs(
             state, area, params, config; density=density)
-        next_state = ks_implicit_midpoint_step(
+        next_state = ks_rk4_step(
             state,
             params,
             area,

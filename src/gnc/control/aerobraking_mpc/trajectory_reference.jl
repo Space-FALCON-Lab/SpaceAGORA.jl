@@ -31,7 +31,7 @@ function build_reference_drag_pass(
     reached = h_prev <= reference.h_cut_m && _radial_velocity_from_ks_state(state) < 0.0
 
     for _ in 1:(reached ? 0 : reference.max_coast_steps)
-        next_state = ks_implicit_midpoint_step(
+        next_state = ks_rk4_step(
             state,
             params,
             area,
@@ -55,7 +55,7 @@ function build_reference_drag_pass(
     exited = false
     for _ in 1:reference.max_pass_steps
         h_now = _altitude_from_ks_state(state, params)
-        next_state = ks_implicit_midpoint_step(
+        next_state = ks_rk4_step(
             state,
             params,
             area,

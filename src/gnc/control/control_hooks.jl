@@ -25,8 +25,8 @@ module ControlHooks
     using ..DynamicsKS: KSPropagationParams
     using ..DynamicsKS: ks_energy_parameter, specific_energy_from_ks
     using ..DynamicsKS: ks_position, ks_velocity, cartesian_to_ks_state, ks_state_to_cartesian
-    using ..DynamicsKS: ks_implicit_midpoint_step, ks_implicit_midpoint_linearization
-    using ..DynamicsKS: ks_step_jacobian, ks_kinematics_jacobians, ks_density_value_gradient
+    using ..DynamicsKS: ks_rk4_step, ks_first_order_tangent_map
+    using ..DynamicsKS: ks_kinematics_jacobians, ks_density_value_gradient
     using ..DynamicsKS: ks_rotation_cross_matrix
     using SparseArrays
     using AstroTime

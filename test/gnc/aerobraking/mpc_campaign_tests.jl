@@ -71,6 +71,13 @@ end
     end
 end
 
+@testset "planet rotation sign is preserved" begin
+    venus = SpaceAGORA.SimulationModel.Venus()
+    context = (environment_model=(planet=venus,),)
+    @test venus.ω[3] < 0.0
+    @test mpc_params_from_spaceagora(context).Ω == venus.ω[3]
+end
+
 function _test_mpc_config(mode; constraints=mpc_constraints(
         heat_rate=false, heat_load=false, drag=false, slew=false))
     return AerobrakingMPCConfig(
@@ -139,17 +146,15 @@ end
     @test C[4, 9] == -1.0e-6
     @test output[4] == -state[9] / 1.0e6
 
-    function step_at(candidate_state, candidate_area)
-        return ks_implicit_midpoint_step(
-            candidate_state,
-            params,
-            candidate_area,
-            delta_s;
+    function first_order_flow(candidate_state, candidate_area)
+        derivative = ks_rhs(
+            candidate_state, params, candidate_area;
             density_kg_m3=density_value,
             drag_coefficient=config.drag_coefficient,
             mass_kg=config.mass_kg,
             use_drag=true,
-        )[1:9]
+        )
+        return candidate_state[1:9] + delta_s .* derivative[1:9]
     end
     numerical_step_jacobian = zeros(9, 9)
     for column in 1:9
@@ -159,13 +164,15 @@ end
         state_plus[column] += state_step
         state_minus[column] -= state_step
         coarse = (
-            step_at(state_plus, area_m2) - step_at(state_minus, area_m2)
+            first_order_flow(state_plus, area_m2) -
+            first_order_flow(state_minus, area_m2)
         ) ./ (2.0 * state_step)
         half_step = 0.5 * state_step
         state_plus[column] = state[column] + half_step
         state_minus[column] = state[column] - half_step
         fine = (
-            step_at(state_plus, area_m2) - step_at(state_minus, area_m2)
+            first_order_flow(state_plus, area_m2) -
+            first_order_flow(state_minus, area_m2)
         ) ./ (2.0 * half_step)
         numerical_step_jacobian[:, column] .= (4.0 .* fine .- coarse) ./ 3.0
     end
@@ -173,18 +180,18 @@ end
 
     area_step = 2.0e-3
     numerical_B = (
-        -step_at(state, area_m2 + 2.0 * area_step) +
-        8.0 * step_at(state, area_m2 + area_step) -
-        8.0 * step_at(state, area_m2 - area_step) +
-        step_at(state, area_m2 - 2.0 * area_step)
+        -first_order_flow(state, area_m2 + 2.0 * area_step) +
+        8.0 * first_order_flow(state, area_m2 + area_step) -
+        8.0 * first_order_flow(state, area_m2 - area_step) +
+        first_order_flow(state, area_m2 - 2.0 * area_step)
     ) ./ (12.0 * area_step)
     @test norm(vec(B) - numerical_B) / max(norm(numerical_B), eps(Float64)) < 1.0e-3
 
     state_perturbation = 1.0e-6 .* max.(abs.(state[1:9]), 1.0) .*
         [1.0, -1.0, 1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0]
     area_perturbation = 1.0e-3
-    nominal_next = step_at(state, area_m2)
-    nonlinear_next = step_at(
+    nominal_next = first_order_flow(state, area_m2)
+    nonlinear_next = first_order_flow(
         vcat(state[1:9] .+ state_perturbation, state[10]),
         area_m2 + area_perturbation,
     )

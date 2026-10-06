@@ -166,7 +166,8 @@ using .SimulationModel: cartesian_to_ks_state, ks_state_to_cartesian
 using .SimulationModel: ks_j2_acceleration_si, ks_drag_acceleration_si, ks_rhs!, ks_rhs
 using .SimulationModel: ks_kinematics_jacobians, ks_j2_acceleration_jacobian_si, ks_density_value_gradient
 using .SimulationModel: ks_rhs_jacobians, ks_rhs_jacobian
-using .SimulationModel: ks_implicit_midpoint_step, ks_implicit_midpoint_linearization, ks_step_jacobian
+using .SimulationModel: ks_rk4_step, ks_linear_implicit_midpoint_step
+using .SimulationModel: ks_first_order_tangent_map
 using .SimulationLifecycle: bind_spacecraft
 using .SimulationModel: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 using .SimulationModel: AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
@@ -534,7 +535,7 @@ export cartesian_to_ks_state, ks_state_to_cartesian
 export ks_j2_acceleration_si, ks_drag_acceleration_si, ks_rhs!, ks_rhs
 export ks_kinematics_jacobians, ks_j2_acceleration_jacobian_si, ks_density_value_gradient
 export ks_rhs_jacobians, ks_rhs_jacobian
-export ks_implicit_midpoint_step, ks_implicit_midpoint_linearization, ks_step_jacobian
+export ks_rk4_step, ks_linear_implicit_midpoint_step, ks_first_order_tangent_map
 export bind_spacecraft
 export AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 export AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel

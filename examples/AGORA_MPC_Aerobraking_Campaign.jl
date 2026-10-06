@@ -4,8 +4,10 @@
 # SPACEAGORA_EXAMPLE_SMOKE=1 selects a shortened integration-test scenario.
 include(joinpath(@__DIR__, "common.jl"))
 
+ENV["GKSwstype"] = get(ENV, "GKSwstype", "100")
 using CSV
 using DataFrames
+include(joinpath(@__DIR__, "support", "mpc_aerobraking_campaign_plots.jl"))
 
 # ---------------------------------------------------------------------------
 # Mission and environment configuration
@@ -150,9 +152,7 @@ reference_max_coast_steps = 2_000_000
 reference_max_pass_steps = 20_000
 qp_max_nodes = smoke_mode ? 40 : 120
 
-ENV["SPACEAGORA_SOLVER_MODE"] = get(ENV, "SPACEAGORA_SOLVER_MODE", "split_imex")
-ENV["SPACEAGORA_SPLIT_IMEX_SOLVER"] = get(ENV, "SPACEAGORA_SPLIT_IMEX_SOLVER", "kencarp4")
-ENV["SPACEAGORA_VACUUM_GRAM_CACHE"] = get(ENV, "SPACEAGORA_VACUUM_GRAM_CACHE", "1")
+solver_mode = Symbol(get(ENV, "SPACEAGORA_SOLVER_MODE", "split_imex"))
 
 spacecraft = make_three_body_spacecraft(
     bus_dims=planet_settings.bus_dims,
@@ -304,7 +304,10 @@ args = SimulationConfiguration(
         abstol_atmosphere=1e-8,
         dt_max_atmosphere=5.0,
     ),
-    solver_config=SolverConfig(solver_mode=Symbol(ENV["SPACEAGORA_SOLVER_MODE"])),
+    solver_config=SolverConfig(
+        solver_mode=solver_mode,
+        split_imex_solver=:kencarp4,
+    ),
 )
 
 println("campaign_settings = ", (
@@ -340,6 +343,13 @@ if args.simulation_settings.results && isfile(csv_path)
         maximum_drag_n=maximum(drag),
         maximum_heat_rate_w_cm2=maximum(heat_rate),
         maximum_area_slew_m2_s=maximum(slew),
+    ))
+    println(write_mpc_campaign_plots(
+        df,
+        args.simulation_settings.results_directory;
+        planet_name=titlecase(string(planet_name)),
+        drag_limit_n=limit_drag_n,
+        heat_rate_limit_w_cm2=limit_heat_rate_w_cm2,
     ))
 end
 println("COMPUTATIONAL TIME = $(elapsed_s) s")

@@ -27,7 +27,7 @@ function aerobraking_mpc_step_matrices(
     Jr_u, Jv_u, Jv_w, _, _, _ = ks_kinematics_jacobians(p, p_prime)
 
     step_s = Float64(Δs)
-    midpoint = ks_implicit_midpoint_linearization(
+    tangent = ks_first_order_tangent_map(
         X0,
         params,
         area,
@@ -37,8 +37,8 @@ function aerobraking_mpc_step_matrices(
         mass_kg=config.mass_kg,
         use_drag=true,
     )
-    A_k = midpoint.transition[1:9, 1:9]
-    B_k = midpoint.input_transition[1:9, :]
+    A_k = tangent.transition[1:9, 1:9]
+    B_k = tangent.input_transition[1:9, :]
 
     rhat = r_vec / (r_norm + eps(Float64))
     Ch_u = transpose(rhat) * Jr_u

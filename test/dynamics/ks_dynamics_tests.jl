@@ -1,6 +1,7 @@
 using Test
 using LinearAlgebra
 using SpaceAGORA
+using StaticArrays
 
 @testset "reusable KS dynamics" begin
     params = KSPropagationParams(
@@ -36,6 +37,7 @@ using SpaceAGORA
     circular_position = [7.0e6, 0.0, 0.0]
     circular_velocity = [0.0, sqrt(params.μ / circular_position[1]), 0.0]
     state = cartesian_to_ks_state(circular_position, circular_velocity, params)
+    @test state isa MVector{10,Float64}
     specific_energy = 0.5 * dot(circular_velocity, circular_velocity) -
         params.μ / norm(circular_position)
     @test state[9] ≈ -specific_energy rtol=3.0 * eps(Float64) atol=0.0
@@ -43,9 +45,13 @@ using SpaceAGORA
     @test specific_energy_from_ks(state[9]) ≈ specific_energy rtol=3.0 * eps(Float64) atol=0.0
     @test ks_state_to_cartesian(state).specific_energy_j_kg ≈
         specific_energy rtol=3.0 * eps(Float64) atol=0.0
-    next_state = ks_implicit_midpoint_step(state, params, 0.0, 1.0e-7)
-    @test all(isfinite, next_state)
-    @test next_state[10] > state[10]
+    rk4_state = ks_rk4_step(state, params, 0.0, 1.0e-7)
+    midpoint_state = ks_linear_implicit_midpoint_step(
+        state, params, 0.0, 1.0e-7)
+    @test all(isfinite, rk4_state)
+    @test all(isfinite, midpoint_state)
+    @test rk4_state[10] > state[10]
+    @test midpoint_state[10] > state[10]
     inplace_rhs = similar(state)
     @test ks_rhs!(inplace_rhs, state, params) === inplace_rhs
     @test inplace_rhs ≈ ks_rhs(state, params) rtol=0.0 atol=0.0
@@ -70,8 +76,12 @@ using SpaceAGORA
         for unit in eachcol(Matrix{Float64}(I, 3, 3))
     )...)
     @test j2_jacobian ≈ finite_difference_j2 rtol=2.0e-7 atol=1.0e-15
-    @test size(ks_rhs_jacobian(state, params)) == (10, 10)
-    @test size(ks_step_jacobian(state, params, 0.0, 1.0e-7)) == (10, 10)
+    @test ks_rhs_jacobian(state, params) isa SMatrix{10,10,Float64}
+    tangent = ks_first_order_tangent_map(state, params, 0.0, 1.0e-7)
+    @test tangent.transition isa SMatrix{10,10,Float64}
+    @test tangent.input_transition isa SVector{10,Float64}
+    @test tangent.transition ≈
+        SMatrix{10,10,Float64}(I) + 1.0e-7 * ks_rhs_jacobian(state, params)
     @test_throws ArgumentError cartesian_to_ks_state(zeros(3), circular_velocity, params)
     @test_throws ArgumentError ks_drag_acceleration_si(
         circular_position,
@@ -105,7 +115,7 @@ end
     acceleration = ks_j2_acceleration_si(ks_position(u), params)
 
     expected_u_prime_derivative = -0.5 .* new_state[9] .* u .+
-        0.5 .* radius .* (ks_dynamics._ks_perturbation_matrix(u) * acceleration)
+        0.5 .* radius .* (ks_dynamics.ks_perturbation_matrix(u) * acceleration)
     @test new_rhs[5:8] ≈ expected_u_prime_derivative rtol=2.0e-14 atol=2.0e-10
     @test new_rhs[9] ≈ -radius * dot(ks_velocity(u, u_prime), acceleration)
     @test sqrt(new_state[9] / 2.0) == sqrt(old_state[9] / 4.0)
@@ -127,26 +137,23 @@ end
         vvec = ks_velocity(u, u_prime)
         acceleration = ks_j2_acceleration_si(rvec, params)
         du_prime = -0.25 .* h_old .* u .+
-            0.5 .* radius .* (ks_dynamics._ks_perturbation_matrix(u) * acceleration)
+            0.5 .* radius .* (ks_dynamics.ks_perturbation_matrix(u) * acceleration)
         dh_old = -2.0 * radius * dot(vvec, acceleration)
         return vcat(u_prime, du_prime, dh_old, radius)
     end
 
-    function old_convention_midpoint_step(state, delta_s)
-        next_state = state .+ delta_s .* old_convention_rhs(state)
-        for _ in 1:12
-            updated = state .+ delta_s .* old_convention_rhs(
-                0.5 .* (state .+ next_state))
-            norm(updated - next_state) <= 1.0e-13 *
-                max(norm(updated), 1.0) && return updated
-            next_state = updated
-        end
-        return next_state
+    function old_convention_rk4_step(state, delta_s)
+        k1 = old_convention_rhs(state)
+        k2 = old_convention_rhs(state .+ 0.5 * delta_s .* k1)
+        k3 = old_convention_rhs(state .+ 0.5 * delta_s .* k2)
+        k4 = old_convention_rhs(state .+ delta_s .* k3)
+        return state .+ (delta_s / 6.0) .* (k1 .+ 2.0 .* k2 .+
+            2.0 .* k3 .+ k4)
     end
 
     for _ in 1:100
-        new_state = ks_implicit_midpoint_step(new_state, params, 0.0, 1.0e-7)
-        old_state = old_convention_midpoint_step(old_state, 1.0e-7)
+        new_state = ks_rk4_step(new_state, params, 0.0, 1.0e-7)
+        old_state = old_convention_rk4_step(old_state, 1.0e-7)
     end
     @test new_state[1:8] ≈ old_state[1:8] rtol=2.0e-14 atol=2.0e-12
     @test new_state[10] ≈ old_state[10] rtol=2.0e-14 atol=2.0e-12

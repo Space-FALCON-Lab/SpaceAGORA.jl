@@ -21,7 +21,8 @@ function _planet_rotation_rate_rad_s(planet)::Float64
     value = _maybe_property(planet, :ω, _maybe_property(planet, :Ω, _maybe_property(planet, :omega, 0.0)))
     value isa Number && return Float64(value)
     try
-        return norm(value)
+        length(value) >= 3 || return 0.0
+        return Float64(value[3])
     catch
         return 0.0
     end

@@ -11,10 +11,10 @@ end
 function ks_velocity(u, u_prime)
     radius = dot(u, u)
     radius > eps(Float64) || throw(ArgumentError("KS velocity is undefined at the origin."))
-    return _ks_velocity_with_radius(u, u_prime, radius)
+    return ks_velocity_with_radius(u, u_prime, radius)
 end
 
-@inline function _ks_velocity_with_radius(u, u_prime, radius)
+@inline function ks_velocity_with_radius(u, u_prime, radius)
     u1, u2, u3, u4 = u
     up1, up2, up3, up4 = u_prime
     return SVector(
@@ -24,32 +24,32 @@ end
     )
 end
 
-function _ks_coordinate_from_position(x)
-    x = Float64.(x)
+function cartesian_position_to_ks_coordinate(x)
+    x = SVector{3,Float64}(x)
     r = norm(x)
     r > eps(Float64) || throw(ArgumentError("KS coordinates are undefined at the origin."))
     if r + x[1] >= r - x[1]
         u1 = sqrt(max(0.0, 0.5 * (r + x[1])))
         denom = 2.0 * u1
-        return [u1, x[2] / denom, x[3] / denom, 0.0]
+        return SVector(u1, x[2] / denom, x[3] / denom, 0.0)
     end
     u2 = sqrt(max(0.0, 0.5 * (r - x[1])))
     denom = 2.0 * u2
-    return [x[2] / denom, u2, 0.0, x[3] / denom]
+    return SVector(x[2] / denom, u2, 0.0, x[3] / denom)
 end
 
-function _ks_derivative_from_velocity(velocity, u)
+function cartesian_velocity_to_ks_derivative(velocity, u)
     u1, u2, u3, u4 = u
     xd1, xd2, xd3 = velocity
-    return [
+    return SVector(
         0.5 * (u1 * xd1 + u2 * xd2 + u3 * xd3),
         0.5 * (-u2 * xd1 + u1 * xd2 + u4 * xd3),
         0.5 * (-u3 * xd1 - u4 * xd2 + u1 * xd3),
         0.5 * (u4 * xd1 - u3 * xd2 + u2 * xd3),
-    ]
+    )
 end
 
-function _ks_lambda(p)
+function ks_lambda_matrix(p)
     return @SMatrix [
         p[1] -p[2] -p[3] p[4]
         p[2] p[1] -p[4] -p[3]

@@ -103,32 +103,10 @@ For a longer Earth aerobraking case, start in smoke mode:
 julia --project=. src/cli/main.jl run --example=AGORA_Earth_Aerobraking.jl --smoke --output-dir=output/aerobraking_smoke
 ```
 
-For the multi-pass MPC campaign using a planet polyfit atmosphere:
-
-```text
-julia --project=. examples/AGORA_MPC_Aerobraking_Campaign.jl
-```
-
-Select Earth, Mars, or Venus with `SPACEAGORA_MPC_PLANET`:
-
-```text
-SPACEAGORA_MPC_PLANET=venus julia --project=. examples/AGORA_MPC_Aerobraking_Campaign.jl
-SPACEAGORA_MPC_PLANET=venus julia --project=. examples/AGORA_MPC_MED_Constraint_Cases.jl
-```
-
-For a shortened Mars campaign:
-
-```text
-SPACEAGORA_MPC_PLANET=mars SPACEAGORA_EXAMPLE_SMOKE=1 SPACEAGORA_SOLVER_MODE=tsit5 \
-  julia --project=. examples/AGORA_MPC_Aerobraking_Campaign.jl
-```
-
 Related mission scripts:
 
 - `AGORA_Earth.jl`
 - `AGORA_Earth_Aerobraking.jl`
-- `AGORA_MPC_Aerobraking_Campaign.jl`
-- `AGORA_MPC_MED_Constraint_Cases.jl`
 - `AGORA_Odyssey.jl`
 - `AGORA_Vex.jl`
 - `AGORA_Mars_RAAN_Scenario.jl`
@@ -253,7 +231,7 @@ Related scripts:
 | First runs (no assets) | `AGORA_Basic_Quickstart.jl`, `AGORA_Earth_NoGRAM.jl`, `AGORA_Earth_MonteCarlo.jl` |
 | First runs (SPICE kernels from the GRAMSuite submodule) | `Earth_Thruster_Test.jl`, `AGORA_Keplerian.jl` |
 | Frozen-atmosphere guidance and control (own environment) | `odyssey_surrogate.jl` |
-| GRAM and missions | `AGORA_Basic_GRAMEarth.jl`, `AGORA_Earth.jl`, `AGORA_Earth_Aerobraking.jl`, `AGORA_MPC_Aerobraking_Campaign.jl`, `AGORA_MPC_MED_Constraint_Cases.jl`, `AGORA_Odyssey.jl`, `AGORA_Vex.jl`, `AGORA_Mars_RAAN_Scenario.jl`, `AGORA_Mars_NoGRAM.jl`, `AGORA_Titan.jl`, `AGORA_Magellan.jl`, `AGORA_LOFTID.jl`, `CYGNSS_test.jl`, `GRIFEX_test.jl` |
+| GRAM and missions | `AGORA_Basic_GRAMEarth.jl`, `AGORA_Earth.jl`, `AGORA_Earth_Aerobraking.jl`, `AGORA_Odyssey.jl`, `AGORA_Vex.jl`, `AGORA_Mars_RAAN_Scenario.jl`, `AGORA_Mars_NoGRAM.jl`, `AGORA_Titan.jl`, `AGORA_Magellan.jl`, `AGORA_LOFTID.jl`, `CYGNSS_test.jl`, `GRIFEX_test.jl` |
 | Controls and torques | `AGORA_Earth_GG_Test.jl`, `AGORA_Earth_SRP_Test.jl`, `AGORA_Earth_const_torque.jl`, `Earth_Torque_Free_Test.jl`, `Earth_RW_Test.jl`, `Earth_Navigation.jl`, `AGORA_Earth_Control_Test.jl`, `AGORA_Odyssey_Control_Test.jl`, `AGORA_Titan_Control_Test.jl`, `AGORA_Vex_Control_Test.jl` |
 | RPO and robotics | `Earth_RPO_CubeSat_MPC.jl`, `Earth_RPO_CubeSat_MPC_Batch.jl`, `Earth_RPO_CubeSat_MPC_PlannerComparison.jl`, `Earth_RPO_CubeSat_MPC_Replanning.jl`, `Robot_Arm_Planner_Cloth_Demo.jl`, `Solar_Panel_Cloth_Deployment_Demo.jl` |
 

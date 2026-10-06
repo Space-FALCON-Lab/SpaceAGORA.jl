@@ -1,12 +1,20 @@
+const KS_IDENTITY3 = SMatrix{3,3,Float64}(I)
+const KS_IDENTITY4 = SMatrix{4,4,Float64}(I)
+const KS_IDENTITY10 = SMatrix{10,10,Float64}(I)
+const KS_ZERO_MATRIX3 = zero(SMatrix{3,3,Float64,9})
+const KS_ZERO_VECTOR3 = zero(SVector{3,Float64})
+
+## Cartesian and perturbation derivatives
+
 """Return Cartesian position and velocity Jacobians with respect to `(u, u′)`."""
 function ks_kinematics_jacobians(u, u_prime)
-    lambda_u = _ks_lambda(u)
+    lambda_u = ks_lambda_matrix(u)
     radius = dot(u, u)
     radius > eps(Float64) || throw(ArgumentError(
         "KS kinematics are undefined at the origin."))
     velocity = (2.0 / radius) * (lambda_u * u_prime)
     position_u = 2.0 * lambda_u
-    velocity_u = (2.0 / radius) * _ks_lambda(u_prime) -
+    velocity_u = (2.0 / radius) * ks_lambda_matrix(u_prime) -
         (4.0 / radius^2) * ((lambda_u * u_prime) * transpose(u))
     velocity_u_prime = (2.0 / radius) * lambda_u
     return position_u, velocity_u, velocity_u_prime, radius, velocity, lambda_u
@@ -42,7 +50,7 @@ function ks_j2_acceleration_jacobian_si(rvec, params)
         shape * transpose(radial_gradient)
 end
 
-@inline function _ks_perturbation_matrix(u)
+@inline function ks_perturbation_matrix(u)
     u1, u2, u3, u4 = u
     return @SMatrix [
          u1  u2  u3
@@ -52,7 +60,7 @@ end
     ]
 end
 
-@inline function _ks_perturbation_state_jacobian(acceleration)
+@inline function ks_perturbation_state_jacobian(acceleration)
     ax, ay, az = acceleration
     return @SMatrix [
         ax  ay  az  0.0
@@ -62,7 +70,7 @@ end
     ]
 end
 
-@inline function _ks_density_value(source, position, elapsed_time_s, params)
+@inline function ks_density_value(source, position, elapsed_time_s, params)
     source isa Real && return max(0.0, Float64(source))
     altitude_m = norm(position) - params.Re
     value = applicable(source, altitude_m, elapsed_time_s, position) ?
@@ -71,7 +79,7 @@ end
     return max(0.0, Float64(value))
 end
 
-function _ks_density_gradient(source, position, elapsed_time_s, params;
+function ks_density_gradient(source, position, elapsed_time_s, params;
     step_m::Real=1.0)
     source isa Real && return @SVector [0.0, 0.0, 0.0]
     if applicable(source, Val(:gradient), position, elapsed_time_s)
@@ -82,8 +90,8 @@ function _ks_density_gradient(source, position, elapsed_time_s, params;
     return SVector{3,Float64}(ntuple(axis -> begin
         offset = SVector{3,Float64}(ntuple(
             index -> index == axis ? step : 0.0, 3))
-        (_ks_density_value(source, position + offset, elapsed_time_s, params) -
-         _ks_density_value(source, position - offset, elapsed_time_s, params)) /
+        (ks_density_value(source, position + offset, elapsed_time_s, params) -
+         ks_density_value(source, position - offset, elapsed_time_s, params)) /
             (2.0 * step)
     end, 3))
 end
@@ -92,37 +100,37 @@ end
 function ks_density_value_gradient(source, position, elapsed_time_s, params;
     gradient_step_m::Real=1.0)
     position_vector = SVector{3,Float64}(position)
-    density = _ks_density_value(
+    density = ks_density_value(
         source, position_vector, Float64(elapsed_time_s), params)
-    gradient = _ks_density_gradient(
+    gradient = ks_density_gradient(
         source, position_vector, Float64(elapsed_time_s), params;
         step_m=gradient_step_m)
     return density, gradient
 end
 
-function _ks_acceleration_partials(state, params, area_m2;
+function ks_acceleration_partials(state, params, area_m2;
     density_kg_m3=0.0,
     drag_coefficient::Real=0.0, mass_kg::Real=1.0,
-    use_drag::Bool=false, density_gradient_step_m::Real=1.0)
-    u = SVector{4,Float64}(state[1:4])
-    u_prime = SVector{4,Float64}(state[5:8])
+    use_drag::Bool=false, density_gradient_step_m::Real=1.0,
+    compute_area_partial::Val{ComputeArea}=Val(true)) where {ComputeArea}
+    u = SVector{4,Float64}(state[1], state[2], state[3], state[4])
+    u_prime = SVector{4,Float64}(state[5], state[6], state[7], state[8])
     position_u, velocity_u, velocity_u_prime, radius, velocity, _ =
         ks_kinematics_jacobians(u, u_prime)
     position = ks_position(u)
     acceleration = ks_j2_acceleration_si(position, params)
-    acceleration_position = Matrix(
-        ks_j2_acceleration_jacobian_si(position, params))
-    acceleration_velocity = zeros(3, 3)
-    acceleration_area = @SVector [0.0, 0.0, 0.0]
+    acceleration_position = ks_j2_acceleration_jacobian_si(position, params)
+    acceleration_velocity = KS_ZERO_MATRIX3
+    acceleration_area = KS_ZERO_VECTOR3
 
     if use_drag
         coefficient = Float64(drag_coefficient)
         mass = Float64(mass_kg)
         mass > 0.0 || throw(ArgumentError("mass_kg must be positive."))
         elapsed_time_s = Float64(state[10])
-        density = _ks_density_value(
+        density = ks_density_value(
             density_kg_m3, position, elapsed_time_s, params)
-        density_gradient = _ks_density_gradient(
+        density_gradient = ks_density_gradient(
             density_kg_m3, position, elapsed_time_s, params;
             step_m=density_gradient_step_m)
         rotation_cross = ks_rotation_cross_matrix(params)
@@ -130,8 +138,7 @@ function _ks_acceleration_partials(state, params, area_m2;
         relative_speed = norm(relative_velocity)
         relative_speed > eps(Float64) || throw(ArgumentError(
             "Drag Jacobian is undefined at zero relative speed."))
-        velocity_product_jacobian = relative_speed *
-            Matrix{Float64}(I, 3, 3) +
+        velocity_product_jacobian = relative_speed * KS_IDENTITY3 +
             relative_velocity * transpose(relative_velocity) / relative_speed
         speed_weighted_velocity = relative_speed * relative_velocity
         drag_scale = 0.5 * coefficient * Float64(area_m2) / mass
@@ -141,8 +148,10 @@ function _ks_acceleration_partials(state, params, area_m2;
             density * velocity_product_jacobian * rotation_cross)
         acceleration_velocity -= drag_scale * density *
             velocity_product_jacobian
-        acceleration_area = -0.5 * coefficient / mass * density *
-            speed_weighted_velocity
+        if ComputeArea
+            acceleration_area = -0.5 * coefficient / mass * density *
+                speed_weighted_velocity
+        end
     end
 
     acceleration_u = acceleration_position * position_u +
@@ -152,116 +161,123 @@ function _ks_acceleration_partials(state, params, area_m2;
         acceleration_area, radius, velocity, velocity_u, velocity_u_prime)
 end
 
-"""Return continuous augmented-KS state and exposed-area Jacobians."""
-function ks_rhs_jacobians(state::AbstractVector, params, area_m2::Real=0.0;
+## Continuous KS linearization
+
+"""Evaluate the KS derivative and its analytical state and area Jacobians."""
+function evaluate_ks_dynamics_and_jacobians(state::AbstractVector, params,
+    area_m2::Real=0.0;
     density_kg_m3=0.0,
     drag_coefficient::Real=0.0, mass_kg::Real=1.0,
-    use_drag::Bool=false, density_gradient_step_m::Real=1.0)
+    use_drag::Bool=false, density_gradient_step_m::Real=1.0,
+    compute_input_jacobian::Val{ComputeInput}=Val(true)) where {ComputeInput}
     length(state) == 10 || throw(ArgumentError(
         "KS state must have 10 components."))
-    u = SVector{4,Float64}(state[1:4])
-    partials = _ks_acceleration_partials(
+    u = SVector{4,Float64}(state[1], state[2], state[3], state[4])
+    u_prime = SVector{4,Float64}(state[5], state[6], state[7], state[8])
+    partials = ks_acceleration_partials(
         state, params, area_m2;
         density_kg_m3=density_kg_m3,
         drag_coefficient=drag_coefficient, mass_kg=mass_kg,
         use_drag=use_drag,
-        density_gradient_step_m=density_gradient_step_m)
-    G = _ks_perturbation_matrix(u)
+        density_gradient_step_m=density_gradient_step_m,
+        compute_area_partial=compute_input_jacobian)
+    G = ks_perturbation_matrix(u)
     lifted_acceleration = G * partials.acceleration
-    F = zeros(10, 10)
-    F[1:4, 5:8] .= Matrix{Float64}(I, 4, 4)
-    F[5:8, 1:4] .= -0.5 * Float64(state[9]) *
-        Matrix{Float64}(I, 4, 4) + 0.5 * (
-            lifted_acceleration * transpose(2.0 * u) +
-            partials.radius *
-                _ks_perturbation_state_jacobian(partials.acceleration) +
-            partials.radius * G * partials.acceleration_u)
-    F[5:8, 5:8] .= 0.5 * partials.radius * G *
-        partials.acceleration_u_prime
-    F[5:8, 9] .= -0.5 * u
+    Fqp = -0.5 * Float64(state[9]) * KS_IDENTITY4 + 0.5 * (
+        lifted_acceleration * transpose(2.0 * u) +
+        partials.radius *
+            ks_perturbation_state_jacobian(partials.acceleration) +
+        partials.radius * G * partials.acceleration_u)
+    Fqq = 0.5 * partials.radius * G * partials.acceleration_u_prime
     velocity_dot_acceleration = dot(
         partials.velocity, partials.acceleration)
-    F[9, 1:4] .= vec(
-        -2.0 * velocity_dot_acceleration * transpose(u) -
-        partials.radius * (
-            transpose(partials.acceleration) * partials.velocity_u +
-            transpose(partials.velocity) * partials.acceleration_u))
-    F[9, 5:8] .= vec(-partials.radius * (
-        transpose(partials.acceleration) * partials.velocity_u_prime +
-        transpose(partials.velocity) * partials.acceleration_u_prime))
-    F[10, 1:4] .= 2.0 * u
-    Gamma = zeros(10, 1)
+    Fhp = -2.0 * velocity_dot_acceleration * u - partials.radius * (
+        transpose(partials.velocity_u) * partials.acceleration +
+        transpose(partials.acceleration_u) * partials.velocity)
+    Fhq = -partials.radius * (
+        transpose(partials.velocity_u_prime) * partials.acceleration +
+        transpose(partials.acceleration_u_prime) * partials.velocity)
+    F = MMatrix{10,10,Float64}(undef)
+    fill!(F, 0.0)
+    @inbounds for row in 1:4
+        F[row, row + 4] = 1.0
+        F[row + 4, 9] = -0.5 * u[row]
+        F[9, row] = Fhp[row]
+        F[9, row + 4] = Fhq[row]
+        F[10, row] = 2.0 * u[row]
+        for column in 1:4
+            F[row + 4, column] = Fqp[row, column]
+            F[row + 4, column + 4] = Fqq[row, column]
+        end
+    end
+    derivative = MVector{10,Float64}(undef)
+    @inbounds for row in 1:4
+        derivative[row] = u_prime[row]
+        derivative[row + 4] = -0.5 * Float64(state[9]) * u[row] +
+            0.5 * partials.radius * lifted_acceleration[row]
+    end
+    derivative[9] = -partials.radius * velocity_dot_acceleration
+    derivative[10] = partials.radius
+    if !ComputeInput
+        return (; derivative=SVector{10,Float64}(derivative),
+            state=SMatrix{10,10,Float64}(F))
+    end
+    Gamma = MVector{10,Float64}(undef)
+    fill!(Gamma, 0.0)
     if use_drag
         lifted_area_derivative = G * partials.acceleration_area
-        Gamma[5:8, 1] .= 0.5 * partials.radius * lifted_area_derivative
-        Gamma[9, 1] = -partials.radius *
+        @inbounds for row in 1:4
+            Gamma[row + 4] = 0.5 * partials.radius *
+                lifted_area_derivative[row]
+        end
+        Gamma[9] = -partials.radius *
             dot(partials.velocity, partials.acceleration_area)
     end
-    return (; state=F, input=Gamma)
+    return (; derivative=SVector{10,Float64}(derivative),
+        state=SMatrix{10,10,Float64}(F),
+        input=SVector{10,Float64}(Gamma))
+end
+
+"""Return continuous augmented-KS state and exposed-area Jacobians."""
+function ks_rhs_jacobians(state::AbstractVector, params, area_m2::Real=0.0;
+    kwargs...)
+    result = evaluate_ks_dynamics_and_jacobians(state, params, area_m2; kwargs...)
+    return (; state=result.state, input=result.input)
 end
 
 """Return the analytical Jacobian of the continuous augmented-KS dynamics."""
 ks_rhs_jacobian(state::AbstractVector, params, area_m2::Real=0.0; kwargs...) =
-    ks_rhs_jacobians(state, params, area_m2; kwargs...).state
+    evaluate_ks_dynamics_and_jacobians(state, params, area_m2;
+        compute_input_jacobian=Val(false), kwargs...).state
 
-function _ks_implicit_midpoint_solution(state, params, area_m2, delta_s;
-    maximum_iterations::Integer=12,
-    nonlinear_tolerance::Real=2.0e-13, kwargs...)
-    x = Float64.(collect(state))
+"""
+Advance the KS state with one linearly implicit midpoint correction.
+
+The continuous dynamics and state Jacobian are evaluated once at the current
+state. This propagation routine neither iterates a nonlinear residual nor
+constructs discrete state or input maps.
+"""
+function ks_linear_implicit_midpoint_step(state::AbstractVector, params,
+    area_m2::Real, delta_s::Real; kwargs...)
+    x = SVector{10,Float64}(state)
     step = Float64(delta_s)
     step > 0.0 || throw(ArgumentError("delta_s must be positive."))
-    next_state = x + step * ks_rhs(x, params, area_m2; kwargs...)
-    identity10 = Matrix{Float64}(I, 10, 10)
-    for iteration in 1:Int(maximum_iterations)
-        midpoint = 0.5 * (x + next_state)
-        residual = next_state - x -
-            step * ks_rhs(midpoint, params, area_m2; kwargs...)
-        jacobians = ks_rhs_jacobians(
-            midpoint, params, area_m2; kwargs...)
-        factorization = lu!(identity10 - 0.5 * step * jacobians.state)
-        correction = factorization \ (-residual)
-        next_state += correction
-        scale = max.(max.(abs.(x), abs.(next_state)), 1.0)
-        if maximum(abs.(correction) ./ scale) <= nonlinear_tolerance
-            final_midpoint = 0.5 * (x + next_state)
-            final_jacobians = ks_rhs_jacobians(
-                final_midpoint, params, area_m2; kwargs...)
-            final_factorization = lu!(identity10 -
-                0.5 * step * final_jacobians.state)
-            return (; state=next_state, jacobians=final_jacobians,
-                factorization=final_factorization, iterations=iteration)
-        end
-    end
-    throw(ErrorException(
-        "KS implicit-midpoint solve did not converge in $(maximum_iterations) iterations."))
+    evaluation = evaluate_ks_dynamics_and_jacobians(
+        x, params, area_m2; compute_input_jacobian=Val(false), kwargs...)
+    midpoint_matrix = KS_IDENTITY10 - 0.5 * step * evaluation.state
+    increment = midpoint_matrix \ (step * evaluation.derivative)
+    return x + increment
 end
 
-"""Advance the nonlinear augmented-KS state with implicit midpoint."""
-function ks_implicit_midpoint_step(state::AbstractVector, params,
+"""Return the first-order discrete state and area tangent maps for MPC."""
+function ks_first_order_tangent_map(state::AbstractVector, params,
     area_m2::Real, delta_s::Real; kwargs...)
-    return _ks_implicit_midpoint_solution(
-        state, params, area_m2, delta_s; kwargs...).state
-end
-
-"""Return one implicit-midpoint step and its state and input tangent maps."""
-function ks_implicit_midpoint_linearization(state::AbstractVector, params,
-    area_m2::Real, delta_s::Real; kwargs...)
-    result = _ks_implicit_midpoint_solution(
-        state, params, area_m2, delta_s; kwargs...)
     step = Float64(delta_s)
-    identity10 = Matrix{Float64}(I, 10, 10)
-    solution = result.factorization \ hcat(
-        identity10 + 0.5 * step * result.jacobians.state,
-        step .* result.jacobians.input)
-    return (; state=result.state,
-        transition=solution[:, 1:10],
-        input_transition=solution[:, 11:11],
-        iterations=result.iterations)
-end
-
-"""Return the discrete implicit-midpoint state-transition Jacobian."""
-function ks_step_jacobian(state::AbstractVector, params, area_m2::Real,
-    delta_s::Real; kwargs...)
-    return ks_implicit_midpoint_linearization(
-        state, params, area_m2, delta_s; kwargs...).transition
+    step > 0.0 || throw(ArgumentError("delta_s must be positive."))
+    evaluation = evaluate_ks_dynamics_and_jacobians(
+        state, params, area_m2; kwargs...)
+    return (;
+        transition=KS_IDENTITY10 + step * evaluation.state,
+        input_transition=step * evaluation.input,
+    )
 end

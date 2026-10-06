@@ -1,6 +1,7 @@
 """Install the checkout and its pinned optional HYPR dependency in an isolated project."""
 module HYPRInstallation
 using Pkg, TOML, UUIDs
+const SUPPORTED_HYPR_VERSIONS = ("0.1.0", "0.1.1")
 const ROOT = normpath(joinpath(@__DIR__, ".."))
 const HYPR_UUID = UUID("342c8629-b435-4bda-9d24-004c735fb297")
 
@@ -8,12 +9,12 @@ function source_spec(root=ROOT; local_path=get(ENV, "SPACEAGORA_HYPR_PATH", ""))
     if !isempty(local_path)
         path = abspath(local_path)
         project = TOML.parsefile(joinpath(path, "Project.toml"))
-        project["uuid"] == string(HYPR_UUID) && project["version"] == "0.1.0" ||
-            error("The explicit HYPR development override must be HYPR 0.1.0.")
+        project["uuid"] == string(HYPR_UUID) && project["version"] in SUPPORTED_HYPR_VERSIONS ||
+            error("The explicit HYPR development override must be a supported HYPR version: $SUPPORTED_HYPR_VERSIONS.")
         return PackageSpec(path=path)
     end
     pin = TOML.parsefile(joinpath(root, "packages", "SpaceAGORAHYPR", "HYPRSource.toml"))
-    pin["uuid"] == string(HYPR_UUID) && pin["version"] == "0.1.0" || error("Unsupported HYPR source pin")
+    pin["uuid"] == string(HYPR_UUID) && pin["version"] in SUPPORTED_HYPR_VERSIONS || error("Unsupported HYPR source pin")
     occursin(r"^[0-9a-f]{40}$", pin["rev"]) || error("HYPR source must pin a full immutable commit")
     return PackageSpec(url=pin["url"], rev=pin["rev"])
 end

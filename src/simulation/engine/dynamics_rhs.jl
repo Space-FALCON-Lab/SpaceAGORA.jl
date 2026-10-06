@@ -287,8 +287,28 @@ end
     t::Float64,
     debug_control::Bool
 )::Float64
+    # SimulationConfiguration stores ControlModel without its tuple parameter.
+    # Cross that type-erased boundary once per spacecraft, rather than boxing
+    # all three hook results for every controller during every RHS evaluation.
+    return _accumulate_control_effectors_from_tuple!(
+        forces, torques, rw_torque_body, sc_view, p, sat_idx, t, debug_control,
+        p.args.control_model.control_effectors,
+    )
+end
+
+function _accumulate_control_effectors_from_tuple!(
+    forces::MVector{3, Float64},
+    torques::MVector{3, Float64},
+    rw_torque_body::MVector{3, Float64},
+    sc_view,
+    p,
+    sat_idx::Int,
+    t::Float64,
+    debug_control::Bool,
+    control_effectors::CE,
+)::Float64 where {CE <: Tuple}
     mass_rate = 0.0
-    @inbounds for control_effector in p.args.control_model.control_effectors
+    @inbounds for control_effector in control_effectors
         control_force, control_torque = SimulationModel.calcControlForceTorque(control_effector, sc_view, p, sat_idx, t)
         control_mass_rate = SimulationModel.calcControlMassFlowRate(control_effector, sc_view, p, sat_idx, t)
         rw_torque = SimulationModel.calcReactionWheelTorque(control_effector, sc_view, p, sat_idx, t)
@@ -2430,8 +2450,13 @@ end
 # here is the only place both are covered.
 function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Float64)
     trial = p.shared_buffers.rhs_width_trial[]
-    trial === nothing && return _spacecraft_dynamics_dispatch!(du, u, p, t)
-    return rhs_width_trial_step!(du, u, p, t, trial, _spacecraft_dynamics_dispatch!)
+    if trial === nothing
+        _spacecraft_dynamics_dispatch!(du, u, p, t)
+    else
+        rhs_width_trial_step!(du, u, p, t, trial, _spacecraft_dynamics_dispatch!)
+    end
+    SimulationModel.SimulationCallbacks._publish_initial_force_outputs!(u, t, p)
+    return nothing
 end
 
 function _spacecraft_dynamics_dispatch!(du::ComponentVector, u::ComponentVector, p, t::Float64)
@@ -2702,11 +2727,12 @@ function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::Compon
     # direct RHS evaluations that start inside the entry interface.
     if _all_active_spacecraft_outside_atmosphere(sc_state, p, t)
         du .= 0.0
+        SimulationModel.SimulationCallbacks._publish_initial_force_outputs!(u, t, p)
         return nothing
     end
     plan = _rhs_execution_plan(p.args, p, dynamic_effectors, length(spacecraft))
     if plan.mode == :flat_constellation_effector_queue
-        return _spacecraft_dynamics_flat_constellation_effector_queue!(
+        _spacecraft_dynamics_flat_constellation_effector_queue!(
             du,
             u,
             p,
@@ -2715,6 +2741,8 @@ function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::Compon
             rhs_kind=:implicit,
             partition=:implicit,
         )
+        SimulationModel.SimulationCallbacks._publish_initial_force_outputs!(u, t, p)
+        return nothing
     end
     effector_decision = plan.effector_decision
     use_rhs_batch = plan.mode != :serial && _rhs_batch_parallel_enabled(p, length(spacecraft))
@@ -2793,6 +2821,8 @@ function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::Compon
             end
         end
     end
+    SimulationModel.SimulationCallbacks._publish_initial_force_outputs!(u, t, p)
+    return nothing
 end # function spacecraft_dynamics_implicit_atmosphere!
 
 function spacecraft_dynamics_explicit_remainder!(du::ComponentVector, u::ComponentVector, p, t::Float64)

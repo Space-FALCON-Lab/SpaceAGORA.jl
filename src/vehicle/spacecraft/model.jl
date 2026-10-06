@@ -288,6 +288,119 @@ mutable struct Link
 end
 
 
+"""Joint types supported by `Joint(...; joint_type=...)`: `:fixed` (default, rigid), `:hinge` (one rotation about `axis`), `:slide` (one translation along `axis`), `:ball` (three rotations, quaternion coordinates)."""
+const JOINT_TYPES = (:fixed, :hinge, :slide, :ball)
+
+const _JOINT_Q_IDENTITY = SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
+
+# Validate and normalize the joint-type parameters. Returns (type, axis, stiffness, damping, rest).
+function _joint_spec(joint_type, axis, stiffness, damping, rest, initial_q, initial_qd)
+    joint_type isa Symbol && joint_type in JOINT_TYPES ||
+        throw(ArgumentError("Joint joint_type must be one of $(JOINT_TYPES), got $(repr(joint_type))."))
+    has_axis = joint_type === :hinge || joint_type === :slide
+    if has_axis && axis === nothing
+        throw(ArgumentError("Joint of type $(repr(joint_type)) requires an `axis` (unit vector in the parent link frame)."))
+    end
+    ax = axis === nothing ? SVector{3, Float64}(0.0, 0.0, 1.0) : SVector{3, Float64}(axis)
+    nax = norm(ax)
+    (isfinite(nax) && nax > 0.0) || throw(ArgumentError("Joint axis must have finite, nonzero norm, got $(ax)."))
+    ax = ax / nax
+
+    gain(name, v) = begin
+        if joint_type === :ball
+            if v === nothing
+                zeros(SMatrix{3, 3, Float64, 9})
+            elseif v isa Real
+                (isfinite(v) && v >= 0) || throw(ArgumentError("Joint $name must be finite and >= 0, got $v."))
+                SMatrix{3, 3, Float64, 9}(Float64(v) * I)
+            else
+                m = SMatrix{3, 3, Float64, 9}(v)
+                all(isfinite, m) || throw(ArgumentError("Joint $name must be finite."))
+                s = (m + m') / 2
+                lam = eigvals(Symmetric(Matrix(s)))
+                minimum(lam) >= -1.0e-12 * max(1.0, maximum(abs, lam)) ||
+                    throw(ArgumentError("Joint $name matrix must be positive semidefinite."))
+                m
+            end
+        else
+            v === nothing && return 0.0
+            v isa Real || throw(ArgumentError("Joint $name must be a scalar for joint type $(repr(joint_type))."))
+            (isfinite(v) && v >= 0) || throw(ArgumentError("Joint $name must be finite and >= 0, got $v."))
+            Float64(v)
+        end
+    end
+    k = gain("stiffness", stiffness)
+    c = gain("damping", damping)
+
+    r = if joint_type === :ball
+        if rest === nothing
+            _JOINT_Q_IDENTITY
+        else
+            qr = SVector{4, Float64}(rest)
+            nq = norm(qr)
+            (isfinite(nq) && nq > 0.0) || throw(ArgumentError("Joint rest quaternion must be finite and nonzero."))
+            qr / nq
+        end
+    else
+        rest === nothing && (rest = 0.0)
+        rest isa Real && isfinite(rest) || throw(ArgumentError("Joint rest must be a finite scalar for joint type $(repr(joint_type))."))
+        Float64(rest)
+    end
+
+    q0 = if joint_type === :ball
+        if initial_q === nothing
+            _JOINT_Q_IDENTITY
+        else
+            qi = SVector{4, Float64}(initial_q)
+            nq = norm(qi)
+            (isfinite(nq) && nq > 0.0) || throw(ArgumentError("Joint initial_q quaternion must be finite and nonzero."))
+            qi / nq
+        end
+    else
+        initial_q === nothing && (initial_q = 0.0)
+        initial_q isa Real && isfinite(initial_q) ||
+            throw(ArgumentError("Joint initial_q must be a finite scalar for joint type $(repr(joint_type))."))
+        Float64(initial_q)
+    end
+    qd0 = if joint_type === :ball
+        initial_qd === nothing ? zero(SVector{3, Float64}) : (all(isfinite, initial_qd) ? SVector{3, Float64}(initial_qd) :
+            throw(ArgumentError("Joint initial_qd must be finite.")))
+    else
+        initial_qd === nothing && (initial_qd = 0.0)
+        initial_qd isa Real && isfinite(initial_qd) ||
+            throw(ArgumentError("Joint initial_qd must be a finite scalar for joint type $(repr(joint_type))."))
+        Float64(initial_qd)
+    end
+    return joint_type, ax, k, c, r, q0, qd0
+end
+
+"""
+    Joint(link1, link2; p1, p2, joint_type=:fixed, axis, stiffness, damping, rest, ...)
+    Joint(link1, p1ᵇ, link2, p2ᵇ[, Kx, Kt, Cx, Ct]; joint_type=:fixed, ...)
+    Joint(; link1, link2, p1, p2, joint_type=:fixed, ...)
+
+Connection between a parent `link1` and a child `link2`. `p1ᵇ` is the joint point in the
+`link1` body frame and `p2ᵇ` the same point in the `link2` body frame. Joint coordinate 0 is the
+configured geometry (the links' configured `r`/`q`).
+
+Joint-type keywords (articulated-body library, `build_articulated_tree`; engine integration is a
+later stage and the existing engine ignores them):
+
+- `joint_type`: `:fixed` (default, rigid, merged into the parent body), `:hinge` (rotation about
+  `axis`), `:slide` (translation along `axis`) or `:ball` (three rotations).
+- `axis`: unit vector in the parent (`link1`) frame; required for `:hinge`/`:slide`, normalized on
+  construction.
+- `stiffness`, `damping`: joint-space gains, `>= 0`. Scalars (N m/rad or N/m, N m s/rad or N s/m)
+  for hinge/slide; a scalar or a 3x3 positive-semidefinite matrix for `:ball`.
+- `rest`: joint coordinate at which the spring is unloaded. Scalar for hinge/slide (default 0),
+  scalar-last quaternion for `:ball` (default identity).
+- `initial_q`, `initial_qd`: initial joint coordinate and rate used by the simulation engine
+  (scalars; for `:ball` a scalar-last quaternion and a 3-vector of parent-frame angular velocity).
+  Default 0 / identity and 0.
+- `options`: reserved for future motor and limit settings; unused.
+
+The legacy `Kx/Kt/Cx/Ct` fields stay unused by the articulated-body library.
+"""
 mutable struct Joint
     link1::Link
     link2::Link
@@ -299,16 +412,27 @@ mutable struct Joint
     Ct::SMatrix{3, 3} # Damping Matrix
     translational_displacement::SVector{3, Float64} # Translational displacement vector
     rotational_displacement::SVector{4, Float64} # Rotational displacement vector (quaternion)
+    joint_type::Symbol # :fixed, :hinge, :slide or :ball
+    axis::SVector{3, Float64} # Unit axis in the link1 frame (hinge/slide)
+    stiffness::Union{Float64, SMatrix{3, 3, Float64, 9}} # Joint-space stiffness (scalar, or 3x3 for :ball)
+    damping::Union{Float64, SMatrix{3, 3, Float64, 9}} # Joint-space damping (scalar, or 3x3 for :ball)
+    rest::Union{Float64, SVector{4, Float64}} # Spring rest coordinate (scalar, or quaternion for :ball)
+    options::Union{Nothing, NamedTuple} # Reserved for motors and limits; unused
+    initial_q::Union{Float64, SVector{4, Float64}} # Initial joint coordinate (scalar, or quaternion for :ball)
+    initial_qd::Union{Float64, SVector{3, Float64}} # Initial joint rate (scalar, or 3-vector for :ball)
 
     function Joint(link1::Link, p1ᵇ::SVector{3, Float64},
         link2::Link, p2ᵇ::SVector{3, Float64},
         Kx=SMatrix{3, 3, Float64}(0.0I),
         Kt=SMatrix{3, 3, Float64}(0.0I),
         Cx=zeros(SMatrix{3, 3, Float64}),
-        Ct=zeros(SMatrix{3, 3, Float64}))
+        Ct=zeros(SMatrix{3, 3, Float64});
+        joint_type::Symbol=:fixed, axis=nothing, stiffness=nothing, damping=nothing, rest=nothing, options=nothing, initial_q=nothing, initial_qd=nothing)
 
+        jt, ax, k, c, r, iq, iqd = _joint_spec(joint_type, axis, stiffness, damping, rest, initial_q, initial_qd)
         new(link1, link2, p1ᵇ, p2ᵇ, Kx, Kt, Cx, Ct,
-            SVector{3, Float64}(0.0, 0.0, 0.0), SVector{4, Float64}(0.0, 0.0, 0.0, 1.0))
+            SVector{3, Float64}(0.0, 0.0, 0.0), SVector{4, Float64}(0.0, 0.0, 0.0, 1.0),
+            jt, ax, k, c, r, options, iq, iqd)
     end
 
     function Joint(link1::Link, link2::Link; p1=link1.bᵇ, 
@@ -318,10 +442,12 @@ mutable struct Joint
                                  Cx=zeros(SMatrix{3,3, Float64}),
                                  Ct=zeros(SMatrix{3,3, Float64}),
                                  translational_displacement=SVector{3, Float64}(0.0, 0.0, 0.0),
-                                 rotational_displacement=SVector{4, Float64}(0.0, 0.0, 0.0, 1.0))
+                                 rotational_displacement=SVector{4, Float64}(0.0, 0.0, 0.0, 1.0),
+                                 joint_type::Symbol=:fixed, axis=nothing, stiffness=nothing, damping=nothing, rest=nothing, options=nothing, initial_q=nothing, initial_qd=nothing)
         
+        jt, ax, k, c, r, iq, iqd = _joint_spec(joint_type, axis, stiffness, damping, rest, initial_q, initial_qd)
         new(link1, link2, p1, p2, Kx, Kt, Cx, Ct, 
-            translational_displacement, rotational_displacement)
+            translational_displacement, rotational_displacement, jt, ax, k, c, r, options, iq, iqd)
     end
 
     function Joint(;link1=Link(), link2=Link(), p1=link1.bᵇ, 
@@ -331,16 +457,20 @@ mutable struct Joint
         Cx=zeros(SMatrix{3,3, Float64}),
         Ct=zeros(SMatrix{3,3, Float64}),
         translational_displacement=SVector{3, Float64}(0.0, 0.0, 0.0),
-        rotational_displacement=SVector{4, Float64}(0.0, 0.0, 0.0, 1.0))
+        rotational_displacement=SVector{4, Float64}(0.0, 0.0, 0.0, 1.0),
+        joint_type::Symbol=:fixed, axis=nothing, stiffness=nothing, damping=nothing, rest=nothing, options=nothing, initial_q=nothing, initial_qd=nothing)
 
+        jt, ax, k, c, r, iq, iqd = _joint_spec(joint_type, axis, stiffness, damping, rest, initial_q, initial_qd)
         new(link1, link2, p1, p2, Kx, Kt, Cx, Ct, 
-            translational_displacement, rotational_displacement)
+            translational_displacement, rotational_displacement, jt, ax, k, c, r, options, iq, iqd)
     end
 
     function Joint(joint::Joint)
         new(joint.link1, joint.link2, joint.p1ᵇ, joint.p2ᵇ, 
             joint.Kx, joint.Kt, joint.Cx, joint.Ct,
-            joint.translational_displacement, joint.rotational_displacement)
+            joint.translational_displacement, joint.rotational_displacement,
+            joint.joint_type, joint.axis, joint.stiffness, joint.damping, joint.rest, joint.options,
+            joint.initial_q, joint.initial_qd)
     end
 end
 

@@ -514,6 +514,7 @@ function run_simulation(
     # Typed pipeline is SI-native (meters, seconds, kilograms). The
     # `simulation_settings.normalize` field is legacy-only and rejected by default.
     _enforce_typed_normalize_policy!(args)
+    _validate_articulated_spacecraft!(args, solver_mode)
     _validate_orientation_inertia!(args)
     _validate_thermal_model_support!(args)
     _validate_ephemerides_support!(args)
@@ -548,6 +549,7 @@ function run_simulation(
     _initialize_harmonics_workspace_buffers!(p)
     _initialize_nbody_workspace_buffers!(p)
     _initialize_aero_workspace_buffers!(p)
+    _initialize_articulated_runtimes!(p)
     _initialize_nbody_ephemeris_cache_buffer!(p)
     _initialize_srp_sun_cache_buffer!(p)
     _initialize_planet_frame_cache_buffer!(p)

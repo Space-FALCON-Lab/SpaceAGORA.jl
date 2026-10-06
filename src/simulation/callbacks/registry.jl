@@ -10,6 +10,7 @@ using SPICE
 using Dates
 using ...RuntimeServices: SPICE_LOCK, GRAM_LOCK, tracked_lock
 using ..SimulationModel: PlanetFrameEphemerisCache, rot
+using ..ArticulatedBody: articulated_forward_kinematics, articulated_link_poses, articulated_has_moving_joints
 using ..SimulationModel: ephemerides_time_seconds, planet_frame_lpi, ephemerides_requires_spice, ephemerides_sun_direction_ii
 using ..ParallelPolicy
 using ..EnvironmentModels

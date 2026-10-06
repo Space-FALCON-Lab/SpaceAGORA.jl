@@ -98,7 +98,7 @@ end
 end
 
 function summarize_per_orbit_results(orbit_raw_df::DataFrame)::DataFrame
-    sweep_multiplier_key = :mission_time_multiplier in names(orbit_raw_df) ? :mission_time_multiplier : :orbit_count
+    sweep_multiplier_key = :mission_time_multiplier in propertynames(orbit_raw_df) ? :mission_time_multiplier : :orbit_count
     keys = _summary_group_keys(
         orbit_raw_df,
         [:category, :scenario, :description, sweep_multiplier_key, :orbital_period_s, :dt_max_orbit_s, :outer_threads_safe]
@@ -143,7 +143,7 @@ function summarize_per_orbit_results(orbit_raw_df::DataFrame)::DataFrame
         summary[!, :sim_seconds_per_wall_second_mean] = fill(missing, nrow(summary))
     end
 
-    if !(:mission_time_multiplier in names(summary))
+    if !(:mission_time_multiplier in propertynames(summary))
         summary[!, :mission_time_multiplier] = summary.orbit_count
     end
     summary[!, :time_per_orbit_mean_s] = [
@@ -522,7 +522,7 @@ function summarize_density_backend_breakdown(raw_df::DataFrame)::DataFrame
         "gram_static_grid_or_cached_surrogate",
         "non_gram"
     ]
-    if nrow(raw_df) == 0 || !(:density_backend_bucket in names(raw_df))
+    if nrow(raw_df) == 0 || !(:density_backend_bucket in propertynames(raw_df))
         return DataFrame([
             (
                 density_backend_bucket=bucket,

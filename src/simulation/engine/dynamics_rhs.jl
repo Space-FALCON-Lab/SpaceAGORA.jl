@@ -2415,6 +2415,30 @@ function _robot_arm_coupling(args, sat_idx::Int, t::Float64)
     return nothing
 end
 
+@inline _sum_gravity_only(::Tuple{}, x, env, t::Float64) = SVector{3, Float64}(0.0, 0.0, 0.0)
+@inline function _sum_gravity_only(effectors::Tuple, x, env, t::Float64)
+    effector = first(effectors)
+    rest = _sum_gravity_only(Base.tail(effectors), x, env, t)
+    SimulationModel.gravity_backbone_structure(effector) === :position_only_static_gravity || return rest
+    return SimulationModel.gravity_backbone_acceleration_ii(effector, x, env, t) + rest
+end
+
+"""Gravitational acceleration [m/s^2] at inertial position `r_ii` from the run's position-only gravity effectors."""
+@inline function _gravity_only_acceleration_ii(p, r_ii::SVector{3, Float64}, t::Float64)::SVector{3, Float64}
+    planet = p.args.environment_model.planet
+    v0 = SVector{3, Float64}(0.0, 0.0, 0.0)
+    x = StateSample(r_ii, v0, 1.0)
+    frame = sample_planet_frame_with_lpi((pos_ii=r_ii, vel_ii=v0), planet, _planet_lpi_at_engine(p, t))
+    return _sum_gravity_only(p.args.dynamics_model.dynamic_effectors, x, EnvironmentSample(planet; planet_frame=frame), t)
+end
+
+"""Link-gravity callable handed to the coupled arm RHS: `r_ii -> acceleration`."""
+struct _ArmLinkGravity{P}
+    p::P
+    t::Float64
+end
+@inline (g::_ArmLinkGravity)(r_ii) = _gravity_only_acceleration_ii(g.p, SVector{3, Float64}(r_ii), g.t)
+
 """Apply coupled cloth robot-arm state derivatives to one spacecraft RHS view."""
 @inline function _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, sat_idx::Int, t::Float64, forces, torques)
     # Fast path: skip the per-satellite effector-tuple scan when the run has no
@@ -2434,6 +2458,7 @@ end
         k_rotation_n_m_rad=coupling.k_rotation_n_m_rad,
         c_rotation_n_m_s_rad=coupling.c_rotation_n_m_s_rad,
         joint_actuators=coupling.joint_actuators,
+        link_gravity_ii=_ArmLinkGravity(p, t),
     )
     return nothing
 end

@@ -149,7 +149,7 @@ function _write_split_rollout_gate_report(
         println(io)
         println(io, "- Gate CSV: `$(gate_csv_path)`")
         println(io)
-        pass_count = (nrow(gate_df) == 0 || !(:pass_all in names(gate_df))) ? 0 : count(Bool.(gate_df.pass_all))
+        pass_count = (nrow(gate_df) == 0 || !(:pass_all in propertynames(gate_df))) ? 0 : count(Bool.(gate_df.pass_all))
         println(io, "- Gate pass count: `$(pass_count)/$(nrow(gate_df))`")
         println(io)
         println(io, "| Scenario | Split Solver | Baseline Retcode | Split Retcode | Runtime Ratio | Pos Rel Max | Vel Rel Max | Q Angle Max [rad] | Omega Rel Max | Pass Runtime | Pass Trajectory | Pass All |")
@@ -296,7 +296,7 @@ function evaluate_split_rollout_gate(
     CSV.write(gate_csv_path, gate_df)
     _write_split_rollout_gate_report(gate_report_path, spec, gate_df, gate_csv_path)
 
-    if _split_rollout_enforce() && nrow(gate_df) > 0 && (:pass_all in names(gate_df)) && any(.!Bool.(gate_df.pass_all))
+    if _split_rollout_enforce() && nrow(gate_df) > 0 && (:pass_all in propertynames(gate_df)) && any(.!Bool.(gate_df.pass_all))
         failing = gate_df[.!gate_df.pass_all, :]
         summary = join(["$(row.scenario):$(row.split_solver)" for row in eachrow(failing)], ", ")
         error("Split rollout gate failed for $(nrow(failing)) configuration(s): $summary")
@@ -331,7 +331,7 @@ function _write_multirate_rollout_gate_report(
         println(io)
         println(io, "- Gate CSV: `$(gate_csv_path)`")
         println(io)
-        pass_count = (nrow(gate_df) == 0 || !(:pass_all in names(gate_df))) ? 0 : count(Bool.(gate_df.pass_all))
+        pass_count = (nrow(gate_df) == 0 || !(:pass_all in propertynames(gate_df))) ? 0 : count(Bool.(gate_df.pass_all))
         println(io, "- Gate pass count: `$(pass_count)/$(nrow(gate_df))`")
         println(io)
         println(io, "| Scenario | Baseline Retcode | Multirate Retcode | Runtime Ratio | Pos Rel Max | Vel Rel Max | Q Angle Max [rad] | Omega Rel Max | Pass Runtime | Pass Trajectory | Pass All |")
@@ -479,7 +479,7 @@ function evaluate_multirate_rollout_gate(
     CSV.write(gate_csv_path, gate_df)
     _write_multirate_rollout_gate_report(gate_report_path, spec, gate_df, gate_csv_path)
 
-    if _multirate_rollout_enforce() && nrow(gate_df) > 0 && (:pass_all in names(gate_df)) && any(.!Bool.(gate_df.pass_all))
+    if _multirate_rollout_enforce() && nrow(gate_df) > 0 && (:pass_all in propertynames(gate_df)) && any(.!Bool.(gate_df.pass_all))
         failing = gate_df[.!gate_df.pass_all, :]
         summary = join([String(row.scenario) for row in eachrow(failing)], ", ")
         error("Multirate rollout gate failed for $(nrow(failing)) configuration(s): $summary")

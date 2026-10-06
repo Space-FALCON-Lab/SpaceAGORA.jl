@@ -250,6 +250,7 @@ function write_report(
         println(io, "- Failed attempts: `$(total_samples - total_success)/$(total_samples)` (`$(_fmt(solve_failure_rate))%`).")
         println(io, "- Retry overhead: `$(retries_total)` retries across `$(requested_runs)` requested runs (`$(_fmt(retry_count_mean_all_runs))` retries/requested run).")
         println(io, "- Robustness-adjusted expected wall time (all attempts): `$(_fmt(penalized_expected_wall_time_all_runs)) s/requested run`.")
+        println(io, "- Counts and success/failure rates describe recorded attempts. Recorded copy-plus-solve costs exclude warmups, worker startup, explicit GC and later processing; they are not complete campaign wall time.")
         println(io, "- Mean fallback count across all attempts: `$(_fmt(fallback_count_mean_all_attempts_global))`.")
         if !(spice_peak === nothing)
             println(

@@ -42,9 +42,10 @@ function measure_entry_duration_scenario(
                             entry_wall_time_per_passage_s=_safe_div(row.total_time_s, Float64(interface_count))
                         )
                     )
+                    row_entry = merge(row_entry, (is_terminal_attempt=row_entry.solve_success || attempt == spec.max_attempts,))
+                    push!(rows, row_entry)
                     last_row = row_entry
                     if row_entry.solve_success
-                        push!(rows, row_entry)
                         line = "    entry_interface_count=$(interface_count) repeat $(rep)/$(repeat_count): total=$(round(row_entry.total_time_s; digits=3)) s"
                         push!(logs, line)
                         if stream_logs
@@ -55,7 +56,6 @@ function measure_entry_duration_scenario(
                     end
                 end
                 if !(last_row === nothing) && !last_row.solve_success
-                    push!(rows, last_row)
                     line = "    entry_interface_count=$(interface_count) repeat $(rep)/$(repeat_count): failed after $(spec.max_attempts) attempts, retcode=$(last_row.solve_retcode)"
                     push!(logs, line)
                     if stream_logs
@@ -133,9 +133,10 @@ function measure_per_orbit_scenario(
                             orbital_period_s=period_s
                         )
                     )
+                    row_orbit = merge(row_orbit, (is_terminal_attempt=row_orbit.solve_success || attempt == spec.max_attempts,))
+                    push!(rows, row_orbit)
                     last_row = row_orbit
                     if row_orbit.solve_success
-                        push!(rows, row_orbit)
                         line = "    mission_time_multiplier=x$(orbit_count) repeat $(rep)/$(spec.repeats): total=$(round(row_orbit.total_time_s; digits=3)) s"
                         push!(logs, line)
                         if stream_logs
@@ -146,7 +147,6 @@ function measure_per_orbit_scenario(
                     end
                 end
                 if !(last_row === nothing) && !last_row.solve_success
-                    push!(rows, last_row)
                     line = "    mission_time_multiplier=x$(orbit_count) repeat $(rep)/$(spec.repeats): failed after $(spec.max_attempts) attempts, retcode=$(last_row.solve_retcode)"
                     push!(logs, line)
                     if stream_logs
@@ -201,14 +201,16 @@ function run_montecarlo_per_orbit!(
             end
             println("    mission_time_multiplier=x$(orbit_count)")
             orbit_rows = Vector{NamedTuple}(undef, length(seeds))
+            orbit_attempts = Vector{Vector{NamedTuple}}(undef, length(seeds))
             orbit_msgs = Vector{String}(undef, length(seeds))
 
             if mc_backend == :process
-                seed_results = pmap(seed -> perf_worker_measure_montecarlo_seed(spec, mission_time, seed, variant, :process), seeds)
+                seed_results = pmap(seed -> perf_worker_measure_montecarlo_seed(spec, mission_time, seed, variant, :process; retain_attempts=true), seeds)
                 for i in eachindex(seeds)
                     seed = seeds[i]
-                    row, err = seed_results[i]
-                    row_orbit = merge(row, (orbit_count=orbit_count, mission_time_multiplier=orbit_count, orbital_period_s=period_s))
+                    attempt_rows, err = seed_results[i]
+                    orbit_attempts[i] = NamedTuple[merge(row, (orbit_count=orbit_count, mission_time_multiplier=orbit_count, orbital_period_s=period_s)) for row in attempt_rows]
+                    row_orbit = last(orbit_attempts[i])
                     orbit_rows[i] = row_orbit
                     if row_orbit.solve_success
                         orbit_msgs[i] = "      seed $(i)/$(length(seeds))=$(seed): total=$(round(row_orbit.total_time_s; digits=3)) s"
@@ -222,7 +224,7 @@ function run_montecarlo_per_orbit!(
                 withenv(threaded_env...) do
                     Threads.@threads for i in eachindex(seeds)
                         seed = seeds[i]
-                        row, err = measure_montecarlo_seed(
+                        attempt_rows, err = _measure_montecarlo_attempts(
                             spec,
                             planet,
                             mission_time,
@@ -233,7 +235,8 @@ function run_montecarlo_per_orbit!(
                             plan=threaded_plan,
                             apply_env=false
                         )
-                        row_orbit = merge(row, (orbit_count=orbit_count, mission_time_multiplier=orbit_count, orbital_period_s=period_s))
+                        orbit_attempts[i] = NamedTuple[merge(row, (orbit_count=orbit_count, mission_time_multiplier=orbit_count, orbital_period_s=period_s)) for row in attempt_rows]
+                        row_orbit = last(orbit_attempts[i])
                         orbit_rows[i] = row_orbit
                         if row_orbit.solve_success
                             orbit_msgs[i] = "      seed $(i)/$(length(seeds))=$(seed): total=$(round(row_orbit.total_time_s; digits=3)) s"
@@ -245,7 +248,7 @@ function run_montecarlo_per_orbit!(
             else
                 for i in eachindex(seeds)
                     seed = seeds[i]
-                    row, err = measure_montecarlo_seed(
+                    attempt_rows, err = _measure_montecarlo_attempts(
                         spec,
                         planet,
                         mission_time,
@@ -254,7 +257,8 @@ function run_montecarlo_per_orbit!(
                         mars=mars,
                         outer_route=:none
                     )
-                    row_orbit = merge(row, (orbit_count=orbit_count, mission_time_multiplier=orbit_count, orbital_period_s=period_s))
+                    orbit_attempts[i] = NamedTuple[merge(row, (orbit_count=orbit_count, mission_time_multiplier=orbit_count, orbital_period_s=period_s)) for row in attempt_rows]
+                    row_orbit = last(orbit_attempts[i])
                     orbit_rows[i] = row_orbit
                     if row_orbit.solve_success
                         orbit_msgs[i] = "      seed $(i)/$(length(seeds))=$(seed): total=$(round(row_orbit.total_time_s; digits=3)) s"
@@ -265,7 +269,7 @@ function run_montecarlo_per_orbit!(
             end
 
             for i in eachindex(seeds)
-                push!(rows, orbit_rows[i])
+                append!(rows, orbit_attempts[i])
                 println(orbit_msgs[i])
             end
             _record_outer_route_feedback!(orbit_case, orbit_rows; route=mc_backend)

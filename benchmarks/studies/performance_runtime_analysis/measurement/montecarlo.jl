@@ -1,4 +1,4 @@
-function measure_montecarlo_seed(
+function _measure_montecarlo_attempts(
     spec::ProfileSpec,
     planet::Earth,
     mission_time_s::Float64,
@@ -12,15 +12,18 @@ function measure_montecarlo_seed(
     case = make_montecarlo_case(seed, mission_time_s, variant, planet; mars=mars)
     resolved_plan = isnothing(plan) ? parallel_priority_plan(case, outer_route) : plan
     run_seed = () -> begin
+        attempt_rows = NamedTuple[]
         last_row = nothing
         for attempt in 1:spec.max_attempts
             row = measure_case(case, spec.name, 1; seed=seed, attempt=attempt, plan=resolved_plan)
+            row = merge(row, (is_terminal_attempt=row.solve_success || attempt == spec.max_attempts,))
+            push!(attempt_rows, row)
             last_row = row
             if row.solve_success
-                return row, nothing
+                return attempt_rows, nothing
             end
         end
-        return last_row, last_row === nothing ? "failed without attempt data" : "failed after $(spec.max_attempts) attempts, retcode=$(last_row.solve_retcode)"
+        return attempt_rows, last_row === nothing ? "failed without attempt data" : "failed after $(spec.max_attempts) attempts, retcode=$(last_row.solve_retcode)"
     end
     if apply_env
         env_pairs = parallel_priority_env_pairs(resolved_plan)
@@ -29,6 +32,18 @@ function measure_montecarlo_seed(
         end
     end
     return run_seed()
+end
+
+# Keep the existing single-seed API for callers that request only the final outcome.
+function measure_montecarlo_seed(
+    spec::ProfileSpec,
+    planet::Earth,
+    mission_time_s::Float64,
+    seed::Int;
+    kwargs...
+)
+    attempt_rows, err = _measure_montecarlo_attempts(spec, planet, mission_time_s, seed; kwargs...)
+    return isempty(attempt_rows) ? nothing : last(attempt_rows), err
 end
 
 function perf_worker_montecarlo_warmup(
@@ -54,11 +69,13 @@ function perf_worker_measure_montecarlo_seed(
     mission_time_s::Float64,
     seed::Int,
     variant::Symbol,
-    outer_route::Symbol=:process
+    outer_route::Symbol=:process;
+    retain_attempts::Bool=false
 )
     planet = perf_worker_planet()
     mars = perf_worker_mars()
-    return measure_montecarlo_seed(
+    measure_seed = retain_attempts ? _measure_montecarlo_attempts : measure_montecarlo_seed
+    return measure_seed(
         spec,
         planet,
         mission_time_s,
@@ -151,13 +168,16 @@ function run_montecarlo_batch!(rows::Vector{NamedTuple}, spec::ProfileSpec, plan
         end
 
         seed_rows = Vector{NamedTuple}(undef, length(seeds))
+        seed_attempts = Vector{Vector{NamedTuple}}(undef, length(seeds))
         seed_msgs = Vector{String}(undef, length(seeds))
 
         if mc_backend == :process
-            seed_results = pmap(seed -> perf_worker_measure_montecarlo_seed(spec, mission_time_s, seed, variant, :process), seeds)
+            seed_results = pmap(seed -> perf_worker_measure_montecarlo_seed(spec, mission_time_s, seed, variant, :process; retain_attempts=true), seeds)
             for i in eachindex(seeds)
                 seed = seeds[i]
-                row, err = seed_results[i]
+                attempt_rows, err = seed_results[i]
+                row = last(attempt_rows)
+                seed_attempts[i] = attempt_rows
                 seed_rows[i] = row
                 if row.solve_success
                     seed_msgs[i] = "    seed $(i)/$(length(seeds))=$(seed): total=$(round(row.total_time_s; digits=3)) s"
@@ -171,7 +191,7 @@ function run_montecarlo_batch!(rows::Vector{NamedTuple}, spec::ProfileSpec, plan
             withenv(threaded_env...) do
                 Threads.@threads for i in eachindex(seeds)
                     seed = seeds[i]
-                    row, err = measure_montecarlo_seed(
+                    attempt_rows, err = _measure_montecarlo_attempts(
                         spec,
                         planet,
                         mission_time_s,
@@ -182,6 +202,8 @@ function run_montecarlo_batch!(rows::Vector{NamedTuple}, spec::ProfileSpec, plan
                         plan=threaded_plan,
                         apply_env=false
                     )
+                    row = last(attempt_rows)
+                    seed_attempts[i] = attempt_rows
                     seed_rows[i] = row
                     if row.solve_success
                         seed_msgs[i] = "    seed $(i)/$(length(seeds))=$(seed): total=$(round(row.total_time_s; digits=3)) s"
@@ -193,7 +215,7 @@ function run_montecarlo_batch!(rows::Vector{NamedTuple}, spec::ProfileSpec, plan
         else
             for i in eachindex(seeds)
                 seed = seeds[i]
-                row, err = measure_montecarlo_seed(
+                attempt_rows, err = _measure_montecarlo_attempts(
                     spec,
                     planet,
                     mission_time_s,
@@ -202,6 +224,8 @@ function run_montecarlo_batch!(rows::Vector{NamedTuple}, spec::ProfileSpec, plan
                     mars=mars,
                     outer_route=:none
                 )
+                row = last(attempt_rows)
+                seed_attempts[i] = attempt_rows
                 seed_rows[i] = row
                 if row.solve_success
                     seed_msgs[i] = "    seed $(i)/$(length(seeds))=$(seed): total=$(round(row.total_time_s; digits=3)) s"
@@ -212,7 +236,7 @@ function run_montecarlo_batch!(rows::Vector{NamedTuple}, spec::ProfileSpec, plan
         end
 
         for i in eachindex(seeds)
-            push!(rows, seed_rows[i])
+            append!(rows, seed_attempts[i])
             println(seed_msgs[i])
         end
         _record_outer_route_feedback!(warmup_case, seed_rows; route=mc_backend)

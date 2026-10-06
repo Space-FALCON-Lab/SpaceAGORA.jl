@@ -463,6 +463,11 @@ function _record_outer_route_feedback!(
     elapsed_success_s = 0.0
     elapsed_success_sq_sum_s = 0.0
     for row in rows
+        # Routing observes the final outcome of each requested run, not its retries.
+        # Older supplied rows have no marker and retain their original meaning.
+        if hasproperty(row, :is_terminal_attempt) && row.is_terminal_attempt === false
+            continue
+        end
         if !hasproperty(row, :solve_success)
             continue
         end

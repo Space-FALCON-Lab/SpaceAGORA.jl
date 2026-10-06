@@ -54,6 +54,14 @@ Default output root: `output/performance/`
 
 These runtime-analysis outputs are intended to stay local under ignored `output/` paths. If they are needed in CI, publish them as workflow artifacts rather than committing machine-specific report files to the repository.
 
+## Retry records and accounting
+
+Runtime, per-orbit and entry-duration raw tables retain one row for each returned measured attempt, including failures before a successful retry. Existing scenario, seed, repeat, sweep and reference/measured-role fields identify the request; `attempt` records its ordered attempts. Collection still stops at the first success or the configured limit. The additive Boolean `is_terminal_attempt` marks that final returned outcome. Adaptive routing feedback uses only terminal outcomes; legacy supplied rows without the marker keep their prior feedback meaning. The single-seed `measure_montecarlo_seed` API still returns the terminal row and error message.
+
+Summary `samples_total`, `samples_failed`, success/failure rates and Success/Total tables describe attempts. Ordinary timing statistics use successful rows only. For complete newly collected sequences, `attempt == 1` counts requested runs, and excess rows count retries. These attempt-level rates are not requested-run completion rates. Older terminal-only CSVs cannot recover discarded attempts or their costs.
+
+`total_time_all_attempts_s` sums recorded copy-plus-solve costs; `penalized_expected_wall_time_s` divides that sum by requested runs. Neither is complete campaign wall time: explicit garbage collection, warmups, worker startup and later processing are outside those measurements. An interrupt or strict error may abort before a row is returned or outputs are written. This retention contract does not promise recovery of unreturned or unwritten measurements.
+
 ## Standalone Parallelization Performance Study
 
 Canonical standalone launcher:

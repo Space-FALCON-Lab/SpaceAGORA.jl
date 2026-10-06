@@ -10,7 +10,7 @@ TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 
 [sources]
 SpaceAGORA = {path = "../.."}
-GRAMSuite = {url = "https://github.com/Space-FALCON-Lab/GRAMSuite.jl.git", rev = "61e188587155b994de1158ddb7558870408577c2"}
+GRAMSuite = {url = "https://github.com/Space-FALCON-Lab/GRAMSuite.jl.git", rev = "0160a48869e98055de2c2ab66f14ce3c64b513a0"}
 
 [compat]
 CSV = "0.10"

@@ -899,20 +899,20 @@ function generate_runtime_plots(
         route_mix_df = (paper_external === nothing) ? nothing : paper_external.route_mix_df
         if !(route_mix_df === nothing) &&
            nrow(route_mix_df) > 0 &&
-           (:none_pct in names(route_mix_df)) &&
-           (:threads_pct in names(route_mix_df)) &&
-           (:process_pct in names(route_mix_df))
+           (:none_pct in propertynames(route_mix_df)) &&
+           (:threads_pct in propertynames(route_mix_df)) &&
+           (:process_pct in propertynames(route_mix_df))
             local_df = copy(route_mix_df)
-            if :mode in names(local_df)
+            if :mode in propertynames(local_df)
                 mask = [_is_adaptive_mode_token(v) for v in local_df.mode]
                 if any(mask)
                     local_df = local_df[mask, :]
                 end
             end
             if nrow(local_df) > 0
-                labels = if :rung in names(local_df)
+                labels = if :rung in propertynames(local_df)
                     _plot_axis_label.(String.(local_df.rung))
-                elseif :mode in names(local_df)
+                elseif :mode in propertynames(local_df)
                     _plot_axis_label.(String.(local_df.mode))
                 else
                     _plot_axis_label.(string.("adaptive_", collect(1:nrow(local_df))))
@@ -933,36 +933,43 @@ function generate_runtime_plots(
                 )
                 push!(panels, p_route)
             end
-        elseif nrow(raw_df) > 0 && (:outer_route in names(raw_df))
-            counts = Dict("none" => 0, "threads" => 0, "process" => 0, "other" => 0)
-            for v in raw_df.outer_route
-                token = lowercase(strip(String(v)))
-                if haskey(counts, token)
-                    counts[token] += 1
-                else
-                    counts["other"] += 1
-                end
+        elseif nrow(raw_df) > 0 && (:outer_route in propertynames(raw_df))
+            route_rows = if :is_terminal_attempt in propertynames(raw_df)
+                raw_df[[value !== false for value in raw_df.is_terminal_attempt], :]
+            else
+                raw_df
             end
-            denom = max(1, nrow(raw_df))
-            labels = ["none", "threads", "process", "other"]
-            vals = [100.0 * counts[label] / denom for label in labels]
-            p_route = Plots.bar(
-                labels,
-                vals;
-                color=["#9aa4b2", "#3f7fb3", "#2f8f5b", "#c06c84"],
-                title="Observed Outer-Route Distribution",
-                xlabel="Outer Route",
-                ylabel="Share of Runs [%]",
-                _plot_margins(size=(2400, 760), bottom_mm=42, right_mm=42, legend=false)...
-            )
-            push!(panels, p_route)
+            if nrow(route_rows) > 0
+                counts = Dict("none" => 0, "threads" => 0, "process" => 0, "other" => 0)
+                for v in route_rows.outer_route
+                    token = lowercase(strip(String(v)))
+                    if haskey(counts, token)
+                        counts[token] += 1
+                    else
+                        counts["other"] += 1
+                    end
+                end
+                denom = max(1, nrow(route_rows))
+                labels = ["none", "threads", "process", "other"]
+                vals = [100.0 * counts[label] / denom for label in labels]
+                p_route = Plots.bar(
+                    labels,
+                    vals;
+                    color=["#9aa4b2", "#3f7fb3", "#2f8f5b", "#c06c84"],
+                    title="Observed Outer-Route Distribution",
+                    xlabel="Outer Route",
+                    ylabel="Share of Runs [%]",
+                    _plot_margins(size=(2400, 760), bottom_mm=42, right_mm=42, legend=false)...
+                )
+                push!(panels, p_route)
+            end
         end
 
         if !(inner_hint_layer_df === nothing) &&
            nrow(inner_hint_layer_df) > 0 &&
-           (:layer in names(inner_hint_layer_df)) &&
-           (:confidence_mean in names(inner_hint_layer_df)) &&
-           (:regret_mean_ns in names(inner_hint_layer_df))
+           (:layer in propertynames(inner_hint_layer_df)) &&
+           (:confidence_mean in propertynames(inner_hint_layer_df)) &&
+           (:regret_mean_ns in propertynames(inner_hint_layer_df))
             hint_df = inner_hint_layer_df[
                 .!ismissing.(inner_hint_layer_df.confidence_mean) .&
                 .!ismissing.(inner_hint_layer_df.regret_mean_ns), :
@@ -997,9 +1004,9 @@ function generate_runtime_plots(
         regret_summary_df = (paper_external === nothing) ? nothing : paper_external.cross_adaptive_regret_summary_df
         if !(regret_summary_df === nothing) &&
            nrow(regret_summary_df) > 0 &&
-           (:adaptive_mode in names(regret_summary_df)) &&
-           (:mean_time_regret_pct in names(regret_summary_df)) &&
-           (:win_rate_pct in names(regret_summary_df))
+           (:adaptive_mode in propertynames(regret_summary_df)) &&
+           (:mean_time_regret_pct in propertynames(regret_summary_df)) &&
+           (:win_rate_pct in propertynames(regret_summary_df))
             local_df = regret_summary_df
             labels = _plot_axis_label.(String.(local_df.adaptive_mode))
             mean_regret = [v isa Missing ? NaN : Float64(v) for v in local_df.mean_time_regret_pct]
@@ -1047,8 +1054,8 @@ function generate_runtime_plots(
         layer_df = paper_external.layer_attribution_speedup_df
         if !(layer_df === nothing) &&
            nrow(layer_df) > 0 &&
-           (:layer_set in names(layer_df)) &&
-           (:total_speedup_vs_outer_only in names(layer_df))
+           (:layer_set in propertynames(layer_df)) &&
+           (:total_speedup_vs_outer_only in propertynames(layer_df))
             speed_by_layer = Dict{String, Float64}()
             for row in eachrow(layer_df)
                 layer = lowercase(strip(String(row.layer_set)))
@@ -1093,9 +1100,9 @@ function generate_runtime_plots(
     if _paper_figure_pack_enabled()
         density_df = density_backend_breakdown_df === nothing ? summarize_density_backend_breakdown(raw_df) : density_backend_breakdown_df
         if nrow(density_df) > 0 &&
-           (:density_backend_bucket in names(density_df)) &&
-           (:total_time_mean_s in names(density_df)) &&
-           (:sim_seconds_per_wall_second_mean in names(density_df))
+           (:density_backend_bucket in propertynames(density_df)) &&
+           (:total_time_mean_s in propertynames(density_df)) &&
+           (:sim_seconds_per_wall_second_mean in propertynames(density_df))
             bucket_order = [
                 "gram_point_to_point",
                 "gram_surrogate",
@@ -1163,11 +1170,11 @@ function generate_runtime_plots(
         deep_df = paper_external.deep_accuracy_df
         if !(deep_df === nothing) &&
            nrow(deep_df) > 0 &&
-           (:rung in names(deep_df)) &&
-           (:traj_pos_rel_rms_median_pct in names(deep_df)) &&
-           (:traj_vel_rel_rms_median_pct in names(deep_df))
+           (:rung in propertynames(deep_df)) &&
+           (:traj_pos_rel_rms_median_pct in propertynames(deep_df)) &&
+           (:traj_vel_rel_rms_median_pct in propertynames(deep_df))
             local_df = copy(deep_df)
-            if :mode in names(local_df)
+            if :mode in propertynames(local_df)
                 sort!(local_df, :mode)
             end
             labels = _plot_axis_label.(String.(local_df.rung))
@@ -1185,7 +1192,7 @@ function generate_runtime_plots(
             )
             push!(panels, p_traj)
 
-            if (:periapsis_time_abs_err_p90_s in names(local_df)) && (:interface_time_abs_err_p90_s in names(local_df))
+            if (:periapsis_time_abs_err_p90_s in propertynames(local_df)) && (:interface_time_abs_err_p90_s in propertynames(local_df))
                 peri_p90 = [v isa Missing ? NaN : Float64(v) for v in local_df.periapsis_time_abs_err_p90_s]
                 interface_p90 = [v isa Missing ? NaN : Float64(v) for v in local_df.interface_time_abs_err_p90_s]
                 p_event = Plots.bar(
@@ -1201,7 +1208,7 @@ function generate_runtime_plots(
                 push!(panels, p_event)
             end
 
-            if (:propellant_rel_err_p90_pct in names(local_df)) && (:control_impulse_rel_err_p90_pct in names(local_df))
+            if (:propellant_rel_err_p90_pct in propertynames(local_df)) && (:control_impulse_rel_err_p90_pct in propertynames(local_df))
                 prop_p90 = [v isa Missing ? NaN : Float64(v) for v in local_df.propellant_rel_err_p90_pct]
                 impulse_p90 = [v isa Missing ? NaN : Float64(v) for v in local_df.control_impulse_rel_err_p90_pct]
                 p_control = Plots.bar(
@@ -1217,7 +1224,7 @@ function generate_runtime_plots(
                 push!(panels, p_control)
             end
 
-            if :callback_exact_match_pct in names(local_df)
+            if :callback_exact_match_pct in propertynames(local_df)
                 callback_match = [v isa Missing ? NaN : Float64(v) for v in local_df.callback_exact_match_pct]
                 p_callback = Plots.bar(
                     labels,
@@ -1235,9 +1242,9 @@ function generate_runtime_plots(
         mc_df = paper_external.montecarlo_parity_df
         if !(mc_df === nothing) &&
            nrow(mc_df) > 0 &&
-           (:mode in names(mc_df)) &&
-           (:rung in names(mc_df)) &&
-           (:event_time_ks_distance in names(mc_df))
+           (:mode in propertynames(mc_df)) &&
+           (:rung in propertynames(mc_df)) &&
+           (:event_time_ks_distance in propertynames(mc_df))
             agg = combine(
                 groupby(mc_df, [:mode, :rung]),
                 :event_time_ks_distance => (v -> _safe_stat(v, median)) => :event_ks_median,
@@ -1317,8 +1324,8 @@ function generate_runtime_plots(
         speedup_summary_df = paper_external.cross_speedup_summary_df
         if !(speedup_summary_df === nothing) &&
            nrow(speedup_summary_df) > 0 &&
-           (:rung in names(speedup_summary_df)) &&
-           (:median_speedup_vs_r0 in names(speedup_summary_df))
+           (:rung in propertynames(speedup_summary_df)) &&
+           (:median_speedup_vs_r0 in propertynames(speedup_summary_df))
             local_df = copy(speedup_summary_df)
             sort!(local_df, :median_speedup_vs_r0, rev=true)
             labels = _plot_axis_label.(String.(local_df.rung))
@@ -1339,12 +1346,12 @@ function generate_runtime_plots(
         regret_summary_df = paper_external.cross_adaptive_regret_summary_df
         if !(regret_summary_df === nothing) &&
            nrow(regret_summary_df) > 0 &&
-           (:adaptive_mode in names(regret_summary_df)) &&
-           (:mean_time_regret_pct in names(regret_summary_df))
+           (:adaptive_mode in propertynames(regret_summary_df)) &&
+           (:mean_time_regret_pct in propertynames(regret_summary_df))
             local_df = regret_summary_df
             labels = _plot_axis_label.(String.(local_df.adaptive_mode))
             regret_pct = [v isa Missing ? NaN : Float64(v) for v in local_df.mean_time_regret_pct]
-            win_rate = (:win_rate_pct in names(local_df)) ?
+            win_rate = (:win_rate_pct in propertynames(local_df)) ?
                 [v isa Missing ? NaN : Float64(v) for v in local_df.win_rate_pct] :
                 fill(NaN, nrow(local_df))
             p_regret = Plots.plot(
@@ -1365,20 +1372,20 @@ function generate_runtime_plots(
         route_mix_summary_df = paper_external.cross_route_mix_summary_df
         if !(route_mix_summary_df === nothing) &&
            nrow(route_mix_summary_df) > 0 &&
-           (:none_pct_mean in names(route_mix_summary_df)) &&
-           (:threads_pct_mean in names(route_mix_summary_df)) &&
-           (:process_pct_mean in names(route_mix_summary_df))
+           (:none_pct_mean in propertynames(route_mix_summary_df)) &&
+           (:threads_pct_mean in propertynames(route_mix_summary_df)) &&
+           (:process_pct_mean in propertynames(route_mix_summary_df))
             local_df = copy(route_mix_summary_df)
-            if :mode in names(local_df)
+            if :mode in propertynames(local_df)
                 mask = [_is_adaptive_mode_token(v) for v in local_df.mode]
                 if any(mask)
                     local_df = local_df[mask, :]
                 end
             end
             if nrow(local_df) > 0
-                labels = if :rung in names(local_df)
+                labels = if :rung in propertynames(local_df)
                     _plot_axis_label.(String.(local_df.rung))
-                elseif :mode in names(local_df)
+                elseif :mode in propertynames(local_df)
                     _plot_axis_label.(String.(local_df.mode))
                 else
                     _plot_axis_label.(string.("adaptive_", collect(1:nrow(local_df))))

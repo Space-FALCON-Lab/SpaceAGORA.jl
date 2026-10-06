@@ -71,6 +71,10 @@ end
 end
 
 @inline function _requires_drag_state_callback(effectors::Tuple, args::SimulationConfiguration)::Bool
+    # Stateful guidance/control needs crossings even when both solver phases
+    # use equal tolerances or the configured density is identically zero.
+    any(SimulationLifecycle.requires_atmosphere_events, args.guidance_model.guidance_effectors) && return true
+    any(SimulationLifecycle.requires_atmosphere_events, args.control_model.control_effectors) && return true
     if !_requires_density_callback(effectors, args)
         return false
     end
@@ -170,7 +174,8 @@ function get_callbacks(
     args::SimulationConfiguration;
     saved_values=nothing,
     save_fields=nothing,
-    extra_callbacks=()
+    extra_callbacks=(),
+    record_saved_values::Bool=false
 )::CallbackSet
     save_fields_resolved = _resolve_save_fields(save_fields, args)
     backbone_mode = _simulation_engine_module()._solver_policy_mode() == :gravity_backbone_split
@@ -225,7 +230,12 @@ function get_callbacks(
         callbacks = _append_callback(callbacks, get_quaternion_projection_callback(num_sats, args))
     end
     callbacks = _append_callback(callbacks, get_plume_callback(args))
-    if !backbone_mode && args.simulation_settings.results
+    engine = _simulation_engine_module()
+    output_solver_mode = args.solver_config === nothing ? engine._solver_policy_mode() :
+        engine._solver_policy_mode(args.solver_config)
+    callbacks = _append_callback(callbacks,
+        get_initial_force_output_callback(effectors; solver_mode=output_solver_mode))
+    if !backbone_mode && (args.simulation_settings.results || record_saved_values)
         callbacks = _append_callback(callbacks, get_data_saving_callback(num_sats, args, save_fields_resolved, saved_values))
     end
     callbacks = _append_callbacks(callbacks, extra_callbacks)

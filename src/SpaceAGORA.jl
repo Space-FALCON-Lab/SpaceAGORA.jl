@@ -34,6 +34,36 @@ export HYPRUnavailableError, hypr_available
 @doc (@doc SimulationModel.HYPRSupport.HYPRUnavailableError) HYPRUnavailableError
 using .SimulationModel: RPOPSOConfig, rpo_pso_config, SimulationSettings
 export SimulationSettings
+# --- Simulation setup API: `using SpaceAGORA` alone is enough to configure a run ---
+using .SimulationModel: SimulationConfiguration, MissionConfiguration, MissionType, MissionTime, MissionOrbits, EnvironmentModel, DynamicsModel, GuidanceModel, NavigationModel, ControlModel, SpacecraftModel, Link, Joint, InitialCondition, CartesianInitialCondition, InitialTime, IntegrationTolerances, SaveField, default_save_fields, MaxwellianHeat, InverseSquaredGravityModel, InverseSquaredJ2GravityModel, NBodyGravityModel, make_example_config, make_three_body_spacecraft
+export SimulationConfiguration, MissionConfiguration, MissionType, MissionTime, MissionOrbits, EnvironmentModel, DynamicsModel, GuidanceModel, NavigationModel, ControlModel, SpacecraftModel, Link, Joint, InitialCondition, CartesianInitialCondition, InitialTime, IntegrationTolerances, SaveField, default_save_fields, MaxwellianHeat, InverseSquaredGravityModel, InverseSquaredJ2GravityModel, NBodyGravityModel, make_example_config, make_three_body_spacecraft
+@doc (@doc SimulationModel.ExampleConfiguration.make_example_config) make_example_config
+@doc (@doc SimulationModel.ExampleConfiguration.make_three_body_spacecraft) make_three_body_spacecraft
+@doc """Dynamics model of a run: the spacecraft list and the tuple of force/torque effectors, `DynamicsModel([spacecraft], effectors)`.""" DynamicsModel
+@doc """Initial orbit of a spacecraft from Keplerian elements (`ra`, `rp`, `i`, `ω`, `Ω`, `ν`).""" InitialCondition
+@doc """Complete one-run scenario: simulation settings, mission configuration, environment, dynamics, guidance, navigation and control models, initial time, and integration tolerances. Pass it to `run_simulation`.""" SimulationConfiguration
+@doc """Mission length and bookkeeping: `mission_type` (`MissionTime` or `MissionOrbits`), `mission_time`, `number_of_orbits`, `keplerian`, `orientation_sim`, and `num_steps_to_save`.""" MissionConfiguration
+@doc """Enum selecting how a mission ends: `MissionTime` (fixed duration) or `MissionOrbits` (fixed orbit count).""" MissionType
+@doc """`MissionType` value: the mission ends after `MissionConfiguration.mission_time` seconds.""" MissionTime
+@doc """`MissionType` value: the mission ends after `MissionConfiguration.number_of_orbits` orbits.""" MissionOrbits
+@doc """Planet, atmosphere density model, ephemerides model, thermal model, entry-interface altitude `EI` (km), and topography/wind switches for a run.""" EnvironmentModel
+@doc """Guidance effectors and their update rates for a run (`guidance_effectors`, `guidance_rates`).""" GuidanceModel
+@doc """Navigation effectors and their update rates for a run (`navigation_effectors`, `navigation_rates`).""" NavigationModel
+@doc """Control effectors and their update rates for a run (`control_effectors`, `control_rates`).""" ControlModel
+@doc """Multi-link spacecraft: joints, links, root link, mass properties, propellant mass, initial condition, and id. Build the links with `Link` and `Joint`, or use `make_three_body_spacecraft`.""" SpacecraftModel
+@doc """One rigid body of a `SpacecraftModel`: mass, dimensions, reference area, offset `r`, attitude `q`, and reflection coefficient. Exported at the root; note that other packages may also export a `Link` name.""" Link
+@doc """Articulated connection between two `Link`s of a `SpacecraftModel`. Exported at the root; note that other packages may also export a `Joint` name.""" Joint
+@doc """Initial spacecraft state given as a Cartesian position and velocity.""" CartesianInitialCondition
+@doc """Epoch at which a simulation starts (calendar date and time).""" InitialTime
+@doc """ODE solver tolerances and maximum step sizes for the orbit and atmosphere phases (`reltol_*`, `abstol_*`, `dt_max_*`).""" IntegrationTolerances
+@doc """Declaration of one quantity written to the saved results.""" SaveField
+@doc """    default_save_fields(config::SimulationConfiguration)
+
+Return the default `SaveField`s for `config`.""" default_save_fields
+@doc """Free-molecular heating model with a thermal accommodation factor (`thermal_accomodation_factor`) for a given planet.""" MaxwellianHeat
+@doc """Point-mass (inverse-square) gravity effector.""" InverseSquaredGravityModel
+@doc """Point-mass gravity with the J2 oblateness term.""" InverseSquaredJ2GravityModel
+@doc """Third-body gravity effector using ephemerides for the listed bodies.""" NBodyGravityModel
 @doc "Output and checkpoint settings for a simulation. The opt-in RPO pilot refuses checkpoint writing and resume." SimulationSettings
 @doc """
     RPOPSOConfig(; kwargs...)
@@ -68,6 +98,7 @@ using .ParallelProcess: ProcessPool, campaign_process_pool, ensure_process_worke
 ## 2.3. Simulation Engine
 using .SimulationEngine: ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 using .SimulationEngine: simulation_engine_config_from_env
+using .SimulationEngine: SimulationResults
 using .SimulationEngine: prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
 run_simulation(args...; kwargs...) = SimulationEngine.run_simulation(args...; kwargs...)
 
@@ -126,6 +157,7 @@ using .SimulationModel: DescentPhaseTargets, apollo11_descent_targets, ApolloDes
 using .SimulationModel: ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
 using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
 using .SimulationModel: control_thruster_levels
+using .SimulationLifecycle: bind_spacecraft
 using .SimulationModel: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 using .SimulationModel: AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 using .SimulationModel: SolarPanelAngleOfAttackControlModel
@@ -178,6 +210,7 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationEngine.ArtifactConfig) ArtifactConfig
 @doc (@doc SimulationEngine.SimulationEngineConfig) SimulationEngineConfig
 @doc (@doc SimulationEngine.simulation_engine_config_from_env) simulation_engine_config_from_env
+@doc (@doc SimulationEngine.SimulationResults) SimulationResults
 @doc (@doc SimulationEngine.run_simulation) run_simulation
 @doc (@doc SimulationEngine.prewarm_nbody_ephemeris_cache) prewarm_nbody_ephemeris_cache
 @doc (@doc SimulationEngine.load_nbody_ephemeris_cache!) load_nbody_ephemeris_cache!
@@ -466,13 +499,13 @@ export DescentPhaseTargets, apollo11_descent_targets, ApolloDescentConfig, Apoll
 export ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
 export getDensity, getDensityBatch!, with_density_model_epoch
 export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
-export control_thruster_levels
+export control_thruster_levels, bind_spacecraft
 export AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 export AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 export SolarPanelAngleOfAttackControlModel
 export ApoapsisTargetPeriapsisRaiseGuidanceModel
 export VerificationRequest, VerificationResult
-export run_verification, run_verification_cli, run_study, run_simulation
+export run_verification, run_verification_cli, run_study, run_simulation, SimulationResults
 export station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
 export VisualizationScene, PlanetSpec, SpacecraftGeometry, LinkBox, AtmosphereSpec, atmosphere_spec, ArmGeometry, arm_geometry
 export load_model_triangles, model_bounding_box, sample_model_pointcloud, articulate_triangles, articulation_payload

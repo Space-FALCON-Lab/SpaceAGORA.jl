@@ -13,11 +13,18 @@ include(joinpath(@__DIR__, "..", "scripts", "setup_hypr.jl"))
             @test_throws ErrorException HYPRInstallation.source_spec(root;local_path="")
             write(pin,text)
         end
+        old=read(pin,String)
+        write(pin,replace(old,"0.1.0"=>"0.1.1"))
+        @test HYPRInstallation.source_spec(root;local_path="").rev == repeat("a",40)
+        write(pin,old)
         old=read(pin,String);write(pin,replace(old,"0.1.0"=>"0.9.0"))
         @test_throws ErrorException HYPRInstallation.source_spec(root;local_path="")
         write(pin,old)
         dev=joinpath(root,"dev");mkpath(dev)
         write(joinpath(dev,"Project.toml"),"uuid = \"$(HYPRInstallation.HYPR_UUID)\"\nversion = \"0.1.0\"\n")
+        @test HYPRInstallation.source_spec(root;local_path=dev).path == dev
+        dev_project=joinpath(dev,"Project.toml")
+        write(dev_project,replace(read(dev_project,String),"0.1.0"=>"0.1.1"))
         @test HYPRInstallation.source_spec(root;local_path=dev).path == dev
         write(joinpath(dev,"Project.toml"),"uuid = \"$(HYPRInstallation.HYPR_UUID)\"\nversion = \"0.9.0\"\n")
         @test_throws ErrorException HYPRInstallation.source_spec(root;local_path=dev)

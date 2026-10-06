@@ -24,6 +24,7 @@ surface.
 ## Stable surface
 
 The generated [Public API](generated/public_api.md) reference and its linked
+[Simulation Setup API](generated/simulation_setup_api.md),
 [Terrain API](generated/terrain_api.md),
 [Mesh Aerodynamics API](generated/mesh_aerodynamics_api.md) and
 [Visualization API](generated/visualization_api.md) pages document the supported
@@ -31,6 +32,9 @@ exported symbols. That surface currently includes:
 
 - simulation entrypoints such as `run_simulation`
 - typed runtime configuration objects
+- simulation setup types and helpers (`SimulationConfiguration`, `SpacecraftModel`,
+  `Link`, `InitialTime`, `make_example_config`, ...), so `using SpaceAGORA` alone
+  is enough to configure a run
 - no-GRAM baseline constructors and builders
 - selected abstract extension interfaces
 - selected extension hook functions

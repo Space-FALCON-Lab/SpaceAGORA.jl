@@ -1,4 +1,5 @@
 module GuidanceHooks
+    import ...SimulationLifecycle
     using ..Structure
     using ..Geodesy: geodetic_altitude, ellipsoid_surface_radius, radius_for_geodetic_altitude
 
@@ -88,6 +89,7 @@ module GuidanceHooks
     include(joinpath(@__DIR__, "rpo", "rpo_guidance_hooks.jl"))
     include(joinpath(@__DIR__, "aerobraking", "interfaces.jl"))
     include(joinpath(@__DIR__, "target_energy_bracketing.jl"))
+    include(joinpath(@__DIR__, "aerobraking", "energy_depletion_lifecycle.jl"))
     include(joinpath(@__DIR__, "aerobraking", "common", "closed_form_solution.jl"))
     include(joinpath(@__DIR__, "aerobraking", "common", "heat_rate_models.jl"))
     include(joinpath(@__DIR__, "aerobraking", "t_edg", "trajectory_predictor.jl"))
@@ -102,4 +104,11 @@ module GuidanceHooks
 
     include(joinpath(@__DIR__, "thruster_guidance", "thruster_guidance_functions.jl"))
     include(joinpath(@__DIR__, "landing", "apollo_descent_guidance.jl"))
+
+    # Per-spacecraft GNC binding (see SimulationLifecycle.bind_spacecraft).
+    function SimulationLifecycle.bind_spacecraft(m::ApolloDescentGuidanceModel, sat_idx::Int)
+        ids = _descent_indices(m.state, (sat_idx,))
+        m.spacecraft_indices == ids && return m
+        return ApolloDescentGuidanceModel(m.config, m.state, m.terrain, ids)
+    end
 end

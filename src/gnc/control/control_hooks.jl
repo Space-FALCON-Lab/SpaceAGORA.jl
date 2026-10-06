@@ -82,6 +82,7 @@ module ControlHooks
     include(joinpath(@__DIR__, "heat_load_control.jl"))
     include(joinpath(@__DIR__, "struct_load_control.jl"))
     include(joinpath(@__DIR__, "targeting_control.jl"))
+    include(joinpath(@__DIR__, "energy_depletion_lifecycle.jl"))
     include(joinpath(@__DIR__, "rpo_mpc", "lqmpc.jl"))
     include(joinpath(@__DIR__, "rpo_mpc", "rpo_control_types.jl"))
     include(joinpath(@__DIR__, "rpo_mpc", "thruster_allocator.jl"))
@@ -93,4 +94,23 @@ module ControlHooks
     include(joinpath(@__DIR__, "aerobraking", "constraint_tracking.jl"))
     include(joinpath(@__DIR__, "aerobraking", "tracking_executor.jl"))
     include(joinpath(@__DIR__, "landing", "apollo_descent_control.jl"))
+
+    # Per-spacecraft GNC binding (see SimulationLifecycle.bind_spacecraft).
+    function SimulationLifecycle.bind_spacecraft(m::MagneticMomentumManagerModel, sat_idx::Int)
+        m.sat_idx == sat_idx && return m
+        b = SimulationLifecycle._shallow_copy(m)
+        b.sat_idx = sat_idx
+        return b
+    end
+    function SimulationLifecycle.bind_spacecraft(m::RobotArmControlEffector, sat_idx::Int)
+        m.spacecraft_idx == sat_idx && return m
+        b = SimulationLifecycle._shallow_copy(m)
+        b.spacecraft_idx = sat_idx
+        return b
+    end
+    function SimulationLifecycle.bind_spacecraft(m::ApolloDescentControlModel, sat_idx::Int)
+        ids = _descent_indices(m.state, (sat_idx,))
+        m.spacecraft_indices == ids && return m
+        return ApolloDescentControlModel(m.config, m.guidance, m.state, m.terrain, m.actuators, ids)
+    end
 end

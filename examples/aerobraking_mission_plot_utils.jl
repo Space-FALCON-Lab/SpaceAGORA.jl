@@ -9,6 +9,9 @@ using LinearAlgebra
 using Logging
 using Dates
 
+include(joinpath(@__DIR__, "support", "aerobraking_result_tables.jl"))
+include(joinpath(@__DIR__, "support", "aerobraking_plot_errors.jl"))
+
 Base.@kwdef struct AerobrakingMissionSpiceConfig
     mission_name::String
     target::String
@@ -217,17 +220,6 @@ end
 function _mars_odyssey_initial_condition_from_spice(initial_time::InitialTime, spice_path::String)::CartesianInitialCondition
     _set_aerobraking_mission_spice_config!(MARS_ODYSSEY_SPICE_CONFIG)
     return _spice_initial_condition_from_config(initial_time, spice_path, MARS_ODYSSEY_SPICE_CONFIG)
-end
-
-# Non-SPICE result consumers share a loading boundary; event tables keep their
-# separate schemas and SPICE readers retain their kernel-furnishing order.
-function _read_simulation_results(csv_path::String)::DataFrame
-    isfile(csv_path) || throw(ArgumentError("Simulation results CSV not found at $(abspath(csv_path))."))
-    return CSV.read(csv_path, DataFrame)
-end
-
-function _require_float_column(df::DataFrame, name::Symbol)::Vector{Float64}
-    return Float64.(df[!, name])
 end
 
 function _correction_reset_times_for_results(csv_path::String)::Vector{Float64}
@@ -1079,26 +1071,6 @@ function _save_aero_sideways_components_plot(args::SimulationConfiguration)
     return plot_path
 end
 
-# Keep each request limited to its own three columns and convert metres to
-# kilometres (or metres/second to kilometres/second) after Float64 conversion.
-function _simulation_vector_samples(args::SimulationConfiguration, columns::NTuple{3,Symbol})
-    csv_path = joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
-    df = _read_simulation_results(csv_path)
-    time_s = _require_float_column(df, :time)
-    x = _require_float_column(df, columns[1]) ./ 1e3
-    y = _require_float_column(df, columns[2]) ./ 1e3
-    z = _require_float_column(df, columns[3]) ./ 1e3
-    return time_s, x, y, z
-end
-
-function _simulation_position_samples(args::SimulationConfiguration)
-    return _simulation_vector_samples(args, (:sc1_pos_1, :sc1_pos_2, :sc1_pos_3))
-end
-
-function _simulation_velocity_samples(args::SimulationConfiguration)
-    return _simulation_vector_samples(args, (:sc1_vel_1, :sc1_vel_2, :sc1_vel_3))
-end
-
 function _orbital_elements_from_state_samples(
     x_km::AbstractVector{<:Real},
     y_km::AbstractVector{<:Real},
@@ -1318,41 +1290,6 @@ function _add_vertical_markers!(p, marker_times)
         vline!(p, marker_times.atmosphere_exit_s ./ 3600.0; label="Atmosphere Exit", color=:seagreen4, linestyle=:dashdot, linewidth=1.6, alpha=0.8)
     end
     return p
-end
-
-function _rtn_error_components(
-    err_x::AbstractVector{<:Real},
-    err_y::AbstractVector{<:Real},
-    err_z::AbstractVector{<:Real},
-    ref_x::AbstractVector{<:Real},
-    ref_y::AbstractVector{<:Real},
-    ref_z::AbstractVector{<:Real},
-    ref_vx::AbstractVector{<:Real},
-    ref_vy::AbstractVector{<:Real},
-    ref_vz::AbstractVector{<:Real}
-)
-    n = length(err_x)
-    err_r = Vector{Float64}(undef, n)
-    err_t = Vector{Float64}(undef, n)
-    err_n = Vector{Float64}(undef, n)
-    @inbounds for i in 1:n
-        r_ref = SVector{3, Float64}(ref_x[i], ref_y[i], ref_z[i])
-        v_ref = SVector{3, Float64}(ref_vx[i], ref_vy[i], ref_vz[i])
-        err = SVector{3, Float64}(err_x[i], err_y[i], err_z[i])
-        r_mag = norm(r_ref)
-        h_vec = cross(r_ref, v_ref)
-        h_mag = norm(h_vec)
-        if r_mag <= eps(Float64) || h_mag <= eps(Float64)
-            throw(ArgumentError("Cannot construct RTN frame at sample $i: degenerate reference position/angular momentum."))
-        end
-        r_hat = r_ref / r_mag
-        n_hat = h_vec / h_mag
-        t_hat = cross(n_hat, r_hat)
-        err_r[i] = max(abs(dot(err, r_hat)), eps(Float64))
-        err_t[i] = max(abs(dot(err, t_hat)), eps(Float64))
-        err_n[i] = max(abs(dot(err, n_hat)), eps(Float64))
-    end
-    return err_r, err_t, err_n
 end
 
 function _save_trajectory_comparison_plot(args::SimulationConfiguration, planet, initial_time::InitialTime, spice_path::String)

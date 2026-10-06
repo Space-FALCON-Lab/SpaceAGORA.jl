@@ -34,9 +34,40 @@ const PUBLIC_API_SECTIONS = [
         (owner = :SpaceAGORA, symbol = :rpo_run_report, rendered = "SpaceAGORA.rpo_run_report"),
     ]),
     (
+        title = "Simulation Setup",
+        items = [
+            (owner = :SpaceAGORA, symbol = :SimulationConfiguration, rendered = "SpaceAGORA.SimulationConfiguration"),
+            (owner = :SpaceAGORA, symbol = :MissionConfiguration, rendered = "SpaceAGORA.MissionConfiguration"),
+            (owner = :SpaceAGORA, symbol = :MissionType, rendered = "SpaceAGORA.MissionType"),
+            (owner = :SpaceAGORA, symbol = :MissionTime, rendered = "SpaceAGORA.MissionTime"),
+            (owner = :SpaceAGORA, symbol = :MissionOrbits, rendered = "SpaceAGORA.MissionOrbits"),
+            (owner = :SpaceAGORA, symbol = :EnvironmentModel, rendered = "SpaceAGORA.EnvironmentModel"),
+            (owner = :SpaceAGORA, symbol = :DynamicsModel, rendered = "SpaceAGORA.DynamicsModel"),
+            (owner = :SpaceAGORA, symbol = :GuidanceModel, rendered = "SpaceAGORA.GuidanceModel"),
+            (owner = :SpaceAGORA, symbol = :NavigationModel, rendered = "SpaceAGORA.NavigationModel"),
+            (owner = :SpaceAGORA, symbol = :ControlModel, rendered = "SpaceAGORA.ControlModel"),
+            (owner = :SpaceAGORA, symbol = :SpacecraftModel, rendered = "SpaceAGORA.SpacecraftModel"),
+            (owner = :SpaceAGORA, symbol = :Link, rendered = "SpaceAGORA.Link"),
+            (owner = :SpaceAGORA, symbol = :Joint, rendered = "SpaceAGORA.Joint"),
+            (owner = :SpaceAGORA, symbol = :InitialCondition, rendered = "SpaceAGORA.InitialCondition"),
+            (owner = :SpaceAGORA, symbol = :CartesianInitialCondition, rendered = "SpaceAGORA.CartesianInitialCondition"),
+            (owner = :SpaceAGORA, symbol = :InitialTime, rendered = "SpaceAGORA.InitialTime"),
+            (owner = :SpaceAGORA, symbol = :IntegrationTolerances, rendered = "SpaceAGORA.IntegrationTolerances"),
+            (owner = :SpaceAGORA, symbol = :SaveField, rendered = "SpaceAGORA.SaveField"),
+            (owner = :SpaceAGORA, symbol = :default_save_fields, rendered = "SpaceAGORA.default_save_fields"),
+            (owner = :SpaceAGORA, symbol = :MaxwellianHeat, rendered = "SpaceAGORA.MaxwellianHeat"),
+            (owner = :SpaceAGORA, symbol = :InverseSquaredGravityModel, rendered = "SpaceAGORA.InverseSquaredGravityModel"),
+            (owner = :SpaceAGORA, symbol = :InverseSquaredJ2GravityModel, rendered = "SpaceAGORA.InverseSquaredJ2GravityModel"),
+            (owner = :SpaceAGORA, symbol = :NBodyGravityModel, rendered = "SpaceAGORA.NBodyGravityModel"),
+            (owner = :SpaceAGORA, symbol = :make_example_config, rendered = "SpaceAGORA.make_example_config"),
+            (owner = :SpaceAGORA, symbol = :make_three_body_spacecraft, rendered = "SpaceAGORA.make_three_body_spacecraft")
+        ]
+    ),
+    (
         title = "Simulation",
         items = [
             (owner = :SpaceAGORA, symbol = :run_simulation, rendered = "SpaceAGORA.run_simulation"),
+            (owner = :SpaceAGORA, symbol = :SimulationResults, rendered = "SpaceAGORA.SimulationResults"),
             (owner = :SpaceAGORA, symbol = :StateAnchor, rendered = "SpaceAGORA.StateAnchor"),
             (owner = :SpaceAGORA, symbol = :get_state_anchor_callback, rendered = "SpaceAGORA.get_state_anchor_callback"),
             (owner = :SpaceAGORA, symbol = :prewarm_nbody_ephemeris_cache, rendered = "SpaceAGORA.prewarm_nbody_ephemeris_cache"),
@@ -177,7 +208,8 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :calcControlEffect!, rendered = "SpaceAGORA.calcControlEffect!"),
             (owner = :SpaceAGORA, symbol = :calcControlForceTorque, rendered = "SpaceAGORA.calcControlForceTorque"),
             (owner = :SpaceAGORA, symbol = :calcControlMassFlowRate, rendered = "SpaceAGORA.calcControlMassFlowRate"),
-            (owner = :SpaceAGORA, symbol = :control_thruster_levels, rendered = "SpaceAGORA.control_thruster_levels")
+            (owner = :SpaceAGORA, symbol = :control_thruster_levels, rendered = "SpaceAGORA.control_thruster_levels"),
+            (owner = :SpaceAGORA, symbol = :bind_spacecraft, rendered = "SpaceAGORA.bind_spacecraft")
         ]
     ),
     (

@@ -262,15 +262,9 @@ function _refresh_crossing_atmosphere_flags!(integrator, events)
     p = integrator.p
     engine = _simulation_engine_module()
     boundary = p.args.environment_model.planet.Rp_e + p.args.environment_model.EI * 1e3
-    boundary_roundoff = 64 * eps(boundary)
+    previous_inside = copy(p.shared_buffers.in_atmosphere)
     for i in eachindex(p.is_active)
-        position = engine._state_position_ii(integrator.u, i)
-        height = norm(position) - boundary
-        now_inside = if abs(height) <= boundary_roundoff
-            dot(position, engine._state_velocity_ii(integrator.u, i)) <= 0.0
-        else
-            height < 0.0
-        end
+        now_inside = engine._inside_atmosphere_at_state(integrator.u, i, boundary)
         events[i] != 0 && (now_inside = events[i] < 0)
         # An exit invalidates a vacuum prediction even if this member's own
         # callback was omitted from a simultaneous event by the solver library.
@@ -281,6 +275,18 @@ function _refresh_crossing_atmosphere_flags!(integrator, events)
         end
         p.shared_buffers.in_atmosphere[i] = now_inside
         p.shared_buffers.in_atmosphere_sample_t[i] = Float64(integrator.t)
+    end
+    # Notify only after the complete simultaneous mask is reconciled. Repeated
+    # delivery of the same direction must not erase a newly computed plan.
+    for i in eachindex(p.is_active)
+        inside = p.shared_buffers.in_atmosphere[i]
+        inside == previous_inside[i] && continue
+        for model in p.args.guidance_model.guidance_effectors
+            SimulationLifecycle.atmosphere_transition!(model, integrator.u, p, integrator.t, i, inside)
+        end
+        for model in p.args.control_model.control_effectors
+            SimulationLifecycle.atmosphere_transition!(model, integrator.u, p, integrator.t, i, inside)
+        end
     end
     return nothing
 end
@@ -363,6 +369,39 @@ function get_quaternion_projection_callback(num_sats::Int, args::SimulationConfi
         initialize=(cb, u, t, integrator) -> affect!(integrator),
         save_positions=(false, false)
     )
+end
+
+# Calibration happens before callback initialization. Arm deferred initial
+# output here, after physical initializers and before either saver. Reinit and
+# checkpoint segments get their own time/state/destinations; completed output
+# arrays never alias the live caches.
+function get_initial_force_output_callback(effectors::Tuple; solver_mode::Symbol=:tsit5)
+    # These drivers initialize separate subsolves/backfilled output; they do
+    # not guarantee an aero evaluation of this saved state before rearming.
+    solver_mode in (:multirate, :gravity_backbone_split, :symplectic) && return nothing
+    # Native aero models (including mesh and scaled wrappers) are implicit.
+    # A custom explicit atmospheric partition needs both-part completion
+    # tracking; preserve that unsupported path instead of publishing early.
+    if solver_mode === :split_imex && any(model ->
+            _simulation_model_module.environment_requirements(model).atmosphere &&
+            _simulation_model_module.solver_partition(model) !== :implicit, effectors)
+        return nothing
+    end
+    # Honor the sampling contract, including wrappers and mesh aerodynamics.
+    any(model -> _simulation_model_module.environment_requirements(model).atmosphere,
+        effectors) || return nothing
+    function initialize(cb, u, t, integrator)
+        p = integrator.p
+        cache = p.save_cache
+        _simulation_engine_module()._initialize_save_cache_buffers!(p)
+        empty!(cache.initial_force_output_destinations)
+        cache.initial_force_output_time[] = Float64(t)
+        cache.initial_force_output_state[] = nothing
+        cache.initial_force_output_pending[] = true
+        return nothing
+    end
+    return DiscreteCallback((u, t, integrator) -> false, integrator -> nothing;
+        initialize=initialize, save_positions=(false, false))
 end
 
 function get_data_saving_callback(
@@ -607,6 +646,15 @@ function _record_default_save_fields_fused!(
         end
     end
 
+    # These views point only at this sample's columns. Later cache writes do
+    # not alias them; a single post-RHS publication finishes the initial row.
+    if p.save_cache.initial_force_output_pending[] &&
+            t_float == p.save_cache.initial_force_output_time[]
+        _register_initial_force_output!(@view(drag_storage[:, :, sample_idx]), :drag, u, t, p)
+        _register_initial_force_output!(@view(lift_storage[:, :, sample_idx]), :lift, u, t, p)
+        _register_initial_force_output!(@view(cross_storage[:, :, sample_idx]), :cross, u, t, p)
+    end
+
     return nothing
 end
 
@@ -638,6 +686,14 @@ end
 
 Return a `SavingCallback` that records into `rec` at `rec.data_rate` seconds.
 Use this as an `extra_callbacks` entry in `run_simulation`.
+
+On ordinary first-order solver paths, initial aerodynamic forces are filled
+from the first actual RHS evaluation of the saved initial state, after
+callbacks have initialized. Split IMEX is supported when all atmospheric
+effectors are in its implicit partition. The separate multirate and gravity
+backbone drivers retain their existing output behavior. This does not query models again. If no matching evaluation occurs
+(for example, initialization aborts or a later custom initializer changes the
+state), those initial force entries remain `NaN`, meaning unavailable.
 """
 function get_trajectory_recorder_callback(rec::TrajectoryRecorder)
     saved_values = SavedValues(Float64, Nothing)

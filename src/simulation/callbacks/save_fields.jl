@@ -30,6 +30,58 @@ end
     return velocities
 end
 
+# Initial SavingCallback values are created before the first solver RHS.
+# Register only built-in force arrays, then backfill them from that actual
+# evaluation. This adds no model queries and keeps custom getters unchanged.
+# NaN denotes an unavailable force if initialization aborts before any matching
+# RHS is evaluated; calibration leftovers must never masquerade as output.
+function _register_initial_force_output!(destination, field::Symbol, u, t, p)
+    cache = p.save_cache
+    if cache.initial_force_output_pending[] && Float64(t) == cache.initial_force_output_time[]
+        if cache.initial_force_output_state[] === nothing
+            cache.initial_force_output_state[] = copy(u)
+        end
+        push!(cache.initial_force_output_destinations, (field, destination))
+        if destination isa AbstractVector{<:SVector}
+            fill!(destination, SVector{3, Float64}(NaN, NaN, NaN))
+        else
+            fill!(destination, NaN)
+        end
+    end
+    return destination
+end
+
+function _copy_initial_force_output!(destination::AbstractVector{<:SVector}, source)
+    copyto!(destination, source)
+    return nothing
+end
+
+function _copy_initial_force_output!(destination::AbstractMatrix, source)
+    @inbounds for i in eachindex(source), k in 1:3
+        destination[k, i] = source[i][k]
+    end
+    return nothing
+end
+
+@inline function _publish_initial_force_outputs!(u, t, p)::Nothing
+    cache = p.save_cache
+    cache.initial_force_output_pending[] || return nothing
+    Float64(t) == cache.initial_force_output_time[] || return nothing
+    state = cache.initial_force_output_state[]
+    # An implicit solver may probe a perturbed state at the same time. Only
+    # the exact state saved during callback initialization can publish.
+    state === nothing || isequal(u, state) || return nothing
+    for (field, destination) in cache.initial_force_output_destinations
+        source = field === :drag ? cache.drag_cache :
+            field === :lift ? cache.lift_cache : cache.cross_cache
+        _copy_initial_force_output!(destination, source)
+    end
+    empty!(cache.initial_force_output_destinations)
+    cache.initial_force_output_state[] = nothing
+    cache.initial_force_output_pending[] = false
+    return nothing
+end
+
 @inline function _save_drag(num_sats::Int, u, t, integrator)
     p = integrator.p
     drag_cache = p.save_cache.drag_cache
@@ -37,7 +89,7 @@ end
     @inbounds for i in 1:num_sats
         drags[i] = i <= length(drag_cache) ? drag_cache[i] : SVector{3, Float64}(0.0, 0.0, 0.0)
     end
-    return drags
+    return _register_initial_force_output!(drags, :drag, u, t, p)
 end
 
 @inline function _save_lift(num_sats::Int, u, t, integrator)
@@ -47,7 +99,7 @@ end
     @inbounds for i in 1:num_sats
         lifts[i] = i <= length(lift_cache) ? lift_cache[i] : SVector{3, Float64}(0.0, 0.0, 0.0)
     end
-    return lifts
+    return _register_initial_force_output!(lifts, :lift, u, t, p)
 end
 
 @inline function _save_cross(num_sats::Int, u, t, integrator)
@@ -57,7 +109,7 @@ end
     @inbounds for i in 1:num_sats
         crosses[i] = i <= length(cross_cache) ? cross_cache[i] : SVector{3, Float64}(0.0, 0.0, 0.0)
     end
-    return crosses
+    return _register_initial_force_output!(crosses, :cross, u, t, p)
 end
 
 @inline function _save_wind(num_sats::Int, u, t, integrator)

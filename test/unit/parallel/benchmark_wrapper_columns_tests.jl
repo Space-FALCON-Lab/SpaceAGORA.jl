@@ -198,22 +198,40 @@ end
     end
 end
 
-@testset "aggregate writes correct gate evidence before existing constructor blocker" begin
+# Check the files written by the real aggregate path while tolerating its known
+# constructor omission. Normal completion after a future repair is also valid.
+function run_aggregate_for_saved_output_checks(f)
+    try
+        return f()
+    catch err
+        if !(err isa UndefKeywordError && err.var == :entry_duration_elapsed_s)
+            rethrow()
+        end
+    end
+    return nothing
+end
+
+@testset "aggregate fixture permits completion and rejects unrelated errors" begin
+    @test run_aggregate_for_saved_output_checks(() -> :completed) === :completed
+    @test run_aggregate_for_saved_output_checks(
+        () -> throw(UndefKeywordError(:entry_duration_elapsed_s))) === nothing
+    @test_throws UndefKeywordError run_aggregate_for_saved_output_checks(
+        () -> throw(UndefKeywordError(:raw_path)))
+    @test_throws ErrorException run_aggregate_for_saved_output_checks(
+        () -> error("unrelated aggregation failure"))
+end
+
+@testset "aggregate writes correct saved gate evidence" begin
     mktempdir() do dir
         first_pass = artifact(joinpath(dir,"pass1");bench=2.0,split=1.0,orbit=4.0)
         second_pass = artifact(joinpath(dir,"pass2");gate=DataFrame(pass_all=[false]),bench=4.0,split=3.0,orbit=6.0)
         runs = [ArmPassResult(pass=1,arm=ARM,artifact=first_pass),ArmPassResult(pass=2,arm=ARM,artifact=second_pass)]
         originals = deepcopy([r.artifact.raw_df for r in runs])
-        # Existing unrelated defect: this producer omits the three required
-        # entry-duration fields in ModeRunArtifacts. Keep the real constructor;
-        # assert saved outputs without claiming complete aggregate execution.
-        err = try
+        # Keep the real constructor and saved-output assertions without
+        # requiring its currently missing entry-duration fields to stay broken.
+        run_aggregate_for_saved_output_checks() do
             _aggregate_arm_artifacts(dir,MATRIX,static_config(dir),ARM,runs)
-            nothing
-        catch e
-            e
         end
-        @test err isa UndefKeywordError && err.var == :entry_duration_elapsed_s
         @test isequal([r.artifact.raw_df for r in runs],originals)
         outputs = readdir(joinpath(dir,"aggregate",ARM.label);join=true)
         report = read(only(filter(p->endswith(p,".md"),outputs)),String)

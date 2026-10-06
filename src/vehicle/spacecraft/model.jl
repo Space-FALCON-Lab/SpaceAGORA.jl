@@ -344,46 +344,6 @@ mutable struct Joint
     end
 end
 
-mutable struct SpacecraftModel
-    joints::Vector{Joint} # List of joints
-    links::Vector{Link} # List of links (bodies)
-    root::Link # Root link (main bus or core body)
-    instant_actuation::Bool # Whether control inputs (e.g., solar panel angles) are applied instantly
-    dry_mass::Float64 # Dry mass of the spacecraft
-    prop_mass::Float64 # Fuel mass available for maneuvers
-    inertia_tensor::SMatrix{3, 3, Float64} # Inertia tensor of the spacecraft in the body frame
-    n_reaction_wheels::Int64 # Number of reaction wheels in the spacecraft model
-    n_thrusters::Int64 # Number of thrusters in the spacecraft model
-    initial_condition::AbstractInitialCondition # Initial conditions for the simulation (orbit, attitude, etc.)
-    id::Int64 # Unique identifier for the spacecraft (useful for multi-spacecraft simulations)
-end
-
-function SpacecraftModel(; joints::AbstractVector{<:Joint}=Joint[], links::AbstractVector{<:Link}=Link[], root::Link=Link(root=true),
-                            instant_actuation::Bool=true,
-                            prop_mass::Float64=0.0,
-                            inertia_tensor::SMatrix{3,3,Float64}=SMatrix{3, 3, Float64}(zeros(3,3)),
-                            n_reaction_wheels::Int64=0,
-                            n_thrusters::Int64=0,
-                            initial_condition::AbstractInitialCondition=InitialCondition(),
-                            id::Int64=1)
-    joints_vec = Vector{Joint}(joints)
-    links_vec = Vector{Link}(links)
-
-    dry_mass = 0.0
-    if !any(link -> link === root, links_vec)
-        # Keep the root in the link list so dry-mass aggregation sees the full assembly.
-        push!(links_vec, root) # Include root in the links list for mass calculation
-    end
-    for link in links_vec
-        dry_mass += link.m
-    end
-
-    return SpacecraftModel(joints_vec, links_vec, root, instant_actuation, dry_mass, prop_mass, inertia_tensor, n_reaction_wheels, n_thrusters, initial_condition, id)
-end
-
-# Preserve the collection type in this module while giving configuration its own file.
-include(joinpath(@__DIR__, "..", "..", "simulation", "config", "constellation_configuration.jl"))
-
 """
     GuidanceModel(; guidance_effectors=(), guidance_rates=Float64[])
 
@@ -450,4 +410,65 @@ Tuple of control effectors and the rate (s) at which each is called. `ControlMod
         new{T_Effectors}(control_effectors, control_rates)
     end
 end
+
+mutable struct SpacecraftModel
+    joints::Vector{Joint} # List of joints
+    links::Vector{Link} # List of links (bodies)
+    root::Link # Root link (main bus or core body)
+    instant_actuation::Bool # Whether control inputs (e.g., solar panel angles) are applied instantly
+    dry_mass::Float64 # Dry mass of the spacecraft
+    prop_mass::Float64 # Fuel mass available for maneuvers
+    inertia_tensor::SMatrix{3, 3, Float64} # Inertia tensor of the spacecraft in the body frame
+    n_reaction_wheels::Int64 # Number of reaction wheels in the spacecraft model
+    n_thrusters::Int64 # Number of thrusters in the spacecraft model
+    initial_condition::AbstractInitialCondition # Initial conditions for the simulation (orbit, attitude, etc.)
+    id::Int64 # Unique identifier for the spacecraft (useful for multi-spacecraft simulations)
+    # Optional per-spacecraft GNC. Empty by default. `flatten_spacecraft_gnc` folds these into the
+    # configuration-level GNC tuples once at run setup, binding each effector to this spacecraft's index.
+    guidance::GuidanceModel
+    navigation::NavigationModel
+    control::ControlModel
+end
+
+_empty_guidance() = GuidanceModel((), Float64[])
+_empty_navigation() = NavigationModel((), Float64[])
+_empty_control() = ControlModel((), Float64[])
+
+# Positional form without GNC (kept for existing callers): declares no per-spacecraft GNC.
+SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor,
+                n_reaction_wheels, n_thrusters, initial_condition, id) =
+    SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor,
+                    n_reaction_wheels, n_thrusters, initial_condition, id,
+                    _empty_guidance(), _empty_navigation(), _empty_control())
+
+function SpacecraftModel(; joints::AbstractVector{<:Joint}=Joint[], links::AbstractVector{<:Link}=Link[], root::Link=Link(root=true),
+                            instant_actuation::Bool=true,
+                            prop_mass::Float64=0.0,
+                            inertia_tensor::SMatrix{3,3,Float64}=SMatrix{3, 3, Float64}(zeros(3,3)),
+                            n_reaction_wheels::Int64=0,
+                            n_thrusters::Int64=0,
+                            initial_condition::AbstractInitialCondition=InitialCondition(),
+                            id::Int64=1,
+                            guidance::GuidanceModel=_empty_guidance(),
+                            navigation::NavigationModel=_empty_navigation(),
+                            control::ControlModel=_empty_control())
+    joints_vec = Vector{Joint}(joints)
+    links_vec = Vector{Link}(links)
+
+    dry_mass = 0.0
+    if !any(link -> link === root, links_vec)
+        # Keep the root in the link list so dry-mass aggregation sees the full assembly.
+        push!(links_vec, root) # Include root in the links list for mass calculation
+    end
+    for link in links_vec
+        dry_mass += link.m
+    end
+
+    return SpacecraftModel(joints_vec, links_vec, root, instant_actuation, dry_mass, prop_mass, inertia_tensor, n_reaction_wheels, n_thrusters, initial_condition, id,
+                           guidance, navigation, control)
+end
+
+# Preserve the collection type in this module while giving configuration its own file.
+include(joinpath(@__DIR__, "..", "..", "simulation", "config", "constellation_configuration.jl"))
+
 end # module SpacecraftModels

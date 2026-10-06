@@ -104,4 +104,11 @@ module GuidanceHooks
 
     include(joinpath(@__DIR__, "thruster_guidance", "thruster_guidance_functions.jl"))
     include(joinpath(@__DIR__, "landing", "apollo_descent_guidance.jl"))
+
+    # Per-spacecraft GNC binding (see SimulationLifecycle.bind_spacecraft).
+    function SimulationLifecycle.bind_spacecraft(m::ApolloDescentGuidanceModel, sat_idx::Int)
+        ids = _descent_indices(m.state, (sat_idx,))
+        m.spacecraft_indices == ids && return m
+        return ApolloDescentGuidanceModel(m.config, m.state, m.terrain, ids)
+    end
 end

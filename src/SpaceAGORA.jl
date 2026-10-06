@@ -98,6 +98,7 @@ using .ParallelProcess: ProcessPool, campaign_process_pool, ensure_process_worke
 ## 2.3. Simulation Engine
 using .SimulationEngine: ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 using .SimulationEngine: simulation_engine_config_from_env
+using .SimulationEngine: SimulationResults
 using .SimulationEngine: prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
 run_simulation(args...; kwargs...) = SimulationEngine.run_simulation(args...; kwargs...)
 
@@ -156,6 +157,7 @@ using .SimulationModel: DescentPhaseTargets, apollo11_descent_targets, ApolloDes
 using .SimulationModel: ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
 using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
 using .SimulationModel: control_thruster_levels
+using .SimulationLifecycle: bind_spacecraft
 using .SimulationModel: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 using .SimulationModel: AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 using .SimulationModel: SolarPanelAngleOfAttackControlModel
@@ -208,6 +210,7 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationEngine.ArtifactConfig) ArtifactConfig
 @doc (@doc SimulationEngine.SimulationEngineConfig) SimulationEngineConfig
 @doc (@doc SimulationEngine.simulation_engine_config_from_env) simulation_engine_config_from_env
+@doc (@doc SimulationEngine.SimulationResults) SimulationResults
 @doc (@doc SimulationEngine.run_simulation) run_simulation
 @doc (@doc SimulationEngine.prewarm_nbody_ephemeris_cache) prewarm_nbody_ephemeris_cache
 @doc (@doc SimulationEngine.load_nbody_ephemeris_cache!) load_nbody_ephemeris_cache!
@@ -495,13 +498,13 @@ export DescentPhaseTargets, apollo11_descent_targets, ApolloDescentConfig, Apoll
 export ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
 export getDensity, getDensityBatch!, with_density_model_epoch
 export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
-export control_thruster_levels
+export control_thruster_levels, bind_spacecraft
 export AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 export AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 export SolarPanelAngleOfAttackControlModel
 export ApoapsisTargetPeriapsisRaiseGuidanceModel
 export VerificationRequest, VerificationResult
-export run_verification, run_verification_cli, run_study, run_simulation
+export run_verification, run_verification_cli, run_study, run_simulation, SimulationResults
 export station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
 export VisualizationScene, PlanetSpec, SpacecraftGeometry, LinkBox, AtmosphereSpec, atmosphere_spec, ArmGeometry, arm_geometry
 export load_model_triangles, model_bounding_box, sample_model_pointcloud, articulate_triangles, articulation_payload

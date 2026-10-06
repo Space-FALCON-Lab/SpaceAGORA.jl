@@ -10,6 +10,7 @@ const DOCS_SRC = joinpath(@__DIR__, "src")
 const GENERATED_SRC = joinpath(DOCS_SRC, "generated")
 const GENERATED_API_PAGE = joinpath(GENERATED_SRC, "public_api.md")
 const API_REFERENCE_PAGES = (
+    (section="Simulation Setup", title="Simulation Setup API", file="simulation_setup_api.md"),
     (section="RPO planner pilot", title="RPO Planner API", file="rpo_planner_api.md"),
     (section="Terrain Queries", title="Terrain API", file="terrain_api.md"),
     (section="Mesh Aerodynamics", title="Mesh Aerodynamics API", file="mesh_aerodynamics_api.md"),
@@ -178,6 +179,7 @@ makedocs(
         "Reference" => Any[
             "CLI" => "cli.md",
             "Public API" => "generated/public_api.md",
+            "Simulation Setup API" => "generated/simulation_setup_api.md",
             "RPO Planner API" => "generated/rpo_planner_api.md",
             "Terrain API" => "generated/terrain_api.md",
             "Mesh Aerodynamics API" => "generated/mesh_aerodynamics_api.md",

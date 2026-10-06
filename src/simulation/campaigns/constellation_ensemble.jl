@@ -111,10 +111,13 @@ keyword is forwarded to [`run_simulation`](@ref) unchanged.
 the benchmark harness measures (see `SpaceAGORA.ParallelProfiles`); they are not the
 supported way to parallelize an ensemble.
 
-The configuration must be uncoupled: guidance, navigation, and control effector tuples
-must be empty, because effectors that coordinate several satellites cannot act across
-ensemble members. If every configured effector acts on one satellite only, pass
-`allow_gnc_effectors=true` to opt in. Remaining keyword arguments are forwarded to
+The configuration must be uncoupled: configuration-level guidance, navigation, and control
+effector tuples must be empty, because effectors that coordinate several satellites cannot
+act across ensemble members. If every configured effector acts on one satellite only, pass
+`allow_gnc_effectors=true` to opt in; the effectors are passed to every member unchanged,
+so spacecraft indices are not remapped. GNC declared on a `SpacecraftModel` (its `guidance`,
+`navigation` and `control` keywords) always travels with that spacecraft, is bound to index 1
+in its member run, and needs no flag. Remaining keyword arguments are forwarded to
 [`run_simulation`](@ref) (for example `return_solution=true`).
 """
 function run_constellation_ensemble(

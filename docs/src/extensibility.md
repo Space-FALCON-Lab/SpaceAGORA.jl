@@ -147,6 +147,29 @@ Template:
 
 - `templates/control_hook_template.jl`
 
+### Per-spacecraft declaration
+
+A `SpacecraftModel` can carry its own GNC (`SpacecraftModel(...; control=ControlModel(...))`,
+likewise `guidance` and `navigation`). At the start of `run_simulation` each such effector is
+passed through `SpaceAGORA.bind_spacecraft(effector, sat_idx)` with the position of its
+spacecraft and appended to the configuration-level tuples. An effector that selects its
+vehicle by an index field implements it by returning a copy with that field set:
+
+```julia
+struct MyPush <: SpaceAGORA.AbstractControlEffectorModel
+    sat_idx::Int
+    force_n::SVector{3, Float64}
+end
+
+SpaceAGORA.bind_spacecraft(m::MyPush, sat_idx::Int) = MyPush(sat_idx, m.force_n)
+```
+
+The fallback throws an `ArgumentError`: an effector without an index acts on every
+spacecraft, and an effector that couples several vehicles (the RPO chaser and target
+types) cannot belong to one, so both stay at configuration level. Built in: the
+momentum manager, the robot-arm control effector and the Apollo descent guidance and control
+models bind.
+
 ## Planet, ephemerides, thermal, thruster, and guidance extensions
 
 Stable interfaces:

@@ -67,6 +67,7 @@ const PUBLIC_API_SECTIONS = [
         title = "Simulation",
         items = [
             (owner = :SpaceAGORA, symbol = :run_simulation, rendered = "SpaceAGORA.run_simulation"),
+            (owner = :SpaceAGORA, symbol = :SimulationResults, rendered = "SpaceAGORA.SimulationResults"),
             (owner = :SpaceAGORA, symbol = :StateAnchor, rendered = "SpaceAGORA.StateAnchor"),
             (owner = :SpaceAGORA, symbol = :get_state_anchor_callback, rendered = "SpaceAGORA.get_state_anchor_callback"),
             (owner = :SpaceAGORA, symbol = :prewarm_nbody_ephemeris_cache, rendered = "SpaceAGORA.prewarm_nbody_ephemeris_cache"),
@@ -207,7 +208,8 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :calcControlEffect!, rendered = "SpaceAGORA.calcControlEffect!"),
             (owner = :SpaceAGORA, symbol = :calcControlForceTorque, rendered = "SpaceAGORA.calcControlForceTorque"),
             (owner = :SpaceAGORA, symbol = :calcControlMassFlowRate, rendered = "SpaceAGORA.calcControlMassFlowRate"),
-            (owner = :SpaceAGORA, symbol = :control_thruster_levels, rendered = "SpaceAGORA.control_thruster_levels")
+            (owner = :SpaceAGORA, symbol = :control_thruster_levels, rendered = "SpaceAGORA.control_thruster_levels"),
+            (owner = :SpaceAGORA, symbol = :bind_spacecraft, rendered = "SpaceAGORA.bind_spacecraft")
         ]
     ),
     (

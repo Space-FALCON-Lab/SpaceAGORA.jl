@@ -2540,6 +2540,41 @@ end
     return _sum_position_gravity(g.effectors, x, EnvironmentSample(planet; planet_frame=frame), g.t)
 end
 
+# Relative gravity g(r + ρ) - g(r) for the attachment and articulated paths: each position-only gravity
+# effector differences its point-mass part analytically (Encke); unknown effectors fall back to two evaluations.
+@inline _sum_relative_gravity(::Tuple{}, xb, xf, eb, ef, ρ, t::Float64) = SVector{3, Float64}(0.0, 0.0, 0.0)
+@inline function _sum_relative_gravity(effectors::Tuple, xb, xf, eb, ef, ρ, t::Float64)
+    effector = first(effectors)
+    rest = _sum_relative_gravity(Base.tail(effectors), xb, xf, eb, ef, ρ, t)
+    _is_position_gravity_effector(effector) || return rest
+    return SimulationModel.gravity_backbone_relative_acceleration_ii(effector, xb, ρ, xf, eb, ef, t) + rest
+end
+
+@inline function SimulationModel.CompliantAttachmentDynamics.relative_gravity(
+    g::_ArticulatedGravity, r_base::SVector{3, Float64}, ρ::SVector{3, Float64}, g_base::SVector{3, Float64},
+)::SVector{3, Float64}
+    planet = g.p.args.environment_model.planet
+    v0 = SVector{3, Float64}(0.0, 0.0, 0.0)
+    r_far = r_base + ρ
+    xb = StateSample(r_base, v0, 1.0; spacecraft=g.spacecraft)
+    xf = StateSample(r_far, v0, 1.0; spacecraft=g.spacecraft)
+    needs_frame = _gravity_needs_planet_frame(g.effectors)
+    fb = needs_frame ? sample_planet_frame_with_lpi((pos_ii=r_base, vel_ii=v0), planet, g.l_pi) : nothing
+    ff = needs_frame ? sample_planet_frame_with_lpi((pos_ii=r_far, vel_ii=v0), planet, g.l_pi) : nothing
+    return _sum_relative_gravity(
+        g.effectors, xb, xf, EnvironmentSample(planet; planet_frame=fb), EnvironmentSample(planet; planet_frame=ff), ρ, g.t)
+end
+
+"""Callable `ρ -> g(r_root + ρ) - g(r_root)` handed to `articulated_dynamics!` (a struct, so nothing is boxed)."""
+struct _RootRelativeGravity{G}
+    gravity::G
+    r_root::SVector{3, Float64}
+    g_root::SVector{3, Float64}
+end
+
+@inline (h::_RootRelativeGravity)(ρ::SVector{3, Float64}) =
+    SimulationModel.CompliantAttachmentDynamics.relative_gravity(h.gravity, h.r_root, ρ, h.g_root)
+
 """
 Assign the full RHS of one articulated spacecraft: loads on the root, then the articulated
 forward dynamics for the root accelerations and the joint accelerations.
@@ -2585,11 +2620,17 @@ end
     force_body = SimulationModel.ArticulatedBody._rotmat(base.q)' * SVector{3, Float64}(forces[1], forces[2], forces[3])
     torque_com = SVector{3, Float64}(torques[1], torques[2], torques[3]) - cross(tree.root_com_bus, force_body)
     rt = p.shared_buffers.attachments_present[] ? p.shared_buffers.attachment_runtimes[sat_idx] : nothing
+    # Encke form: the backbone sees only each body's gravity relative to the root, the root's own gravity
+    # is added to the root acceleration afterwards (exact for a uniform field, see `articulated_dynamics!`).
+    base_pos = base.pos
     if rt === nothing
+        g_root = gravity(base_pos)
         a, alpha, qdd = SimulationModel.articulated_dynamics!(
             art.ws, tree, base, sc_view.joint_q, sc_view.joint_qd,
             forces, SimulationModel.DynamicsRotational.body_torque(torque_com), gravity;
             root_mass=sc_view.mass - art.moving_mass,
+            relative_gravity=_RootRelativeGravity(gravity, base_pos, g_root),
+            root_gravity=g_root,
         )
     else
         # Compliant attachments: body kinematics first (the mount frames), then the attachment loads,
@@ -2603,11 +2644,14 @@ end
             tree, rel_base, sc_view.joint_q, sc_view.joint_qd,
         )
         SimulationModel.apply_attachments_articulated!(du_view, sc_view, rt, ws, t, gravity)
+        g_root = rt.base_gravity[1]
         a, alpha, qdd = SimulationModel.articulated_dynamics!(
             ws, tree, base, sc_view.joint_q, sc_view.joint_qd,
             forces, SimulationModel.DynamicsRotational.body_torque(torque_com), gravity;
             root_mass=sc_view.mass - art.moving_mass,
             body_force_world=ws.ext_force, body_torque_world=ws.ext_torque,
+            relative_gravity=_RootRelativeGravity(gravity, base_pos, g_root),
+            root_gravity=g_root,
         )
         SimulationModel.finish_attachments!(du_view, rt, a)
     end

@@ -68,10 +68,6 @@ function AerobrakingEnergyDepletionControlModel(
     return AerobrakingEnergyDepletionControlModel(config, state, aoa_effector)
 end
 
-@inline function _edg_control_state_index_ok(state::AerobrakingEnergyDepletionState, i::Int)::Bool
-    return 1 <= i <= length(state.selected_mode)
-end
-
 function _edg_recompute_switches!(
     model::AerobrakingEnergyDepletionControlModel,
     p::ODEParams,

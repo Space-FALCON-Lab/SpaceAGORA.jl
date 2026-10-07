@@ -49,7 +49,11 @@ a separate apply flag, a switch_action (:cached, :outside_pass, :solved,
 The :solved status records execution, not scientific acceptance.
 An invalid index produces no command application or environment query.
 
-Numerical kernels do not move panels or propagated heat loads. The decision
+Numerical kernels do not move panels or propagated heat loads. The targeting
+solve _edg_solve_targeting_switch and its fallback
+_edg_disable_uncertified_targeting! are state-mutating decision helpers,
+not read-only kernels: their bracket, target-energy, mode and flag writes
+remain inside _edg_recompute_switches! before actuation. The decision
 updates the existing EDG cache and telemetry before panel application, in the
 same order as the former control hook. Existing exceptions still propagate;
 a decision can update mode before an atmosphere error, and completed telemetry
@@ -75,7 +79,9 @@ The required GNC boundary gate also checks this typed owner for duplicate
 definitions, reverse dependencies on control and panel mutation. The focused
 ownership tests cover command/application parity, invalid-index laziness,
 switch endpoints, input forms, panel-selection mismatch, query coordinates,
-epoch and wind conventions, plus deliberately broken ownership, wind-sign and
-time-offset controls. Numerical equivalence is assessed on a matched parent
+epoch and wind conventions, plus parsed include/definition counterexamples,
+loaded method ownership and hook-level heat-load/fallback cases. The retained
+follow-up mutation run exercises those assertions against altered production
+methods; comparing a mutated copy with production is not an adequacy proof. Numerical equivalence is assessed on a matched parent
 and candidate with the retained bounded predictor fingerprint; this does not
 replace full mission or scientific acceptance.

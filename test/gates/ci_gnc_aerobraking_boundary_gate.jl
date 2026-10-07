@@ -1,3 +1,4 @@
+include(joinpath(@__DIR__, "..", "contracts", "edg_ownership_checks.jl"))
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
 required_files = (
@@ -25,7 +26,7 @@ for (root, _, files) in walkdir(guidance_root)
         path = joinpath(root, file)
         rel = relpath(path, REPO_ROOT)
         src = read(path, String)
-        occursin(r"include\([^\)]*control", src) && push!(violations, "$rel: guidance includes control source directly")
+        EDGOwnershipChecks.has_control_include(src) && push!(violations, "$rel: guidance includes control source directly")
     end
 end
 
@@ -68,7 +69,6 @@ for rel in (
     end
 end
 
-include(joinpath(@__DIR__, "..", "contracts", "edg_ownership_checks.jl"))
 append!(violations, EDGOwnershipChecks.violations(EDGOwnershipChecks.source_map(REPO_ROOT)))
 
 if !isempty(violations)

@@ -19,7 +19,7 @@ decision(x, t=0.0, i=1; links=x.control.aoa_effector.controlled_panel_links) =
 # checked against the matched-parent fingerprint and verbatim move inventory.
 function reference_control!(model, u, p, t, i)
     state = model.state
-    C._edg_control_state_index_ok(state, i) || return nothing
+    1 <= i <= length(state.selected_mode) || return nothing
     config = model.config
     if state.selected_mode[i] == :inactive
         state.selected_mode[i] = (:max_energy_depletion in config.guidance_modes) ? :max_energy_depletion : :safe_low_drag
@@ -54,6 +54,26 @@ end
             @test getfield(C, symbol) === getfield(owner, symbol)
         end
     end
+    gnc_modules = [G, C, S.NavigationHooks]
+    @test isempty(EDGOwnershipChecks.runtime_violations(A, P, gnc_modules))
+    # A same-name function in another loaded module is not an alias.
+    foreign = Module(gensym(:EDGForeignWitness))
+    Core.eval(foreign, :(_edg_prediction_time_grid(x) = x))
+    @test any(message -> occursin("separate EDG binding _edg_prediction_time_grid", message),
+        EDGOwnershipChecks.runtime_violations(A, P, [gnc_modules; foreign]))
+    # Qualified extensions are legal Julia, but do not belong to the EDG owner.
+    Core.eval(foreign, :(const Algorithms = $A))
+    before_methods = collect(methods(A._edg_prediction_time_grid))
+    try
+        Core.eval(foreign, :(Algorithms._edg_prediction_time_grid(::Val{:edg_foreign_witness}) = nothing))
+        @test any(message -> occursin("foreign method on _edg_prediction_time_grid", message),
+            Base.invokelatest(EDGOwnershipChecks.runtime_violations, A, P, gnc_modules))
+    finally
+        for method in setdiff(Base.invokelatest(() -> collect(methods(A._edg_prediction_time_grid))), before_methods)
+            Base.delete_method(method)
+        end
+    end
+    @test isempty(EDGOwnershipChecks.runtime_violations(A, P, gnc_modules))
     @test !isdefined(A, :ControlHooks)
     @test !isdefined(A, :SolarPanelAngleOfAttackControlModel)
     @test !isdefined(A, :_apply_solar_panel_aoa!)
@@ -83,6 +103,83 @@ end
         @test isequal(state_values(x.state), state_values(old.state))
         @test isequal(state_values(hook.state), state_values(old.state))
         @test geometry(x.spacecraft) == geometry(old.spacecraft) == geometry(hook.spacecraft)
+    end
+end
+
+@testset "Public hooks preserve measured links, fallback and cached precedence" begin
+    for (links, measured, expected_alpha) in (((2,), 3.0, pi/2), ((3,), 12.0, 1e-4))
+        x = _edg_test_context(max_energy_submodes=(:heat_load,), heat_load_limit_j_cm2=10.0)
+        x.u.sc[1].heat_loads .= [0.0, 3.0, 12.0]
+        x.state.selected_mode[1] = :max_energy_depletion
+        x.state.heat_load_switch_solved[1] = true
+        x.state.heat_load_drag_passage_active[1] = true
+        x.state.heat_load_switches_s[1] = (Inf, Inf)
+        model = S.AerobrakingEnergyDepletionControlModel(x.config, x.state;
+            aoa_effector=S.SolarPanelAngleOfAttackControlModel(links))
+        before = geometry(x.spacecraft)
+        @test x.config.controlled_panel_links == (2, 3)
+        @test S.calcControlEffect!(model, x.u, x.p, 1.0, 1) === nothing
+        @test x.state.last_heat_load_j_cm2[1] == measured
+        @test x.state.last_alpha_rad[1] == expected_alpha
+        @test x.spacecraft.links[only(links)].α == expected_alpha
+        @test geometry(x.spacecraft)[links == (2,) ? 3 : 2] ==
+              before[links == (2,) ? 3 : 2]
+        @test x.u.sc[1].heat_loads == [0.0, 3.0, 12.0]
+    end
+    for modes in ((:targeting, :max_energy_depletion), (:targeting,))
+        x = _edg_test_context(guidance_modes=modes)
+        x.u.sc[1].pos .= (x.args.environment_model.planet.Rp_e + 300e3, 0.0, 0.0)
+        before = geometry(x.spacecraft)
+        @test S.calcGuidanceEffect!(x.guidance, x.u, x.p, 0.0, 1) === nothing
+        @test x.state.selected_mode[1] == (length(modes) == 2 ? :max_energy_depletion : :safe_low_drag)
+        @test x.state.safe_low_drag[1] == (length(modes) == 1)
+        @test !x.state.targeting_active[1]
+        @test !x.state.energy_bracketing_evaluated[1]
+        @test x.state.energy_bracketing_count[1] == 0
+        @test geometry(x.spacecraft) == before
+    end
+    x = _edg_test_context()
+    x.u.sc[1].pos .= (x.args.environment_model.planet.Rp_e + 300e3, 0.0, 0.0)
+    x.state.selected_mode[1] = :targeting
+    x.state.targeting_active[1] = true
+    x.state.targeting_switch_s[1] = 10.0
+    @test decision(x, 8.0).switch_action == :cached
+    @test x.state.targeting_switch_s[1] == 10.0
+end
+
+@testset "Targeting solve retains heat accumulated after entry bracketing" begin
+    # Bounded scenario from the independent S10c differential. Start with zero
+    # heat, establish a reachable target, then accumulate heat before control.
+    options = (guidance_modes=(:targeting, :max_energy_depletion),
+        max_energy_submodes=(:heat_rate, :structural_load, :heat_load),
+        heat_rate_limit_w_cm2=Inf, structural_load_limit_pa=Inf,
+        heat_load_limit_j_cm2=30.0,
+        density_model=S.ExponentialAtmosphereModel(1e-8, 100e3, 20e3; temperature_k=150.0),
+        planning_horizon_s=400.0)
+    base = _edg_test_context(; options...)
+    sc = base.u.sc[1]
+    r0, v0 = SVector{3,Float64}(sc.pos), SVector{3,Float64}(sc.vel)
+    duration = A._edg_drag_passage_duration(base.config, base.p, r0, v0, Float64(sc.mass))
+    target = A._edg_targeting_outcome_with_heat_load(base.config, base.p, base.spacecraft,
+        r0, v0, Float64(sc.mass), 0.0, 0.373 * (duration + 1.0), 0.0;
+        heat_rate_control=true, structural_control=true)
+    @test 10.0 < target.heat_load_j_cm2 < 20.0
+    for accumulated in (0.0, 20.0)
+        x = _edg_test_context(; options..., target_apoapsis_radius_m=target.apoapsis_radius_m)
+        S.calcControlEffect!(x.control, x.u, x.p, 0.0, 1)
+        S.calcGuidanceEffect!(x.guidance, x.u, x.p, 0.0, 1)
+        @test x.state.targeting_active[1]
+        @test x.state.selected_mode[1] == :targeting
+        @test x.state.energy_bracketing_evaluated[1]
+        @test !isfinite(x.state.targeting_switch_s[1])
+        x.u.sc[1].heat_loads .= [0.0, accumulated, 0.0]
+        @test S.calcControlEffect!(x.control, x.u, x.p, 1.0, 1) === nothing
+        @test x.state.last_heat_load_j_cm2[1] == accumulated
+        @test x.state.last_switch_solve_t[1] == 1.0
+        @test x.state.targeting_active[1] == (accumulated == 0.0)
+        @test x.state.selected_mode[1] == (accumulated == 0.0 ? :targeting : :max_energy_depletion)
+        @test isfinite(x.state.targeting_switch_s[1]) == (accumulated == 0.0)
+        @test x.u.sc[1].heat_loads == [0.0, accumulated, 0.0]
     end
 end
 
@@ -178,7 +275,8 @@ end
     @test P._edg_sample_prediction_atmosphere(x.p,-2.,7.) == (1e-9,150.)
     @test x.events == [(:density,0.,0.,0.,7.,true)]
     empty!(x.events)
-    P._edg_environment_state(x.u,x.p,7.,1)
+    current_env=P._edg_environment_state(x.u,x.p,7.,1)
+    @test current_env.speed ≈ norm(expected) rtol=1e-13
     @test x.events == [(:frame,12352.),(:density,lla[1],lla[2],lla[3],7.,true)]
     empty!(x.events)
     x.state.selected_mode[1]=:targeting;x.state.targeting_active[1]=true;x.state.targeting_switch_s[1]=2.
@@ -231,39 +329,38 @@ end
     path="src/gnc/control/targeting_control.jl"
     bad[path]=replace(bad[path],"    return EDGAlgorithms._edg_base_alpha"=>"    t += 1.0\n    return EDGAlgorithms._edg_base_alpha")
     @test !isempty(EDGOwnershipChecks.violations(bad))
+    for definition in (
+        "_edg_prediction_time_grid(t) = [t]",
+        "    function _edg_prediction_time_grid(t)\n        [t]\n    end",
+        "@noinline function _edg_prediction_time_grid(t)\n    [t]\nend",
+        "function EDGAlgorithms._edg_prediction_time_grid(t)\n    [t]\nend",
+        "control_decision!(args...) = nothing",
+    )
+        @test refused("src/gnc/control/other.jl", definition)
+        @test refused("src/core/other.jl", definition)
+    end
+    @test refused(path, "_edg_base_alpha(model, t, i) = t")
+    bad = copy(sources)
+    bad[path] = replace(bad[path], "model.config, model.state, t, i)" =>
+        "model.config, model.state, i, t)")
+    @test !isempty(EDGOwnershipChecks.violations(bad))
+    for include_call in (
+        "include(joinpath(dirname(dirname(dirname(@__DIR__))), \"control\", \"struct_load_control.jl\"))",
+        "Base.include(@__MODULE__, joinpath(dirname(@__DIR__), \"control\", \"other.jl\"))",
+    )
+        @test EDGOwnershipChecks.has_control_include(include_call)
+        @test refused(EDGOwnershipChecks.OWNER * "algorithms.jl", include_call)
+    end
+    @test !EDGOwnershipChecks.has_control_include("# include(\"control.jl\")")
+    @test !EDGOwnershipChecks.has_control_include("message = \"include(control) is forbidden\"")
+    aggregator = sources[EDGOwnershipChecks.OWNER * "algorithms.jl"]
+    @test !isempty(EDGOwnershipChecks.aggregator_violations(
+        replace(aggregator, "heat_rate.jl" => "other.jl")))
+    @test !isempty(EDGOwnershipChecks.aggregator_violations(
+        aggregator * "\ninclude(joinpath(@__DIR__, \"heat_rate.jl\"))"))
     missing=copy(sources);delete!(missing,EDGOwnershipChecks.OWNER*"targeting.jl")
     @test !isempty(EDGOwnershipChecks.violations(missing))
 end
-
-@testset "Wind sign and epoch negative controls exercise the real adapter" begin
-    source = read(joinpath(root, EDGOwnershipChecks.OWNER, "services.jl"),String)
-    for (name,pattern,replacement) in (
-        (:EDGWrongWindWitness, "vel_pp - wind_pp", "vel_pp + wind_pp"),
-        (:EDGWrongEpochWitness, "p.shared_buffers.et_start[] + t_abs", "p.shared_buffers.et_start[] - t_abs"),
-    )
-        @test occursin(pattern,source)
-        mutant=replace(replace(source,"module EDGServices"=>"module "*String(name)),pattern=>replacement)
-        Base.include_string(S,mutant,"edg_negative_control.jl")
-        x=spy_context(max_energy_submodes=(:heat_rate,),heat_rate_limit_w_cm2=Inf)
-        x.u.sc[1].pos .= [3.0e6,1.0e6,1.2e6]
-        r=SVector{3,Float64}(x.u.sc[1].pos);v=SVector{3,Float64}(x.u.sc[1].vel)
-        expected=P._edg_targeting_prediction_environment(x.p,r,v,7.)
-        expected_queries=copy(x.events);empty!(x.events)
-        observed=Base.invokelatest(() -> getfield(getfield(S,name),:_edg_targeting_prediction_environment)(x.p,r,v,7.))
-        accepted=observed.vel_pp_rw ≈ expected.vel_pp_rw && x.events==expected_queries
-        @test !accepted
-        if name == :EDGWrongWindWitness
-            @test x.events==expected_queries
-            @test !isapprox(observed.vel_pp_rw,expected.vel_pp_rw)
-        else
-            @test x.events[1:2]==[(:frame,12338.),(:frame,12338.)]
-        end
-        empty!(x.events)
-        restored=P._edg_targeting_prediction_environment(x.p,r,v,7.)
-        @test restored.vel_pp_rw==expected.vel_pp_rw && x.events==expected_queries
-    end
-end
-
 
 @testset "Actuator errors preserve preceding decision and partial application" begin
     x=_edg_test_context(max_energy_submodes=(:heat_rate,),heat_rate_limit_w_cm2=Inf)

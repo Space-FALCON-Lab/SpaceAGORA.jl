@@ -1,3 +1,4 @@
+include(joinpath(@__DIR__, "..", "contracts", "edg_ownership_checks.jl"))
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
 const SCAN_ROOTS = (
@@ -86,9 +87,13 @@ for root in SCAN_ROOTS
             end
 
             if startswith(rel, joinpath("src", "gnc", "guidance", "aerobraking"))
-                if occursin(r"include\([^\)]*control", active_src)
+                if EDGOwnershipChecks.has_control_include(src)
                     push!(violations, "$rel: guidance aerobraking file includes control source directly.")
                 end
+            end
+
+            if rel == joinpath("src", "gnc", "guidance", "aerobraking", "typed_edg", "algorithms.jl")
+                append!(violations, EDGOwnershipChecks.aggregator_violations(src))
             end
 
             has_raw_include = any(occursin(r"^\s*include\(", line) for line in split(active_src, '\n'))

@@ -175,10 +175,6 @@ struct AerobrakingEnergyDepletionGuidanceModel <: AbstractGuidanceModel
     state::AerobrakingEnergyDepletionState
 end
 
-@inline function _edg_state_index_ok(state::AerobrakingEnergyDepletionState, i::Int)::Bool
-    return 1 <= i <= length(state.selected_mode)
-end
-
 const _edg_sat_state = EDGServices._edg_control_sat_state
 
 const _edg_pos_vel_mass = EDGServices._edg_control_pos_vel_mass

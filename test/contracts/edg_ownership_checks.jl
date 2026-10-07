@@ -68,6 +68,21 @@ const EXPECTED = Dict(
     "_edg_run_target_energy_bracketing!" => "src/gnc/guidance/aerobraking/typed_edg/guidance_decision.jl",
 )
 
+# Decision entry points have the same ownership rules as the retained kernels.
+EXPECTED["control_decision!"] = OWNER * "angle_decision.jl"
+EXPECTED["guidance_decision!"] = OWNER * "guidance_decision.jl"
+
+const FORWARD_CALLS = Dict(
+    "_edg_recompute_switches!" => :(EDGAlgorithms._edg_recompute_switches!(model.config, model.state, p, env, spacecraft, pos, vel, mass, heat_load_j_cm2, t, i)),
+    "_edg_base_alpha" => :(EDGAlgorithms._edg_base_alpha(model.config, model.state, t, i)),
+    "_edg_command_alpha!" => :(EDGAlgorithms._edg_command_alpha!(model.config, model.state, p, model.aoa_effector.controlled_panel_links, env, spacecraft, base_alpha, heat_load_j_cm2, heat_load_low_drag_active, i)),
+    "_edg_heat_load_low_drag_active" => :(EDGAlgorithms._edg_heat_load_low_drag_active(model.config, model.state, t, i)),
+    "_edg_interpolate_bracket_value" => :(_edg_algorithms()._edg_interpolate_bracket_value(exit_energy, energy_min, energy_max, value_at_min, value_at_max)),
+    "_edg_target_energy_from_reachable_bracket" => :(_edg_algorithms()._edg_target_energy_from_reachable_bracket(planet, target_apoapsis_radius_m, energy_min, energy_max, periapsis_at_min, periapsis_at_max)),
+    "_edg_set_targeting_fallback!" => :(_edg_algorithms()._edg_set_targeting_fallback!(config, state, i)),
+    "_edg_run_target_energy_bracketing!" => :(_edg_algorithms()._edg_run_target_energy_bracketing!(model.config, model.state, u, p, t, i)),
+)
+
 const WRAPPER_FILES = Set((
     "src/gnc/control/targeting_control.jl",
     "src/gnc/control/heat_load_control.jl",
@@ -76,7 +91,7 @@ const WRAPPER_FILES = Set((
 
 function source_map(root)
     result = Dict{String,String}()
-    for owner in ("guidance", "control", "shared", "internal"), (dir, _, files) in walkdir(joinpath(root, "src", "gnc", owner))
+    for (dir, _, files) in walkdir(joinpath(root, "src"))
         for file in files
             endswith(file, ".jl") || continue
             path = joinpath(dir, file)
@@ -87,32 +102,103 @@ function source_map(root)
 end
 
 
-function _projection(ex)
-    ex isa Symbol && return true
+# Parse syntax without evaluating it. Parenthesized include arguments and
+# indented, short-form, macro-wrapped or qualified methods remain visible.
+function _walk(f, ex)
+    ex isa Expr || return
+    ex.head == :quote && return
+    f(ex)
+    foreach(arg -> _walk(f, arg), ex.args)
+end
+
+function _leaf_name(ex)
+    ex isa Symbol && return String(ex)
+    ex isa Expr && ex.head == :. && ex.args[end] isa QuoteNode &&
+        return String(ex.args[end].value)
+    return nothing
+end
+
+function _signature(ex)
+    while ex isa Expr && ex.head in (:(::), :where)
+        ex = ex.args[1]
+    end
+    return ex
+end
+
+function _definition(ex)
+    ex.head in (:function, :(=)) || return nothing
+    sig = _signature(ex.args[1])
+    sig isa Expr && sig.head == :call || return nothing
+    name = _leaf_name(sig.args[1])
+    return name === nothing ? nothing : (name, sig.args[1], ex.args[2])
+end
+
+function _forwarder_only(body, name)
+    haskey(FORWARD_CALLS, name) || return false
+    statements = body isa Expr && body.head == :block ?
+        filter(x -> !(x isa LineNumberNode), body.args) : [body]
+    length(statements) in (1, 2) || return false
+    call = first(statements)
+    call isa Expr && call.head == :return && (call = only(call.args))
+    call == FORWARD_CALLS[name] || return false
+    return length(statements) == 1 ||
+        (name == "_edg_recompute_switches!" && last(statements) == Expr(:return, :nothing))
+end
+
+function _include_calls(source)
+    calls = Expr[]
+    _walk(Meta.parseall(source)) do ex
+        ex.head == :call && _leaf_name(ex.args[1]) == "include" && push!(calls, ex)
+    end
+    return calls
+end
+
+function _contains_control_literal(ex)
+    ex isa String && return occursin("control", ex)
     ex isa Expr || return false
-    return ex.head == :. && _projection(ex.args[1]) && ex.args[2] isa QuoteNode
+    return any(_contains_control_literal, ex.args)
 end
 
-function _forward_call(ex, name)
-    ex isa Expr && ex.head == :return && (ex = only(ex.args))
-    ex isa Expr && ex.head == :call || return false
-    callee = ex.args[1]
-    callee isa Expr && callee.head == :. || return false
-    callee.args[2] == QuoteNode(Symbol(name)) || return false
-    owner = callee.args[1]
-    allowed_owner = owner == :EDGAlgorithms ||
-        (owner isa Expr && owner.head == :call && owner.args == [:_edg_algorithms])
-    return allowed_owner && all(_projection, ex.args[2:end])
+has_control_include(source) =
+    any(call -> any(_contains_control_literal, call.args[2:end]), _include_calls(source))
+
+_syntax(ex) = ex isa Expr ?
+    Expr(ex.head, (_syntax(arg) for arg in ex.args if !(arg isa LineNumberNode))...) : ex
+
+function aggregator_violations(source)
+    siblings = ("heat_rate.jl", "heat_load.jl", "structural_load.jl",
+                "targeting.jl", "guidance_decision.jl", "angle_decision.jl")
+    expected = [_syntax(Meta.parse("include(joinpath(@__DIR__, $(repr(file))))"))
+                for file in siblings]
+    actual = map(_syntax, _include_calls(source))
+    return actual == expected ? String[] :
+        ["$(OWNER)algorithms.jl: expected exactly the six ordered sibling includes"]
 end
 
-function _forwarder_only(source, name)
-    parsed = Meta.parse(source)
-    parsed.head == :macrocall && (parsed = parsed.args[end])
-    parsed.head == :function || return false
-    body = filter(x -> !(x isa LineNumberNode), parsed.args[2].args)
-    length(body) in (1,2) || return false
-    _forward_call(first(body), name) || return false
-    return length(body) == 1 || last(body) == Expr(:return, :nothing)
+# Runtime checks complement the source inventory: aliases share the same
+# function object, while a qualified extension carries its defining module.
+function runtime_violations(algorithms, services, gnc_modules)
+    errors = String[]
+    for (name, path) in EXPECTED
+        symbol = Symbol(name)
+        owner = endswith(path, "/services.jl") ? services : algorithms
+        isdefined(owner, symbol) || (push!(errors, "$owner: missing $name"); continue)
+        owned = getfield(owner, symbol)
+        all(method -> method.module === owner, methods(owned)) ||
+            push!(errors, "$owner: foreign method on $name")
+        for mod in gnc_modules
+            isdefined(mod, symbol) || continue
+            bound = getfield(mod, symbol)
+            bound === owned && continue
+            allowed = haskey(FORWARD_CALLS, name) &&
+                nameof(mod) == (name in ("_edg_interpolate_bracket_value",
+                    "_edg_target_energy_from_reachable_bracket", "_edg_set_targeting_fallback!",
+                    "_edg_run_target_energy_bracketing!") ? :GuidanceHooks : :ControlHooks)
+            allowed && all(method -> method.module === mod, methods(bound)) && continue
+            push!(errors, "$mod: separate EDG binding $name")
+        end
+    end
+    return sort!(errors)
 end
 
 function violations(sources)
@@ -135,20 +221,25 @@ function violations(sources)
             occursin(r"\b_control_module\s*\(|\bControlHooks\b", code) &&
                 push!(errors, "$path: typed guidance depends on control")
         end
-        for m in eachmatch(r"(?m)^(?:@inline )?function ([^\s(]+)[\s\S]*?^end\b", source)
-            name = m.captures[1]
-            haskey(EXPECTED, name) || continue
-            if path == EXPECTED[name]
+        _walk(Meta.parseall(source)) do ex
+            definition = _definition(ex)
+            definition === nothing && return
+            name, callee, body = definition
+            haskey(EXPECTED, name) || return
+            if path == EXPECTED[name] && callee isa Symbol
                 counts[name] += 1
-            elseif path in WRAPPER_FILES
-                if !_forwarder_only(m.match, name)
-                    push!(errors, "$path: $name must be a forwarding compatibility method")
-                end
+            elseif path in WRAPPER_FILES && callee isa Symbol
+                _forwarder_only(body, name) ||
+                    push!(errors, "$path: $name must be an exact forwarding compatibility method")
             else
                 push!(errors, "$path: duplicate EDG definition $name")
             end
         end
     end
+    aggregator = OWNER * "algorithms.jl"
+    haskey(sources, aggregator) ?
+        append!(errors, aggregator_violations(sources[aggregator])) :
+        push!(errors, "$aggregator: missing aggregator")
     for (name, count) in counts
         count == 1 || push!(errors, "$(EXPECTED[name]): expected one $name definition, found $count")
     end

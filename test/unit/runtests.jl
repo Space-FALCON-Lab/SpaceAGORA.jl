@@ -6,6 +6,7 @@ using Test
 end
 
 include(joinpath(@__DIR__, "example_imports_tests.jl"))
+include(joinpath(@__DIR__, "environment", "gram_loading_contract_tests.jl"))
 include(joinpath(@__DIR__, "xval_fullarc_provenance_tests.jl"))
 include(joinpath(@__DIR__, "environment", "pck_override_order_tests.jl"))
 include("gnc/hypr_services_tests.jl")

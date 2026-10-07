@@ -68,6 +68,9 @@ for rel in (
     end
 end
 
+include(joinpath(@__DIR__, "..", "contracts", "edg_ownership_checks.jl"))
+append!(violations, EDGOwnershipChecks.violations(EDGOwnershipChecks.source_map(REPO_ROOT)))
+
 if !isempty(violations)
     println("gnc_aerobraking_boundary_violations:")
     for v in sort(unique(violations))

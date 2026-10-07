@@ -149,9 +149,13 @@ include(joinpath(@__DIR__, "..", "mission", "operations", "aerobraking_policy", 
 # --- Navigation Effectors ---
 include(joinpath(@__DIR__, "..", "gnc", "navigation", "navigation_hooks.jl"))
 @reexport using .NavigationHooks
+# --- Typed EDG platform services ---
+include(joinpath(@__DIR__, "..", "gnc", "guidance", "aerobraking", "typed_edg", "services.jl"))
 # --- Guidance Effectors ---
 include(joinpath(@__DIR__, "..", "gnc", "guidance", "guidance_hooks.jl"))
 @reexport using .GuidanceHooks
+# --- Typed EDG prediction and decisions ---
+include(joinpath(@__DIR__, "..", "gnc", "guidance", "aerobraking", "typed_edg", "algorithms.jl"))
 # --- Control Effectors ---
 include(joinpath(@__DIR__, "..", "gnc", "control", "control_hooks.jl"))
 @reexport using .ControlHooks

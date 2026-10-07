@@ -34,6 +34,8 @@ const ALLOWED_RAW_INCLUDE_FILES = Set([
     joinpath("src", "gnc", "control", "propulsive_maneuvers.jl"),
     joinpath("src", "gnc", "guidance", "guidance_models.jl"),
     joinpath("src", "gnc", "guidance", "guidance_hooks.jl"),
+    # Typed EDG module includes only its own numerical/decision source files.
+    joinpath("src", "gnc", "guidance", "aerobraking", "typed_edg", "algorithms.jl"),
     # Existing helper module now loads its shared and RRT source owners.
     joinpath("src", "gnc", "hypr", "hypr_utils.jl"),
     joinpath("src", "gnc", "navigation", "navigation_hooks.jl"),
@@ -84,7 +86,7 @@ for root in SCAN_ROOTS
             end
 
             if startswith(rel, joinpath("src", "gnc", "guidance", "aerobraking"))
-                if occursin("include(", active_src) && occursin("control", active_src)
+                if occursin(r"include\([^\)]*control", active_src)
                     push!(violations, "$rel: guidance aerobraking file includes control source directly.")
                 end
             end

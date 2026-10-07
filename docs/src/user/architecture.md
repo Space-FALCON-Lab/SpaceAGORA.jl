@@ -333,6 +333,18 @@ description of the current code.
   owner, `benchmarks/scripts/performance_paper_pipeline.jl`, relative to the
   launcher directory. The include route is tested without executing the pipeline;
   benchmark workloads and performance validation remain separate.
+- Saved static-versus-parallel runs require the core, per-orbit, entry-duration,
+  report and stage-timing files from the selected raw file's run stamp. Missing
+  legacy files or required stage measurements produce an explicit incomplete-input
+  error; files from another run and estimated zero costs cannot fill those gaps.
+  Hardware metadata remains optional, and split-gate artifacts retain their
+  independently generated timestamps. A run with no selected entry cases still
+  supplies empty entry CSVs and its measured entry-stage time.
+- Aggregation preserves entry reference/measured roles, failed attempts, per-pass
+  reference values and errors, and uses the existing success-only summary rules.
+  It reports the mean recorded entry-stage time and mean recorded runtime total
+  across passes. That total includes other enabled stages, such as the multirate
+  gate; it does not measure child startup or complete campaign wall time.
 
 **Intentional similarities (keep):**
 

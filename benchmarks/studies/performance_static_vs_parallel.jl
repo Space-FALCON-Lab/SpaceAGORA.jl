@@ -284,67 +284,67 @@ function _latest_artifact_path_optional(outdir::String, prefix::String, profile_
     return last(candidates)
 end
 
-function _stage_elapsed_s(
-    stage_timing_path::Union{Nothing, String},
-    fallback_total_s::Float64
-)::Tuple{Float64, Float64, Float64, Float64}
-    if isnothing(stage_timing_path)
-        return fallback_total_s, 0.0, 0.0, fallback_total_s
-    end
+# Core runtime outputs share one stamp. Require that run's evidence instead of
+# independently selecting the newest file for every prefix.
+function _same_run_artifact_path(
+    outdir::String, prefix::String, profile_name::String, stamp::String, suffix::String;
+    required::Bool=true
+)::Union{Nothing, String}
+    path = joinpath(outdir, "$(prefix)_$(profile_name)_$(stamp)$(suffix)")
+    isfile(path) && return path
+    required && throw(ArgumentError("Incomplete saved runtime run: missing '$path'."))
+    return nothing
+end
 
+function _stage_elapsed_s(stage_timing_path::String)::Tuple{Float64, Float64, Float64, Float64, Float64}
+    isfile(stage_timing_path) || throw(ArgumentError("Incomplete saved runtime run: missing '$stage_timing_path'."))
     stage_df = CSV.read(stage_timing_path, DataFrame)
-    bench_elapsed_s = 0.0
-    split_gate_elapsed_s = 0.0
-    orbit_elapsed_s = 0.0
-    total_elapsed_s = fallback_total_s
-
-    if :stage in propertynames(stage_df) && :elapsed_s in propertynames(stage_df)
-        for row in eachrow(stage_df)
-            stage_name = String(row.stage)
-            elapsed = Float64(row.elapsed_s)
-            if stage_name == "run_benchmarks"
-                bench_elapsed_s = elapsed
-            elseif stage_name == "run_split_rollout_gate"
-                split_gate_elapsed_s = elapsed
-            elseif stage_name == "run_per_orbit"
-                orbit_elapsed_s = elapsed
-            elseif stage_name == "total"
-                total_elapsed_s = elapsed
-            end
-        end
+    all(col -> col in propertynames(stage_df), (:stage, :elapsed_s)) ||
+        throw(ArgumentError("Incomplete saved runtime timing '$stage_timing_path': expected stage and elapsed_s columns."))
+    required = ("run_benchmarks", "run_per_orbit", "run_entry_duration_sweep", "total")
+    elapsed_by_stage = Dict{String, Float64}()
+    for row in eachrow(stage_df)
+        ismissing(row.stage) && throw(ArgumentError("Incomplete saved runtime timing '$stage_timing_path': missing stage name."))
+        stage_name = String(row.stage)
+        stage_name in required || stage_name == "run_split_rollout_gate" || continue
+        haskey(elapsed_by_stage, stage_name) &&
+            throw(ArgumentError("Ambiguous saved runtime timing '$stage_timing_path': duplicate '$stage_name'."))
+        elapsed = row.elapsed_s
+        elapsed isa Real && isfinite(elapsed) && elapsed >= 0 ||
+            throw(ArgumentError("Invalid elapsed_s for '$stage_name' in '$stage_timing_path'."))
+        elapsed_by_stage[stage_name] = Float64(elapsed)
     end
-
-    if total_elapsed_s <= 0.0
-        total_elapsed_s = bench_elapsed_s + split_gate_elapsed_s + orbit_elapsed_s
+    for stage_name in required
+        haskey(elapsed_by_stage, stage_name) ||
+            throw(ArgumentError("Incomplete saved runtime timing '$stage_timing_path': missing '$stage_name'. Legacy inputs need recorded stage evidence."))
     end
-    if total_elapsed_s <= 0.0
-        total_elapsed_s = fallback_total_s
-    end
-    if bench_elapsed_s <= 0.0 && split_gate_elapsed_s <= 0.0 && orbit_elapsed_s <= 0.0
-        bench_elapsed_s = total_elapsed_s
-    end
-
-    return bench_elapsed_s, split_gate_elapsed_s, orbit_elapsed_s, total_elapsed_s
+    # The producer omits the split-gate row when that optional stage is disabled.
+    # Its total also includes enabled stages (such as multirate) not broken out here.
+    return elapsed_by_stage["run_benchmarks"], get(elapsed_by_stage, "run_split_rollout_gate", 0.0),
+        elapsed_by_stage["run_per_orbit"], elapsed_by_stage["run_entry_duration_sweep"], elapsed_by_stage["total"]
 end
 
 function _arm_result_artifacts(
     arm::ArmSpec,
     config::StaticVsParallelConfig,
-    arm_outdir::String,
-    elapsed_s::Float64
+    arm_outdir::String
 )::ModeRunArtifacts
     profile_name = config.profile.name
     raw_path = _latest_artifact_path(arm_outdir, "runtime_raw", profile_name, ".csv")
-    summary_path = _latest_artifact_path(arm_outdir, "runtime_summary", profile_name, ".csv")
-    orbit_raw_path = _latest_artifact_path(arm_outdir, "runtime_per_orbit_raw", profile_name, ".csv")
-    orbit_summary_path = _latest_artifact_path(arm_outdir, "runtime_per_orbit_summary", profile_name, ".csv")
-    stage_timing_path = _latest_artifact_path_optional(arm_outdir, "runtime_stage_timing", profile_name, ".csv")
-    hardware_info_path = _latest_artifact_path_optional(arm_outdir, "runtime_hardware_info", profile_name, ".csv")
+    stamp = String(chopsuffix(chopprefix(basename(raw_path), "runtime_raw_$(profile_name)_"), ".csv"))
+    summary_path = _same_run_artifact_path(arm_outdir, "runtime_summary", profile_name, stamp, ".csv")
+    orbit_raw_path = _same_run_artifact_path(arm_outdir, "runtime_per_orbit_raw", profile_name, stamp, ".csv")
+    orbit_summary_path = _same_run_artifact_path(arm_outdir, "runtime_per_orbit_summary", profile_name, stamp, ".csv")
+    entry_duration_raw_path = _same_run_artifact_path(arm_outdir, "runtime_entry_duration_raw", profile_name, stamp, ".csv")
+    entry_duration_summary_path = _same_run_artifact_path(arm_outdir, "runtime_entry_duration_summary", profile_name, stamp, ".csv")
+    stage_timing_path = _same_run_artifact_path(arm_outdir, "runtime_stage_timing", profile_name, stamp, ".csv")
+    hardware_info_path = _same_run_artifact_path(arm_outdir, "runtime_hardware_info", profile_name, stamp, ".csv"; required=false)
+    # Rollout-gate files have their own earlier stamp; retain their existing selection.
     split_gate_csv_path = _latest_artifact_path_optional(arm_outdir, "split_rollout_gate", profile_name, ".csv")
     split_gate_report_path = _latest_artifact_path_optional(arm_outdir, "split_rollout_gate", profile_name, ".md")
-    report_path = _latest_artifact_path(arm_outdir, "runtime_report", profile_name, ".md")
+    report_path = _same_run_artifact_path(arm_outdir, "runtime_report", profile_name, stamp, ".md")
 
-    bench_elapsed_s, split_gate_elapsed_s, orbit_elapsed_s, total_elapsed_s = _stage_elapsed_s(stage_timing_path, elapsed_s)
+    bench_elapsed_s, split_gate_elapsed_s, orbit_elapsed_s, entry_duration_elapsed_s, total_elapsed_s = _stage_elapsed_s(stage_timing_path)
     split_gate_df = isnothing(split_gate_csv_path) ? nothing : CSV.read(split_gate_csv_path, DataFrame)
 
     return ModeRunArtifacts(
@@ -353,12 +353,15 @@ function _arm_result_artifacts(
         elapsed_s=total_elapsed_s,
         bench_elapsed_s=bench_elapsed_s,
         orbit_elapsed_s=orbit_elapsed_s,
+        entry_duration_elapsed_s=entry_duration_elapsed_s,
         raw_path=raw_path,
         summary_path=summary_path,
         orbit_raw_path=orbit_raw_path,
         orbit_summary_path=orbit_summary_path,
+        entry_duration_raw_path=entry_duration_raw_path,
+        entry_duration_summary_path=entry_duration_summary_path,
         report_path=report_path,
-        stage_timing_path=isnothing(stage_timing_path) ? "" : stage_timing_path,
+        stage_timing_path=stage_timing_path,
         hardware_info_path=isnothing(hardware_info_path) ? "" : hardware_info_path,
         split_gate_elapsed_s=split_gate_elapsed_s,
         split_gate_csv_path=split_gate_csv_path,
@@ -388,16 +391,13 @@ function run_arm(
 
     cmd = `$(Base.julia_cmd()) --project=$(STATIC_VS_PARALLEL_PROJECT) $(STATIC_VS_PARALLEL_RUNTIME_SCRIPT) --profile=$(config.profile.name) --outdir=$(arm_outdir)`
     env_pairs = _arm_env_pairs(arm, matrix, config)
-    started_ns = time_ns()
     withenv(env_pairs...) do
         run(cmd)
     end
-    elapsed_s = (time_ns() - started_ns) / 1e9
-
-    artifacts = _arm_result_artifacts(arm, config, arm_outdir, elapsed_s)
+    artifacts = _arm_result_artifacts(arm, config, arm_outdir)
     println(
         "[static-vs-parallel] matrix=$(matrix.label) pass=$(pass_idx) arm=$(arm.label) completed total=$(round(artifacts.elapsed_s; digits=3)) s " *
-        "(run_benchmarks=$(round(artifacts.bench_elapsed_s; digits=3)) s, split_gate=$(round(artifacts.split_gate_elapsed_s; digits=3)) s, per_orbit=$(round(artifacts.orbit_elapsed_s; digits=3)) s)"
+        "(run_benchmarks=$(round(artifacts.bench_elapsed_s; digits=3)) s, split_gate=$(round(artifacts.split_gate_elapsed_s; digits=3)) s, per_orbit=$(round(artifacts.orbit_elapsed_s; digits=3)) s, entry_duration=$(round(artifacts.entry_duration_elapsed_s; digits=3)) s)"
     )
     return artifacts
 end
@@ -439,7 +439,10 @@ function _write_aggregate_arm_report(
     runs::Vector{ArmPassResult},
     bench_elapsed_s::Float64,
     orbit_elapsed_s::Float64,
+    entry_duration_elapsed_s::Float64,
     total_elapsed_s::Float64;
+    entry_duration_raw_path::String,
+    entry_duration_summary_path::String,
     split_gate_csv_path::Union{Nothing, String}=nothing,
     split_gate_pass_rows::Int=0,
     split_gate_total_rows::Int=0
@@ -454,7 +457,11 @@ function _write_aggregate_arm_report(
         println(io, "- Aggregated passes: `$(length(runs))`")
         println(io, "- Mean run_benchmarks elapsed: `$(round(bench_elapsed_s; digits=3)) s`")
         println(io, "- Mean per-orbit elapsed: `$(round(orbit_elapsed_s; digits=3)) s`")
+        println(io, "- Mean entry-duration elapsed: `$(round(entry_duration_elapsed_s; digits=3)) s`")
+        println(io, "- Entry-duration aggregated raw CSV: `$(entry_duration_raw_path)`")
+        println(io, "- Entry-duration aggregated summary CSV: `$(entry_duration_summary_path)`")
         println(io, "- Mean total elapsed: `$(round(total_elapsed_s; digits=3)) s`")
+        println(io, "- Timing scope: mean recorded runtime stage totals; excludes child startup and complete campaign wall time.")
         if split_gate_total_rows > 0
             println(io, "- Split rollout gate pass rows: `$(split_gate_pass_rows)/$(split_gate_total_rows)`")
         else
@@ -467,7 +474,7 @@ function _write_aggregate_arm_report(
         println(io, "## Source Runs")
         println(io)
         for run in runs
-            println(io, "- pass=$(run.pass): raw=`$(run.artifact.raw_path)`, per-orbit raw=`$(run.artifact.orbit_raw_path)`, report=`$(run.artifact.report_path)`")
+            println(io, "- pass=$(run.pass): raw=`$(run.artifact.raw_path)`, per-orbit raw=`$(run.artifact.orbit_raw_path)`, entry raw=`$(run.artifact.entry_duration_raw_path)`, entry summary=`$(run.artifact.entry_duration_summary_path)`, report=`$(run.artifact.report_path)`")
         end
     end
 end
@@ -483,11 +490,15 @@ function _aggregate_arm_artifacts(
 
     raw_df = DataFrame()
     orbit_raw_df = DataFrame()
+    entry_duration_raw_df = DataFrame()
     split_gate_df = DataFrame()
     for run in runs
         raw_df = vcat(raw_df, _tag_arm_column(run.artifact.raw_df, arm.label; pass_idx=run.pass, matrix_key=matrix.key); cols=:union)
         local_orbit_raw = CSV.read(run.artifact.orbit_raw_path, DataFrame)
         orbit_raw_df = vcat(orbit_raw_df, _tag_arm_column(local_orbit_raw, arm.label; pass_idx=run.pass, matrix_key=matrix.key); cols=:union)
+        local_entry_raw = CSV.read(run.artifact.entry_duration_raw_path, DataFrame)
+        entry_duration_raw_df = vcat(entry_duration_raw_df,
+            _tag_arm_column(local_entry_raw, arm.label; pass_idx=run.pass, matrix_key=matrix.key); cols=:union)
         if !(run.artifact.split_gate_df === nothing)
             split_gate_df = vcat(
                 split_gate_df,
@@ -499,11 +510,13 @@ function _aggregate_arm_artifacts(
 
     summary_df = summarize_results(raw_df)
     orbit_summary_df = summarize_per_orbit_results(orbit_raw_df)
+    entry_duration_summary_df = summarize_entry_duration_results(entry_duration_raw_df)
 
     bench_elapsed_s = mean([run.artifact.bench_elapsed_s for run in runs])
     split_gate_elapsed_s = mean([run.artifact.split_gate_elapsed_s for run in runs])
     orbit_elapsed_s = mean([run.artifact.orbit_elapsed_s for run in runs])
-    total_elapsed_s = bench_elapsed_s + split_gate_elapsed_s + orbit_elapsed_s
+    entry_duration_elapsed_s = mean([run.artifact.entry_duration_elapsed_s for run in runs])
+    total_elapsed_s = mean([run.artifact.elapsed_s for run in runs])
 
     stamp = Dates.format(now(UTC), dateformat"yyyymmdd_HHMMSS")
     agg_outdir = joinpath(matrix_outdir, "aggregate", arm.label)
@@ -513,6 +526,8 @@ function _aggregate_arm_artifacts(
     summary_path = joinpath(agg_outdir, "runtime_summary_agg_$(config.profile.name)_$(arm.label)_$(stamp).csv")
     orbit_raw_path = joinpath(agg_outdir, "runtime_per_orbit_raw_agg_$(config.profile.name)_$(arm.label)_$(stamp).csv")
     orbit_summary_path = joinpath(agg_outdir, "runtime_per_orbit_summary_agg_$(config.profile.name)_$(arm.label)_$(stamp).csv")
+    entry_duration_raw_path = joinpath(agg_outdir, "runtime_entry_duration_raw_agg_$(config.profile.name)_$(arm.label)_$(stamp).csv")
+    entry_duration_summary_path = joinpath(agg_outdir, "runtime_entry_duration_summary_agg_$(config.profile.name)_$(arm.label)_$(stamp).csv")
     stage_timing_path = joinpath(agg_outdir, "runtime_stage_timing_agg_$(config.profile.name)_$(arm.label)_$(stamp).csv")
     hardware_info_path = joinpath(agg_outdir, "runtime_hardware_info_agg_$(config.profile.name)_$(arm.label)_$(stamp).csv")
     split_gate_csv_path = nrow(split_gate_df) > 0 ? joinpath(agg_outdir, "split_rollout_gate_agg_$(config.profile.name)_$(arm.label)_$(stamp).csv") : nothing
@@ -536,14 +551,16 @@ function _aggregate_arm_artifacts(
         )
     ])
     stage_timing_df = DataFrame(
-        stage=["run_benchmarks", "run_split_rollout_gate", "run_per_orbit", "total"],
-        elapsed_s=[bench_elapsed_s, split_gate_elapsed_s, orbit_elapsed_s, total_elapsed_s]
+        stage=["run_benchmarks", "run_split_rollout_gate", "run_per_orbit", "run_entry_duration_sweep", "total"],
+        elapsed_s=[bench_elapsed_s, split_gate_elapsed_s, orbit_elapsed_s, entry_duration_elapsed_s, total_elapsed_s]
     )
 
     CSV.write(raw_path, raw_df)
     CSV.write(summary_path, summary_df)
     CSV.write(orbit_raw_path, orbit_raw_df)
     CSV.write(orbit_summary_path, orbit_summary_df)
+    CSV.write(entry_duration_raw_path, entry_duration_raw_df)
+    CSV.write(entry_duration_summary_path, entry_duration_summary_df)
     CSV.write(stage_timing_path, stage_timing_df)
     CSV.write(hardware_info_path, hardware_info_df)
     if !(split_gate_csv_path === nothing)
@@ -557,7 +574,10 @@ function _aggregate_arm_artifacts(
         runs,
         bench_elapsed_s,
         orbit_elapsed_s,
+        entry_duration_elapsed_s,
         total_elapsed_s;
+        entry_duration_raw_path=entry_duration_raw_path,
+        entry_duration_summary_path=entry_duration_summary_path,
         split_gate_csv_path=split_gate_csv_path,
         split_gate_pass_rows=split_gate_pass_rows,
         split_gate_total_rows=split_gate_total_rows
@@ -570,10 +590,13 @@ function _aggregate_arm_artifacts(
         elapsed_s=total_elapsed_s,
         bench_elapsed_s=bench_elapsed_s,
         orbit_elapsed_s=orbit_elapsed_s,
+        entry_duration_elapsed_s=entry_duration_elapsed_s,
         raw_path=raw_path,
         summary_path=summary_path,
         orbit_raw_path=orbit_raw_path,
         orbit_summary_path=orbit_summary_path,
+        entry_duration_raw_path=entry_duration_raw_path,
+        entry_duration_summary_path=entry_duration_summary_path,
         report_path=report_path,
         stage_timing_path=stage_timing_path,
         hardware_info_path=hardware_info_path,
@@ -733,6 +756,8 @@ function _write_static_vs_parallel_report(
             println(io, "- Arm `$(artifact.mode)` aggregated raw: `$(artifact.raw_path)`")
             println(io, "- Arm `$(artifact.mode)` aggregated summary: `$(artifact.summary_path)`")
             println(io, "- Arm `$(artifact.mode)` aggregated per-orbit summary: `$(artifact.orbit_summary_path)`")
+            println(io, "- Arm `$(artifact.mode)` aggregated entry-duration raw: `$(artifact.entry_duration_raw_path)`")
+            println(io, "- Arm `$(artifact.mode)` aggregated entry-duration summary: `$(artifact.entry_duration_summary_path)`")
             if !isempty(artifact.stage_timing_path)
                 println(io, "- Arm `$(artifact.mode)` aggregated stage timing: `$(artifact.stage_timing_path)`")
             end

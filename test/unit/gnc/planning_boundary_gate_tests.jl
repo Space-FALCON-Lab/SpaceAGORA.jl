@@ -7,10 +7,14 @@ using Test
         joinpath("src", "gnc", "rrt"), joinpath("src", "gnc", "shared", "rpo"),
         joinpath("packages", "SpaceAGORAHYPR", "src"), joinpath("packages", "SpaceAGORAHYPR", "src", "rpo"))
     gates = (
-        "ci_no_legacy_include_chains_gate.jl" => "__legacy_probe = nothing\n",
-        "ci_no_guidance_control_cross_include_gate.jl" => "include(\"control/probe.jl\")\n",
-        "ci_gnc_aerobraking_boundary_gate.jl" => "using DynamicEffectors\n",
-        "ci_gnc_typed_command_boundary_gate.jl" => "using ThrusterModels\n",
+        ("ci_no_legacy_include_chains_gate.jl", "__legacy_probe = nothing\n",
+            "Legacy include-chain gate failed", "contains forbidden legacy token '__legacy_'"),
+        ("ci_no_guidance_control_cross_include_gate.jl", "include(\"control/probe.jl\")\n",
+            "Guidance/control cross-include gate failed", "include(\"control/probe.jl\")"),
+        ("ci_gnc_aerobraking_boundary_gate.jl", "using DynamicEffectors\n",
+            "GNC aerobraking boundary gate failed", "GNC source still depends on DynamicEffectors directly"),
+        ("ci_gnc_typed_command_boundary_gate.jl", "using ThrusterModels\n",
+            "GNC typed-command boundary gate failed", "guidance must not depend on ThrusterModels directly"),
     )
     # Only copy the small source files required by these gates. Each fixture is
     # isolated, so a forbidden source file never enters the working checkout.
@@ -28,6 +32,15 @@ using Test
         "src/gnc/control/aerobraking/control_commands.jl",
         "src/gnc/control/aerobraking/constraint_tracking.jl",
         "src/mission/operations/aerobraking_policy/policy_types.jl",
+        # The aerobraking gate also verifies the complete typed EDG owner.
+        "src/gnc/guidance/aerobraking/typed_edg/algorithms.jl",
+        "src/gnc/guidance/aerobraking/typed_edg/services.jl",
+        "src/gnc/guidance/aerobraking/typed_edg/targeting.jl",
+        "src/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
+        "src/gnc/guidance/aerobraking/typed_edg/heat_rate.jl",
+        "src/gnc/guidance/aerobraking/typed_edg/structural_load.jl",
+        "src/gnc/guidance/aerobraking/typed_edg/guidance_decision.jl",
+        "src/gnc/guidance/aerobraking/typed_edg/angle_decision.jl",
     )
     mktempdir() do fixture
         for rel in required
@@ -38,23 +51,50 @@ using Test
         for owner in owner_paths
             mkpath(joinpath(fixture, owner))
         end
-        for (gate, forbidden) in gates
+        for (gate, forbidden, failure_message, violation_message) in gates
             path = joinpath(repo, "test", "gates", gate)
             source = read(path, String)
             root_line = "const REPO_ROOT = normpath(joinpath(@__DIR__, \"..\", \"..\"))"
             @test occursin(root_line, source)
             isolated_source = replace(source, root_line => "const REPO_ROOT = $(repr(fixture))"; count=1)
-            run_gate() = redirect_stdout(devnull) do
-                Base.include_string(Module(gensym(:PlanningGate)), isolated_source, path)
+            function run_gate()
+                isolated = Module(gensym(:PlanningGate))
+                # Module(name) has no include binding. Gate helpers must load into
+                # the same isolated module, with paths resolved from the gate file.
+                Core.eval(isolated, :(include(path) = Base.include(@__MODULE__, path)))
+                failure = try
+                    redirect_stdout(devnull) do
+                        Base.include_string(isolated, isolated_source, path)
+                    end
+                    nothing
+                catch err
+                    err
+                end
+                # Read newly evaluated bindings in the gate's own module.
+                violations = Core.eval(isolated,
+                    :(isdefined(@__MODULE__, :violations) ? copy(violations) : String[]))
+                return (; failure, violations)
             end
             # Establish that unrelated required-file checks do not cause the failure.
-            @test isnothing(run_gate())
+            @test isnothing(run_gate().failure)
             for owner in owner_paths
                 probe = joinpath(fixture, owner, "boundary_probe.jl")
                 write(probe, forbidden)
-                @test_throws LoadError run_gate()
-                rm(probe)
-                @test isnothing(run_gate())
+                try
+                    rejected = run_gate()
+                    @test rejected.failure isa LoadError
+                    @test rejected.failure isa LoadError &&
+                        rejected.failure.error isa ErrorException &&
+                        rejected.failure.error.msg == failure_message
+                    # Reject this injected dependency specifically, rather than an
+                    # unrelated include error or another incomplete source fixture.
+                    prefix = relpath(probe, fixture) * ":"
+                    @test any(v -> startswith(v, prefix) && occursin(violation_message, v),
+                        rejected.violations)
+                finally
+                    rm(probe)
+                end
+                @test isnothing(run_gate().failure)
             end
         end
     end

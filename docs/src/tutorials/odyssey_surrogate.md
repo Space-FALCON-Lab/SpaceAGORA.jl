@@ -160,6 +160,14 @@ resume are refused before output creation because the checkpoint format does
 not preserve EDG pass state. The stored `switch_recompute_interval_s` setting
 remains inactive; this lifecycle rule does not introduce periodic re-solving.
 
+## EDG prediction and panel application
+
+EDG computes the prediction, mode, switch times and constrained angle command.
+The control callback applies that command to the panels at the same control
+times as before. Computing a decision alone leaves panel geometry and propagated
+heat loads unchanged. The existing pass-reset rules, numerical limits and
+separate prediction/control panel selections remain in force.
+
 ## Inspect the result
 
 Unless you pass `--output=DIR` (or `output_dir` in Julia), the comparison writes

@@ -1,0 +1,13 @@
+# MuJoCo 3.11.0, official Google DeepMind release (Apache-2.0), Linux x86_64 only.
+# Source: https://github.com/google-deepmind/mujoco/releases/tag/3.11.0
+# sha256 matches both the published .sha256 file and the GitHub release asset digest.
+# The tarball has a top-level mujoco-3.11.0/ directory; the binding searches for libmujoco.
+[mujoco_3_11_0_linux_x86_64]
+arch = "x86_64"
+os = "linux"
+git-tree-sha1 = "6a34a368d528ad0332f9da97de3d2f105977bac8"
+lazy = true
+
+    [[mujoco_3_11_0_linux_x86_64.download]]
+    sha256 = "681a9353b296a06682e9e757d6d21ab7a0a5a5bdb218a1c05cb9a38536817c79"
+    url = "https://github.com/google-deepmind/mujoco/releases/download/3.11.0/mujoco-3.11.0-linux-x86_64.tar.gz"

@@ -348,10 +348,12 @@ description of the current code.
   which definitions can share an owner. Their current duplication is not yet
   established as intentional or necessary.
 
-- `scripts/plotting/plot_data.jl` still reads old dictionary and solution
-  structures and is listed as a runnable owner. Check the replacement coverage for its
-  costate and switching diagnostics with the legacy capability owner before
-  retiring the entrypoint; similar modern plots are not sufficient evidence.
+- `scripts/plotting/plot_data.jl` is retained legacy plotting code using older
+  dictionary and nested-solution interfaces; current workflow support has not
+  been established. Check replacement coverage for its costate/switching,
+  closed-form, per-link, attitude, reaction-wheel and torque/inertia diagnostics
+  with the legacy capability owner before any port or retirement. Similar modern
+  plots or available saved fields alone do not establish equivalent coverage.
 - The direct `Tables` dependency and the redundant `output/calibration/` ignore
   entry are cleanup candidates. A direct-dependency change needs manifest
   validation; transitive users of `Tables` must continue to resolve it.

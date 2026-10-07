@@ -384,16 +384,68 @@ feature. Links whose joint is `:fixed` move rigidly with their parent body.
 - Propellant is a point mass at the root composite COM: it adds mass and no inertia and never
   moves the COM, so the root inertia stays the configured composite.
 
-### Loads in v1
+### Loads in v1 (default)
 
 Every non-gravity load (aerodynamics, SRP, thrusters, control torques, third-body gravity) is
 evaluated by the existing effectors from the rigid configured geometry and applied to the root
 body. Gravity from the position-only gravity models (point mass, J2, harmonics) is evaluated per
-body at its own COM, so the gravity-gradient effect of the layout, including joint motion, emerges
-from the dynamics; a gravity effector's own `gravity_gradient` flag is superseded by this. A
-separate `GravityGradientTorqueModel` still uses the spacecraft `inertia_tensor` on the root: a
-known v1 limitation. Per-link aerodynamics and SRP on moving links, joint motors and joint limits
-are not implemented.
+body at its own COM, so the inter-body part of the gravity-gradient effect of the layout, including
+joint motion, emerges from the dynamics. The default mode cannot apply a gravity-gradient torque
+itself, so a gravity-gradient request on an articulated spacecraft (`gravity_gradient=true` on a
+gravity effector, or a `GravityGradientTorqueModel`) is **refused at setup** with an `ArgumentError`
+that names the effector. Set `SimulationSettings(articulated_live_pose_loads=true)` (below) to apply per-body
+gravity gradient from the link inertias, or remove the request. Rigid spacecraft are unaffected. This is what
+runs unless the switch below is turned on.
+
+### Live-pose loads (opt-in)
+
+```julia
+SimulationSettings(articulated_live_pose_loads=true)    # default false
+```
+
+With the switch on, aerodynamics and facet SRP act on each link where the link actually is, and
+the gravity gradient becomes per body. Everything is evaluated from one joint-kinematics pass per
+RHS call; the `Link` objects (`r`, `q`) are never written.
+
+- **Aerodynamics** (`AerodynamicCoefficientfM`, `AerodynamicCoefficientConstant`,
+  `AerodynamicCoefficientNoBallisticFlight`): each link gets its own flow angles from its live
+  attitude and its own airspeed from its live COM velocity, which includes the `omega x r` term of
+  the body that carries it. That term is where aerodynamic damping of a rotating or swinging
+  appendage comes from. The force acts at the link COM; the link's `cop_offset_b` gives the torque
+  about the link COM. Density, temperature and wind are the spacecraft-level sample unless the
+  model's `per_link_atmosphere` option is set, which queries non-root links at their own position
+  as before. The saved drag, lift and cross vectors are the sums over the links.
+- **Facet SRP** (`FacetSolarRadiationPressureModel`): facet normals and centers of pressure use the
+  live link attitude, and the Sun distance and the eclipse fraction are evaluated per link at the
+  link COM, so one panel can be in shadow while another is lit.
+- **Where the loads go:** each link's force and torque are applied to the dynamic body that carries
+  the link (a link merged by a `:fixed` joint rides with its parent body), as a force through the
+  link COM plus the torque about the body COM, `tau_link + (R_body c_link) x F_link`. This also
+  removes the v1 error of taking the bus-origin lever about the root composite COM.
+- **Gravity gradient:** any request, either `gravity_gradient=true` on `ConstantGravityModel`,
+  `InverseSquaredGravityModel` or `InverseSquaredJ2GravityModel`, or a `GravityGradientTorqueModel`,
+  becomes the per-body torque `3 mu/r^3 r x (R_b I_b R_b^T) r` from the tree's body inertia `I_b`
+  about each body COM. The configured `inertia_tensor` version is not applied as well, so nothing is
+  counted twice, and a gravity effector's flag is no longer dropped. Together with the per-body
+  point-mass gravity this gives the full gradient torque of the whole structure. The per-body torque
+  exists only with the switch; without it the same request is refused (see above). No request, no torque.
+- **Everything else** (thrusters, control torques, cannonball SRP, third-body gravity, magnets,
+  eddy damping, the mesh aerodynamic surrogate, heating) keeps the base application from v1.
+  Compliant attachments stay gravity-only.
+
+Limits and refusals with the switch on:
+
+| Case | Behavior |
+|---|---|
+| Panel-angle control of a link on a moving body | refused at setup, as without the switch |
+| Panel-angle control of a `:fixed` link of the root body | works; the live link attitude follows the commanded `link.q` |
+| Whole-vehicle (`root_only`) `AerodynamicCoefficientMeshSurrogate` | refused at setup: the fit bakes in the configured geometry |
+| Rigid spacecraft | never enter this path |
+| Link mass, COM and inertia | frozen at the configured geometry (unchanged) |
+
+For a locked configuration (very stiff joints) the live-pose run reproduces the rigid run except for
+the `omega x r` airspeed term, of relative size `|omega| |r| / |v|`, and a hinged rod in a circular
+orbit librates at `sqrt(3) n`, which needs the per-body gradient.
 
 ### Solver advice and supported routes
 
@@ -413,7 +465,7 @@ period, and use tight tolerances; `:dp8` was used for the conservation checks. T
 coordinates use the quaternion and angular-rate tolerances.
 
 !!! note
-    Per-link loads, motors and limits are not part of this release; see "Loads in v1" above.
+    Motors and joint limits are not part of this release. Per-link loads are opt-in; see "Live-pose loads" above.
 
 ## Compliant attachments
 

@@ -1,7 +1,8 @@
 module PerturbationEffectors
     using ...ConfigTypes: ODEParams, NBodyScratchWorkspace, HarmonicsScratchWorkspace
     using ...AbstractTypes: AbstractPlanet, AbstractForceTorqueModel
-    using ...EffectorSampling: StateSample, EnvironmentSample, ThirdBodyEphemerisSample, EffectorEnvironmentRequirements
+    using ...EffectorSampling: StateSample, EnvironmentSample, ThirdBodyEphemerisSample, EffectorEnvironmentRequirements, LinkStateSample
+    import ...EffectorSampling: link_wrench_capable, link_wrench
     using ...Planets: Earth, Mars, Venus, Moon, Titan
     using ...EphemeridesModels: spice_position_j2000_m
     using ...ParallelPolicy

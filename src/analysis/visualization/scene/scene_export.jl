@@ -241,7 +241,8 @@ function with_visualization_scene(args::SimulationConfiguration, flag::Bool=true
         checkpoint_enabled=s.checkpoint_enabled,
         checkpoint_interval_s=s.checkpoint_interval_s,
         checkpoint_directory=s.checkpoint_directory,
-        resume_from_checkpoint=s.resume_from_checkpoint
+        resume_from_checkpoint=s.resume_from_checkpoint,
+        articulated_live_pose_loads=s.articulated_live_pose_loads
     )
     return _with_configuration(args;
         simulation_settings=settings,

@@ -2,7 +2,8 @@ module AerodynamicEffectors
     using ...Structure
     using ...ConfigTypes: ODEParams, AeroScratchWorkspace
     using ...AbstractTypes: AbstractForceTorqueModel
-    using ...EffectorSampling: StateSample, EnvironmentSample, EffectorEnvironmentRequirements
+    using ...EffectorSampling: StateSample, EnvironmentSample, EffectorEnvironmentRequirements, LinkStateSample
+    import ...EffectorSampling: link_wrench_capable, link_wrench, link_wrench_store!
     using ...ParallelPolicy
     using ...Kinematics
     import ...SimulationModel

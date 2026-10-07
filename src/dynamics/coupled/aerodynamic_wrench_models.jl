@@ -718,6 +718,102 @@ end
     return force, torque
 end
 
+# ---------------------------------------------------------------------------
+# Per-link kernel at a live link pose (articulated spacecraft, opt-in; see `link_wrench`)
+# ---------------------------------------------------------------------------
+#
+# The orientation_sim branch of `_aero_pure_wrench` for ONE link, evaluated at the link's live COM
+# position, velocity and attitude. The relative wind therefore includes `ω × r` of the carrying body
+# (aerodynamic damping). Link `r`/`q` are never read: the pose is `xl`. `env.planet_frame` is the
+# planet-frame sample at the link COM; `env.atmosphere` is the spacecraft-level sample unless the
+# model's `per_link_atmosphere` opt-in is set (then a non-root link queries density and temperature at
+# its own position, as `_aero_pure_wrench` does). Force at the link COM and torque about it, inertial.
+function _aero_link_pure_wrench(
+    coefficient_mode::Symbol,
+    link,
+    xl::LinkStateSample,
+    env::EnvironmentSample,
+    per_link_density::Bool,
+    t::Float64,
+    p,
+    sat_idx::Int,
+)::NTuple{5, SVector{3, Float64}}
+    planet_frame = env.planet_frame
+    atmosphere = env.atmosphere
+    planet_frame === nothing && throw(ArgumentError("Aerodynamic link wrench evaluation requires env.planet_frame."))
+    atmosphere === nothing && throw(ArgumentError("Aerodynamic link wrench evaluation requires env.atmosphere."))
+    planet = env.planet
+    rho = atmosphere.rho_kg_m3
+    T = atmosphere.temperature_k
+    wind = atmosphere.wind_pp
+    if per_link_density && p !== nothing && !link.root
+        rho_l, T_l, _ = _aero_link_atmosphere_query(p, sat_idx, t, planet_frame.pos_pp, planet)
+        if isfinite(rho_l) && rho_l > eps(Float64) && isfinite(T_l) && T_l > 0.0
+            rho, T = rho_l, T_l
+        end
+    end
+    if !isfinite(rho) || rho <= eps(Float64) || !isfinite(T) || T <= 0.0
+        return _AERO_ZERO5
+    end
+    vel_pp = planet_frame.vel_pp
+    h_pp = cross(planet_frame.pos_pp, vel_pp)
+    h_pp_mag = norm(h_pp)
+    if !isfinite(h_pp_mag) || h_pp_mag <= eps(Float64)
+        return _AERO_ZERO5
+    end
+    uD, uN, uE = latlongtoNED((planet_frame.alt_m, planet_frame.lat_rad, planet_frame.lon_rad))
+    wE, wN, wU = wind
+    wind_pp = wN * uN + wE * uE - wU * uD
+    vel_pp_rw = vel_pp - wind_pp
+    vel_pp_rw_mag = norm(vel_pp_rw)
+    if vel_pp_rw_mag <= eps(Float64)
+        return _AERO_ZERO5
+    end
+    vel_pp_rw_hat = vel_pp_rw / vel_pp_rw_mag
+    h_pp_hat = h_pp / h_pp_mag
+    lift_pp_hat = normalize(cross(h_pp_hat, vel_pp_rw_hat))
+    drag_pp_hat = -vel_pp_rw_hat
+    cross_pp_hat = cross(drag_pp_hat, lift_pp_hat)
+    l_pi_t = planet_frame.l_pi'
+    vel_pi = l_pi_t * vel_pp_rw
+    θ_body = acos(clamp(vel_pp_rw[1] / vel_pp_rw_mag, -1.0, 1.0))
+    R_link = SMatrix{3, 3, Float64, 9}(rot(xl.q_ib)')       # link frame -> inertial
+    body_frame_velocity = R_link' * vel_pi
+    α_body = atan(body_frame_velocity[1], body_frame_velocity[3])
+    β_body = atan(body_frame_velocity[2], hypot(body_frame_velocity[1], body_frame_velocity[3]))
+    link_area = link.ref_area
+    mach_body = vel_pp_rw_mag / sqrt(planet.γ * planet.R * T)
+    S_body = sqrt(planet.γ * 0.5) * mach_body
+    q_body = 0.5 * rho * vel_pp_rw_mag^2
+    CL_body, CD_body, CS_body = if coefficient_mode == :fm
+        coeffs = aerodynamic_coefficient_fM(link, T, S_body, α_body, β_body, θ_body)
+        coeffs[1], coeffs[2], coeffs[3]
+    else
+        0.0, _constant_drag_coefficient(_fold_constant_incidence(α_body)), 0.0
+    end
+    drag_ii = l_pi_t * (q_body * CD_body * link_area * drag_pp_hat)
+    lift_ii = l_pi_t * (q_body * CL_body * link_area * lift_pp_hat)
+    cross_ii = l_pi_t * (q_body * CS_body * link_area * cross_pp_hat)
+    force_ii = drag_ii + lift_ii + cross_ii
+    cop = SVector{3, Float64}(link.cop_offset_b)
+    torque_ii = cross(R_link * cop, force_ii)
+    return force_ii, torque_ii, drag_ii, lift_ii, cross_ii
+end
+
+@inline link_wrench_capable(::AerodynamicCoefficientConstant) = true
+@inline link_wrench_capable(::AerodynamicCoefficientfM) = true
+@inline link_wrench_capable(::AerodynamicCoefficientNoBallisticFlight) = true
+
+@inline link_wrench(model::AerodynamicCoefficientConstant, link, xl::LinkStateSample, env::EnvironmentSample, t::Float64, p, sat_idx::Int) =
+    _aero_link_pure_wrench(:constant, link, xl, env, _per_link_enabled(model), t, p, sat_idx)
+@inline link_wrench(model::AerodynamicCoefficientfM, link, xl::LinkStateSample, env::EnvironmentSample, t::Float64, p, sat_idx::Int) =
+    _aero_link_pure_wrench(:fm, link, xl, env, _per_link_enabled(model), t, p, sat_idx)
+@inline link_wrench(model::AerodynamicCoefficientNoBallisticFlight, link, xl::LinkStateSample, env::EnvironmentSample, t::Float64, p, sat_idx::Int) =
+    _aero_link_pure_wrench(:constant, link, xl, env, _per_link_enabled(model), t, p, sat_idx)
+
+@inline link_wrench_store!(::Union{AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight},
+    p::ODEParams, sat_idx::Int, drag_ii, lift_ii, cross_ii) = _store_aero_caches!(p, sat_idx, drag_ii, lift_ii, cross_ii)
+
 # Calculate force/torque functions
 function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     planet = param.args.environment_model.planet

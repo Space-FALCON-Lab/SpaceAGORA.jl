@@ -2461,6 +2461,29 @@ function _validate_articulated_spacecraft!(args, solver_mode::Symbol)
         if _robot_arm_coupling(args, i, 0.0) !== nothing
             throw(ArgumentError("Spacecraft $i is articulated and also has a robot-arm effector; the two multibody paths cannot be combined."))
         end
+        if args.simulation_settings.articulated_live_pose_loads
+            for effector in args.dynamics_model.dynamic_effectors
+                if effector isa SimulationModel.AerodynamicCoefficientMeshSurrogate && effector.root_only
+                    throw(ArgumentError(
+                        "Spacecraft $i is articulated with articulated_live_pose_loads=true and the dynamic effectors include a whole-vehicle " *
+                        "(root_only) AerodynamicCoefficientMeshSurrogate: a whole-vehicle fit bakes in the configured geometry and is wrong once " *
+                        "a joint moves. Use per-link surrogates, a link-based aero model, or turn articulated_live_pose_loads off."
+                    ))
+                end
+            end
+        end
+        if !args.simulation_settings.articulated_live_pose_loads
+            for effector in args.dynamics_model.dynamic_effectors
+                if SimulationModel.DynamicEffectors.GravityEffectors.gravity_gradient_requested(effector)
+                    throw(ArgumentError(
+                        "Spacecraft $i is articulated and $(nameof(typeof(effector))) requests a gravity-gradient torque, which the default articulated " *
+                        "mode cannot apply (a gravity effector's flag is dropped, and GravityGradientTorqueModel would use the configured inertia_tensor " *
+                        "on the root and count the inter-body part twice). Set SimulationSettings(articulated_live_pose_loads=true), which applies " *
+                        "per-body gravity gradient from the link inertias, or remove the gravity-gradient request."
+                    ))
+                end
+            end
+        end
         link_sum = sum(l.m for l in sc.links)
         if !isapprox(sc.dry_mass, link_sum; rtol=1.0e-9)
             throw(ArgumentError(
@@ -2502,6 +2525,7 @@ function _initialize_articulated_runtimes!(p)
         any_art = true
     end
     p.shared_buffers.articulated_present[] = any_art
+    p.shared_buffers.articulated_live_loads[] = any_art && args.simulation_settings.articulated_live_pose_loads
     if any_art && _rhs_env_config(p).execution_mode == :flat_constellation_effector_queue
         throw(ArgumentError(
             "SPACEAGORA_RHS_EXECUTION_MODE=flat is not supported with articulated spacecraft; use auto, serial or satellite."

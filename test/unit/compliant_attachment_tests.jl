@@ -40,6 +40,10 @@ end
 
 const T0 = SM.InitialTime(year=2014, month=5, day=27, hour=5, minute=0, second=0.0)
 
+# Allocation counts are only meaningful without coverage instrumentation, which
+# blocks inlining and adds allocations (cf. test/unit/parallel/cost_robust_timing_tests.jl).
+const _ALLOC_CHECKS = Base.JLOptions().code_coverage == 0
+
 # The attachment state holds ABSOLUTE inertial positions (~7e6 m here, ulp 1e-9 m), so the spring forces carry a
 # roundoff floor of k * 1e-9 m. Absolute tolerances below that floor only shrink the step; `abs_orbit` stays at it.
 function tight_tolerances(; dt_max=0.05, rel=1e-12, abs_orbit=1e-9, abs_att=1e-9)
@@ -488,7 +492,7 @@ end
     @test buf.pos == kin.pos && buf.quat == kin.quat && buf.vel == kin.vel && buf.ω == kin.ω
     # in-place kinematics are allocation-free
     AB.articulated_kinematics!(buf, tree, base, jq, jqd)
-    @test (@allocated AB.articulated_kinematics!(buf, tree, base, jq, jqd)) == 0
+    @test (@allocated AB.articulated_kinematics!(buf, tree, base, jq, jqd)) == 0 skip=!_ALLOC_CHECKS
 end
 
 @testset "compliant_joint_loads_in_place! agrees with compliant_joint_loads" begin
@@ -520,7 +524,7 @@ end
     end
     # the reaction on the (fixed) mount is minus the force the first joint exerts on its child
     @test fm ≈ loads[1].translation_force_parent_world rtol = 1e-13
-    @test (@allocated CM.compliant_joint_loads_in_place!(F, T, cmodel, 0, pos, quat, vel, ω, mount, restv)) == 0
+    @test (@allocated CM.compliant_joint_loads_in_place!(F, T, cmodel, 0, pos, quat, vel, ω, mount, restv)) == 0 skip=!_ALLOC_CHECKS
 end
 
 # ---------------------------------------------------------------------------
@@ -673,7 +677,7 @@ end
             SE._apply_attachments_rigid!(du.sc[1], u.sc[1], p, 1, 0.0, forces, torques, (eff,))     # warm-up
             alloc = _rigid_alloc(p, u, du, forces, torques, eff)
             @info "rigid attachment RHS allocation" label effector = nameof(typeof(eff)) alloc
-            @test alloc == 0
+            @test alloc == 0 skip=!_ALLOC_CHECKS
             @test any(!iszero, du.sc[1].att_v)                                  # the attachment actually has a derivative
         end
         # whole RHS dispatch, point-mass gravity: the attachment adds nothing to what the same rigid spacecraft allocates without it
@@ -699,7 +703,7 @@ end
             SE._assign_articulated_rhs!(du.sc[1], u.sc[1], art, p, 1, 0.0, forces, torques, 0.0, (eff,))
             alloc = _art_alloc(art, p, u, du, forces, torques, eff)
             @info "articulated attachment RHS allocation" label effector = nameof(typeof(eff)) alloc
-            @test alloc == 0
+            @test alloc == 0 skip=!_ALLOC_CHECKS
         end
     end
     # runs with no attachments pay only the flag: the flag is false and the helper returns immediately
@@ -708,7 +712,7 @@ end
     @test !p.shared_buffers.attachments_present[]
     forces = MVector{3, Float64}(0.0, 0.0, 0.0); torques = MVector{3, Float64}(0.0, 0.0, 0.0)
     SE._apply_attachments_rigid!(du.sc[1], u.sc[1], p, 1, 0.0, forces, torques, (SM.InverseSquaredGravityModel(),))
-    @test _rigid_alloc(p, u, du, forces, torques, SM.InverseSquaredGravityModel()) == 0
+    @test _rigid_alloc(p, u, du, forces, torques, SM.InverseSquaredGravityModel()) == 0 skip=!_ALLOC_CHECKS
 end
 
 # ---------------------------------------------------------------------------

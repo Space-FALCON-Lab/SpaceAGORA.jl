@@ -79,6 +79,9 @@ include(joinpath(@__DIR__, "..", "dynamics", "coupled", "articulated_body.jl"))
 include(joinpath(@__DIR__, "..", "dynamics", "multibody_cloth", "compliant_attachment_dynamics.jl"))
 @reexport using .CompliantAttachmentDynamics
 
+# Generic hooks for spacecraft an external integrator owns for a run (internal name space, not re-exported).
+include(joinpath(@__DIR__, "..", "dynamics", "coupled", "external_propagation.jl"))
+
 # Private owner for shared coordinate transforms; preserve legacy qualified bindings.
 module FrameTransforms
 using ..EphemeridesModels: ephemerides_requires_spice, planet_frame_lpi

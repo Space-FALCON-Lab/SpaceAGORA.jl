@@ -129,6 +129,9 @@ function run_constellation_ensemble(
     route_tuning::Union{Nothing, OuterRouteTuning}=nothing,
     run_kwargs...
 )
+    isempty(args.external_propagators) || throw(ArgumentError(
+        "run_constellation_ensemble does not support externally propagated spacecraft (args.external_propagators): " *
+        "the owned spacecraft are coupled bodies of one scene and cannot be split into independent members."))
     spacecraft = args.dynamics_model.spacecraft
     isempty(spacecraft) && throw(ArgumentError(
         "run_constellation_ensemble requires at least one spacecraft in args.dynamics_model.spacecraft."

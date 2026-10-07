@@ -356,7 +356,7 @@ function get_quaternion_projection_callback(num_sats::Int, args::SimulationConfi
         u = integrator.u
         corrected = false
         @inbounds for i in 1:num_sats
-            if !p.is_active[i]
+            if !p.is_active[i] || p.shared_buffers.external_owner[i] != 0
                 continue
             end
             if p.shared_buffers.articulated_present[]

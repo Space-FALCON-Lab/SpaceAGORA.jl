@@ -2515,7 +2515,8 @@ end
 @inline function _articulated_plan_guard(plan::SimulationModel.RhsExecutionPlan, p)::SimulationModel.RhsExecutionPlan
     plan.mode == :flat_constellation_effector_queue || return plan
     (p !== nothing && hasproperty(p, :shared_buffers) &&
-        (p.shared_buffers.articulated_present[] || p.shared_buffers.attachments_present[])) || return plan
+        (p.shared_buffers.articulated_present[] || p.shared_buffers.attachments_present[] ||
+         p.shared_buffers.external_present[])) || return plan
     return (
         mode=:satellite_batch,
         allotment=1,

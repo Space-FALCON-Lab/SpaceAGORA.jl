@@ -35,6 +35,20 @@ This contract defines canonical ownership for the topology cleanup that answers 
    - the browser viewer itself is owned only by top-level `viewer/` (never
      under `src/viewer/`)
 
+11. Externally propagated spacecraft (shadow entries held in the state vector while an
+    optional package integrates them) are owned in three places, none of which
+    knows any concrete integrator:
+    - `src/dynamics/coupled/external_propagation.jl`: the `SimulationModel.ExternalPropagation`
+      hook surface (an internal name space, not a root export). Unimplemented hooks throw
+      `Not implemented`.
+    - `src/simulation/engine/external_propagation.jl`: setup-time refusals, per-run runtimes
+      and the shadow right-hand side.
+    - `src/simulation/callbacks/external_propagation_callbacks.jl`: the sync callback that
+      overwrites shadow entries after every accepted step, first among the discrete callbacks.
+    `SimulationConfiguration.external_propagators` carries the owners. Concrete owners live
+    in optional packages under `packages/` (for example `packages/SpaceAGORAMuJoCo`); the root
+    package never depends on them.
+
 ## Required Canonical Files
 1. `src/simulation/engine/public_api.jl`
 2. `src/simulation/engine/execution.jl`

@@ -9,5 +9,6 @@ include(joinpath(@__DIR__, "event_callbacks.jl"))
 include(joinpath(@__DIR__, "navigation_guidance_callbacks.jl"))
 include(joinpath(@__DIR__, "control_callbacks.jl"))
 include(joinpath(@__DIR__, "state_anchor_callbacks.jl"))
+include(joinpath(@__DIR__, "external_propagation_callbacks.jl"))
 include(joinpath(@__DIR__, "plume_callbacks.jl"))
 end # module SimulationCallbacks

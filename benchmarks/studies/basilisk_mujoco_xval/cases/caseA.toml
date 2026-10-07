@@ -1,0 +1,26 @@
+# Case A: free hub with one hinged panel, contact disabled (model: caseA_hinged_panel.xml).
+name = "caseA"
+mjcf = "caseA_hinged_panel.xml"
+mu = 3.98600436233e14          # SpaceAGORA Earth (make_no_gram_planet(:earth).mu); also set on the Basilisk body
+orbit_radius_m = 6.7781366e6   # SpaceAGORA Earth equatorial radius 6378136.6 m + 400 km
+inclination_deg = 51.6
+duration_s = 30.0
+sample_dt_s = 1.0
+sagora_dt_s = [0.04, 0.02, 0.01, 0.005, 0.0025, 0.00125]
+bsk_dt_s = [0.2, 0.1, 0.05, 0.025]
+
+[[body]]                       # free-root bodies, MJCF order; dr, dv relative to the orbit point (world axes)
+name = "hub"
+dr = [0.0, 0.0, 0.0]
+dv = [0.0, 0.0, 0.0]
+omega = [0.002, -0.003, 0.001] # body-frame rad/s (attitude is identity at t = 0)
+
+[[joint]]
+name = "panel_10_deploy"
+qpos = 0.8
+qvel = 0.0
+
+[[ctrl]]                       # piecewise-constant motor torque [N m], value of the last time <= t
+actuator = "panel_10_deploy"
+times  = [0.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0, 110.0, 120.0, 130.0, 140.0, 150.0, 160.0, 170.0, 180.0, 190.0, 200.0, 210.0, 220.0, 230.0, 240.0, 250.0, 260.0, 270.0, 280.0, 290.0, 300.0, 310.0, 320.0, 330.0, 340.0, 350.0, 360.0, 370.0, 380.0, 390.0]
+values = [0.25, 0.25, -0.25, -0.25, -0.25, -0.25, 0.25, 0.25, 0.25, 0.25, -0.25, -0.25, -0.25, -0.25, 0.25, 0.25, 0.25, 0.25, -0.25, -0.25, -0.25, -0.25, 0.25, 0.25, 0.25, 0.25, -0.25, -0.25, -0.25, -0.25, 0.25, 0.25, 0.25, 0.25, -0.25, -0.25, -0.25, -0.25, 0.25, 0.25]

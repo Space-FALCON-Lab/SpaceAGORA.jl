@@ -1,0 +1,23 @@
+# Case C: free contact between two 1 m, 1 kg cubes (model: caseC_contact.xml), no weld latch.
+# hub_2 starts 0.3 m off-center above hub_1 and approaches at 0.1 m/s with a small tangential rate and spin.
+name = "caseC"
+mjcf = "caseC_contact.xml"
+mu = 3.98600436233e14
+orbit_radius_m = 6.7781366e6
+inclination_deg = 51.6
+duration_s = 12.0
+verdict = "inconclusive: contact not converged on either side at 0.5 ms (observed self-convergence orders below 1 or negative); the pass rows hold only because the self-convergence errors are large"
+sample_dt_s = 1.0
+sagora_dt_s = [0.004, 0.002, 0.001, 0.0005]
+bsk_dt_s = [0.004, 0.002, 0.001, 0.0005]
+
+[[body]]
+name = "hub_1"
+dr = [0.0, 0.0, 0.0]
+dv = [0.0, 0.0, 0.0]
+omega = [0.0, 0.0, 0.0]
+[[body]]
+name = "hub_2"
+dr = [0.3, 0.0, 1.5]
+dv = [-0.02, 0.0, -0.1]
+omega = [0.0, 0.02, 0.0]

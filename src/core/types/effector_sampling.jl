@@ -15,6 +15,7 @@ export StateSample,
     solver_partition,
     gravity_backbone_structure,
     gravity_backbone_acceleration_ii,
+    gravity_backbone_relative_acceleration_ii,
     gravity_backbone_kick_structure,
     gravity_backbone_kick_acceleration_ii
 
@@ -206,6 +207,17 @@ units for effectors that declare
 [`gravity_backbone_structure`](@ref) == `:position_only_static_gravity`.
 """
 function gravity_backbone_acceleration_ii end
+
+"""
+    gravity_backbone_relative_acceleration_ii(model, x_base, ρ, x_far, env_base, env_far, t) -> Δg_ii
+
+Acceleration difference `g(x_base + ρ) - g(x_base)` of one position-only gravity effector, where
+`x_far` and `env_far` are the samples at `x_base.pos_ii + ρ`. The fallback subtracts two evaluations of
+[`gravity_backbone_acceleration_ii`](@ref); models override it to difference their point-mass part
+analytically (Encke), so a small `ρ` does not lose the difference to cancellation.
+"""
+@inline gravity_backbone_relative_acceleration_ii(model, x_base, ρ, x_far, env_base, env_far, t) =
+    gravity_backbone_acceleration_ii(model, x_far, env_far, t) - gravity_backbone_acceleration_ii(model, x_base, env_base, t)
 
 """
     gravity_backbone_kick_structure(model) -> Symbol

@@ -686,6 +686,13 @@ body COM and a torque about it, both in the INERTIAL frame (the engine hands the
 over this way). They enter as generalized forces `Jᵀ [F; τ]` through each body's Jacobian columns,
 in addition to `base_force_world`/`base_torque_body` (which stay root-only).
 
+`relative_gravity` (default `nothing`) switches to the Encke form: a callable `ρ -> g(x_root + ρ) -
+g(x_root)` replaces `body_gravity` for the bodies other than the root, the system is solved with those
+relative accelerations only, and the root gravity (`root_gravity`, default `body_gravity(base pos)`) is
+added to the returned root acceleration. This is exact: a uniform field `g` gives `u = [g; 0]` because
+the root translation Jacobian columns are the identity and have no rotational part. The common ~8 m/s^2
+therefore never has to cancel inside the Cholesky solve.
+
 `root_mass` (default `tree.mass[1]`) overrides the root body mass at runtime so mass flow needs no
 tree rebuild; the root inertia stays the configured composite (propellant carries no inertia).
 
@@ -695,7 +702,8 @@ workspace built once per tree the call performs no allocation; the math is gener
 """
 function articulated_dynamics!(ws::ArticulatedWorkspace{T}, tree::ArticulatedTree, base_state,
         joint_q::AbstractVector, joint_qd::AbstractVector, base_force_world, base_torque_body, body_gravity;
-        root_mass=tree.mass[1], body_force_world=nothing, body_torque_world=nothing) where {T}
+        root_mass=tree.mass[1], body_force_world=nothing, body_torque_world=nothing,
+        relative_gravity=nothing, root_gravity=nothing) where {T}
     nb = tree.nb
     nv = tree.nv
     n = 6 + nv
@@ -706,7 +714,9 @@ function articulated_dynamics!(ws::ArticulatedWorkspace{T}, tree::ArticulatedTre
     R1 = _rotmat(SVector{4, T}(base_state.q))
     ω1 = SVector{3, T}(base_state.ω)
     R[1] = R1
-    x[1] = SVector{3, T}(base_state.pos)
+    # With `relative_gravity` the positions are kept ROOT-RELATIVE (the root at the origin): they are used
+    # only for gravity, and ρ_b never forms an orbital-magnitude position.
+    x[1] = relative_gravity === nothing ? SVector{3, T}(base_state.pos) : zero(SVector{3, T})
     v[1] = SVector{3, T}(base_state.vel)
     w[1] = R1 * ω1
     ab[1] = zero(SVector{3, T})
@@ -786,7 +796,8 @@ function articulated_dynamics!(ws::ArticulatedWorkspace{T}, tree::ArticulatedTre
         Rb = R[b]
         Iw = Rb * SMatrix{3, 3, T, 9}(tree.inertia[b]) * Rb'
         mb = b == 1 ? T(root_mass) : T(tree.mass[b])
-        g = SVector{3, T}(body_gravity(x[b]))
+        g = relative_gravity === nothing ? SVector{3, T}(body_gravity(x[b])) :
+            (b == 1 ? zero(SVector{3, T}) : SVector{3, T}(relative_gravity(x[b])))
         Fb = mb * (ab[b] - g)
         Tb = Iw * alb[b] + cross(w[b], Iw * w[b])
         for j in 1:n
@@ -837,7 +848,11 @@ function articulated_dynamics!(ws::ArticulatedWorkspace{T}, tree::ArticulatedTre
     @inbounds for i in 1:nv
         qdd[i] = u[6 + i]
     end
-    return SVector{3, T}(u[1], u[2], u[3]), SVector{3, T}(u[4], u[5], u[6]), qdd
+    a_root = SVector{3, T}(u[1], u[2], u[3])
+    if relative_gravity !== nothing
+        a_root += root_gravity === nothing ? SVector{3, T}(body_gravity(SVector{3, T}(base_state.pos))) : SVector{3, T}(root_gravity)
+    end
+    return a_root, SVector{3, T}(u[4], u[5], u[6]), qdd
 end
 
 end # module ArticulatedBody

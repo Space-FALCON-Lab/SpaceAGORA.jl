@@ -22,6 +22,39 @@ end
     gravity_gradient::Bool = false
 end
 
+"""
+    encke_point_mass_difference(μ, r, ρ)
+
+Point-mass gravity difference `g(r + ρ) - g(r)` with `g(r) = -μ r / |r|^3`, evaluated without forming
+the two large terms: `-μ/|r|^3 (ρ - f(σ)(r + ρ))`, `σ = ρ·(2r + ρ)/|r|^2`,
+`f(σ) = σ(3 + 3σ + σ^2) / ([1 + (1 + σ)^(3/2)] (1 + σ)^(3/2))` (Encke's method). The factor `σ` is
+exact in the numerator, so the result keeps full relative precision as `ρ → 0` (zero for `ρ = 0`).
+Generic over the element type and allocation-free. Internal to the gravity code.
+"""
+@inline function encke_point_mass_difference(μ, r, ρ)
+    r2 = dot(r, r)
+    σ = dot(ρ, 2r + ρ) / r2
+    s3 = sqrt(1 + σ)^3
+    f = σ * (3 + σ * (3 + σ)) / ((1 + s3) * s3)
+    return -μ / (r2 * sqrt(r2)) * (ρ - f * (r + ρ))
+end
+
+# J2 term only (the second term of `_inverse_squared_j2_gravity_accel`), planet-fixed frame.
+@inline function _j2_only_gravity_accel(pos_pp::SVector{3, Float64}, planet)::SVector{3, Float64}
+    r = norm(pos_pp)
+    μ = Float64(planet.μ)
+    J2 = Float64(planet.J2)
+    Rp_m = Float64(planet.Rp_e)
+    x, y, z = pos_pp
+    r_squared = r^2
+    j2_term = SVector{3, Float64}(
+        x / r * (5 * z^2 / r_squared - 1),
+        y / r * (5 * z^2 / r_squared - 1),
+        z / r * (5 * z^2 / r_squared - 3),
+    )
+    return 3 / 2 * J2 * μ * Rp_m^2 / r^4 * j2_term
+end
+
 @inline function _gravity_runtime_field(args, name::Symbol, default)
     if args !== nothing && hasproperty(args, name)
         return getproperty(args, name)
@@ -226,6 +259,12 @@ end
     return _inverse_squared_gravity_accel(x.pos_ii, env.planet)
 end
 
+@inline function gravity_backbone_relative_acceleration_ii(
+    model::ConstantGravityModel, x_base::StateSample, ρ, x_far::StateSample, env_base::EnvironmentSample, env_far::EnvironmentSample, t::Float64,
+)::SVector{3, Float64}
+    return encke_point_mass_difference(Float64(env_base.planet.μ), x_base.pos_ii, ρ)
+end
+
 function calcForceTorque(model::InverseSquaredGravityModel, x::ComponentVector, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     pos_ii = SVector{3, Float64}(x[1], x[2], x[3])
     mass = Float64(x[7])
@@ -255,6 +294,12 @@ end
     t::Float64,
 )::SVector{3, Float64}
     return _inverse_squared_gravity_accel(x.pos_ii, env.planet)
+end
+
+@inline function gravity_backbone_relative_acceleration_ii(
+    model::InverseSquaredGravityModel, x_base::StateSample, ρ, x_far::StateSample, env_base::EnvironmentSample, env_far::EnvironmentSample, t::Float64,
+)::SVector{3, Float64}
+    return encke_point_mass_difference(Float64(env_base.planet.μ), x_base.pos_ii, ρ)
 end
 
 function calcForceTorque(model::InverseSquaredJ2GravityModel, x::ComponentVector, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
@@ -293,6 +338,18 @@ end
     planet_frame === nothing && throw(ArgumentError("InverseSquaredJ2GravityModel gravity-backbone acceleration requires env.planet_frame."))
     gravity_pp = _inverse_squared_j2_gravity_accel(planet_frame.pos_pp, env.planet)
     return planet_frame.l_pi' * gravity_pp
+end
+
+@inline function gravity_backbone_relative_acceleration_ii(
+    model::InverseSquaredJ2GravityModel, x_base::StateSample, ρ, x_far::StateSample, env_base::EnvironmentSample, env_far::EnvironmentSample, t::Float64,
+)::SVector{3, Float64}
+    pb = env_base.planet_frame
+    pf = env_far.planet_frame
+    (pb === nothing || pf === nothing) && throw(ArgumentError("InverseSquaredJ2GravityModel relative gravity requires env.planet_frame."))
+    planet = env_base.planet
+    point_mass = encke_point_mass_difference(Float64(planet.μ), x_base.pos_ii, ρ)
+    # J2 is a small term (1e-3 of the point mass), so its plain difference is accurate enough.
+    return point_mass + pb.l_pi' * (_j2_only_gravity_accel(pf.pos_pp, planet) - _j2_only_gravity_accel(pb.pos_pp, planet))
 end
 
 """

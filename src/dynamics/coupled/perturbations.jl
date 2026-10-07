@@ -1817,7 +1817,8 @@ function _harmonics_scalar_force_ii(
     workspace::HarmonicsScratchWorkspace,
     pos_ii::SVector{3, Float64},
     mass::Float64,
-    L_PI::SMatrix{3, 3, Float64, 9},
+    L_PI::SMatrix{3, 3, Float64, 9};
+    include_central::Bool=model.include_central,
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     rVec_cart, inv_r, s, t, u = _harmonics_frame_terms(L_PI, pos_ii)
     A = workspace.A
@@ -1915,7 +1916,7 @@ function _harmonics_scalar_force_ii(
 
     return _harmonics_back_transform(
         a1, a2, a3, a4, s, t, u, inv_r, mass, rVec_cart,
-        L_PI, model.gm_m3s2, model.include_central,
+        L_PI, model.gm_m3s2, include_central,
     )
 end
 
@@ -1994,6 +1995,24 @@ end
 )::SVector{3, Float64}
     force_ii, _ = wrench(model, x, env, t)
     return force_ii / x.mass_kg
+end
+
+# Relative gravity: the central term by Encke, the non-central part (J2 and higher harmonics) differenced
+# plainly. Without `include_central` the model has no point-mass term and the whole difference is plain.
+@inline function gravity_backbone_relative_acceleration_ii(
+    model::GravitationalHarmonicsModel,
+    x_base::StateSample, ρ, x_far::StateSample, env_base::EnvironmentSample, env_far::EnvironmentSample,
+    t::Float64,
+)::SVector{3, Float64}
+    pb = env_base.planet_frame
+    pf = env_far.planet_frame
+    (pb === nothing || pf === nothing) && throw(ArgumentError("GravitationalHarmonicsModel relative gravity requires env.planet_frame."))
+    workspace = _make_harmonics_scratch_workspace(model)
+    f_far, _ = _harmonics_scalar_force_ii(model, workspace, x_far.pos_ii, 1.0, pf.l_pi; include_central=false)
+    f_base, _ = _harmonics_scalar_force_ii(model, workspace, x_base.pos_ii, 1.0, pb.l_pi; include_central=false)
+    noncentral = f_far - f_base
+    model.include_central || return noncentral
+    return encke_point_mass_difference(model.gm_m3s2, x_base.pos_ii, ρ) + noncentral
 end
 
 """

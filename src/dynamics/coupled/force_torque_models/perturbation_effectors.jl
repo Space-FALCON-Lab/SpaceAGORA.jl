@@ -8,12 +8,13 @@ module PerturbationEffectors
     using ....RuntimeServices: SPICE_LOCK
     using ...SimulationModel: SRPSunEphemerisCache, NBodyEphemerisCache, SpiceRhsMemo
     using ...SimulationModel: ephemerides_cache_key, ephemerides_requires_spice, planet_frame_lpi
+    using ..GravityEffectors: encke_point_mass_difference
     using ..AerodynamicEffectors: _multibody_thread_decision
     # Shared geodetic conversion for the IGRF field option.
     using ...FrameTransforms: rtolatlong
     using StaticArrays
     import ..DynamicEffectors: calcForceTorque, wrench, environment_requirements
-    import ...EffectorSampling: gravity_backbone_structure, gravity_backbone_acceleration_ii
+    import ...EffectorSampling: gravity_backbone_structure, gravity_backbone_acceleration_ii, gravity_backbone_relative_acceleration_ii
     import ...EffectorSampling: gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 
     export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel, FacetSolarRadiationPressureModel

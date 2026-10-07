@@ -25,6 +25,7 @@ using ..ArticulatedBody: ArticulatedTree, ArticulatedWorkspace, articulated_kine
 
 export AttachmentRuntime, build_attachment_runtime, attachment_state_shape, initialize_attachment_state!
 export spacecraft_has_attachments, attachment_total_body_count, attachment_total_mass
+export relative_gravity
 export attachment_loads!, finish_attachments!, apply_attachments_rigid!, apply_attachments_articulated!
 
 """Evaluates a rest schedule at the runtime clock without boxing: `thunk()` writes into the joint rest buffer."""
@@ -149,6 +150,16 @@ function initialize_attachment_state!(sc_view, sc::SpacecraftModel, tree::Union{
 end
 
 """
+    relative_gravity(gravity, r_base, ρ, g_base) -> g(r_base + ρ) - g(r_base)
+
+Gravity difference between a body at `r_base + ρ` and the base, `g_base = gravity(r_base)`. The fallback
+subtracts two evaluations. The engine adds a method for its gravity callable that differences the
+point-mass part analytically (Encke), so the difference does not cancel two 8 m/s^2 terms. This module is
+included before the gravity code, hence the hook.
+"""
+@inline relative_gravity(gravity, r_base, ρ, g_base) = gravity(r_base + ρ) - g_base
+
+"""
     attachment_loads!(du_view, sc_view, rt, k, mount, gravity, base_pos, base_gravity) -> (force_on_mount, torque_on_mount)
 
 Evaluate attachment `k` in coordinates relative to the base (`mount` is relative too): its rest schedule
@@ -157,11 +168,10 @@ Evaluate attachment `k` in coordinates relative to the base (`mount` is relative
 inertial). `att_v'` is written WITHOUT the base acceleration: [`finish_attachments!`](@ref) subtracts it
 once the base acceleration, which includes these reactions, is known.
 
-Gravity is evaluated at each body's absolute position `base_pos + att_r`, but only its DIFFERENCE from
-the base gravity enters here: `g(r_base + r_rel) - g(r_base)` is about 1e-6 m/s^2 for a 1 m offset in
-LEO, while each term is about 8 m/s^2, so the difference is formed term by term from two evaluations
-that agree to 1e-16 relative (an absolute error of 1e-15 m/s^2) and the large common part never
-reaches the relative acceleration. The remaining `g(r_base) - a_base` is the negative of the
+Only the gravity DIFFERENCE `g(r_base + r_rel) - g(r_base)` enters here (about 1e-6 m/s^2 for a 1 m
+offset in LEO, against 8 m/s^2 for each term). [`relative_gravity`](@ref) forms it, by Encke
+differencing for the engine's gravity models, so the large common part never reaches the relative
+acceleration. The remaining `g(r_base) - a_base` is the negative of the
 non-gravitational base acceleration and is formed in `finish_attachments!`.
 """
 function attachment_loads!(du_view, sc_view, rt::AttachmentRuntime, k::Int, mount::ClothMultibody.CompliantMountKinematics, gravity,
@@ -175,7 +185,7 @@ function attachment_loads!(du_view, sc_view, rt::AttachmentRuntime, k::Int, moun
         rt.forces, rt.torques, model, col0, att_r, att_q, att_v, att_ω, mount, rt.rest[k])
     @inbounds for i in eachindex(model.bodies)
         c = col0 + i
-        g = gravity(base_pos + SVector{3, Float64}(att_r[1, c], att_r[2, c], att_r[3, c])) - base_gravity
+        g = relative_gravity(gravity, base_pos, SVector{3, Float64}(att_r[1, c], att_r[2, c], att_r[3, c]), base_gravity)
         m = model.bodies[i].mass_kg
         rt.forces[1, c] += m * g[1]
         rt.forces[2, c] += m * g[2]

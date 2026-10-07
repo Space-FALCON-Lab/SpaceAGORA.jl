@@ -1654,6 +1654,48 @@ FacetSolarRadiationPressureModel(; AU_m::Real=149_597_870_700.0, p_srp_1au::Real
     return force_ii, torque_body
 end
 
+# Per-link kernel at a live link pose (articulated spacecraft, opt-in; see `link_wrench`): the facets of ONE
+# link, with the link's own COM position (eclipse and distance to the Sun) and attitude. Force at the link
+# COM and torque about it, both inertial. Link `r`/`q` are never read.
+@inline link_wrench_capable(::FacetSolarRadiationPressureModel) = true
+
+function link_wrench(
+    model::FacetSolarRadiationPressureModel,
+    link,
+    xl::LinkStateSample,
+    env::EnvironmentSample,
+    t::Float64,
+    p,
+    sat_idx::Int,
+)::NTuple{5, SVector{3, Float64}}
+    zero3 = SVector{3, Float64}(0.0, 0.0, 0.0)
+    zero5 = (zero3, zero3, zero3, zero3, zero3)
+    isempty(link.SRP_facets) && return zero5
+    solar = env.solar
+    solar === nothing && throw(ArgumentError("FacetSolarRadiationPressureModel link wrench requires env.solar."))
+    sun_pos_ii = solar.sun_pos_ii
+    r_sc_sun = sun_pos_ii - xl.pos_ii
+    d_sun = norm(r_sc_sun)
+    (isfinite(d_sun) && d_sun > 0.0) || return zero5
+    shadow = eclipse_area_calc(xl.pos_ii, sun_pos_ii, env.planet.Rp_e)
+    shadow == 0.0 && return zero5
+    s_hat = r_sc_sun / d_sun
+    P = model.p_srp_1au * (model.AU_m / d_sun)^2 * shadow
+    R_link = rot(xl.q_ib)'                                 # link frame -> inertial
+    force_ii = zero3
+    torque_ii = zero3
+    @inbounds for facet in link.SRP_facets
+        n_link = rot(SVector{4, Float64}(facet.attitude))' * SVector{3, Float64}(facet.normal_vector)
+        n_ii = normalize(R_link * n_link)
+        cosθ = dot(n_ii, s_hat)
+        cosθ > 0.0 || continue
+        F_ii = -P * facet.area * cosθ * ((1.0 - facet.δ) * s_hat + 2.0 * (facet.ρ / 3.0 + facet.δ * cosθ) * n_ii)
+        force_ii += F_ii
+        torque_ii += cross(R_link * SVector{3, Float64}(facet.cp), F_ii)
+    end
+    return force_ii, torque_ii, zero3, zero3, zero3
+end
+
 @inline function _srp_sun_position_from_spice_j2000_m(
     et::Float64,
     primary_body_name::String,

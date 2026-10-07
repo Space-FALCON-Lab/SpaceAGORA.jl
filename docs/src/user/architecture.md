@@ -80,7 +80,10 @@ of rigid bodies (links joined by `:fixed` joints are merged) and solves the
 forward dynamics in joint coordinates, with the root as a free-floating base.
 The engine integrates the joint coordinates beside the root state
 (`joint_q`, `joint_qd`) and applies the existing loads to the root body;
-only gravity is evaluated per body. Spacecraft without a non-fixed joint
+only gravity is evaluated per body. With
+`SimulationSettings(articulated_live_pose_loads=true)` aerodynamics and facet
+SRP are instead evaluated per link at the live link poses, through the opt-in
+`link_wrench` kernel, and the gravity gradient becomes per body. Spacecraft without a non-fixed joint
 never touch this path. See [Joint types](simulation_configuration.md#Joint-types-and-articulated-spacecraft).
 The compliant model above remains the route for compliant (spring-connected)
 bodies. It is no longer arm-only: a `CompliantAttachment` mounts a

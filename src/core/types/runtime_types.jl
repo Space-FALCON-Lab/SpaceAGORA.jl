@@ -942,6 +942,9 @@ export RhsEffectorDecision, RhsExecutionPlan
         # at a time (the `@batch` and serial loops partition by satellite).
         articulated_runtimes::Vector{Union{Nothing, ArticulatedRuntime}} = _typed_nothing_vector(ArticulatedRuntime, n_sats)
         articulated_present::Base.RefValue{Bool} = Ref(false)
+        # `SimulationSettings.articulated_live_pose_loads` for runs with articulated spacecraft, read once at
+        # setup (`_initialize_articulated_runtimes!`); one Bool load per articulated RHS call.
+        articulated_live_loads::Base.RefValue{Bool} = Ref(false)
         # Compliant attachments (cloth meshes, flexible appendages mounted on links): per-satellite
         # runtime built once per run by `_initialize_attachment_runtimes!` (`nothing` for spacecraft
         # without attachments). `attachments_present` is the run-constant flag the RHS tests first

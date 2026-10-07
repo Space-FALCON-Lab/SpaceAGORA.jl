@@ -414,3 +414,33 @@ end
     torque_body = _gravity_gradient_torque_body(model, x, env.planet)
     return SVector{3, Float64}(0.0, 0.0, 0.0), torque_body
 end
+
+# ---------------------------------------------------------------------------
+# Per-body gravity gradient for articulated spacecraft (live-pose loads)
+# ---------------------------------------------------------------------------
+
+"""
+    gravity_gradient_requested(effector) -> Bool
+
+`true` when `effector` asks for a gravity-gradient torque: `gravity_gradient=true` on an analytic gravity
+model, or an enabled [`GravityGradientTorqueModel`](@ref). On articulated spacecraft with live-pose loads
+any such request becomes the per-body torque of [`body_gravity_gradient_torque_ii`](@ref).
+"""
+@inline gravity_gradient_requested(::Any)::Bool = false
+@inline gravity_gradient_requested(
+    model::Union{ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel, GravityGradientTorqueModel},
+)::Bool = model.gravity_gradient
+
+"""True for the stand-alone [`GravityGradientTorqueModel`](@ref), which the live-pose path replaces by per-body torques."""
+@inline is_gravity_gradient_torque_effector(::Any)::Bool = false
+@inline is_gravity_gradient_torque_effector(::GravityGradientTorqueModel)::Bool = true
+
+"""
+    body_gravity_gradient_torque_ii(R_b, I_b, r_ii, μ) -> torque_ii
+
+Central-field gravity-gradient torque about the COM of one dynamic body: `3μ/r³ r̂ × (R_b I_b R_bᵀ) r̂`, with
+`I_b` the body inertia about its COM in the body frame, `R_b` the body-to-inertial rotation and `r_ii` the
+body COM position. The result is inertial.
+"""
+@inline body_gravity_gradient_torque_ii(R_b, I_b, r_ii::SVector{3, Float64}, μ::Float64)::SVector{3, Float64} =
+    gravity_gradient(SMatrix{3, 3, Float64, 9}(R_b * I_b * R_b'), r_ii, μ)

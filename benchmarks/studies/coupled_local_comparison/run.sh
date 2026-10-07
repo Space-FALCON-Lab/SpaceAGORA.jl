@@ -93,6 +93,13 @@ for lock in $LOCKS; do
     lock_cmd+=(flock "$lock")
 done
 
+# The harness is copied FROM this checkout, so it must be one that defines the
+# case; launching run.sh from a tree with the stock harness would overwrite the
+# other tree's harness with it.
+grep -q 'e6_actuated_saved' "$SRC_ROOT/benchmarks/studies/parallelization_performance/cases.jl" || {
+    echo "run.sh: $SRC_ROOT's harness does not define stack<N>_e6_actuated_saved; run it from a checkout that does" >&2
+    exit 2
+}
 for tree in "$PRE_TREE" "$POST_TREE"; do
     [[ "$(realpath "$tree")" == "$(realpath "$SRC_ROOT")" ]] && continue   # running from that tree
     for f in cases.jl cli.jl execution.jl; do

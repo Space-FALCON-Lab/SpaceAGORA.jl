@@ -57,7 +57,7 @@ for g in groupby(df, [:code, :case, :threads])
 end
 
 if any(==("pre"), df.code) && any(==("post"), df.code)
-    println("\n== PR #222 effect (pre / post median, same route and thread count)")
+    println("\n== Code change effect (pre / post median, same route and thread count)")
     for r in eachrow(sort(filter(r -> r.code == "post" && !isnan(r.patch_speedup), df), [:case, :threads, :mode]))
         p = pre[(r.case, r.mode, r.threads)]
         @printf("%-28s %-18s t=%-2d %8.3f -> %8.3f s  x%5.2f   alloc %9.1f -> %9.1f MiB\n",

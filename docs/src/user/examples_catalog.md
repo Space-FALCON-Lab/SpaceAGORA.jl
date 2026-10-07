@@ -125,6 +125,22 @@ no SPICE. See [Joint types](simulation_configuration.md#Joint-types-and-articula
 julia --project=. examples/Articulated_Panels_Demo.jl
 ```
 
+### Compliant attachments
+
+`Cloth_Panel_Attachment_Demo.jl` runs the four-panel cloth solar array deployment of
+`Solar_Panel_Cloth_Deployment_Demo.jl` inside `run_simulation`: the 48-tile mesh is a
+`CompliantAttachment` on a bus (deployment schedule as `rest_schedule`, hinge motors as
+`joint_actuators`). A 1e8 kg bus in free space is compared with the standalone RK4 stepping of the
+same model (about 7e-6 m with the rest schedule evaluated mid-step; the standalone demo's per-step rest
+lags the engine by about 1e-3 m), and a 100 kg bus in a circular orbit shows the reaction on the bus.
+It writes a 3D HTML from the saved `attachment_pose` columns, a comparison HTML and a CSV under
+`output/cloth_panel_attachment_demo/`. No GRAM and no SPICE; `SPACEAGORA_EXAMPLE_SMOKE=1` runs 3 s.
+See [Compliant attachments](simulation_configuration.md#Compliant-attachments).
+
+```text
+julia --project=. examples/Cloth_Panel_Attachment_Demo.jl
+```
+
 ### Controls, torque, and navigation checks
 
 Use these when the question is about one force, torque, control, or navigation
@@ -234,6 +250,7 @@ Related scripts:
 - `Earth_RPO_CubeSat_MPC_Replanning.jl`
 - `Robot_Arm_Planner_Cloth_Demo.jl`
 - `Solar_Panel_Cloth_Deployment_Demo.jl`
+- `Cloth_Panel_Attachment_Demo.jl`
 
 ## Full script list
 
@@ -244,7 +261,7 @@ Related scripts:
 | Frozen-atmosphere guidance and control (own environment) | `odyssey_surrogate.jl` |
 | GRAM and missions | `AGORA_Basic_GRAMEarth.jl`, `AGORA_Earth.jl`, `AGORA_Earth_Aerobraking.jl`, `AGORA_Odyssey.jl`, `AGORA_Vex.jl`, `AGORA_Mars_RAAN_Scenario.jl`, `AGORA_Mars_NoGRAM.jl`, `AGORA_Titan.jl`, `AGORA_Magellan.jl`, `AGORA_LOFTID.jl`, `CYGNSS_test.jl`, `GRIFEX_test.jl` |
 | Controls and torques | `AGORA_Earth_GG_Test.jl`, `AGORA_Earth_SRP_Test.jl`, `AGORA_Earth_const_torque.jl`, `Earth_Torque_Free_Test.jl`, `Earth_RW_Test.jl`, `Earth_Navigation.jl`, `AGORA_Earth_Control_Test.jl`, `AGORA_Odyssey_Control_Test.jl`, `AGORA_Titan_Control_Test.jl`, `AGORA_Vex_Control_Test.jl` |
-| RPO and robotics | `Earth_RPO_CubeSat_MPC.jl`, `Earth_RPO_CubeSat_MPC_Batch.jl`, `Earth_RPO_CubeSat_MPC_PlannerComparison.jl`, `Earth_RPO_CubeSat_MPC_Replanning.jl`, `Robot_Arm_Planner_Cloth_Demo.jl`, `Solar_Panel_Cloth_Deployment_Demo.jl` |
+| RPO and robotics | `Earth_RPO_CubeSat_MPC.jl`, `Earth_RPO_CubeSat_MPC_Batch.jl`, `Earth_RPO_CubeSat_MPC_PlannerComparison.jl`, `Earth_RPO_CubeSat_MPC_Replanning.jl`, `Robot_Arm_Planner_Cloth_Demo.jl`, `Solar_Panel_Cloth_Deployment_Demo.jl`, `Cloth_Panel_Attachment_Demo.jl` |
 
 Support files included by examples:
 

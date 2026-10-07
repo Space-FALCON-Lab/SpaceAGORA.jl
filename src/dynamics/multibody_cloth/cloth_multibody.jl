@@ -11,6 +11,10 @@ export rectangular_prism_inertia, thin_panel_inertia
 export build_compliant_topology, build_rectangular_compliant_grid
 export compliant_state_vector, compliant_state_parts, compliant_multibody_dynamics
 export compliant_joint_loads
+export CompliantMountKinematics, compliant_mount_kinematics, compliant_joint_loads_in_place!
+export compliant_body_derivatives!, compliant_rest_state, compliant_state_in_mount_frame
+export compliant_state_to_inertial!, compliant_mount_wrench, compliant_world_to_body
+export CompiledCompliantModel, compile_compliant_model
 export step_compliant_multibody_rk4, step_compliant_multibody_implicit_midpoint
 export simulate_compliant_multibody
 
@@ -475,6 +479,20 @@ function _normalize_state_quaternions!(x::AbstractVector)
     return x
 end
 
+"""Kinematics of a body-fixed attachment point from a body state (position, attitude, velocity, body rate)."""
+@inline function _body_kinematics(r, q, v, ω, p_body)
+    R = _rot(q)
+    return (
+        r=r,
+        q=q,
+        R=R,
+        ω=ω,
+        ω_world=R * ω,
+        point=r + R * p_body,
+        point_velocity=_body_offset_velocity(v, q, ω, p_body),
+    )
+end
+
 """Return parent attachment kinematics for a compliant joint."""
 function _parent_kinematics(model::CompliantMultibodyModel, x::AbstractVector, parent::Int, p_body)
     if parent == 0
@@ -494,16 +512,7 @@ function _parent_kinematics(model::CompliantMultibodyModel, x::AbstractVector, p
         )
     end
     s = compliant_state_parts(x, parent)
-    R = _rot(s.q)
-    return (
-        r=s.r,
-        q=s.q,
-        R=R,
-        ω=s.ω,
-        ω_world=R * s.ω,
-        point=s.r + R * p_body,
-        point_velocity=_body_offset_velocity(s.v, s.q, s.ω, p_body),
-    )
+    return _body_kinematics(s.r, s.q, s.v, s.ω, p_body)
 end
 
 """Return the rest orientation for a compliant joint instance."""
@@ -513,7 +522,7 @@ end
 
 """Transform actuator torque from child joint coordinates into world coordinates."""
 function _actuator_torque_child_world(
-    actuator::CompliantJointActuator,
+    actuator,
     child,
     ϕ_world::SVector{3, Float64},
     Δω_world::SVector{3, Float64},
@@ -522,6 +531,34 @@ function _actuator_torque_child_world(
     raw_child_body = child.R' * pd_world + actuator.feedforward_torque_child_body
     limited_child_body = clamp.(raw_child_body, -actuator.torque_limit_n_m, actuator.torque_limit_n_m)
     return child.R * (actuator.efficiency * limited_child_body)
+end
+
+"""
+Evaluate one compliant joint from parent and child attachment kinematics. Shared by
+`compliant_joint_loads` and `compliant_joint_loads_in_place!`; allocation-free.
+"""
+@inline function _joint_load_kernel(joint, jidx::Int, parent, child, rest, joint_actuators)
+    Δr = parent.point - child.point
+    Δv = parent.point_velocity - child.point_velocity
+    force_parent = -joint.k_translation_n_m * Δr - joint.c_translation_n_s_m * Δv
+    force_child = -force_parent
+
+    desired_child_q = _quat_mul(parent.q, rest)
+    q_err = _quat_mul(desired_child_q, _quat_conj(child.q))
+    ϕ_world = _axis_angle_error(q_err)
+    Δω_world = child.ω_world - parent.ω_world
+    compliance_child_world = joint.k_rotation_n_m_rad * ϕ_world - joint.c_rotation_n_m_s_rad * Δω_world
+    actuator_child_world = SVector{3, Float64}(0.0, 0.0, 0.0)
+    for actuator in joint_actuators
+        actuator.joint == jidx || continue
+        actuator_child_world += _actuator_torque_child_world(actuator, child, ϕ_world, Δω_world)
+    end
+    return (
+        force_parent=force_parent,
+        force_child=force_child,
+        compliance_child_world=compliance_child_world,
+        actuator_child_world=actuator_child_world,
+    )
 end
 
 """Compute compliant joint forces, torques, and diagnostics for a state."""
@@ -537,24 +574,11 @@ function compliant_joint_loads(
     for (jidx, joint) in pairs(model.joints)
         parent = _parent_kinematics(model, x, joint.parent, joint.parent_point_body)
         child = _parent_kinematics(model, x, joint.child, joint.child_point_body)
-
-        Δr = parent.point - child.point
-        Δv = parent.point_velocity - child.point_velocity
-        force_parent = -joint.k_translation_n_m * Δr - joint.c_translation_n_s_m * Δv
-        force_child = -force_parent
-
         rest = _joint_rest(joint, jidx, joint_rest_quaternions)
-        desired_child_q = _quat_mul(parent.q, rest)
-        q_err = _quat_mul(desired_child_q, _quat_conj(child.q))
-        ϕ_world = _axis_angle_error(q_err)
-        Δω_world = child.ω_world - parent.ω_world
-        compliance_child_world = joint.k_rotation_n_m_rad * ϕ_world - joint.c_rotation_n_m_s_rad * Δω_world
-        actuator_child_world = SVector{3, Float64}(0.0, 0.0, 0.0)
-        for actuator in joint_actuators
-            actuator.joint == jidx || continue
-            actuator_child_world += _actuator_torque_child_world(actuator, child, ϕ_world, Δω_world)
-        end
+        k = _joint_load_kernel(joint, jidx, parent, child, rest, joint_actuators)
 
+        compliance_child_world = k.compliance_child_world
+        actuator_child_world = k.actuator_child_world
         compliance_parent_world = -compliance_child_world
         actuator_parent_world = -actuator_child_world
         compliance_child_body = child.R' * compliance_child_world
@@ -563,8 +587,8 @@ function compliant_joint_loads(
             joint.name,
             joint.parent,
             joint.child,
-            force_parent,
-            force_child,
+            k.force_parent,
+            k.force_child,
             compliance_parent_world,
             compliance_child_world,
             actuator_parent_world,
@@ -727,6 +751,320 @@ function simulate_compliant_multibody(
         states[k] = stepper(model, states[k - 1], times[k - 1], times[k] - times[k - 1]; dynamics_kwargs...)
     end
     return CompliantMultibodyTrajectory(times, states)
+end
+
+# ---------------------------------------------------------------------------
+# Mounted use: a compliant model attached to a moving frame (spacecraft link)
+# ---------------------------------------------------------------------------
+#
+# When a model is mounted on a moving link, joints with `parent == 0` attach to the MOUNT frame
+# instead of the fixed base: the model's `base_position`/`base_quaternion` are not used. The body
+# states live in column-per-body matrices (absolute inertial position and velocity, scalar-last
+# attitude quaternion, body-frame angular velocity), the layout of the engine state.
+
+"""Inertial kinematics of a mount frame: origin `r`, attitude `q`, origin velocity `v`, angular velocity `ω` in mount-frame components."""
+struct CompliantMountKinematics
+    r::SVector{3, Float64}
+    q::SVector{4, Float64}
+    v::SVector{3, Float64}
+    ω::SVector{3, Float64}
+end
+
+"""
+    compliant_mount_kinematics(body_pos, body_vel, body_q, body_ω, link_offset, link_q, mount_point, mount_q)
+
+Mount-frame kinematics for a mount at `mount_point` (link frame) with orientation `mount_q` relative to
+the link frame, on a link whose frame origin sits at `link_offset` (body frame) with attitude `link_q`
+relative to a dynamic body with inertial pose `body_pos`/`body_q`, velocity `body_vel` and body-frame
+rate `body_ω`. Quaternions are scalar-last, active body-to-inertial.
+"""
+@inline function compliant_mount_kinematics(body_pos, body_vel, body_q, body_ω, link_offset, link_q, mount_point, mount_q)
+    qb = _unit_quat(body_q)
+    Rb = _rot(qb)
+    ω_world = Rb * SVector{3, Float64}(body_ω)
+    e_link = Rb * SVector{3, Float64}(link_offset)
+    q_link = _quat_mul(qb, link_q)
+    e_mount = _rot(q_link) * SVector{3, Float64}(mount_point)
+    q_mount = _quat_mul(q_link, mount_q)
+    e = e_link + e_mount
+    return CompliantMountKinematics(
+        SVector{3, Float64}(body_pos) + e,
+        q_mount,
+        SVector{3, Float64}(body_vel) + cross(ω_world, e),
+        _rot(q_mount)' * ω_world,
+    )
+end
+
+"""
+    compliant_mount_wrench(mount, body_ref_pos, force_world, torque_world) -> (force_world, torque_world)
+
+Move a reaction (force at the mount origin plus a torque, both inertial) to the reference point
+`body_ref_pos` of the body the mount is fixed to: the force is unchanged and the torque gains
+`(mount.r - body_ref_pos) × force`.
+"""
+@inline function compliant_mount_wrench(mount::CompliantMountKinematics, body_ref_pos, force_world, torque_world)
+    f = SVector{3, Float64}(force_world)
+    return f, cross(mount.r - SVector{3, Float64}(body_ref_pos), f) + SVector{3, Float64}(torque_world)
+end
+
+"""Components in the body frame of attitude `q` (active, scalar-last) of an inertial vector."""
+@inline compliant_world_to_body(q, v_world) = _rot(q)' * SVector{3, Float64}(v_world)
+
+@inline function _mount_parent_kinematics(mount::CompliantMountKinematics, p_body)
+    return _body_kinematics(mount.r, mount.q, mount.v, mount.ω, p_body)
+end
+
+@inline function _column_kinematics(pos, quat, vel, angvel, c::Int, p_body)
+    return _body_kinematics(
+        SVector{3, Float64}(pos[1, c], pos[2, c], pos[3, c]),
+        _unit_quat(SVector{4, Float64}(quat[1, c], quat[2, c], quat[3, c], quat[4, c])),
+        SVector{3, Float64}(vel[1, c], vel[2, c], vel[3, c]),
+        SVector{3, Float64}(angvel[1, c], angvel[2, c], angvel[3, c]),
+        p_body,
+    )
+end
+
+@inline function _add_column!(A::AbstractMatrix, c::Int, v)
+    A[1, c] += v[1]
+    A[2, c] += v[2]
+    A[3, c] += v[3]
+    return nothing
+end
+
+struct CompiledJoint
+    parent::Int
+    child::Int
+    parent_point_body::SVector{3, Float64}
+    child_point_body::SVector{3, Float64}
+    k_translation_n_m::SMatrix{3, 3, Float64, 9}
+    c_translation_n_s_m::SMatrix{3, 3, Float64, 9}
+    k_rotation_n_m_rad::SMatrix{3, 3, Float64, 9}
+    c_rotation_n_m_s_rad::SMatrix{3, 3, Float64, 9}
+end
+
+struct CompiledActuator
+    joint::Int
+    torque_limit_n_m::SVector{3, Float64}
+    kp_n_m_rad::SMatrix{3, 3, Float64, 9}
+    kd_n_m_s_rad::SMatrix{3, 3, Float64, 9}
+    feedforward_torque_child_body::SVector{3, Float64}
+    efficiency::Float64
+end
+
+"""
+    CompiledCompliantModel
+
+Concretely typed copy of a model's bodies, joints and joint actuators for the allocation-free in-place
+functions. The public types keep abstractly typed matrix fields (their numerics are part of the
+existing behavior), which would force dynamic dispatch in a hot loop; this mirror has the same
+field names and is built once per run by [`compile_compliant_model`](@ref).
+"""
+struct CompiledCompliantModel
+    bodies::Vector{NamedTuple{(:mass_kg, :inertia_body_kg_m2), Tuple{Float64, SMatrix{3, 3, Float64, 9}}}}
+    joints::Vector{CompiledJoint}
+    actuators::Vector{CompiledActuator}
+end
+
+"""Build the concretely typed [`CompiledCompliantModel`](@ref) of a model and its joint actuators."""
+function compile_compliant_model(model::CompliantMultibodyModel, actuators::AbstractVector{CompliantJointActuator}=CompliantJointActuator[])
+    bodies = [(mass_kg=b.mass_kg, inertia_body_kg_m2=SMatrix{3, 3, Float64, 9}(b.inertia_body_kg_m2)) for b in model.bodies]
+    joints = CompiledJoint[CompiledJoint(
+        j.parent, j.child, j.parent_point_body, j.child_point_body,
+        SMatrix{3, 3, Float64, 9}(j.k_translation_n_m), SMatrix{3, 3, Float64, 9}(j.c_translation_n_s_m),
+        SMatrix{3, 3, Float64, 9}(j.k_rotation_n_m_rad), SMatrix{3, 3, Float64, 9}(j.c_rotation_n_m_s_rad)) for j in model.joints]
+    acts = CompiledActuator[CompiledActuator(
+        a.joint, a.torque_limit_n_m, SMatrix{3, 3, Float64, 9}(a.kp_n_m_rad), SMatrix{3, 3, Float64, 9}(a.kd_n_m_s_rad),
+        a.feedforward_torque_child_body, a.efficiency) for a in actuators]
+    return CompiledCompliantModel(bodies, joints, acts)
+end
+
+"""
+    compliant_joint_loads_in_place!(forces, torques_body, model, col0, pos, quat, vel, angvel, mount, rest)
+        -> (force_on_mount_world, torque_on_mount_world)
+
+Allocation-free counterpart of [`compliant_joint_loads`](@ref) with the same joint math, on a
+[`CompiledCompliantModel`](@ref) (which carries the joint actuators). Body `i` of
+`model` is column `col0 + i` of the 3-by-N `forces` (world), `torques_body` (body frame), `pos`, `vel`,
+`angvel` and the 4-by-N `quat`. The joint forces and torques are written to those columns (they are
+zeroed first); `rest[j]` is the rest orientation of joint `j`. Joints with parent 0 attach to `mount`;
+their reaction is returned as the total force on the mount frame (world) and the torque about the mount
+origin (world), to be applied to whatever the mount is fixed to.
+"""
+function compliant_joint_loads_in_place!(
+    forces::AbstractMatrix{Float64},
+    torques_body::AbstractMatrix{Float64},
+    model::CompiledCompliantModel,
+    col0::Int,
+    pos::AbstractMatrix{Float64},
+    quat::AbstractMatrix{Float64},
+    vel::AbstractMatrix{Float64},
+    angvel::AbstractMatrix{Float64},
+    mount::CompliantMountKinematics,
+    rest::AbstractVector{SVector{4, Float64}},
+)
+    @inbounds for i in eachindex(model.bodies), k in 1:3
+        forces[k, col0 + i] = 0.0
+        torques_body[k, col0 + i] = 0.0
+    end
+    f_mount = SVector{3, Float64}(0.0, 0.0, 0.0)
+    t_mount = SVector{3, Float64}(0.0, 0.0, 0.0)
+    @inbounds for jidx in eachindex(model.joints)
+        joint = model.joints[jidx]
+        parent = joint.parent == 0 ?
+            _mount_parent_kinematics(mount, joint.parent_point_body) :
+            _column_kinematics(pos, quat, vel, angvel, col0 + joint.parent, joint.parent_point_body)
+        cc = col0 + joint.child
+        child = _column_kinematics(pos, quat, vel, angvel, cc, joint.child_point_body)
+        k = _joint_load_kernel(joint, jidx, parent, child, rest[jidx], model.actuators)
+
+        compliance_parent_world = -k.compliance_child_world
+        actuator_parent_world = -k.actuator_child_world
+        if joint.parent == 0
+            f_mount += k.force_parent
+            t_mount += cross(parent.point - mount.r, k.force_parent) + compliance_parent_world + actuator_parent_world
+        else
+            pc = col0 + joint.parent
+            _add_column!(forces, pc, k.force_parent)
+            _add_column!(torques_body, pc,
+                cross(joint.parent_point_body, parent.R' * k.force_parent) +
+                parent.R' * (compliance_parent_world + actuator_parent_world))
+        end
+        _add_column!(forces, cc, k.force_child)
+        _add_column!(torques_body, cc,
+            cross(joint.child_point_body, child.R' * k.force_child) +
+            child.R' * (k.compliance_child_world + k.actuator_child_world))
+    end
+    return f_mount, t_mount
+end
+
+"""
+    compliant_body_derivatives!(dpos, dquat, dvel, dangvel, model, col0, forces, torques_body, quat, vel, angvel)
+
+Rigid-body derivative of every body of `model` (columns `col0 + 1:col0 + n`) from the total world-frame
+`forces` and body-frame `torques_body` (joint loads plus anything the caller added), with the same
+equations as [`compliant_multibody_dynamics`](@ref). Allocation-free.
+"""
+function compliant_body_derivatives!(
+    dpos::AbstractMatrix{Float64}, dquat::AbstractMatrix{Float64}, dvel::AbstractMatrix{Float64}, dangvel::AbstractMatrix{Float64},
+    model::CompiledCompliantModel, col0::Int,
+    forces::AbstractMatrix{Float64}, torques_body::AbstractMatrix{Float64},
+    quat::AbstractMatrix{Float64}, vel::AbstractMatrix{Float64}, angvel::AbstractMatrix{Float64},
+)
+    @inbounds for i in eachindex(model.bodies)
+        c = col0 + i
+        body = model.bodies[i]
+        q = _unit_quat(SVector{4, Float64}(quat[1, c], quat[2, c], quat[3, c], quat[4, c]))
+        ω = SVector{3, Float64}(angvel[1, c], angvel[2, c], angvel[3, c])
+        qdot = 0.5 * _quat_raw_mul(q, SVector{4, Float64}(ω[1], ω[2], ω[3], 0.0))
+        J = body.inertia_body_kg_m2
+        α = J \ (SVector{3, Float64}(torques_body[1, c], torques_body[2, c], torques_body[3, c]) - cross(ω, J * ω))
+        for k in 1:3
+            dpos[k, c] = vel[k, c]
+            dvel[k, c] = forces[k, c] / body.mass_kg
+            dangvel[k, c] = α[k]
+        end
+        for k in 1:4
+            dquat[k, c] = qdot[k]
+        end
+    end
+    return nothing
+end
+
+"""
+    compliant_state_in_mount_frame(model, x) -> Vector{Float64}
+
+Express a state of `model` given in the frame where its base sits at `base_position`/`base_quaternion`
+(as produced by `build_compliant_topology`) relative to that base, i.e. as mount-frame coordinates.
+The identity when the base is at the origin with identity attitude.
+"""
+function compliant_state_in_mount_frame(model::CompliantMultibodyModel, x::AbstractVector)
+    n = length(model.bodies)
+    length(x) == 13n || throw(ArgumentError("state length must be 13 * number of bodies."))
+    out = Vector{Float64}(x)
+    qb = _unit_quat(model.base_quaternion)
+    if model.base_position == SVector{3, Float64}(0.0, 0.0, 0.0) && qb == _Q_IDENTITY
+        return out
+    end
+    Rt = _rot(qb)'
+    qc = _quat_conj(qb)
+    for i in 1:n
+        b = 13 * (i - 1)
+        s = compliant_state_parts(x, i)
+        out[(b + 1):(b + 3)] .= Rt * (s.r - model.base_position)
+        out[(b + 4):(b + 7)] .= _quat_mul(qc, s.q)
+        out[(b + 8):(b + 10)] .= Rt * s.v
+    end
+    return out
+end
+
+"""
+    compliant_rest_state(model) -> Vector{Float64}
+
+Zero-velocity state at the model's rest geometry in the mount frame, built by walking a spanning tree
+from the joints attached to the mount (`parent == 0`): each child takes its joint's rest orientation and
+the position that makes the joint points coincide. Models with closed loops (meshes) have one geometry
+per spanning tree; pass `initial_state` (for example a topology build's) for those.
+"""
+function compliant_rest_state(model::CompliantMultibodyModel)
+    n = length(model.bodies)
+    pos = Vector{SVector{3, Float64}}(undef, n)
+    quat = Vector{SVector{4, Float64}}(undef, n)
+    done = falses(n)
+    progress = true
+    while progress && !all(done)
+        progress = false
+        for joint in model.joints
+            done[joint.child] && continue
+            if joint.parent == 0
+                q_parent = _Q_IDENTITY
+                point = joint.parent_point_body
+            elseif done[joint.parent]
+                q_parent = quat[joint.parent]
+                point = pos[joint.parent] + _rot(q_parent) * joint.parent_point_body
+            else
+                continue
+            end
+            q = _quat_mul(q_parent, joint.rest_child_parent_quat)
+            quat[joint.child] = q
+            pos[joint.child] = point - _rot(q) * joint.child_point_body
+            done[joint.child] = true
+            progress = true
+        end
+    end
+    all(done) || throw(ArgumentError("compliant model bodies $(findall(!, done)) are not reachable from the mount frame through its joints; pass an explicit initial_state."))
+    return compliant_state_vector(pos, quat)
+end
+
+"""
+    compliant_state_to_inertial!(att_r, att_q, att_v, att_ω, col0, x_mount, mount)
+
+Write the mount-frame state `x_mount` (13 numbers per body, relative to a fixed mount) into columns
+`col0 + 1:col0 + n` of the inertial engine arrays for a mount that moves with `mount` kinematics: the
+body gets the rigid-body velocity of its mount-frame position plus its relative velocity, and its
+body-frame rate adds the mount's rotation.
+"""
+function compliant_state_to_inertial!(att_r, att_q, att_v, att_ω, col0::Int, x_mount::AbstractVector, mount::CompliantMountKinematics)
+    n = length(x_mount) ÷ 13
+    Rm = _rot(mount.q)
+    ω_world = Rm * mount.ω
+    for i in 1:n
+        s = compliant_state_parts(x_mount, i)
+        c = col0 + i
+        rel = Rm * s.r
+        q = _quat_mul(mount.q, s.q)
+        r = mount.r + rel
+        v = mount.v + cross(ω_world, rel) + Rm * s.v
+        ω = s.ω + _rot(q)' * ω_world
+        for k in 1:3
+            att_r[k, c] = r[k]
+            att_v[k, c] = v[k]
+            att_ω[k, c] = ω[k]
+        end
+        for k in 1:4
+            att_q[k, c] = q[k]
+        end
+    end
+    return nothing
 end
 
 end # module ClothMultibody

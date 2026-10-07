@@ -7,7 +7,7 @@ using ..Components
 using ..Geodesy: geodetic_altitude, ellipsoid_surface_radius, radius_for_geodetic_altitude
 using ..EphemeridesModels: SpiceEphemeridesModel, ephemerides_time_seconds, planet_frame_lpi
 
-export Link, Joint, SpacecraftModel, DynamicsModel, InitialCondition, CartesianInitialCondition, AbstractInitialCondition, GuidanceModel, NavigationModel, ControlModel
+export Link, Joint, CompliantAttachment, attachment_body_count, SpacecraftModel, DynamicsModel, InitialCondition, CartesianInitialCondition, AbstractInitialCondition, GuidanceModel, NavigationModel, ControlModel
 
 const I3 = SMatrix{3, 3, Float64}(diagm(ones(3)))
 const DEFAULT_INITIAL_CONDITION_Q = SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
@@ -541,6 +541,9 @@ Tuple of control effectors and the rate (s) at which each is called. `ControlMod
     end
 end
 
+# Compliant multibody models mounted on links (needs `Link`, needed by `SpacecraftModel`).
+include(joinpath(@__DIR__, "..", "..", "dynamics", "multibody_cloth", "compliant_attachment.jl"))
+
 mutable struct SpacecraftModel
     joints::Vector{Joint} # List of joints
     links::Vector{Link} # List of links (bodies)
@@ -558,18 +561,29 @@ mutable struct SpacecraftModel
     guidance::GuidanceModel
     navigation::NavigationModel
     control::ControlModel
+    # Compliant multibody models mounted on links (cloth panels, flexible appendages). Empty by default;
+    # their bodies are not links and not part of `dry_mass`/`mass`.
+    attachments::Vector{CompliantAttachment}
 end
 
 _empty_guidance() = GuidanceModel((), Float64[])
 _empty_navigation() = NavigationModel((), Float64[])
 _empty_control() = ControlModel((), Float64[])
 
+# Positional form with GNC but no attachments (kept for existing callers).
+SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor,
+                n_reaction_wheels, n_thrusters, initial_condition, id,
+                guidance::GuidanceModel, navigation::NavigationModel, control::ControlModel) =
+    SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor,
+                    n_reaction_wheels, n_thrusters, initial_condition, id,
+                    guidance, navigation, control, CompliantAttachment[])
+
 # Positional form without GNC (kept for existing callers): declares no per-spacecraft GNC.
 SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor,
                 n_reaction_wheels, n_thrusters, initial_condition, id) =
     SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor,
                     n_reaction_wheels, n_thrusters, initial_condition, id,
-                    _empty_guidance(), _empty_navigation(), _empty_control())
+                    _empty_guidance(), _empty_navigation(), _empty_control(), CompliantAttachment[])
 
 function SpacecraftModel(; joints::AbstractVector{<:Joint}=Joint[], links::AbstractVector{<:Link}=Link[], root::Link=Link(root=true),
                             instant_actuation::Bool=true,
@@ -581,7 +595,8 @@ function SpacecraftModel(; joints::AbstractVector{<:Joint}=Joint[], links::Abstr
                             id::Int64=1,
                             guidance::GuidanceModel=_empty_guidance(),
                             navigation::NavigationModel=_empty_navigation(),
-                            control::ControlModel=_empty_control())
+                            control::ControlModel=_empty_control(),
+                            attachments::AbstractVector{CompliantAttachment}=CompliantAttachment[])
     joints_vec = Vector{Joint}(joints)
     links_vec = Vector{Link}(links)
 
@@ -593,9 +608,13 @@ function SpacecraftModel(; joints::AbstractVector{<:Joint}=Joint[], links::Abstr
     for link in links_vec
         dry_mass += link.m
     end
+    for (k, a) in pairs(attachments)
+        any(l -> l === a.link, links_vec) ||
+            throw(ArgumentError("Attachment $k is mounted on a link that is not one of the spacecraft's links (or its root)."))
+    end
 
     return SpacecraftModel(joints_vec, links_vec, root, instant_actuation, dry_mass, prop_mass, inertia_tensor, n_reaction_wheels, n_thrusters, initial_condition, id,
-                           guidance, navigation, control)
+                           guidance, navigation, control, Vector{CompliantAttachment}(attachments))
 end
 
 # Preserve the collection type in this module while giving configuration its own file.

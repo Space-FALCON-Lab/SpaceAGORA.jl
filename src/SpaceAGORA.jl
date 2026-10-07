@@ -124,7 +124,7 @@ using .SimulationModel: robot_arm_clearance_stats_from_samples, robot_arm_hypr_p
 using .SimulationModel: ClothRobotArmReferenceState, cloth_reference_state
 using .SimulationModel: CompliantBody, CompliantJoint, CompliantMultibodyModel, CompliantMultibodyTrajectory
 using .SimulationModel: CompliantTopologyNode, CompliantTopologyEdge, CompliantTopologyBuild
-using .SimulationModel: CompliantJointActuator, CompliantJointLoad
+using .SimulationModel: CompliantJointActuator, CompliantJointLoad, CompliantAttachment
 using .SimulationModel: rectangular_prism_inertia, thin_panel_inertia
 using .SimulationModel: build_compliant_topology, build_rectangular_compliant_grid
 using .SimulationModel: compliant_state_vector, compliant_state_parts, compliant_multibody_dynamics
@@ -278,6 +278,7 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.CompliantTopologyBuild) CompliantTopologyBuild
 @doc (@doc SimulationModel.CompliantJointActuator) CompliantJointActuator
 @doc (@doc SimulationModel.CompliantJointLoad) CompliantJointLoad
+@doc (@doc SimulationModel.CompliantAttachment) CompliantAttachment
 @doc (@doc SimulationModel.rectangular_prism_inertia) rectangular_prism_inertia
 @doc (@doc SimulationModel.thin_panel_inertia) thin_panel_inertia
 @doc (@doc SimulationModel.build_compliant_topology) build_compliant_topology
@@ -472,7 +473,7 @@ export cloth_robot_arm_rest_quaternions, cloth_robot_arm_end_effector, simulate_
 export cloth_robot_arm_actuators
 export CompliantBody, CompliantJoint, CompliantMultibodyModel, CompliantMultibodyTrajectory
 export CompliantTopologyNode, CompliantTopologyEdge, CompliantTopologyBuild
-export CompliantJointActuator, CompliantJointLoad
+export CompliantJointActuator, CompliantJointLoad, CompliantAttachment
 export rectangular_prism_inertia, thin_panel_inertia
 export build_compliant_topology, build_rectangular_compliant_grid
 export compliant_state_vector, compliant_state_parts, compliant_multibody_dynamics, compliant_joint_loads

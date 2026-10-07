@@ -387,7 +387,9 @@ _declares_gnc(sc) = !(isempty(sc.guidance.guidance_effectors) &&
 # Spacecraft copy without its per-spacecraft GNC (links, joints and the rest are shared).
 _without_gnc(sc::SimulationModel.SpacecraftModel) = SimulationModel.SpacecraftModel(
     sc.joints, sc.links, sc.root, sc.instant_actuation, sc.dry_mass, sc.prop_mass, sc.inertia_tensor,
-    sc.n_reaction_wheels, sc.n_thrusters, sc.initial_condition, sc.id)
+    sc.n_reaction_wheels, sc.n_thrusters, sc.initial_condition, sc.id,
+    SimulationModel.GuidanceModel((), Float64[]), SimulationModel.NavigationModel((), Float64[]),
+    SimulationModel.ControlModel((), Float64[]), sc.attachments)
 
 """
 Fold per-spacecraft GNC declarations (`SpacecraftModel` `guidance`/`navigation`/`control`) into the
@@ -515,6 +517,7 @@ function run_simulation(
     # `simulation_settings.normalize` field is legacy-only and rejected by default.
     _enforce_typed_normalize_policy!(args)
     _validate_articulated_spacecraft!(args, solver_mode)
+    _validate_attachments!(args, solver_mode)
     _validate_orientation_inertia!(args)
     _validate_thermal_model_support!(args)
     _validate_ephemerides_support!(args)
@@ -550,6 +553,7 @@ function run_simulation(
     _initialize_nbody_workspace_buffers!(p)
     _initialize_aero_workspace_buffers!(p)
     _initialize_articulated_runtimes!(p)
+    _initialize_attachment_runtimes!(p)
     _initialize_nbody_ephemeris_cache_buffer!(p)
     _initialize_srp_sun_cache_buffer!(p)
     _initialize_planet_frame_cache_buffer!(p)

@@ -2514,7 +2514,8 @@ end
 # the articulated path hooks into, so articulated runs reroute it to the per-satellite batch route.
 @inline function _articulated_plan_guard(plan::SimulationModel.RhsExecutionPlan, p)::SimulationModel.RhsExecutionPlan
     plan.mode == :flat_constellation_effector_queue || return plan
-    (p !== nothing && hasproperty(p, :shared_buffers) && p.shared_buffers.articulated_present[]) || return plan
+    (p !== nothing && hasproperty(p, :shared_buffers) &&
+        (p.shared_buffers.articulated_present[] || p.shared_buffers.attachments_present[])) || return plan
     return (
         mode=:satellite_batch,
         allotment=1,
@@ -2523,4 +2524,91 @@ end
         policy_applied=true,
         effector_decision=_with_serial_effector_decision(plan.effector_decision),
     )
+end
+
+# ---------------------------------------------------------------------------
+# Compliant attachments (`SpacecraftModel.attachments`)
+# ---------------------------------------------------------------------------
+#
+# A spacecraft carries attachments if and only if its `attachments` list is not empty. Everything
+# below is skipped for every other spacecraft, so runs without attachments are unchanged.
+
+@inline _spacecraft_has_attachments(sc)::Bool = !isempty(sc.attachments)
+
+@inline function _any_attachments(args)::Bool
+    @inbounds for sc in args.dynamics_model.spacecraft
+        _spacecraft_has_attachments(sc) && return true
+    end
+    return false
+end
+
+"""
+    _validate_attachments!(args, solver_mode)
+
+Setup-time guards for spacecraft with compliant attachments (each throws an `ArgumentError`). A no-op
+when no spacecraft has attachments. Supported: `orientation_sim=true`, the first-order single-RHS solver
+modes `:tsit5`, `:auto_stiff`, `:rodas5p` and `:dp8`, rigid or articulated spacecraft, and constellations
+in which every spacecraft has the same attachment body count (equal state blocks). Refused: a robot-arm
+effector on the same spacecraft, an attachment whose link is not in the spacecraft, and a model without a
+joint to the mount (parent 0).
+"""
+function _validate_attachments!(args, solver_mode::Symbol)
+    _any_attachments(args) || return nothing
+    if !args.mission_configuration.orientation_sim
+        throw(ArgumentError(
+            "Compliant attachments require MissionConfiguration orientation_sim=true: the mount frame follows the spacecraft attitude."
+        ))
+    end
+    if !(solver_mode in (:tsit5, :auto_stiff, :rodas5p, :dp8))
+        throw(ArgumentError(
+            "Compliant attachments support the first-order single-RHS solver modes :tsit5, :auto_stiff, :rodas5p and :dp8; " *
+            "solver mode $(repr(solver_mode)) (split, multirate, symplectic and gravity-backbone routes) is not supported. " *
+            "Cloth meshes are stiff: prefer :auto_stiff or :rodas5p when the joint stiffness makes the fastest attachment mode " *
+            "much faster than the orbit and attitude dynamics."
+        ))
+    end
+    counts = [SimulationModel.attachment_total_body_count(sc) for sc in args.dynamics_model.spacecraft]
+    if !all(==(first(counts)), counts)
+        throw(ArgumentError(
+            "A run containing a spacecraft with compliant attachments requires every spacecraft to carry the same number of attachment bodies " *
+            "(the state holds one equally sized block per spacecraft); got attachment body counts $(counts)."
+        ))
+    end
+    for (i, sc) in enumerate(args.dynamics_model.spacecraft)
+        _spacecraft_has_attachments(sc) || continue
+        if _robot_arm_coupling(args, i, 0.0) !== nothing
+            throw(ArgumentError("Spacecraft $i has compliant attachments and also a robot-arm effector; the two compliant-body paths cannot be combined."))
+        end
+        for (k, a) in pairs(sc.attachments)
+            if !(a.link === sc.root || any(l -> l === a.link, sc.links))
+                throw(ArgumentError("Spacecraft $i attachment $k is mounted on a link that is not one of the spacecraft's links."))
+            end
+            if !any(j -> j.parent == 0, a.model.joints)
+                throw(ArgumentError("Spacecraft $i attachment $k has no joint with parent == 0: nothing attaches it to the mount."))
+            end
+        end
+    end
+    return nothing
+end
+
+function _initialize_attachment_runtimes!(p)
+    args = p.args
+    n_sats = length(args.dynamics_model.spacecraft)
+    runtimes = p.shared_buffers.attachment_runtimes
+    resize!(runtimes, n_sats)
+    fill!(runtimes, nothing)
+    any_att = false
+    for (i, sc) in enumerate(args.dynamics_model.spacecraft)
+        _spacecraft_has_attachments(sc) || continue
+        tree = _spacecraft_articulated(sc) ? SimulationModel.build_articulated_tree(sc; prop_mass=sc.prop_mass) : nothing
+        runtimes[i] = SimulationModel.build_attachment_runtime(sc, tree)
+        any_att = true
+    end
+    p.shared_buffers.attachments_present[] = any_att
+    if any_att && _rhs_env_config(p).execution_mode == :flat_constellation_effector_queue
+        throw(ArgumentError(
+            "SPACEAGORA_RHS_EXECUTION_MODE=flat is not supported with compliant attachments; use auto, serial or satellite."
+        ))
+    end
+    return nothing
 end

@@ -168,6 +168,12 @@ the [CSV column reference](#Visualization-fields) below:
   included); `system_com` (`sc{N}_system_com_1..3`) is the inertial center of
   mass of the whole spacecraft. The `link_pose` viewer field still holds the
   configured rigid geometry.
+- Spacecraft with compliant attachments add `attachment_pose`
+  (`sc{N}_attachment_pose_1` .. `7N`): `[rx, ry, rz, qx, qy, qz, qw]` per attachment body in
+  attachment order, the body COM in inertial metres (`pos + att_r`) and its scalar-last body-to-inertial
+  attitude. `system_com` (`sc{N}_system_com_1..3`) includes the attachment bodies (rigid
+  spacecraft get the column from the attachment fields; articulated ones from the articulated
+  fields). Spacecraft without attachments save neither.
 - `density`: `sc{N}_density`, the atmospheric density along the trajectory in
   kg/m³, for a run with an atmosphere model.
 

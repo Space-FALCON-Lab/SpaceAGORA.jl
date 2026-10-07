@@ -74,6 +74,11 @@ include(joinpath(@__DIR__, "..", "vehicle", "spacecraft", "assembly.jl"))
 include(joinpath(@__DIR__, "..", "dynamics", "coupled", "articulated_body.jl"))
 @reexport using .ArticulatedBody
 
+# Compliant multibody attachments mounted on spacecraft links (the type itself lives in
+# SpacecraftModels; this is its runtime and dynamics).
+include(joinpath(@__DIR__, "..", "dynamics", "multibody_cloth", "compliant_attachment_dynamics.jl"))
+@reexport using .CompliantAttachmentDynamics
+
 # Private owner for shared coordinate transforms; preserve legacy qualified bindings.
 module FrameTransforms
 using ..EphemeridesModels: ephemerides_requires_spice, planet_frame_lpi

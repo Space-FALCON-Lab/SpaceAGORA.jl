@@ -2439,6 +2439,38 @@ end
 end
 
 # ---------------------------------------------------------------------------
+# Compliant attachments on a rigid spacecraft
+# ---------------------------------------------------------------------------
+#
+# Attachment bodies carry their own state (`att_r`, `att_q`, `att_v`, `att_ω`). Their derivatives are
+# written here; the reaction on the mount (force at the mount point plus torque) is added to the bus
+# `forces` (inertial) and `torques` (body frame, about the bus position) before the bus equations of
+# motion. Gravity acts on each attachment body at its own position; no other effector does.
+# One Bool load per call when the run has no attachments.
+
+@inline function _apply_attachments_rigid!(du_view, sc_view, p, sat_idx::Int, t::Float64, forces, torques, dynamic_effectors::Tuple)
+    p.shared_buffers.attachments_present[] || return nothing
+    rt = p.shared_buffers.attachment_runtimes[sat_idx]
+    rt === nothing && return nothing
+    gravity = _ArticulatedGravity(
+        p, t, _planet_lpi_at_engine(p, t),
+        p.args.dynamics_model.spacecraft[sat_idx],
+        dynamic_effectors,
+    )
+    SimulationModel.apply_attachments_rigid!(du_view, sc_view, rt, t, forces, torques, gravity)
+    return nothing
+end
+
+# Stage 2: the bus acceleration (reactions included) is in `du_view.vel`; attachment derivatives come last.
+@inline function _finish_attachments_rigid!(du_view, p, sat_idx::Int)
+    p.shared_buffers.attachments_present[] || return nothing
+    rt = p.shared_buffers.attachment_runtimes[sat_idx]
+    rt === nothing && return nothing
+    SimulationModel.finish_attachments!(du_view, rt, du_view.vel)
+    return nothing
+end
+
+# ---------------------------------------------------------------------------
 # Articulated spacecraft RHS (any non-fixed `Joint`)
 # ---------------------------------------------------------------------------
 #
@@ -2552,11 +2584,33 @@ end
     # COM at `tree.root_com_bus`, so move the torque there: tau_com = tau_origin - c x F_body.
     force_body = SimulationModel.ArticulatedBody._rotmat(base.q)' * SVector{3, Float64}(forces[1], forces[2], forces[3])
     torque_com = SVector{3, Float64}(torques[1], torques[2], torques[3]) - cross(tree.root_com_bus, force_body)
-    a, alpha, qdd = SimulationModel.articulated_dynamics!(
-        art.ws, tree, base, sc_view.joint_q, sc_view.joint_qd,
-        forces, SimulationModel.DynamicsRotational.body_torque(torque_com), gravity;
-        root_mass=sc_view.mass - art.moving_mass,
-    )
+    rt = p.shared_buffers.attachments_present[] ? p.shared_buffers.attachment_runtimes[sat_idx] : nothing
+    if rt === nothing
+        a, alpha, qdd = SimulationModel.articulated_dynamics!(
+            art.ws, tree, base, sc_view.joint_q, sc_view.joint_qd,
+            forces, SimulationModel.DynamicsRotational.body_torque(torque_com), gravity;
+            root_mass=sc_view.mass - art.moving_mass,
+        )
+    else
+        # Compliant attachments: body kinematics first (the mount frames), then the attachment loads,
+        # whose reactions enter the backbone as per-body wrenches (generalized forces J'[F; tau]).
+        ws = art.ws
+        # Kinematics RELATIVE to the root COM (the attachment state is base-relative).
+        rel_base = SimulationModel.ArticulatedBaseState{Float64}(
+            SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0), base.q, base.ω)
+        SimulationModel.articulated_kinematics!(
+            (pos=ws.kpos, quat=ws.kquat, vel=ws.kvel, ω=ws.kwb, ω_world=ws.kww),
+            tree, rel_base, sc_view.joint_q, sc_view.joint_qd,
+        )
+        SimulationModel.apply_attachments_articulated!(du_view, sc_view, rt, ws, t, gravity)
+        a, alpha, qdd = SimulationModel.articulated_dynamics!(
+            ws, tree, base, sc_view.joint_q, sc_view.joint_qd,
+            forces, SimulationModel.DynamicsRotational.body_torque(torque_com), gravity;
+            root_mass=sc_view.mass - art.moving_mass,
+            body_force_world=ws.ext_force, body_torque_world=ws.ext_torque,
+        )
+        SimulationModel.finish_attachments!(du_view, rt, a)
+    end
     du_view.pos .= SimulationModel.DynamicsTranslational.position_derivative(sc_view.vel)
     du_view.vel .= a
     du_view.mass = SimulationModel.DynamicsTranslational.mass_derivative(mass_rate)
@@ -2628,6 +2682,7 @@ function _spacecraft_dynamics_dispatch!(du::ComponentVector, u::ComponentVector,
                 rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
                 mass_rate = _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, i, t, debug_control)
                 _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
+                _apply_attachments_rigid!(du_view, sc_view, p, i, t, forces, torques, dynamic_effectors)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
                     sc_view,
@@ -2642,6 +2697,7 @@ function _spacecraft_dynamics_dispatch!(du::ComponentVector, u::ComponentVector,
                     forces,
                     mass_rate,
                 )
+                _finish_attachments_rigid!(du_view, p, i)
 
                 if p.args.mission_configuration.orientation_sim
                     inertia_tensor = spacecraft[i].inertia_tensor
@@ -2682,6 +2738,7 @@ function _spacecraft_dynamics_dispatch!(du::ComponentVector, u::ComponentVector,
                 rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
                 mass_rate = _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, i, t, debug_control)
                 _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
+                _apply_attachments_rigid!(du_view, sc_view, p, i, t, forces, torques, dynamic_effectors)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
                     sc_view,
@@ -2696,6 +2753,7 @@ function _spacecraft_dynamics_dispatch!(du::ComponentVector, u::ComponentVector,
                     forces,
                     mass_rate,
                 )
+                _finish_attachments_rigid!(du_view, p, i)
 
                 if p.args.mission_configuration.orientation_sim
                     inertia_tensor = spacecraft[i].inertia_tensor
@@ -3210,6 +3268,9 @@ function build_initial_conditions(args)::ComponentVector
             tree = SimulationModel.build_articulated_tree(sc; prop_mass=sc.prop_mass)
             base_shape = merge(base_shape, (joint_q = zeros(tree.nq), joint_qd = zeros(tree.nv)))
         end
+        if !isempty(sc.attachments)
+            base_shape = merge(base_shape, SimulationModel.attachment_state_shape(sc))
+        end
         coupling = _robot_arm_coupling(args, i, 0.0)
         coupling === nothing && return base_shape
         return merge(base_shape, SimulationModel.coupled_cloth_robot_arm_state_shape(coupling.plan))
@@ -3239,10 +3300,14 @@ function build_initial_conditions(args)::ComponentVector
                 sc_view.h_wheels .= spacecraft.root.rw_assembly.h_wheels
             end
         end
+        init_tree = nothing
         if SimulationModel.articulated_has_moving_joints(spacecraft)
-            tree = SimulationModel.build_articulated_tree(spacecraft; prop_mass=spacecraft.prop_mass)
-            sc_view.joint_q .= tree.q0
-            sc_view.joint_qd .= tree.qd0
+            init_tree = SimulationModel.build_articulated_tree(spacecraft; prop_mass=spacecraft.prop_mass)
+            sc_view.joint_q .= init_tree.q0
+            sc_view.joint_qd .= init_tree.qd0
+        end
+        if !isempty(spacecraft.attachments)
+            SimulationModel.initialize_attachment_state!(sc_view, spacecraft, init_tree)
         end
         coupling = _robot_arm_coupling(args, i, 0.0)
         if coupling !== nothing

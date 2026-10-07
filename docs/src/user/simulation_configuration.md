@@ -415,6 +415,102 @@ coordinates use the quaternion and angular-rate tolerances.
 !!! note
     Per-link loads, motors and limits are not part of this release; see "Loads in v1" above.
 
+## Compliant attachments
+
+A `CompliantAttachment` mounts a `CompliantMultibodyModel` (a cloth panel mesh, a
+flexible appendage) on a spacecraft link. The attachment bodies move under their own
+compliant joint springs, dampers and actuators and exchange forces and torques with the
+link in both directions. `examples/Cloth_Panel_Attachment_Demo.jl` runs the four-panel cloth
+deployment of `Solar_Panel_Cloth_Deployment_Demo.jl` inside `run_simulation` this way.
+
+```julia
+build = build_rectangular_compliant_grid(3, 4; anchor_index=1)       # or any CompliantTopologyBuild / model
+att = CompliantAttachment(;
+    model=build,                       # a CompliantMultibodyModel, or a build (its state is the initial state)
+    link=bus,                          # root, a fixed-merged link, or a link of a moving body
+    mount_point=(0.5, 0.0, 0.0),       # mount frame origin in the link frame (m)
+    mount_quaternion=(0.0, 0.0, 0.0, 1.0),   # mount frame orientation relative to the link frame
+    joint_actuators=actuators,         # CompliantJointActuator list
+    rest_schedule=(out, t) -> (out[1] = rest_quaternion(t); nothing),   # optional
+)
+sc = SpacecraftModel(; links=[bus], root=bus, inertia_tensor=bus.inertia, initial_condition=ic, attachments=[att])
+```
+
+### Frames and conventions
+
+- The **mount frame** sits at `mount_point` in the link frame with orientation
+  `mount_quaternion` relative to it. The link frame origin is the link center of mass (the
+  spacecraft position for the root link; the link's `r` and `q` relative to the bus otherwise)
+  and its axes are the link body axes. In an articulated spacecraft the link frame follows the
+  link's dynamic body.
+- The model's joints with `parent == 0` attach to the mount frame instead of a fixed base: the
+  model's `base_position` and `base_quaternion` are **ignored**. At least one such joint is
+  required. A topology build's own state, given for its base pose, is converted to mount-frame
+  coordinates; an explicit `initial_state` is already in the mount frame (13 numbers per body:
+  position, scalar-last quaternion, velocity, body-frame angular velocity, relative to a mount at
+  rest). With neither, the model starts at its rest geometry (a spanning tree from the mount joints;
+  pass a build's state for meshes with closed loops).
+- The run state (`att_r`, `att_q`, `att_v`, `att_ω`) holds each body's position and velocity RELATIVE to the
+  spacecraft's `pos` and `vel` (inertial axes) and its absolute attitude and body rate; the initial state is the
+  mount-frame state moved by the mount's pose and rigid-body velocity about the bus. The saved `attachment_pose`
+  and `system_com` are inertial (`pos + att_r`). (The robot-arm state `arm_*` still holds absolute positions: a known follow-up.)
+- `rest_schedule(out::Vector{SVector{4,Float64}}, t)` writes every joint's rest quaternion for time `t`
+  (seconds since the start) into `out`; `nothing` keeps each joint's own rest quaternion. It is called
+  on every RHS evaluation with the stage time, so a smoothstep deployment is followed exactly (a
+  standalone stepper that freezes the rest per step lags by half a step), and the run is
+  allocation-free when the schedule is.
+
+### How the loads reach the spacecraft
+
+The joint loads and the gravity difference are computed from relative quantities. The bus (or articulated base)
+acceleration, which includes the reactions, is then known, and each body's relative acceleration is
+`F_i/m_i + g(r_base + r_rel) - g(r_base) + (g(r_base) - a_base)`: gravity is evaluated at each body's absolute position
+but only its difference from the base gravity enters, so the large common term never reaches the relative acceleration.
+
+- The compliant joint springs, dampers and actuators use the same math as `compliant_joint_loads`
+  (`compliant_joint_loads_in_place!` is the allocation-free variant the engine calls).
+- The reaction on the mount, a force at the mount point plus a torque, goes to the link it is mounted
+  on. **Rigid spacecraft:** the force is added to the bus force (inertial) and the torque, including
+  the `r_mount x F` lever, to the bus torque (body frame) before the bus equations. **Articulated
+  spacecraft:** the body kinematics are computed first, then the attachment loads, and the reaction enters
+  `articulated_dynamics!` as a per-body wrench (`body_force_world`, `body_torque_world`, about the body
+  COM) that is mapped to the generalized forces through each body's Jacobian columns, so the hinge,
+  slide and ball coordinates and the root respond to the attachment.
+- **Loads in v1:** gravity acts on every attachment body at its own position (the position-only
+  gravity effectors). No aerodynamics, SRP, thermal or other effector acts on attachment bodies.
+
+### Mass bookkeeping
+
+Attachment bodies are not links: they are not in `links`, `dry_mass` or the state `mass`, and carry
+their own masses (`attachment_total_mass(sc)`). The system total is the spacecraft plus the attachments;
+the saved `system_com` includes them. A body modeled as a `:fixed` link instead adds to `dry_mass`.
+Thrust, mass flow and every other effector see the spacecraft mass only.
+
+### Solver advice and supported routes
+
+| Route | Support |
+|---|---|
+| `:tsit5`, `:auto_stiff`, `:rodas5p`, `:dp8`, rigid or articulated spacecraft | supported |
+| `:split_imex`, `:multirate`, `:symplectic`, `:gravity_backbone_split` | refused with an `ArgumentError` |
+| Serial and per-satellite RHS routes, `isolate_state` copies, checkpoint and resume | supported |
+| Flat constellation queue | automatically rerouted to the per-satellite route; forcing `SPACEAGORA_RHS_EXECUTION_MODE=flat` is refused |
+| `orientation_sim=false`, a robot-arm effector on the same spacecraft | refused |
+| Attachment link not in the spacecraft, model without a joint to the mount | refused |
+| Mixing spacecraft with different attachment body counts (or with and without attachments) in one run | refused (equal-sized state blocks) |
+
+Cloth meshes are stiff in general. Use `:auto_stiff` or `:rodas5p` when the fastest attachment
+mode (about `sqrt(k/m)` for the translational springs and `sqrt(k_rot/I)` for the rotational ones,
+plus the damping rate `c/m`) is much faster than the orbit and attitude dynamics of interest; the
+explicit modes are fine for mild meshes such as the demo (about 30 rad/s). The attitude and
+angular-rate tolerances apply to `att_q` and `att_ω`. Because the attachment state is relative to the bus, spring forces carry no roundoff from orbital-radius
+positions; a 2e5 N/m attachment integrates with ordinary tolerances.
+
+### Limits
+
+No per-body aerodynamics, SRP or thermal loads, no contact, no attachment-to-attachment joints,
+and no attachment on a spacecraft with the robot-arm effector. The `arm_*` robot-arm path is separate
+and unchanged.
+
 ## Using `make_example_config`
 
 For quick studies and all repository examples, `make_example_config` from

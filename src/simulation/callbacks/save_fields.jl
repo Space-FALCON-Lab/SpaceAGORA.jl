@@ -376,20 +376,66 @@ end
     out = Vector{Vector{Float64}}(undef, num_sats)
     @inbounds for i in 1:num_sats
         art = _articulated_runtime_for(integrator, i)
-        if art === nothing
+        att = _attachment_runtime_for(integrator, i)
+        if art === nothing && att === nothing
             out[i] = Float64[]
             continue
         end
         sc_view = u.sc[i]
-        tree = art.tree
-        pos, _ = articulated_forward_kinematics(tree, sc_view.pos, sc_view.q, sc_view.joint_q)
-        root_mass = sc_view.mass - art.moving_mass
-        total = root_mass + art.moving_mass
-        com = root_mass * pos[1]
-        for b in 2:tree.nb
-            com += tree.mass[b] * pos[b]
+        # Spacecraft part: the articulated system COM (root mass plus moving bodies), or the rigid position.
+        if art === nothing
+            total = Float64(sc_view.mass)
+            com = total * SVector{3, Float64}(sc_view.pos[1], sc_view.pos[2], sc_view.pos[3])
+        else
+            tree = art.tree
+            pos, _ = articulated_forward_kinematics(tree, sc_view.pos, sc_view.q, sc_view.joint_q)
+            root_mass = sc_view.mass - art.moving_mass
+            total = root_mass + art.moving_mass
+            com = root_mass * pos[1]
+            for b in 2:tree.nb
+                com += tree.mass[b] * pos[b]
+            end
+        end
+        # Attachment bodies carry their own masses and are part of the system.
+        if att !== nothing
+            for k in 1:att.n_att, (j, body) in pairs(att.attachments[k].model.bodies)
+                c = att.col0[k] + j
+                total += body.mass_kg
+                com += body.mass_kg * (SVector{3, Float64}(sc_view.pos[1], sc_view.pos[2], sc_view.pos[3]) +
+                    SVector{3, Float64}(sc_view.att_r[1, c], sc_view.att_r[2, c], sc_view.att_r[3, c]))
+            end
         end
         out[i] = Float64.(com / total)
+    end
+    return out
+end
+
+@inline function _attachment_runtime_for(integrator, i::Int)
+    runtimes = integrator.p.shared_buffers.attachment_runtimes
+    return i <= length(runtimes) ? runtimes[i] : nothing
+end
+
+# Compliant attachments: inertial position (pos + att_r, 3) and scalar-last quaternion (4) of every attachment body.
+@inline function _save_attachment_poses(num_sats::Int, u, t, integrator)
+    out = Vector{Vector{Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        if _attachment_runtime_for(integrator, i) === nothing
+            out[i] = Float64[]
+            continue
+        end
+        sc_view = u.sc[i]
+        n = size(sc_view.att_r, 2)
+        pose = Vector{Float64}(undef, 7n)
+        for c in 1:n
+            for k in 1:3
+                # `att_r` is relative to the spacecraft position; the saved pose is inertial.
+                pose[7c - 7 + k] = sc_view.pos[k] + sc_view.att_r[k, c]
+            end
+            for k in 1:4
+                pose[7c - 4 + k] = sc_view.att_q[k, c]
+            end
+        end
+        out[i] = pose
     end
     return out
 end
@@ -413,6 +459,27 @@ function articulated_save_fields(args::SimulationConfiguration)
         SaveField(:articulated_link_pose, (u, t, integrator) -> _save_articulated_link_poses(n, u, t, integrator); per_satellite=true, column_prefix="articulated_link_pose"),
         SaveField(:system_com, (u, t, integrator) -> _save_system_com(n, u, t, integrator); per_satellite=true, column_prefix="system_com"),
     ]
+end
+
+"""
+    attachment_save_fields(args) -> Vector{SaveField}
+
+Fields for spacecraft with compliant attachments; empty when there are none. `attachment_pose` holds,
+per attachment body in attachment order, the inertial position (3) and scalar-last attitude quaternion
+(4, body-to-inertial): `sc{i}_attachment_pose_{k}` with `k = 7(body - 1) + 1:7`. `system_com` (inertial
+system center of mass of spacecraft plus attachment bodies) is added here for rigid spacecraft; articulated
+spacecraft get it from `articulated_save_fields`, which includes the attachment bodies.
+"""
+function attachment_save_fields(args::SimulationConfiguration)
+    any(sc -> !isempty(sc.attachments), args.dynamics_model.spacecraft) || return SaveField[]
+    n = length(args.dynamics_model.spacecraft)
+    fields = SaveField[
+        SaveField(:attachment_pose, (u, t, integrator) -> _save_attachment_poses(n, u, t, integrator); per_satellite=true, column_prefix="attachment_pose"),
+    ]
+    if !any(sc -> articulated_has_moving_joints(sc), args.dynamics_model.spacecraft)
+        push!(fields, SaveField(:system_com, (u, t, integrator) -> _save_system_com(n, u, t, integrator); per_satellite=true, column_prefix="system_com"))
+    end
+    return fields
 end
 
 @inline function _arm_pose_field_enabled(args::SimulationConfiguration)::Bool
@@ -468,6 +535,7 @@ function default_save_fields(args::SimulationConfiguration)
         push!(fields, SaveField(:quaternion, (u, t, integrator) -> _save_quaternion(num_sats, u, t, integrator); per_satellite=true, column_prefix="q"))
     end
     append!(fields, articulated_save_fields(args))
+    append!(fields, attachment_save_fields(args))
     append!(fields, plume_save_fields(args))
     for field in visualization_save_fields(args)
         push!(fields, field)

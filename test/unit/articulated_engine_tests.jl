@@ -38,6 +38,10 @@ end
 
 const T0 = SM.InitialTime(year=2014, month=5, day=27, hour=5, minute=0, second=0.0)
 
+# Allocation counts are only meaningful without coverage instrumentation, which
+# blocks inlining and adds allocations (cf. test/unit/parallel/cost_robust_timing_tests.jl).
+const _ALLOC_CHECKS = Base.JLOptions().code_coverage == 0
+
 function tight_tolerances(; dt_max=0.05)
     return SM.IntegrationTolerances(
         reltol_orbit=1e-12, abstol_orbit=1e-14, reltol_atmosphere=1e-12, abstol_atmosphere=1e-14,
@@ -525,7 +529,7 @@ end
         SE._assign_articulated_rhs!(du.sc[1], u.sc[1], art, p, 1, 0.0, forces, torques, 0.0, (eff,))    # warm-up
         alloc = _art_rhs_alloc(art, p, u, du, forces, torques, (eff,))
         @info "articulated RHS allocation" effector = nameof(typeof(eff)) alloc
-        @test alloc == 0
+        @test alloc == 0 skip=!_ALLOC_CHECKS
         # gravity helper agrees with the effector acceleration at the root
         g = SE._gravity_only_acceleration_ii(p, SVector(7.0e6, 1.0e5, -2.0e5), 0.0)
         @test norm(g) > 1.0 && g[1] < 0

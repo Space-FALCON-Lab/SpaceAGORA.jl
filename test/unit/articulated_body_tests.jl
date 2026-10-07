@@ -10,6 +10,10 @@ const SM = SpaceAGORA.SimulationModel
 const AB = SM.ArticulatedBody
 const CM = SM.ClothMultibody
 
+# Allocation counts are only meaningful without coverage instrumentation, which
+# blocks inlining and adds allocations (cf. test/unit/parallel/cost_robust_timing_tests.jl).
+const _ALLOC_CHECKS = Base.JLOptions().code_coverage == 0
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -410,7 +414,7 @@ end
     AB.articulated_dynamics!(ws, tree, base, jq, jqd, F, T, grav)
     alloc = alloc_probe(ws, tree, base, jq, jqd, F, T, grav)
     @info "(g) allocations of a warmed call" alloc
-    @test alloc == 0
+    @test alloc == 0 skip=!_ALLOC_CHECKS
 end
 
 end # module

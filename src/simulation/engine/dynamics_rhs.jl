@@ -2548,9 +2548,13 @@ end
         p.args.dynamics_model.spacecraft[sat_idx],
         dynamic_effectors,
     )
+    # Effector torques are about the bus origin (root link COM); the base is the root composite
+    # COM at `tree.root_com_bus`, so move the torque there: tau_com = tau_origin - c x F_body.
+    force_body = SimulationModel.ArticulatedBody._rotmat(base.q)' * SVector{3, Float64}(forces[1], forces[2], forces[3])
+    torque_com = SVector{3, Float64}(torques[1], torques[2], torques[3]) - cross(tree.root_com_bus, force_body)
     a, alpha, qdd = SimulationModel.articulated_dynamics!(
         art.ws, tree, base, sc_view.joint_q, sc_view.joint_qd,
-        forces, SimulationModel.DynamicsRotational.body_torque(torques), gravity;
+        forces, SimulationModel.DynamicsRotational.body_torque(torque_com), gravity;
         root_mass=sc_view.mass - art.moving_mass,
     )
     du_view.pos .= SimulationModel.DynamicsTranslational.position_derivative(sc_view.vel)

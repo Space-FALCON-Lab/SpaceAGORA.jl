@@ -450,6 +450,61 @@ end
 end
 
 # ---------------------------------------------------------------------------
+# base torque is about the root composite COM, not the bus origin
+# ---------------------------------------------------------------------------
+
+function _base_rhs(sc, F, torque_origin)
+    args = engine_args(sc; mission_time = 10.0)
+    p = SM.ODEParams(n_sats = 1, args = args)
+    SE._initialize_runtime_env_config!(p)
+    SE._initialize_articulated_runtimes!(p)
+    u = SE.build_initial_conditions(args)
+    du = zero(u)
+    art = p.shared_buffers.articulated_runtimes[1]
+    SE._assign_articulated_rhs!(du.sc[1], u.sc[1], art, p, 1, 0.0, MVector{3, Float64}(F), MVector{3, Float64}(torque_origin), 0.0, ())
+    sv = u.sc[1]
+    base = AB.ArticulatedBaseState(collect(sv.pos), collect(sv.vel), collect(sv.q), collect(sv.ω))
+    a, α, qdd = AB.articulated_dynamics!(art.ws, art.tree, base, sv.joint_q, sv.joint_qd, F, zeros(3), r -> zeros(3); root_mass = sv.mass - art.moving_mass)
+    return (tree = art.tree, du = du.sc[1], a = collect(a), α = collect(α), qdd = copy(qdd))
+end
+
+@testset "articulated base torque is moved from the bus origin to the root composite COM" begin
+    ic = SM.CartesianInitialCondition(SVector(7.0e6, 0.0, 0.0), SVector(30.0, -20.0, 10.0);
+        q = rotq([1, 1, 0], 0.7), ang_vel = SVector(0.0, 0.0, 0.0))
+    bus = mklink(root = true, m = 10.0, dims = (1.0, 1.0, 1.0))
+    block = mklink(m = 5.0, dims = (0.4, 0.4, 0.4), r = (0.5, 0.0, 0.0))
+    panel = mklink(m = 2.0, dims = (0.05, 1.0, 0.5), r = (0.0, 1.1, 0.0))
+    fixed = mkjoint(bus, block, (0.5, 0.0, 0.0); joint_type = :fixed)
+    hinge = mkjoint(bus, panel, (0.0, 0.5, 0.0); joint_type = :hinge, axis = [0, 0, 1], stiffness = 1.0, damping = 0.0, initial_q = 0.0)
+    sc = SM.SpacecraftModel(; joints = [fixed, hinge], links = [bus, block, panel], root = bus, initial_condition = ic)
+    F = SVector(1.0, -2.0, 3.0)
+    # a force through the composite COM: its torque about the bus origin is c x F_body
+    R = Rmat(ic.q)
+    tree0 = AB.build_articulated_tree(sc)
+    c = tree0.root_com_bus
+    @test norm(c) > 0.1
+    r = _base_rhs(sc, F, cross(c, R' * F))
+    @test collect(r.du.ω) ≈ r.α rtol = 1e-12
+    @test collect(r.du.vel) ≈ r.a rtol = 1e-12
+    @test collect(r.du.joint_qd) ≈ r.qdd rtol = 1e-12
+    # Without the conversion the same load would spin the base: the unconverted torque is not neutral.
+    r0 = _base_rhs(sc, F, zeros(3))
+    @test norm(collect(r0.du.ω) - r.α) > 1e-6
+
+    # No :fixed child mass: root_com_bus = 0 and the torque passes through bit for bit.
+    sc2 = hinge_spacecraft(k = 4.0, c = 0.0, θ0 = 0.1, ic = ic)
+    Tq = SVector(0.01, 0.02, -0.03)
+    r2 = _base_rhs(sc2, F, Tq)
+    @test iszero(r2.tree.root_com_bus)
+    base_args = engine_args(sc2; mission_time = 10.0)
+    p2 = SM.ODEParams(n_sats = 1, args = base_args); SE._initialize_runtime_env_config!(p2); SE._initialize_articulated_runtimes!(p2)
+    u2 = SE.build_initial_conditions(base_args); sv = u2.sc[1]; art = p2.shared_buffers.articulated_runtimes[1]
+    b2 = AB.ArticulatedBaseState(collect(sv.pos), collect(sv.vel), collect(sv.q), collect(sv.ω))
+    _, α2, _ = AB.articulated_dynamics!(art.ws, art.tree, b2, sv.joint_q, sv.joint_qd, F, Tq, r -> zeros(3); root_mass = sv.mass - art.moving_mass)
+    @test collect(r2.du.ω) == collect(α2)
+end
+
+# ---------------------------------------------------------------------------
 # allocations of the articulated RHS
 # ---------------------------------------------------------------------------
 

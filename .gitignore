@@ -35,7 +35,6 @@ docs/site/
 docs/src/generated/
 docs/.CondaPkg/
 docs/Manifest.toml
-output/calibration/
 !test/golden/*/fixture.csv
 !test/golden/agora_earth_regression.csv
 data/telemetry/CYGNSS/

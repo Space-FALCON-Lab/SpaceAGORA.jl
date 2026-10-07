@@ -2713,6 +2713,10 @@ function _spacecraft_dynamics_dispatch!(du::ComponentVector, u::ComponentVector,
             @views begin
                 sc_view = sc_state[i]
                 du_view = sc_du[i]
+                if p.shared_buffers.external_present[] && p.shared_buffers.external_owner[i] != 0
+                    _assign_external_shadow_rhs!(du_view, sc_view, p, i, t)
+                    continue
+                end
                 if p.shared_buffers.articulated_present[]
                     art = p.shared_buffers.articulated_runtimes[i]
                     if art !== nothing
@@ -2769,6 +2773,10 @@ function _spacecraft_dynamics_dispatch!(du::ComponentVector, u::ComponentVector,
             @views begin
                 sc_view = sc_state[i]
                 du_view = sc_du[i]
+                if p.shared_buffers.external_present[] && p.shared_buffers.external_owner[i] != 0
+                    _assign_external_shadow_rhs!(du_view, sc_view, p, i, t)
+                    continue
+                end
                 if p.shared_buffers.articulated_present[]
                     art = p.shared_buffers.articulated_runtimes[i]
                     if art !== nothing

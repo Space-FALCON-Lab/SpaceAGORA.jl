@@ -949,6 +949,14 @@ export RhsEffectorDecision, RhsExecutionPlan
         # by one thread at a time, like the articulated workspaces.
         attachment_runtimes::Vector{Union{Nothing, AttachmentRuntime}} = _typed_nothing_vector(AttachmentRuntime, n_sats)
         attachments_present::Base.RefValue{Bool} = Ref(false)
+        # Externally propagated spacecraft (shadow entries; see SimulationModel.ExternalPropagation): the run's
+        # runtimes (one per propagator, built by `_initialize_external_runtimes!`), and for each satellite the
+        # runtime index (0 = ordinary) and its position among that propagator's owned spacecraft.
+        # `external_present` is the run-constant flag the RHS tests first.
+        external_runtimes::Vector{Any} = Any[]
+        external_owner::Vector{Int} = zeros(Int, n_sats)
+        external_local::Vector{Int} = zeros(Int, n_sats)
+        external_present::Base.RefValue{Bool} = Ref(false)
         policy_env_config::Base.RefValue{Union{Nothing, PolicyDecisionEnvConfig}} = Ref{Union{Nothing, PolicyDecisionEnvConfig}}(nothing)
         # The run's scoped ParallelPolicy.PolicyContext, captured at setup in the
         # task that owns the solve (SPACEAGORA_PARALLEL_POLICY_V2 only; `nothing`

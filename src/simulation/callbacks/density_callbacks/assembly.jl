@@ -193,8 +193,12 @@ function get_callbacks(
     backbone_mode = _simulation_engine_module()._solver_policy_mode() == :gravity_backbone_split
     touchdown_specs = _touchdown_specs(args, num_sats)
     has_touchdown = any(spec -> spec !== nothing, touchdown_specs)
-    impact_callback = has_touchdown ? get_impact_callback(num_sats;
-        excluded_spacecraft=map(spec -> spec !== nothing, touchdown_specs)) : get_impact_callback(num_sats)
+    # Touchdown spacecraft and externally propagated shadow entries have no impact event.
+    impact_excluded = has_touchdown ? map(spec -> spec !== nothing, touchdown_specs) : nothing
+    owned_mask = _external_owned_mask(args, num_sats)
+    owned_mask === nothing || (impact_excluded = impact_excluded === nothing ? owned_mask : impact_excluded .| owned_mask)
+    impact_callback = impact_excluded === nothing ? get_impact_callback(num_sats) :
+        get_impact_callback(num_sats; excluded_spacecraft=impact_excluded)
     callbacks = if backbone_mode
         (impact_callback,)
     else
@@ -203,6 +207,8 @@ function get_callbacks(
             update_planet_frame_callback(),
         )
     end
+    # First among the discrete callbacks that follow: later ones read the synced shadow entries.
+    owned_mask === nothing || (callbacks = _append_callback(callbacks, get_external_propagation_callback(num_sats)))
 
     has_touchdown && (callbacks = _append_callback(callbacks, get_touchdown_callback(touchdown_specs)))
 

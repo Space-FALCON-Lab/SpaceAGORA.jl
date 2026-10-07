@@ -17,6 +17,22 @@ const SM = SpaceAGORA.SimulationModel
 const SE = SpaceAGORA.SimulationEngine
 const V3 = SVector{3, Float64}
 
+# --- attitude convention --------------------------------------------------------------------------------
+#
+# SpaceAGORA stores the attitude quaternion scalar-last, q = (x, y, z, w), as the active body-to-inertial
+# rotation: `rot(q)` is the inertial-to-body matrix (the transpose of the Hamilton matrix of q), and the
+# kinematics are qdot = 1/2 q (x) (omega_body, 0). MuJoCo stores quaternions scalar-first, (w, x, y, z), as the
+# Hamilton body-to-world rotation (`xquat`), the free joint's angular velocity is in the body frame, and the
+# scene's world axes are parallel to ECI. Both are therefore the same rotation, the same Hamilton product and
+# the same body-frame rate: the mapping is a pure reordering of components, exact in floating point, and the
+# angular velocity needs no transformation.
+
+"""`sa_to_mujoco_quaternion(q)`: SpaceAGORA `(x, y, z, w)` (body to inertial) to MuJoCo `(w, x, y, z)` (body to world)."""
+sa_to_mujoco_quaternion(q) = SVector{4, Float64}(q[4], q[1], q[2], q[3])
+
+"""`mujoco_to_sa_quaternion(q)`: MuJoCo `(w, x, y, z)` (body to world) to SpaceAGORA `(x, y, z, w)` (body to inertial)."""
+mujoco_to_sa_quaternion(q) = SVector{4, Float64}(q[2], q[3], q[4], q[1])
+
 # RK4 is not offered: the runner steps with mj_step1/mj_step2 so it can write wrenches from fresh
 # kinematics, and MuJoCo's mj_step2 integrates RK4 models with Euler. Accepting :rk4 would silently
 # run Euler, so it is refused until a full-step (mj_step) path supports it.
@@ -27,8 +43,9 @@ const _INTEGRATORS = (euler = Binding.INT_EULER, implicit = Binding.INT_IMPLICIT
     SceneBodyState(body, r, v; q=(1,0,0,0), ω=(0,0,0))
 
 Absolute initial state of one free-root body of a scene: inertial position `r` [m] and velocity `v` [m/s]
-of the body center of mass, attitude quaternion `q` (MuJoCo order `(w, x, y, z)`, body to world) and
-body-frame angular velocity `ω` [rad/s]. `body` is the MJCF body name.
+of the body center of mass, attitude quaternion `q` (MuJoCo order `(w, x, y, z)`, body to world; see
+[`sa_to_mujoco_quaternion`](@ref) for SpaceAGORA's order) and body-frame angular velocity `ω` [rad/s], the same
+vector SpaceAGORA stores. `body` is the MJCF body name.
 """
 struct SceneBodyState
     body::String
@@ -43,14 +60,11 @@ SceneBodyState(body::AbstractString, r, v; q=(1.0, 0.0, 0.0, 0.0), ω=(0.0, 0.0,
 """
     body_state_from_initial_condition(body, ic::SpaceAGORA.CartesianInitialCondition)
 
-Map a SpaceAGORA spacecraft initial condition to a [`SceneBodyState`](@ref). Only position and velocity are
-mapped; the attitude convention between SpaceAGORA and MuJoCo is Stage 2 work, so a non-identity attitude
-or a nonzero angular rate is rejected rather than silently dropped.
+Map a SpaceAGORA spacecraft initial condition to a [`SceneBodyState`](@ref): position and velocity as given, the
+attitude quaternion through [`sa_to_mujoco_quaternion`](@ref) and the body-frame angular rate unchanged.
 """
 function body_state_from_initial_condition(body::AbstractString, ic)
-    isapprox(ic.q, SVector(0.0, 0.0, 0.0, 1.0); atol = 1e-12) && iszero(ic.ang_vel) || throw(ArgumentError(
-        "body_state_from_initial_condition: attitude/angular-rate mapping is not implemented; use identity attitude and zero rate, or build the SceneBodyState directly."))
-    return SceneBodyState(body, ic.pos, ic.vel)
+    return SceneBodyState(body, ic.pos, ic.vel; q = sa_to_mujoco_quaternion(ic.q), ω = ic.ang_vel)
 end
 
 """
@@ -253,10 +267,11 @@ function _refresh!(scene::ProximityScene)
 end
 
 """
-    scene_body_state(scene, i) -> (r, v, q, ω)
+    scene_body_state(scene, i) -> (r, v, q, ω, ω_world)
 
 Absolute inertial state of body `i`: COM position `R + xipos`, COM velocity `V + v`, attitude quaternion
-`(w, x, y, z)` body to world, and angular velocity in world axes.
+`q = (w, x, y, z)` body to world, angular velocity `ω` in the body frame (the vector SpaceAGORA stores; read
+exactly from the free joint for a free-root body) and the same rate in world axes `ω_world`.
 """
 function scene_body_state(scene::ProximityScene, i::Integer)
     1 <= i <= scene.nb || throw(BoundsError(scene.names, i))
@@ -265,12 +280,27 @@ function scene_body_state(scene::ProximityScene, i::Integer)
     r = scene.R + V3(scene.xipos[1, i + 1], scene.xipos[2, i + 1], scene.xipos[3, i + 1])
     v = scene.V + V3(scene.vel6[4], scene.vel6[5], scene.vel6[6])
     q = SVector{4, Float64}(scene.xquat[1, i + 1], scene.xquat[2, i + 1], scene.xquat[3, i + 1], scene.xquat[4, i + 1])
-    return (r = r, v = v, q = q, ω = V3(scene.vel6[1], scene.vel6[2], scene.vel6[3]))
+    ω_world = V3(scene.vel6[1], scene.vel6[2], scene.vel6[3])
+    ω = if i in scene.roots
+        da = Binding.jnt_dofadr(scene.model)[Binding.body_jntadr(scene.model)[i + 1] + 1]
+        V3(scene.qvel[da + 4], scene.qvel[da + 5], scene.qvel[da + 6])
+    else
+        _rotate_inverse(q, ω_world)
+    end
+    return (r = r, v = v, q = q, ω = ω, ω_world = ω_world)
 end
 function scene_body_state(scene::ProximityScene, name::AbstractString)
     i = findfirst(==(name), scene.names)
     i === nothing && throw(ArgumentError("no body named '$name'"))
     return scene_body_state(scene, i)
+end
+
+# Components of a world-axes vector in the body frame of the (w, x, y, z) body-to-world quaternion q:
+# the inverse rotation x - 2w (u x x) + 2 u x (u x x), with u the vector part of q.
+function _rotate_inverse(q::SVector{4, Float64}, x::V3)
+    w = q[1]; u = V3(q[2], q[3], q[4])
+    c = cross(u, x)
+    return x - 2w * c + 2 * cross(u, c)
 end
 
 # --- gravity through SpaceAGORA's hooks --------------------------------------------------------------
@@ -388,6 +418,9 @@ function scene_set_state!(scene::ProximityScene, st::SceneState)
     scene.fresh = false
     return scene
 end
+
+# `deepcopy` of a configuration holding a scene must not duplicate native pointers: copy the model.
+Base.deepcopy_internal(scene::ProximityScene, dict::IdDict) = get!(() -> copy(scene), dict, scene)
 
 """An independent scene with its own copied `mjModel` and fresh `mjData`, at the same state."""
 function Base.copy(scene::ProximityScene)

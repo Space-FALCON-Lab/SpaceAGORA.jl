@@ -214,6 +214,8 @@ xipos(m::MjModel, d::MjData) = unsafe_wrap(Array, unsafe_load(Ptr{Ptr{Float64}}(
 xquat(m::MjModel, d::MjData) = unsafe_wrap(Array, unsafe_load(Ptr{Ptr{Float64}}(d.ptr + OFFSETS.data.xquat)), (4, nbody(m)); own = false)
 """Times MuJoCo raised warning `w` (a `WARN_*` index) since the counter was last cleared."""
 warning_count(d::MjData, w::Integer) = Int(unsafe_load(Ptr{Cint}(d.ptr + OFFSETS.data.warning + WARNING_STRIDE * w + WARNING_NUMBER)))
+"""Body orientation matrices (body to world), row-major 3x3 per body: a `9 x nbody` array."""
+ximat(m::MjModel, d::MjData) = unsafe_wrap(Array, unsafe_load(Ptr{Ptr{Float64}}(d.ptr + OFFSETS.data.ximat)), (9, nbody(m)); own = false)
 eq_active(m::MjModel, d::MjData) = _arr(d.ptr, OFFSETS.data.eq_active, UInt8, neq(m))
 
 end # module Binding

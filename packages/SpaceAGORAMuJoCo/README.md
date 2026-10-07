@@ -1,7 +1,15 @@
 # SpaceAGORAMuJoCo
 
-Optional MuJoCo proximity scenes for SpaceAGORA. Stage 1 is the standalone scene runner; engine
-integration (shadow spacecraft entries, sync callback, GNC) is Stage 2. The root `SpaceAGORA` project
+Optional MuJoCo proximity scenes for SpaceAGORA. Stage 1 is the standalone scene runner; Stage 2
+runs a scene inside `run_simulation` (shadow spacecraft entries, a sync callback, guidance and navigation
+reading the scene state; actuation and sensors are Stage 3):
+
+```julia
+config = SM.SimConfig._with_configuration(config;
+    external_propagators = (ProximitySceneDynamics(scene, 1 => "chaser", 2 => "target"),))
+SpaceAGORA.run_simulation(config)   # spacecraft 1 and 2 are now carried by the scene
+```
+ The root `SpaceAGORA` project
 does not depend on this package, and a plain `using SpaceAGORA` never touches MuJoCo.
 
 ```julia

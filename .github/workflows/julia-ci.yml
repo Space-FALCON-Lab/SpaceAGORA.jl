@@ -934,4 +934,5 @@ jobs:
         env:
           SPACEAGORA_MUJOCO_REQUIRED: "1"
           JULIA_LOAD_PATH: "@:@stdlib"
+          JULIA_NUM_THREADS: "4"                  # the threaded Monte Carlo identity test
         run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" packages/SpaceAGORAMuJoCo/test/runtests.jl

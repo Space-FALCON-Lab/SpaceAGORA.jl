@@ -52,6 +52,13 @@ function _build_solver_tolerances(u_state::ComponentVector, args)
             reltol_state.sc[i].joint_qd .= reltol_ω
             abstol_state.sc[i].joint_qd .= abstol_ω
         end
+        if hasproperty(reltol_state.sc[i], :att_q)
+            # Attachment bodies: attitude and body-rate tolerances (positions and velocities keep the orbit ones).
+            reltol_state.sc[i].att_q .= reltol_q
+            abstol_state.sc[i].att_q .= abstol_q
+            reltol_state.sc[i].att_ω .= reltol_ω
+            abstol_state.sc[i].att_ω .= abstol_ω
+        end
     end
     return reltol_state, abstol_state
 end

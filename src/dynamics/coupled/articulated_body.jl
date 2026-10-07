@@ -33,7 +33,7 @@ using ..SpacecraftModels: SpacecraftModel, Link, Joint
 
 export ArticulatedTree, ArticulatedWorkspace, ArticulatedBaseState
 export build_articulated_tree, articulated_dynamics!, articulated_forward_kinematics
-export articulated_kinematics, articulated_link_poses, articulated_joint_qdot, articulated_joint_qdot!
+export articulated_kinematics, articulated_kinematics!, articulated_link_poses, articulated_joint_qdot, articulated_joint_qdot!
 export articulated_potential_energy, articulated_moving_mass, articulated_has_moving_joints
 export ArticulatedRuntime
 
@@ -201,6 +201,17 @@ struct ArticulatedWorkspace{T}
     rhs::Vector{T}
     u::Vector{T}
     qdd::Vector{T}
+    # Kinematics output buffers (see `articulated_kinematics!`): per dynamic body inertial COM
+    # position, attitude quaternion, COM velocity, body-frame and world-frame angular velocity.
+    kpos::Vector{SVector{3, T}}
+    kquat::Vector{SVector{4, T}}
+    kvel::Vector{SVector{3, T}}
+    kwb::Vector{SVector{3, T}}
+    kww::Vector{SVector{3, T}}
+    # External wrench per dynamic body about its COM, world frame (see `articulated_dynamics!`);
+    # written by the caller (the engine) and zeroed by it.
+    ext_force::Vector{SVector{3, T}}
+    ext_torque::Vector{SVector{3, T}}
 end
 
 function ArticulatedWorkspace(tree::ArticulatedTree, ::Type{T}=Float64) where {T}
@@ -211,6 +222,8 @@ function ArticulatedWorkspace(tree::ArticulatedTree, ::Type{T}=Float64) where {T
         fill(zero(SMatrix{3, 3, T, 9}), nb), fill(z3, nb), fill(z3, nb), fill(z3, nb), fill(z3, nb), fill(z3, nb),
         zeros(T, 3, n, nb), zeros(T, 3, n, nb), zeros(T, 3, n), zeros(T, n, n), zeros(T, n), zeros(T, n),
         zeros(T, tree.nv),
+        fill(z3, nb), fill(zero(SVector{4, T}), nb), fill(z3, nb), fill(z3, nb), fill(z3, nb),
+        fill(z3, nb), fill(z3, nb),
     )
 end
 
@@ -519,6 +532,11 @@ function articulated_forward_kinematics(tree::ArticulatedTree, base_pos, base_q,
     T = promote_type(eltype(base_pos), eltype(base_q), eltype(joint_q))
     pos = Vector{SVector{3, T}}(undef, tree.nb)
     quat = Vector{SVector{4, T}}(undef, tree.nb)
+    return _forward_kinematics!(pos, quat, tree, base_pos, base_q, joint_q)
+end
+
+function _forward_kinematics!(pos, quat, tree::ArticulatedTree, base_pos, base_q, joint_q::AbstractVector)
+    T = eltype(eltype(pos))
     pos[1] = SVector{3, T}(base_pos)
     quat[1] = _qnormalize(SVector{4, T}(base_q))
     for b in 2:tree.nb
@@ -541,11 +559,24 @@ velocity, and body-frame angular velocity.
 function articulated_kinematics(tree::ArticulatedTree, base_state, joint_q::AbstractVector, joint_qd::AbstractVector)
     T = promote_type(eltype(base_state.pos), eltype(base_state.vel), eltype(base_state.q), eltype(base_state.ω),
         eltype(joint_q), eltype(joint_qd))
-    pos, quat = articulated_forward_kinematics(tree, base_state.pos, base_state.q, joint_q)
     nb = tree.nb
-    vel = Vector{SVector{3, T}}(undef, nb)
-    wb = Vector{SVector{3, T}}(undef, nb)
-    ww = Vector{SVector{3, T}}(undef, nb)
+    k = (pos=Vector{SVector{3, T}}(undef, nb), quat=Vector{SVector{4, T}}(undef, nb), vel=Vector{SVector{3, T}}(undef, nb),
+        ω=Vector{SVector{3, T}}(undef, nb), ω_world=Vector{SVector{3, T}}(undef, nb))
+    articulated_kinematics!(k, tree, base_state, joint_q, joint_qd)
+    return (pos=k.pos, quat=k.quat, vel=k.vel, ω=k.ω)
+end
+
+"""
+    articulated_kinematics!(buf, tree, base_state, joint_q, joint_qd) -> buf
+
+In-place, allocation-free [`articulated_kinematics`](@ref): `buf` is a NamedTuple of per-body vectors
+`(pos, quat, vel, ω, ω_world)` (the world-frame angular velocity is the extra scratch output).
+"""
+function articulated_kinematics!(buf, tree::ArticulatedTree, base_state, joint_q::AbstractVector, joint_qd::AbstractVector)
+    pos = buf.pos; quat = buf.quat; vel = buf.vel; wb = buf.ω; ww = buf.ω_world
+    T = eltype(eltype(pos))
+    _forward_kinematics!(pos, quat, tree, base_state.pos, base_state.q, joint_q)
+    nb = tree.nb
     vel[1] = SVector{3, T}(base_state.vel)
     wb[1] = SVector{3, T}(base_state.ω)
     ww[1] = _rotmat(quat[1]) * wb[1]
@@ -568,7 +599,7 @@ function articulated_kinematics(tree::ArticulatedTree, base_state, joint_q::Abst
         f = R * tree.d2[b]
         vel[b] = vel[p] + cross(ww[p], e) + sd * (Rp * tree.axis[b]) - cross(ww[b], f)
     end
-    return (pos=pos, quat=quat, vel=vel, ω=wb)
+    return buf
 end
 
 """
@@ -649,6 +680,12 @@ evaluated at every body's own COM, the root included, so gravity-gradient effect
 body offsets. Joint springs and dampers act in joint space (`τ = -k(q - rest) - c q̇`; for ball
 joints `τ = -R_rest K ϕ - C ω_rel` with `ϕ` the axis-angle of `rest⁻¹ ⊗ q`).
 
+`body_force_world` and `body_torque_world` (default `nothing`) are optional per-dynamic-body external
+wrenches: vectors of 3-vectors indexed by dynamic body (index 1 is the root), a force through the
+body COM and a torque about it, both in the INERTIAL frame (the engine hands the attachment reactions
+over this way). They enter as generalized forces `Jᵀ [F; τ]` through each body's Jacobian columns,
+in addition to `base_force_world`/`base_torque_body` (which stay root-only).
+
 `root_mass` (default `tree.mass[1]`) overrides the root body mass at runtime so mass flow needs no
 tree rebuild; the root inertia stays the configured composite (propellant carries no inertia).
 
@@ -658,7 +695,7 @@ workspace built once per tree the call performs no allocation; the math is gener
 """
 function articulated_dynamics!(ws::ArticulatedWorkspace{T}, tree::ArticulatedTree, base_state,
         joint_q::AbstractVector, joint_qd::AbstractVector, base_force_world, base_torque_body, body_gravity;
-        root_mass=tree.mass[1]) where {T}
+        root_mass=tree.mass[1], body_force_world=nothing, body_torque_world=nothing) where {T}
     nb = tree.nb
     nv = tree.nv
     n = 6 + nv
@@ -756,6 +793,10 @@ function articulated_dynamics!(ws::ArticulatedWorkspace{T}, tree::ArticulatedTre
             jw = _col(Jw, j, b)
             jv = _col(Jv, j, b)
             rhs[j] -= dot(jv, Fb) + dot(jw, Tb)
+            if body_force_world !== nothing
+                # External wrench on body b about its COM: generalized force Jᵀ [F; τ].
+                rhs[j] += dot(jv, SVector{3, T}(body_force_world[b])) + dot(jw, SVector{3, T}(body_torque_world[b]))
+            end
             Aj = Iw * jw
             A[1, j] = Aj[1]; A[2, j] = Aj[2]; A[3, j] = Aj[3]
         end

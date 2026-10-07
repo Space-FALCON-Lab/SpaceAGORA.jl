@@ -4,6 +4,7 @@ module ConfigTypes
 # include("core/simulation_model.jl")
 using ..SpacecraftModels: SpacecraftModel
 using ..ArticulatedBody: ArticulatedRuntime
+using ..CompliantAttachmentDynamics: AttachmentRuntime
 using ..SimConfig: SimulationConfiguration
 using ..EnvironmentModels: GRAMAtmosphereModel, GRAMAtmosphereModelSurrogate
 using ..LegacyModelCodes:
@@ -941,6 +942,13 @@ export RhsEffectorDecision, RhsExecutionPlan
         # at a time (the `@batch` and serial loops partition by satellite).
         articulated_runtimes::Vector{Union{Nothing, ArticulatedRuntime}} = _typed_nothing_vector(ArticulatedRuntime, n_sats)
         articulated_present::Base.RefValue{Bool} = Ref(false)
+        # Compliant attachments (cloth meshes, flexible appendages mounted on links): per-satellite
+        # runtime built once per run by `_initialize_attachment_runtimes!` (`nothing` for spacecraft
+        # without attachments). `attachments_present` is the run-constant flag the RHS tests first
+        # (one Bool load per RHS call without attachments). A satellite's runtime buffers are touched
+        # by one thread at a time, like the articulated workspaces.
+        attachment_runtimes::Vector{Union{Nothing, AttachmentRuntime}} = _typed_nothing_vector(AttachmentRuntime, n_sats)
+        attachments_present::Base.RefValue{Bool} = Ref(false)
         policy_env_config::Base.RefValue{Union{Nothing, PolicyDecisionEnvConfig}} = Ref{Union{Nothing, PolicyDecisionEnvConfig}}(nothing)
         # The run's scoped ParallelPolicy.PolicyContext, captured at setup in the
         # task that owns the solve (SPACEAGORA_PARALLEL_POLICY_V2 only; `nothing`

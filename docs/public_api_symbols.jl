@@ -253,6 +253,7 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :CompliantTopologyBuild, rendered = "SpaceAGORA.CompliantTopologyBuild"),
             (owner = :SpaceAGORA, symbol = :CompliantJointActuator, rendered = "SpaceAGORA.CompliantJointActuator"),
             (owner = :SpaceAGORA, symbol = :CompliantJointLoad, rendered = "SpaceAGORA.CompliantJointLoad"),
+            (owner = :SpaceAGORA, symbol = :CompliantAttachment, rendered = "SpaceAGORA.CompliantAttachment"),
             (owner = :SpaceAGORA, symbol = :rectangular_prism_inertia, rendered = "SpaceAGORA.rectangular_prism_inertia"),
             (owner = :SpaceAGORA, symbol = :thin_panel_inertia, rendered = "SpaceAGORA.thin_panel_inertia"),
             (owner = :SpaceAGORA, symbol = :build_compliant_topology, rendered = "SpaceAGORA.build_compliant_topology"),

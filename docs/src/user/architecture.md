@@ -83,7 +83,15 @@ The engine integrates the joint coordinates beside the root state
 only gravity is evaluated per body. Spacecraft without a non-fixed joint
 never touch this path. See [Joint types](simulation_configuration.md#Joint-types-and-articulated-spacecraft).
 The compliant model above remains the route for compliant (spring-connected)
-bodies such as the robot arm.
+bodies. It is no longer arm-only: a `CompliantAttachment` mounts a
+`CompliantMultibodyModel` on any spacecraft link (the root, a fixed-merged link
+or a moving articulated link), integrates its bodies beside the spacecraft
+(`att_r`, `att_q`, `att_v`, `att_ω`) and exchanges forces and torques with the
+link in both directions: through the bus equations for a rigid spacecraft and
+through per-body wrenches into the articulated backbone otherwise
+(`src/dynamics/multibody_cloth/compliant_attachment_dynamics.jl`). The
+robot-arm coupling keeps its own path for now. See
+[Compliant attachments](simulation_configuration.md#Compliant-attachments).
 
 For example, an arm attached to a station belongs to the station's assembly.
 A free-flying inspector is another spacecraft. Their task assignment and

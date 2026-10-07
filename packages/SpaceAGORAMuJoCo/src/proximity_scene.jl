@@ -17,8 +17,11 @@ const SM = SpaceAGORA.SimulationModel
 const SE = SpaceAGORA.SimulationEngine
 const V3 = SVector{3, Float64}
 
+# RK4 is not offered: the runner steps with mj_step1/mj_step2 so it can write wrenches from fresh
+# kinematics, and MuJoCo's mj_step2 integrates RK4 models with Euler. Accepting :rk4 would silently
+# run Euler, so it is refused until a full-step (mj_step) path supports it.
 const _INTEGRATORS = (euler = Binding.INT_EULER, implicit = Binding.INT_IMPLICIT,
-    implicitfast = Binding.INT_IMPLICITFAST, rk4 = Binding.INT_RK4)
+    implicitfast = Binding.INT_IMPLICITFAST)
 
 """
     SceneBodyState(body, r, v; q=(1,0,0,0), ω=(0,0,0))
@@ -110,6 +113,7 @@ function ProximityScene(; mjcf_path=nothing, mjcf_xml=nothing, dt, planet, gravi
         planet_rotation=nothing, t0::Real=0.0)
     (mjcf_path === nothing) ⊻ (mjcf_xml === nothing) || throw(ArgumentError("give exactly one of mjcf_path or mjcf_xml"))
     isfinite(dt) && dt > 0 || throw(ArgumentError("dt must be positive and finite, got $dt"))
+    integrator === :rk4 && throw(ArgumentError("integrator :rk4 is not supported: the scene steps with mj_step1/mj_step2, and MuJoCo integrates RK4 models with Euler on that path. Use :implicitfast, :implicit or :euler."))
     haskey(_INTEGRATORS, integrator) || throw(ArgumentError("integrator must be one of $(keys(_INTEGRATORS)), got :$integrator"))
     _check_effectors(gravity_effectors, planet_rotation)
     model = mjcf_path === nothing ? Binding.load_xml_string(mjcf_xml) : Binding.load_xml_file(String(mjcf_path))

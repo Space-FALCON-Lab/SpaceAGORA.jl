@@ -187,6 +187,8 @@ end
     @test_throws ArgumentError ProximityScene(; kw..., dt=0.0)
     @test_throws ArgumentError ProximityScene(; kw..., dt=NaN)
     @test_throws ArgumentError ProximityScene(; kw..., dt=0.05, integrator=:midpoint)
+    # RK4 would silently run as Euler on the mj_step1/mj_step2 path, so it is refused
+    @test_throws ArgumentError ProximityScene(; kw..., dt=0.05, integrator=:rk4)
     @test_throws ArgumentError ProximityScene(; kw..., mjcf_path="x.xml", dt=0.05)    # both sources
     @test_throws ArgumentError ProximityScene(; planet=EARTH, gravity_effectors=kw.gravity_effectors, initial_states=states(), dt=0.05)
     @test_throws ArgumentError ProximityScene(; kw..., dt=0.05, initial_states=states()[1:1])   # missing body state

@@ -156,12 +156,15 @@ end
 
 # Warmed, allocation-only regression through the real type-erasing config
 # boundary. Keep buffers/state outside the measurement and observe a checksum.
-# The tuple is still obtained through an abstract ControlModel field, so this
-# entry retains one runtime dispatch boundary per spacecraft. ODEParams is a
-# large immutable aggregate; boxing it at that boundary can allocate even when
-# the homogeneous inner loop infers. Julia 1.12.1 measured 2,096 B/call for this
-# fixture after warmup. A 4 KiB/call budget allows that measured residual while
-# catching a return to the original per-controller hook-result boxing. This is
+# The ControlModel is still obtained through an abstract field, so this entry
+# retains one runtime dispatch boundary per spacecraft. While ODEParams was an
+# immutable aggregate stored inline, that boundary copied it to the heap:
+# Julia 1.12.1 measured 2,096 B/call for this fixture after warmup. With
+# ODEParams mutable and the ControlModel passed whole, the same measurement is
+# 16 B/call (the boxed Float64 time argument). The 64 B/call budget catches a
+# return of either copy, or of the per-controller hook-result boxing. Coverage
+# instrumentation changes inlining and allocation, so a coverage run keeps the
+# earlier 4 KiB/call bound, which still catches the hook-result boxing. This is
 # an allocation regression bound, not a zero-allocation or wall-time claim.
 @noinline function readout_batch!(p, state, forces, torques, wheels, repetitions)
     checksum = 0.0
@@ -187,6 +190,7 @@ end
     readout_allocated(p, state, f, tq, rw, repetitions, checksum)
     bytes = readout_allocated(p, state, f, tq, rw, repetitions, checksum)
     @test checksum[] == sum(1:32) / 1024.0
-    @test bytes <= 4096 * repetitions
+    budget = Base.JLOptions().code_coverage == 0 ? 64 : 4096
+    @test bytes <= budget * repetitions
 end
 end # module ControlReadoutTests

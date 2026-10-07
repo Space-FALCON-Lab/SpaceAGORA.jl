@@ -24,8 +24,7 @@ julia --project=packages/SpaceAGORAMuJoCo packages/SpaceAGORAMuJoCo/test/runtest
 ```
 
 or add `SpaceAGORA` and `SpaceAGORAMuJoCo` as path packages to your own environment
-(`scripts/setup_hypr.jl`'s `HYPRInstallation.setup(dir; with_hypr=false)` builds one from the root
-manifest). The first load downloads the MuJoCo artifact; the download is verified against the sha256 in
+(`julia packages/SpaceAGORAMuJoCo/scripts/setup_env.jl <dir>` builds one from the root manifest, as CI does). The first load downloads the MuJoCo artifact; the download is verified against the sha256 in
 `Artifacts.toml` and the unpacked tree against its git tree hash.
 
 ## Dependency review

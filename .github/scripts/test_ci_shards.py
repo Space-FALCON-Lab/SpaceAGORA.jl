@@ -68,6 +68,9 @@ class PlanTests(unittest.TestCase):
             if aggregator in ("tests", "coverage-quality-gate"):
                 expected_needs.append("optional-hypr-installation")
                 self.assertIn("needs.optional-hypr-installation.result", agg.group(1))
+                if aggregator == "tests":
+                    expected_needs.append("optional-mujoco-installation")
+                    self.assertIn("needs.optional-mujoco-installation.result", agg.group(1))
             needs = re.search(r"needs: \[(.*?)\]", agg.group(1))
             self.assertIsNotNone(needs, aggregator)
             self.assertEqual([x.strip() for x in needs.group(1).split(",")], expected_needs)

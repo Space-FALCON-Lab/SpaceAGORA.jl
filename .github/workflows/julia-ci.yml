@@ -193,7 +193,7 @@ jobs:
 
   tests:
     if: always()
-    needs: [plan, test-shards, optional-hypr-installation]
+    needs: [plan, test-shards, optional-hypr-installation, optional-mujoco-installation]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -219,7 +219,7 @@ jobs:
       - name: Enforce test shard success
         run: |
           echo "test-shards result=${{ needs.test-shards.result }}"
-          if [ "${{ needs.test-shards.result }}" != "success" ] || [ "${{ needs.optional-hypr-installation.result }}" != "success" ]; then
+          if [ "${{ needs.test-shards.result }}" != "success" ] || [ "${{ needs.optional-hypr-installation.result }}" != "success" ] || [ "${{ needs.optional-mujoco-installation.result }}" != "success" ]; then
             echo "Test shards failed or were cancelled."
             exit 1
           fi
@@ -906,3 +906,32 @@ jobs:
           path: hypr-installation-coverage/coverage.tgz
           retention-days: 3
           if-no-files-found: error
+
+  # The optional MuJoCo subpackage (packages/SpaceAGORAMuJoCo), Linux only. The root project never
+  # depends on it. The MuJoCo 3.11.0 artifact is a public Apache-2.0 release, so unlike GRAM content it may
+  # be cached; Pkg still verifies the sha256 and tree hash from Artifacts.toml whenever it downloads.
+  optional-mujoco-installation:
+    needs: depot
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          gram: none
+          gramsuite-smoke: "false"
+          token: ${{ github.token }}
+      - name: Cache the MuJoCo artifact
+        uses: actions/cache@v4
+        with:
+          path: ~/.julia/artifacts/6a34a368d528ad0332f9da97de3d2f105977bac8
+          key: mujoco-artifact-${{ runner.os }}-${{ hashFiles('packages/SpaceAGORAMuJoCo/Artifacts.toml') }}
+      - name: Build the SpaceAGORA plus SpaceAGORAMuJoCo environment
+        run: julia --startup-file=no --project=. packages/SpaceAGORAMuJoCo/scripts/setup_env.jl "$RUNNER_TEMP/mujoco-env"
+      - name: SpaceAGORAMuJoCo tests
+        env:
+          SPACEAGORA_MUJOCO_REQUIRED: "1"
+          JULIA_LOAD_PATH: "@:@stdlib"
+        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" packages/SpaceAGORAMuJoCo/test/runtests.jl

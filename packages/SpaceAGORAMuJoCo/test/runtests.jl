@@ -6,6 +6,8 @@ using SpaceAGORAMuJoCo
 const _mujoco_ok = try
     SpaceAGORAMuJoCo.Binding.version() == 3_011_000
 catch err
+    # CI sets SPACEAGORA_MUJOCO_REQUIRED=1 so a failed artifact download fails the job instead of skipping.
+    get(ENV, "SPACEAGORA_MUJOCO_REQUIRED", "") == "1" && rethrow()
     @warn "MuJoCo 3.11.0 is not loadable; skipping SpaceAGORAMuJoCo tests" exception = (err, catch_backtrace())
     false
 end

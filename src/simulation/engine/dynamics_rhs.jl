@@ -2084,10 +2084,15 @@ function _spacecraft_dynamics_flat_constellation_effector_queue!(
     # spacecraft, and when, changes; no value is shared between spacecraft.
     # The harmonics pass's cost-model observation now times the fused region,
     # which is what one RHS call costs on this route.
+    #
+    # The pre-pass's own dispatch is unchanged: the channel-woken persistent
+    # pool by default, the spin-barrier pool under
+    # SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER=1. Unfused, the spin barrier lost
+    # because its spinning workers held the threads the spawned assembly tasks
+    # needed; fused, there are no such tasks on this route.
     if partition === nothing && !needs_planet_frame_prefill &&
        length(dynamic_effectors) == 1 &&
        dynamic_effectors[1] isa SimulationModel.GravitationalHarmonicsModel &&
-       !rhs_env.harmonics_batch_spin_barrier &&   # spin workers hold their threads; left as it was
        any(p.is_active)
         num_sats = length(sc_state)
         _ensure_rhs_flat_effector_scratch!(p.shared_buffers, num_sats, 1)

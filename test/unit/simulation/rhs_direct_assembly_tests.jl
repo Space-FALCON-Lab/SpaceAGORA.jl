@@ -5,7 +5,7 @@ using ComponentArrays
 
 const RHSDA_SE = SpaceAGORA.SimulationEngine
 
-function _rhs_direct_assembly_config(; n_sats::Int=3)
+function _rhs_direct_assembly_config(; n_sats::Int=3, effectors::Tuple=(InverseSquaredGravityModel(),))
     planet = Earth()
     spacecraft = SpacecraftModel[]
     for i in 1:n_sats
@@ -60,7 +60,7 @@ function _rhs_direct_assembly_config(; n_sats::Int=3)
             wind=false,
             ephemerides_model=SimpleEphemeridesModel(),
         ),
-        dynamics_model=DynamicsModel(spacecraft, (InverseSquaredGravityModel(),)),
+        dynamics_model=DynamicsModel(spacecraft, effectors),
         guidance_model=GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
         navigation_model=NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
         control_model=ControlModel(control_effectors=(), control_rates=Float64[]),
@@ -281,4 +281,59 @@ end
         :implicit,
         1,
     )
+end
+
+# The harmonics-only flat route fuses the harmonics pre-pass, the reduction and
+# the final assembly into one parallel region (each worker finishes the
+# spacecraft range its slice covers). It must write exactly what the unfused
+# composition writes -- pre-pass and reduction, then every spacecraft assembled
+# from the totals -- for both assemblies, with inactive spacecraft at the ends
+# and in the gaps between slices.
+@testset "Fused harmonics RHS matches the unfused route bit for bit" begin
+    planet = Earth()
+    gravity_file = joinpath(normpath(joinpath(@__DIR__, "..", "..", "..")),
+        "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+    model = GravitationalHarmonicsModel(20, 20, gravity_file, planet)
+    n = 37
+    args = _rhs_direct_assembly_config(n_sats=n, effectors=(model,))
+    u = RHSDA_SE.build_initial_conditions(args)
+    plan = (
+        mode=:flat_constellation_effector_queue, allotment=max(2, Threads.nthreads()),
+        scheduler=:static, dominant_axis=:flat_effector, policy_applied=false,
+        effector_decision=(use_threads=false, allotment=1, mode=:off, policy_applied=false),
+    )
+    for direct in (false, true), inactive in (Int[], [1, 2, 9, 10, 11, 36, 37], [5])
+        fresh_p() = begin
+            p = ODEParams(n_sats=n, args=args)
+            p.is_active .= true
+            p.is_active[inactive] .= false
+            p.shared_buffers.rhs_env_config[] = withenv(
+                "SPACEAGORA_RHS_FINAL_ASSEMBLY_DIRECT_LAYOUT" => (direct ? "1" : "0"),
+            ) do
+                RHSDA_SE._snapshot_rhs_plan_env_config()
+            end
+            p
+        end
+        p_fused = fresh_p()
+        fused = fill!(zero(u), 99.0)
+        RHSDA_SE._spacecraft_dynamics_flat_constellation_effector_queue!(
+            fused, u, p_fused, 30.0, plan; rhs_kind=:full)
+
+        p_ref = fresh_p()
+        ref = fill!(zero(u), 99.0)
+        RHSDA_SE._accumulate_dynamic_effectors_flat_batch!(u.sc, p_ref, 30.0, (model,), plan)
+        totals = p_ref.shared_buffers.rhs_flat_effector_totals[]
+        env = p_ref.shared_buffers.rhs_env_config[]
+        stride = RHSDA_SE._flat_translational_direct_layout_stride(ref, u, p_ref, env, :full)
+        @test (stride > 0) == direct
+        for i in 1:n
+            RHSDA_SE._assemble_flat_satellite!(
+                ref.sc, u.sc, ComponentArrays.getdata(ref), ComponentArrays.getdata(u),
+                p_ref, 30.0, totals, args.dynamics_model.spacecraft,
+                p_ref.shared_buffers.debug_control[], stride, :full, i)
+        end
+        @test !any(==(99.0), ComponentArrays.getdata(fused))
+        @test isequal(ComponentArrays.getdata(fused), ComponentArrays.getdata(ref))
+        @test isequal(p_fused.shared_buffers.rhs_flat_effector_totals[][:, 1:n], totals[:, 1:n])
+    end
 end

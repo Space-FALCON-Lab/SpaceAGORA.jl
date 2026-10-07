@@ -1115,7 +1115,8 @@ function _accumulate_harmonics_flat_batch!(
     model::SimulationModel.GravitationalHarmonicsModel,
     plan;
     eff_idx::Int=1,
-)::Nothing
+    after_slice::A=nothing,
+)::Nothing where {A}
     num_sats = length(sc_state)
     active_sats = count(identity, p.is_active)
     active_sats <= 0 && return nothing
@@ -1136,6 +1137,7 @@ function _accumulate_harmonics_flat_batch!(
         count_items += 1
         work_items[count_items] = sat_idx
     end
+    n_items = count_items   # assigned once, so the closure below does not box it
 
     et = p.shared_buffers.et_start[] + t
     lpi = SimulationModel.DynamicEffectors.PerturbationEffectors._harmonics_lpi_at!(model, p, et)
@@ -1161,6 +1163,9 @@ function _accumulate_harmonics_flat_batch!(
         pert._harmonics_flat_batch_kernel!(
             slots, eff_idx, model, sc_state, work_items, item_start, item_end, lpi, pool[w],
         )
+        # The fused RHS (`_fused_harmonics_direct_rhs!`) finishes the slice's
+        # spacecraft here, on the same worker, instead of in two more regions.
+        after_slice === nothing || after_slice(item_start, item_end, n_items)
         return nothing
     end
     if n_workers <= 1
@@ -1828,6 +1833,48 @@ end
     return nothing
 end
 
+# Stride of the raw state layout the direct assembly writes, or 0 when this
+# RHS call must take the generic assembly.
+function _flat_translational_direct_layout_stride(
+    du::ComponentVector,
+    u::ComponentVector,
+    p,
+    env::SimulationModel.RhsPlanEnvConfig,
+    rhs_kind::Symbol,
+)::Int
+    env.final_assembly_direct_layout || return 0
+    _rhs_final_assembly_direct_supported_kind(rhs_kind) || return 0
+    p.args.mission_configuration.orientation_sim && return 0
+    !isempty(p.args.control_model.control_effectors) && return 0
+    _robot_arm_present(p) && return 0
+    _rhs_heat_rates_active(p) && return 0
+    length(u) == length(du) || return 0
+    return _rhs_final_assembly_direct_stride!(p.shared_buffers, u.sc, du.sc, u, du)
+end
+
+# One spacecraft of the direct assembly: d(pos) = vel, d(vel) = F/m, the rest 0.
+@inline function _assign_rhs_direct_satellite!(
+    du_data, u_data, totals, active_flags, stride::Int, sat_idx::Int,
+)::Nothing
+    base = (sat_idx - 1) * stride
+    @inbounds if !active_flags[sat_idx]
+        _zero_rhs_direct_segment!(du_data, base, stride)
+        return nothing
+    end
+
+    @inbounds begin
+        du_data[base + 1] = Float64(u_data[base + 4])
+        du_data[base + 2] = Float64(u_data[base + 5])
+        du_data[base + 3] = Float64(u_data[base + 6])
+    end
+    _assign_rhs_direct_acceleration!(du_data, base, totals, u_data[base + 7], sat_idx)
+    @inbounds du_data[base + 7] = 0.0
+    @inbounds for offset in 8:stride
+        du_data[base + offset] = 0.0
+    end
+    return nothing
+end
+
 function _try_assign_flat_translational_rhs_direct_layout!(
     du::ComponentVector,
     u::ComponentVector,
@@ -1837,40 +1884,14 @@ function _try_assign_flat_translational_rhs_direct_layout!(
     rhs_kind::Symbol,
     assembly_allotment::Int,
 )::Bool
-    env.final_assembly_direct_layout || return false
-    _rhs_final_assembly_direct_supported_kind(rhs_kind) || return false
-    p.args.mission_configuration.orientation_sim && return false
-    !isempty(p.args.control_model.control_effectors) && return false
-    _robot_arm_present(p) && return false
-    _rhs_heat_rates_active(p) && return false
-    length(u) == length(du) || return false
-
-    sc_state = u.sc
-    sc_du = du.sc
-    num_sats = length(sc_state)
-    stride = _rhs_final_assembly_direct_stride!(p.shared_buffers, sc_state, sc_du, u, du)
+    stride = _flat_translational_direct_layout_stride(du, u, p, env, rhs_kind)
     stride > 0 || return false
 
     u_data = ComponentArrays.getdata(u)
     du_data = ComponentArrays.getdata(du)
     active_flags = p.is_active
-    SimulationModel.ParallelPolicy.threaded_foreach(num_sats, assembly_allotment) do sat_idx
-        base = (sat_idx - 1) * stride
-        @inbounds if !active_flags[sat_idx]
-            _zero_rhs_direct_segment!(du_data, base, stride)
-            return nothing
-        end
-
-        @inbounds begin
-            du_data[base + 1] = Float64(u_data[base + 4])
-            du_data[base + 2] = Float64(u_data[base + 5])
-            du_data[base + 3] = Float64(u_data[base + 6])
-        end
-        _assign_rhs_direct_acceleration!(du_data, base, totals, u_data[base + 7], sat_idx)
-        @inbounds du_data[base + 7] = 0.0
-        @inbounds for offset in 8:stride
-            du_data[base + offset] = 0.0
-        end
+    SimulationModel.ParallelPolicy.threaded_foreach(length(u.sc), assembly_allotment) do sat_idx
+        _assign_rhs_direct_satellite!(du_data, u_data, totals, active_flags, stride, sat_idx)
         return nothing
     end
     return true
@@ -2041,6 +2062,59 @@ function _spacecraft_dynamics_flat_constellation_effector_queue!(
         p.shared_buffers.rhs_atmosphere_prefilled[] = needs_atm_prefill
     end
 
+    rhs_env = _rhs_env_config(p)
+    # 0 selects the generic assembly; otherwise the direct layout's stride.
+    direct_stride = _flat_translational_direct_layout_stride(du, u, p, rhs_env, rhs_kind)
+    u_data = ComponentArrays.getdata(u)
+    du_data = ComponentArrays.getdata(du)
+
+    # Harmonics-only constellation: ONE parallel region per RHS call instead of
+    # three (harmonics pre-pass, flat reduction, final assembly), each of which
+    # is a fork-join over every worker whose wake-and-join cost grows with the
+    # thread count (thread-ceiling record, 2026-10-06). Nothing forces the two
+    # barriers between them: spacecraft i's total depends only on its own slot,
+    # and its derivative only on its own total and state. So each harmonics
+    # worker, right after its slice, reduces and assembles the contiguous
+    # spacecraft range that slice covers (inactive spacecraft between active
+    # ones included; the last non-empty slice runs to the end).
+    #
+    # Bit-identical by construction: the same kernel, the same
+    # `_reduce_flat_effector_slots_range!` (per spacecraft, effector order, from
+    # zero), the same per-spacecraft assembly. Only which worker runs a
+    # spacecraft, and when, changes; no value is shared between spacecraft.
+    # The harmonics pass's cost-model observation now times the fused region,
+    # which is what one RHS call costs on this route.
+    if partition === nothing && !needs_planet_frame_prefill &&
+       length(dynamic_effectors) == 1 &&
+       dynamic_effectors[1] isa SimulationModel.GravitationalHarmonicsModel &&
+       !rhs_env.harmonics_batch_spin_barrier &&   # spin workers hold their threads; left as it was
+       any(p.is_active)
+        num_sats = length(sc_state)
+        _ensure_rhs_flat_effector_scratch!(p.shared_buffers, num_sats, 1)
+        fused_totals = p.shared_buffers.rhs_flat_effector_totals[]
+        slots = p.shared_buffers.rhs_flat_effector_partials[]
+        work_items = p.shared_buffers.rhs_flat_work_items[]   # filled in place by the pre-pass
+        active_flags = p.is_active
+        finish_slice! = (item_start, item_end, n_items) -> begin
+            lo = item_start == 1 ? 1 : work_items[item_start - 1] + 1
+            hi = item_end == n_items ? num_sats : work_items[item_end]
+            _reduce_flat_effector_slots_range!(
+                fused_totals, slots, dynamic_effectors, nothing, active_flags, lo, hi,
+            )
+            for i in lo:hi
+                _assemble_flat_satellite!(
+                    sc_du, sc_state, du_data, u_data, p, t, fused_totals, spacecraft,
+                    debug_control, direct_stride, rhs_kind, i,
+                )
+            end
+            return nothing
+        end
+        _accumulate_harmonics_flat_batch!(
+            sc_state, p, t, dynamic_effectors[1], plan; eff_idx=1, after_slice=finish_slice!,
+        )
+        return nothing
+    end
+
     try
         _accumulate_dynamic_effectors_flat_batch!(sc_state, p, t, dynamic_effectors, plan; partition=partition)
     finally
@@ -2050,111 +2124,115 @@ function _spacecraft_dynamics_flat_constellation_effector_queue!(
         end
     end
     totals = p.shared_buffers.rhs_flat_effector_totals[]
-
-    rhs_env = _rhs_env_config(p)
-    if rhs_env.final_assembly_direct_layout &&
-       _try_assign_flat_translational_rhs_direct_layout!(
-            du,
-            u,
-            p,
-            totals,
-            rhs_env,
-            rhs_kind,
-            plan.allotment,
+    SimulationModel.ParallelPolicy.threaded_foreach(length(sc_state), plan.allotment) do i
+        _assemble_flat_satellite!(
+            sc_du, sc_state, du_data, u_data, p, t, totals, spacecraft,
+            debug_control, direct_stride, rhs_kind, i,
         )
+    end
+    return nothing
+end
+
+# Final assembly of spacecraft i from its reduced totals: the direct layout's
+# raw writes when `direct_stride > 0`, otherwise the generic per-spacecraft
+# assembly. Shared by the unfused route's `threaded_foreach` and the fused
+# harmonics route, so both run the same statements.
+@inline function _assemble_flat_satellite!(
+    sc_du, sc_state, du_data, u_data, p, t::Float64, totals, spacecraft,
+    debug_control, direct_stride::Int, rhs_kind::Symbol, i::Int,
+)::Nothing
+    if direct_stride > 0
+        _assign_rhs_direct_satellite!(du_data, u_data, totals, p.is_active, direct_stride, i)
         return nothing
     end
-
-    SimulationModel.ParallelPolicy.threaded_foreach(length(sc_state), plan.allotment) do i
-        @inbounds if !p.is_active[i] ||
-                     (rhs_kind == :implicit && _spacecraft_outside_atmosphere_for_current_state(sc_state[i], p, i, t))
-            sc_du[i] .= 0.0
-            return
-        end
-        @inbounds @views begin
-            sc_view = sc_state[i]
-            du_view = sc_du[i]
-            forces, torques = _flat_totals_force_torque(totals, i)
-            if rhs_kind == :implicit
-                SimulationModel.DynamicsTranslational.assign_force_only_translational_rhs!(
+    @inbounds if !p.is_active[i] ||
+                 (rhs_kind == :implicit && _spacecraft_outside_atmosphere_for_current_state(sc_state[i], p, i, t))
+        sc_du[i] .= 0.0
+        return nothing
+    end
+    @inbounds @views begin
+        sc_view = sc_state[i]
+        du_view = sc_du[i]
+        forces, torques = _flat_totals_force_torque(totals, i)
+        if rhs_kind == :implicit
+            SimulationModel.DynamicsTranslational.assign_force_only_translational_rhs!(
+                du_view,
+                sc_view,
+                forces,
+            )
+            if p.args.mission_configuration.orientation_sim
+                inertia_tensor = spacecraft[i].inertia_tensor
+                _assign_orientation_rhs!(
                     du_view,
                     sc_view,
-                    forces,
+                    inertia_tensor,
+                    torques;
+                    propagate_quaternion=false,
+                    include_gyroscopic=false,
+                    rw_assembly=spacecraft[i].root.rw_assembly,
                 )
-                if p.args.mission_configuration.orientation_sim
-                    inertia_tensor = spacecraft[i].inertia_tensor
-                    _assign_orientation_rhs!(
-                        du_view,
-                        sc_view,
-                        inertia_tensor,
-                        torques;
-                        propagate_quaternion=false,
-                        include_gyroscopic=false,
-                        rw_assembly=spacecraft[i].root.rw_assembly,
-                    )
-                end
-                du_view.heat_loads .= 0.0
-            elseif rhs_kind == :slow
-                heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
-                    p,
-                    sc_view,
-                    i,
-                    t;
-                    use_buffered_density=false,
-                )
-                SimulationModel.DynamicsTranslational.assign_slow_translational_rhs!(
-                    du_view,
-                    sc_view,
-                    forces,
-                )
-                if p.args.mission_configuration.orientation_sim
-                    inertia_tensor = spacecraft[i].inertia_tensor
-                    _assign_orientation_rhs!(
-                        du_view,
-                        sc_view,
-                        inertia_tensor,
-                        torques;
-                        propagate_quaternion=true,
-                        include_gyroscopic=true,
-                        rw_assembly=spacecraft[i].root.rw_assembly,
-                    )
-                end
-                _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
-            else
-                rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
-                mass_rate = if rhs_kind == :explicit || rhs_kind == :full
-                    _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, i, t, debug_control)
-                else
-                    0.0
-                end
-                heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
-                    p,
-                    sc_view,
-                    i,
-                    t;
-                    use_buffered_density=false,
-                )
-                SimulationModel.DynamicsTranslational.assign_full_translational_rhs!(
-                    du_view,
-                    sc_view,
-                    forces,
-                    mass_rate,
-                )
-                if p.args.mission_configuration.orientation_sim
-                    inertia_tensor = spacecraft[i].inertia_tensor
-                    _assign_orientation_rhs!(
-                        du_view,
-                        sc_view,
-                        inertia_tensor,
-                        torques;
-                        propagate_quaternion=true,
-                        include_gyroscopic=true,
-                        rw_assembly=spacecraft[i].root.rw_assembly,
-                        rw_torque_body=SVector{3, Float64}(rw_torque_body),
-                    )
-                end
-                _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
             end
+            du_view.heat_loads .= 0.0
+        elseif rhs_kind == :slow
+            heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
+                p,
+                sc_view,
+                i,
+                t;
+                use_buffered_density=false,
+            )
+            SimulationModel.DynamicsTranslational.assign_slow_translational_rhs!(
+                du_view,
+                sc_view,
+                forces,
+            )
+            if p.args.mission_configuration.orientation_sim
+                inertia_tensor = spacecraft[i].inertia_tensor
+                _assign_orientation_rhs!(
+                    du_view,
+                    sc_view,
+                    inertia_tensor,
+                    torques;
+                    propagate_quaternion=true,
+                    include_gyroscopic=true,
+                    rw_assembly=spacecraft[i].root.rw_assembly,
+                )
+            end
+            _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
+        else
+            rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
+            mass_rate = if rhs_kind == :explicit || rhs_kind == :full
+                _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, i, t, debug_control)
+            else
+                0.0
+            end
+            heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
+                p,
+                sc_view,
+                i,
+                t;
+                use_buffered_density=false,
+            )
+            SimulationModel.DynamicsTranslational.assign_full_translational_rhs!(
+                du_view,
+                sc_view,
+                forces,
+                mass_rate,
+            )
+            if p.args.mission_configuration.orientation_sim
+                inertia_tensor = spacecraft[i].inertia_tensor
+                _assign_orientation_rhs!(
+                    du_view,
+                    sc_view,
+                    inertia_tensor,
+                    torques;
+                    propagate_quaternion=true,
+                    include_gyroscopic=true,
+                    rw_assembly=spacecraft[i].root.rw_assembly,
+                    rw_torque_body=SVector{3, Float64}(rw_torque_body),
+                )
+            end
+            _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
         end
     end
     return nothing

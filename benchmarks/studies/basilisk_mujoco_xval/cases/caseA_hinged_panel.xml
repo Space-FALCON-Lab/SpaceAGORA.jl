@@ -1,0 +1,32 @@
+<!--
+  Case A model: a free hub with one hinged panel, contact disabled.
+  Derived from examples/mujoco/sat_w_branching_panels.xml of Basilisk 2.12
+  (Copyright (c) 2025, Autonomous Vehicle Systems Lab, University of Colorado at Boulder; ISC License,
+  see NOTICE.md). Changes: only the hub, `panel_10` and its geoms are kept (the four sub-panels and
+  `panel_20` branch are removed), and a joint motor `panel_10_deploy` is added in the form used by
+  examples/mujoco/sat_w_deployable_panels.xml. Geometry, densities, the joint axis and the joint range are
+  unchanged from the published file.
+-->
+<mujoco>
+	<option gravity="0 0 0">
+		<flag contact="disable"/>
+	</option>
+
+	<worldbody>
+		<body name="hub">
+			<freejoint/>
+			<geom name="hub_box" type="box" size="1 1 1" density="700" rgba="1 0 0 0.5"/>
+
+			<body name="panel_10" pos="1 0 -1" xyaxes="0 -1 0 0 0 -1">
+				<joint name="panel_10_deploy" axis="1 0 0" range="0 90"/>
+				<geom name="panel_10_box" type="box"  pos="0 0 1" size="1 0.05 0.8" density="500" rgba="0 1 0 1"/>
+				<geom name="panel_10_bar" type="cylinder" fromto="0 0 0 0 0 2" size=".075" density="1000" rgba="0 1 1 1"/>
+				<geom name="panel_10_cbar" type="cylinder" fromto="1 0 1 -1 0 1" size=".075" density="1000" rgba="0 1 1 1" />
+			</body>
+		</body>
+	</worldbody>
+
+	<actuator>
+		<motor name="panel_10_deploy" joint="panel_10_deploy" />
+	</actuator>
+</mujoco>

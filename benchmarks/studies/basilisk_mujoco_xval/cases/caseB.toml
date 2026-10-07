@@ -1,0 +1,58 @@
+# Case B: articulated multi-link (hub + two 4-joint arms), contact-free (model: caseB_thruster_arms.xml).
+name = "caseB"
+mjcf = "caseB_thruster_arms.xml"
+mu = 3.98600436233e14
+orbit_radius_m = 6.7781366e6
+inclination_deg = 51.6
+duration_s = 30.0
+sample_dt_s = 1.0
+sagora_dt_s = [0.04, 0.02, 0.01, 0.005, 0.0025, 0.00125]
+bsk_dt_s = [0.2, 0.1, 0.05, 0.025]
+
+[[body]]
+name = "hub"
+dr = [0.0, 0.0, 0.0]
+dv = [0.0, 0.0, 0.0]
+omega = [0.01, -0.02, 0.015]
+
+[[joint]]
+name = "arm_1_joint_1"
+qpos = 0.2
+qvel = 0.02
+[[joint]]
+name = "arm_1_joint_2"
+qpos = -0.15
+qvel = -0.01
+[[joint]]
+name = "arm_1_joint_3"
+qpos = 0.3
+qvel = 0.015
+[[joint]]
+name = "arm_1_joint_4"
+qpos = 0.1
+qvel = 0.0
+[[joint]]
+name = "arm_2_joint_1"
+qpos = -0.25
+qvel = -0.02
+[[joint]]
+name = "arm_2_joint_2"
+qpos = 0.1
+qvel = 0.01
+[[joint]]
+name = "arm_2_joint_3"
+qpos = -0.2
+qvel = 0.0
+[[joint]]
+name = "arm_2_joint_4"
+qpos = 0.15
+qvel = 0.02
+
+[[ctrl]]
+actuator = "u_arm_1_joint_1"
+times  = [0.0, 10.0, 20.0]
+values = [0.005, -0.005, 0.0025]
+[[ctrl]]
+actuator = "u_arm_2_joint_2"
+times  = [0.0, 15.0]
+values = [-0.004, 0.004]

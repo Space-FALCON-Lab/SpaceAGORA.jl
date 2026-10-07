@@ -1,0 +1,39 @@
+<!--
+  Case C model: examples/mujoco/sats_dock.xml of Basilisk 2.12 (Copyright (c) 2025, Autonomous Vehicle
+  Systems Lab, University of Colorado at Boulder; ISC License, see NOTICE.md). Changes: the
+  `<flag contact="disable"/>` line is removed so that the two hubs collide, and the keyframe is dropped
+  (initial states come from the case file). Everything else, including the `dock` weld (inactive in the
+  file) and the absence of any contact parameter, is as published: contacts use MuJoCo's defaults
+  (solref 0.02 1, solimp 0.9 0.95 0.001, friction 1 0.005 0.0001, condim 3).
+-->
+<mujoco>
+	<option gravity="0 0 0"/>
+
+	<worldbody>
+		<body name="hub_1">
+			<freejoint/>
+			<geom name="hub_1_box" type="box" size="0.5 0.5 0.5" rgba="1 0 0 0.5" density="1"/>
+			<site name="hub_1_com"/>
+			<site name="hub_1_contact_point" pos="0 0 -0.5"/>
+		</body>
+
+		<body name="hub_2">
+			<freejoint/>
+			<geom name="hub_2_box" type="box" size="0.5 0.5 0.5" rgba="0 0 1 0.5" density="1"/>
+			<site name="hub_2_com"/>
+			<site name="hub_2_contact_point" pos="0 0 0.5"/>
+		</body>
+
+	</worldbody>
+
+	<actuator>
+		<motor name="hub_1_thruster" site="hub_1_com" gear="1 0 0 0 0 0"/>
+        <motor name="hub_2_thruster" site="hub_2_com" gear="0 0 1 0 0 0"/>
+	</actuator>
+
+	<equality>
+		<weld name="dock" site1="hub_1_contact_point" site2="hub_2_contact_point" active="false"/>
+	</equality>
+
+</mujoco>
+

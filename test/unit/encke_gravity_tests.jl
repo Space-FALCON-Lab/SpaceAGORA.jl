@@ -69,7 +69,7 @@ end
     μ = 3.986004418e14
     r = SVector(7.0e6, 1.2e5, -3.4e5); ρ = SVector(1.0, -2.0, 0.5)
     encke(μ, r, ρ)
-    @test (@allocated encke(μ, r, ρ)) == 0
+    @test (@allocated encke(μ, r, ρ)) == 0 skip=Base.JLOptions().code_coverage != 0  # coverage instrumentation adds allocations
 end
 
 # ---------------------------------------------------------------------------

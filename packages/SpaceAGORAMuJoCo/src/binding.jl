@@ -25,9 +25,15 @@ const OFFSETS = (
         jnt_type = 2104, jnt_qposadr = 2112, jnt_dofadr = 2120,
         body_mass = 1944, body_inertia = 1960, opt = 792),
     opt = (timestep = 0, gravity = 56, integrator = 248),
-    data = (time = 160640, qpos = 160680, qvel = 160688, act = 160696, ctrl = 160728,
+    data = (warning = 160264, time = 160640, qpos = 160680, qvel = 160688, act = 160696, ctrl = 160728,
         xfrc_applied = 160744, eq_active = 160752, xquat = 160840, xipos = 160856, ximat = 160864),
 )
+# mjWarningStat is {int lastinfo; int number}; mjtWarning enum values from mujoco/mjtype.h, mjNWARNING = 7.
+const WARNING_STRIDE = 8
+const WARNING_NUMBER = 4
+const WARN_BADQPOS = 3
+const WARN_BADQVEL = 4
+const WARN_BADQACC = 5
 const SIZEOF_MJMODEL = 5672
 const SIZEOF_MJDATA = 161976
 const SIZEOF_MJOPTION = 304
@@ -206,6 +212,8 @@ ctrl(m::MjModel, d::MjData) = _arr(d.ptr, OFFSETS.data.ctrl, Float64, nu(m))
 xfrc_applied(m::MjModel, d::MjData) = unsafe_wrap(Array, unsafe_load(Ptr{Ptr{Float64}}(d.ptr + OFFSETS.data.xfrc_applied)), (6, nbody(m)); own = false)
 xipos(m::MjModel, d::MjData) = unsafe_wrap(Array, unsafe_load(Ptr{Ptr{Float64}}(d.ptr + OFFSETS.data.xipos)), (3, nbody(m)); own = false)
 xquat(m::MjModel, d::MjData) = unsafe_wrap(Array, unsafe_load(Ptr{Ptr{Float64}}(d.ptr + OFFSETS.data.xquat)), (4, nbody(m)); own = false)
+"""Times MuJoCo raised warning `w` (a `WARN_*` index) since the counter was last cleared."""
+warning_count(d::MjData, w::Integer) = Int(unsafe_load(Ptr{Cint}(d.ptr + OFFSETS.data.warning + WARNING_STRIDE * w + WARNING_NUMBER)))
 eq_active(m::MjModel, d::MjData) = _arr(d.ptr, OFFSETS.data.eq_active, UInt8, neq(m))
 
 end # module Binding

@@ -240,3 +240,16 @@ end
     @info "RSS growth over 1200 scene make/free cycles (MB)" growth
     @test growth < 60
 end
+
+@testset "MuJoCo instability is an error, not a silent reset" begin
+    sc = make_scene((SM.InverseSquaredJ2GravityModel(),); dt=0.05)
+    run_steps!(sc, 3)
+    forces = zeros(3, 2); forces[1, 1] = Inf       # drives qacc to Inf; MuJoCo would reset the data and go on
+    err = try scene_step!(sc; external_forces=forces); nothing catch e; e end
+    @test err isa ErrorException
+    @test occursin("unstable", err.msg) && occursin("mjWARN_BADQ", err.msg) && occursin("step 4", err.msg)
+    # a huge but finite force is caught the same way
+    sc = make_scene((SM.InverseSquaredJ2GravityModel(),); dt=0.05)
+    forces = fill(1e300, 3, 2)
+    @test_throws ErrorException scene_step!(sc; external_forces=forces)
+end

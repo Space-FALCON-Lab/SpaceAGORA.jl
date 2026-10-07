@@ -86,3 +86,16 @@
     @test B.body_mass(m3) == B.body_mass(m)
     @test_throws ErrorException B.load_xml_string("<mujoco><oops/></mujoco>")
 end
+
+# mjData.warning[i].number at offsetof(mjData, warning) + 8 i + 4, checked against what MuJoCo itself records.
+@testset "binding: warning counters" begin
+    B = SpaceAGORAMuJoCo.Binding
+    m = B.load_xml_string("<mujoco><worldbody><body><freejoint/><inertial pos='0 0 0' mass='1' diaginertia='1 1 1'/></body></worldbody></mujoco>")
+    d = B.MjData(m)
+    @test all(B.warning_count(d, w) == 0 for w in 0:6)
+    B.xfrc_applied(m, d)[1, 2] = Inf
+    B.step1!(m, d); B.step2!(m, d)          # MuJoCo logs, resets the data and carries on
+    @test B.warning_count(d, B.WARN_BADQACC) == 1
+    @test B.warning_count(d, B.WARN_BADQPOS) == 0 && B.warning_count(d, B.WARN_BADQVEL) == 0
+    @test sum(B.warning_count(d, w) for w in 0:6) == 1    # no other slot aliases the BADQACC counter
+end

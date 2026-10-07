@@ -315,6 +315,9 @@ function _advance_chief!(scene::ProximityScene, afb::V3)
     return nothing
 end
 
+const _UNSTABLE = (Binding.WARN_BADQACC, Binding.WARN_BADQPOS, Binding.WARN_BADQVEL)
+const _UNSTABLE_NAMES = ("mjWARN_BADQACC", "mjWARN_BADQPOS", "mjWARN_BADQVEL")
+
 """
     scene_step!(scene; external_forces=nothing)
 
@@ -331,6 +334,7 @@ function scene_step!(scene::ProximityScene; external_forces::Union{Nothing, Abst
     if external_forces !== nothing
         size(external_forces) == (3, nb) || throw(DimensionMismatch("external_forces must be 3 x $nb"))
     end
+    before = map(w -> B.warning_count(scene.data, w), _UNSTABLE)
     B.step1!(scene.model, scene.data)
     afb = zero(V3)
     if external_forces !== nothing
@@ -356,6 +360,12 @@ function scene_step!(scene::ProximityScene; external_forces::Union{Nothing, Abst
         scene.xfrc[4, i + 1] = 0.0; scene.xfrc[5, i + 1] = 0.0; scene.xfrc[6, i + 1] = 0.0
     end
     B.step2!(scene.model, scene.data)
+    for (k, w) in enumerate(_UNSTABLE)
+        # MuJoCo has already reset its state on a bad acceleration; continuing would run on reset data.
+        B.warning_count(scene.data, w) == before[k] || error(
+            "MuJoCo reported an unstable simulation ($(_UNSTABLE_NAMES[k])) at scene time $(t) s, step $(scene.n + 1); ",
+            "the scene state was reset by MuJoCo and is no longer valid")
+    end
     _advance_chief!(scene, afb)
     scene.n += 1
     scene.fresh = false

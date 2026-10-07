@@ -287,8 +287,9 @@ end
 # the final assembly into one parallel region (each worker finishes the
 # spacecraft range its slice covers). It must write exactly what the unfused
 # composition writes -- pre-pass and reduction, then every spacecraft assembled
-# from the totals -- for both assemblies, with inactive spacecraft at the ends
-# and in the gaps between slices.
+# from the totals -- for both assemblies and both pre-pass dispatches (persistent
+# pool, spin barrier), with inactive spacecraft at the ends and in the gaps
+# between slices.
 @testset "Fused harmonics RHS matches the unfused route bit for bit" begin
     planet = Earth()
     gravity_file = joinpath(normpath(joinpath(@__DIR__, "..", "..", "..")),
@@ -302,13 +303,15 @@ end
         scheduler=:static, dominant_axis=:flat_effector, policy_applied=false,
         effector_decision=(use_threads=false, allotment=1, mode=:off, policy_applied=false),
     )
-    for direct in (false, true), inactive in (Int[], [1, 2, 9, 10, 11, 36, 37], [5])
+    PP = SpaceAGORA.SimulationModel.ParallelPolicy
+    for spin in (false, true), direct in (false, true), inactive in (Int[], [1, 2, 9, 10, 11, 36, 37], [5])
         fresh_p() = begin
             p = ODEParams(n_sats=n, args=args)
             p.is_active .= true
             p.is_active[inactive] .= false
             p.shared_buffers.rhs_env_config[] = withenv(
                 "SPACEAGORA_RHS_FINAL_ASSEMBLY_DIRECT_LAYOUT" => (direct ? "1" : "0"),
+                "SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER" => (spin ? "1" : "0"),
             ) do
                 RHSDA_SE._snapshot_rhs_plan_env_config()
             end
@@ -336,4 +339,6 @@ end
         @test isequal(ComponentArrays.getdata(fused), ComponentArrays.getdata(ref))
         @test isequal(p_fused.shared_buffers.rhs_flat_effector_totals[][:, 1:n], totals[:, 1:n])
     end
+    # Stop the spin-barrier workers so they do not hold threads for later tests.
+    PP._destroy_persistent_foreach_scope!(PP._active_policy_scope_id())
 end

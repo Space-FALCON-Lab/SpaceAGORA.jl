@@ -623,7 +623,14 @@ jobs:
           /tmp/spaceagora-cygnss-tools/bin/python scripts/dev/viewer_demos/test_cygnss_fetch.py
           /tmp/spaceagora-cygnss-tools/bin/python scripts/dev/viewer_demos/fetch_cygnss_l1_states.py --self-test
 
-      - name: README example command
+      - name: README quickstart artifact checker regressions
+        run: python3 -B -m unittest discover -s test/scripts -p test_readme_quickstart.py -v
+
+      - name: README quickstart command and artifacts
+        run: python3 -B test/smoke/ci_readme_quickstart.py
+
+      # Preserve the full thruster burn exercised by the formerly mislabeled step.
+      - name: Earth thruster example
         run: julia --startup-file=no --compiled-modules=existing --project=. examples/Earth_Thruster_Test.jl
 
   example-regression:

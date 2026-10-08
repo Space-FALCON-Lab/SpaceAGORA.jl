@@ -1069,3 +1069,39 @@ SPACEAGORA_VEX_TARGET_RA_M=72450000 julia --project=. examples/AGORA_Vex_Energy_
 For that run, the exit-to-apoapsis J2/N-body energy change is `95.778186 J/kg`. Targeting is
 active, the single switch is at `43104.264115 s`, and the final osculating apoapsis radius is
 `72450.407647 km`, 407.647 m above the 72,450 km target.
+
+
+## Accumulated heat protection and constraint observations
+
+With the `:heat_load` submode enabled and a positive finite limit, the controller
+commands `min_alpha_rad` whenever the supplied accumulated heat reaches that limit.
+This guard applies to both targeting and maximum depletion, including after a
+scheduled low-drag window ends. It does not reset heat at passage boundaries and
+is independent of the optional predictive `heat_load_security_mode`.
+
+Minimum angle can still produce positive heating. This guard limits further
+heating; it cannot undo a spent heat budget or certify the rest of the trajectory.
+It also does not stop the simulation. Impact and configured mission completion
+remain separate simulator events.
+
+The control state reports `last_heat_budget_status` (`:available`, `:exhausted`,
+`:disabled`, `:unbounded`, `:invalid_limit`, or `:unobserved`). The heat-rate and
+structural observations use `last_heat_rate_status` and `last_structural_load_status`.
+Their active outcomes are `:within_limit`, `:command_above_limit`, and
+`:above_limit_at_minimum_angle`, with the same disabled/unbounded/invalid/unobserved
+qualifiers. Corresponding `last_minimum_heat_rate_w_cm2` and
+`last_minimum_structural_load_pa` retain the modeled values at the configured
+minimum angle. These are instantaneous observations, not global proofs that all
+possible control histories are infeasible.
+
+`last_dynamic_pressure_pa` is atmosphere-relative dynamic pressure. The structural
+metric is dynamic pressure multiplied by the modeled drag area divided by its
+maximum-angle reference drag area. These quantities are distinct. Changing panel
+angle can reduce modeled load at a given state while dynamic pressure remains
+unchanged there. The existing legacy-plate structural model and all configured
+physical limits are preserved.
+
+The numerical optimizer's reduced costates remain an approximation to its
+Cartesian predictor. These diagnostics do not certify those sensitivities,
+final applied-profile terminal conditions, outbound-event coverage, continuous
+constraint satisfaction, or scientific mission acceptance.

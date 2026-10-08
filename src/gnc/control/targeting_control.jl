@@ -228,6 +228,25 @@ end
     return config.max_alpha_rad
 end
 
+# These are instantaneous model observations, not trajectory feasibility proofs.
+function _edg_constraint_status(enabled::Bool, limit::Float64, value::Float64, minimum_value::Float64)
+    enabled || return :disabled
+    limit == Inf && return :unbounded
+    isfinite(limit) && limit > 0.0 || return :invalid_limit
+    isfinite(value) && isfinite(minimum_value) || return :unobserved
+    value <= limit && return :within_limit
+    return minimum_value > limit ? :above_limit_at_minimum_angle : :command_above_limit
+end
+
+function _edg_heat_budget_status(config, heat_load_j_cm2::Float64)
+    :heat_load in config.max_energy_submodes || return :disabled
+    limit = config.heat_load_limit_j_cm2
+    limit == Inf && return :unbounded
+    isfinite(limit) && limit > 0.0 || return :invalid_limit
+    isfinite(heat_load_j_cm2) || return :unobserved
+    return heat_load_j_cm2 >= limit ? :exhausted : :available
+end
+
 function _edg_command_alpha!(
     model::AerobrakingEnergyDepletionControlModel,
     p::ODEParams,
@@ -272,6 +291,12 @@ function _edg_command_alpha!(
         alpha = alpha_struct
     end
     alpha = clamp(alpha, config.min_alpha_rad, config.max_alpha_rad)
+    budget_status = _edg_heat_budget_status(config, heat_load_j_cm2)
+    # Cumulative heat is the state supplied by the simulator. Minimum angle limits
+    # further heating; nonzero residual heating can still exceed the budget.
+    # This protection also applies after a switch window expires and in targeting.
+    budget_status == :exhausted && (alpha = config.min_alpha_rad)
+    state.last_heat_budget_status[i] = budget_status
     state.last_alpha_rad[i] = alpha
     state.last_alpha_heat_rate_rad[i] = alpha_hr
     state.last_alpha_structural_rad[i] = alpha_struct
@@ -296,6 +321,21 @@ function _edg_command_alpha!(
     )
     state.last_structural_load_pa[i] = env.dynamic_pressure * controlled_drag_area /
         max(reference_drag_area, eps(Float64))
+    minimum_drag_area = _energy_depletion_struct_drag_area(
+        spacecraft, env.temperature, env.molecular_speed_ratio,
+        model.aoa_effector.controlled_panel_links, config.min_alpha_rad, config,
+    )
+    state.last_minimum_heat_rate_w_cm2[i] = _edg_maxwellian_heat_rate(p, env, config.min_alpha_rad)
+    state.last_minimum_structural_load_pa[i] = env.dynamic_pressure * minimum_drag_area /
+        max(reference_drag_area, eps(Float64))
+    state.last_heat_rate_status[i] = _edg_constraint_status(
+        :heat_rate in config.max_energy_submodes, config.heat_rate_limit_w_cm2,
+        state.last_heat_rate_w_cm2[i], state.last_minimum_heat_rate_w_cm2[i],
+    )
+    state.last_structural_load_status[i] = _edg_constraint_status(
+        :structural_load in config.max_energy_submodes, config.structural_load_limit_pa,
+        state.last_structural_load_pa[i], state.last_minimum_structural_load_pa[i],
+    )
     return alpha
 end
 

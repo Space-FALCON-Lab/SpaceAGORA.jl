@@ -108,6 +108,11 @@ mutable struct AerobrakingEnergyDepletionState
     last_heat_load_j_cm2::Vector{Float64}
     last_dynamic_pressure_pa::Vector{Float64}
     last_structural_load_pa::Vector{Float64}
+    last_minimum_heat_rate_w_cm2::Vector{Float64}
+    last_minimum_structural_load_pa::Vector{Float64}
+    last_heat_rate_status::Vector{Symbol}
+    last_structural_load_status::Vector{Symbol}
+    last_heat_budget_status::Vector{Symbol}
 end
 
 function AerobrakingEnergyDepletionState(; num_sats::Integer)
@@ -139,6 +144,11 @@ function AerobrakingEnergyDepletionState(; num_sats::Integer)
         fill(NaN, n),
         fill(NaN, n),
         fill(NaN, n),
+        fill(NaN, n),
+        fill(NaN, n),
+        fill(:unobserved, n),
+        fill(:unobserved, n),
+        fill(:unobserved, n),
     )
 end
 

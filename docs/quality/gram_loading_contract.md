@@ -42,7 +42,24 @@ module and can throw supplied failures. It does not run Julia's package loader o
 extension mechanism. Unexpected macros and calls fail fixture extraction rather
 than adding new effects implicitly.
 
-## Remaining decisions and validation
+## Supported direction and next acceptance boundary
+
+The supported model route is package-loaded `SpaceAGORA` with imported
+`GRAMSuite` and the canonical `SpaceAGORAGRAMSuiteExt` extension. Use
+`SpaceAGORA.SimulationModel` types. A successful import, an attached extension
+and usable methods are separate facts; none alone qualifies native resources.
+The caller's prepared environment keeps precedence. A vendored wrapper remains
+an explicit fallback when discovery fails.
+
+This ownership direction does not consolidate the existing helpers or change
+installation/retry policy, search order, the current package-binding guard,
+worker setup, SPICE ordering or the runtime benchmark's independent types.
+The real-package readiness diagnostic described in
+[GRAM package readiness](gram_package_readiness.md) adds a separate fresh-process
+acceptance boundary. The synthetic fixture above remains the loading-policy
+regression test. Native and worker qualification still require their own checks.
+
+## Remaining validation before consolidation
 
 Successful synthetic import does not prove package resolution, precompilation,
 extension attachment, supported dependency pins, native availability, world-age

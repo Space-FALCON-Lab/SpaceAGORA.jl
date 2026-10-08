@@ -47,9 +47,15 @@ starts, not on the CLI:
 |---|---|
 | `assets check`, `assets manifest`, `assets setup-open` | nothing |
 | `run --example=<no-GRAM example>` (`AGORA_Basic_Quickstart.jl`, `AGORA_Earth_NoGRAM.jl`, `AGORA_Earth_MonteCarlo.jl`, `Solar_Panel_Cloth_Deployment_Demo.jl`) | nothing |
-| `run --example=<GRAM-backed or SPICE-backed example>` (`AGORA_Earth_Aerobraking.jl`, `AGORA_Odyssey.jl`, `AGORA_Vex.jl`, `Earth_Thruster_Test.jl`, `AGORA_Keplerian.jl`, the RPO examples, and the others listed on the [Examples Catalog](user/examples_catalog.md)) | the `data/GRAMSuite.jl` submodule ([GRAMSuite Setup](user/gramsuite_setup.md)); the GRAM-backed ones also need the native GRAM library built |
+| `run --example=<GRAM-backed or SPICE-backed example>` (`AGORA_Earth_Aerobraking.jl`, `AGORA_Odyssey.jl`, `AGORA_Vex.jl`, `Earth_Thruster_Test.jl`, `AGORA_Keplerian.jl`) | the `data/GRAMSuite.jl` submodule ([GRAMSuite Setup](user/gramsuite_setup.md)); the GRAM-backed ones also need the native GRAM library built |
+| HYPR/RPO examples (direct script commands) | the prepared `examples/rpo_planner_env` companion environment; RPO cases also need SPICE kernels. Use the setup and direct commands in the [Examples Catalog](user/examples_catalog.md#RPO-and-robotics). |
 | `telemetry ...` | the `data/GRAMSuite.jl` submodule: the study loads the vendored `GRAMSuite` package before it reads any scenario, even for `--scenarios=odyssey`; the truth files it grades are in the repository |
 | `benchmark ...` | the `data/GRAMSuite.jl` submodule, and for the GRAM-backed cases the native GRAM library |
+
+The CLI does not select the HYPR companion environment. Its `run` command
+always launches the repository project, even if the CLI itself was started
+with `--project=examples/rpo_planner_env`. Run those examples directly with
+that companion project as shown in the catalog.
 
 Without the submodule, `telemetry` and `benchmark` stop with "Package
 GRAMSuite not found in current path"; that is the prerequisite, not the CLI.

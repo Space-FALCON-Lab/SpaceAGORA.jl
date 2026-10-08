@@ -2099,17 +2099,28 @@ function _spacecraft_dynamics_flat_constellation_effector_queue!(
         fused_totals = p.shared_buffers.rhs_flat_effector_totals[]
         slots = p.shared_buffers.rhs_flat_effector_partials[]
         work_items = p.shared_buffers.rhs_flat_work_items[]   # filled in place by the pre-pass
-        active_flags = p.is_active
+        # Everything the finisher needs, behind ONE Ref. The channel pool boxes
+        # one request per worker per call, closure included, and the model and
+        # ODEParams are immutable structs that hold the planet inline, so
+        # capturing them directly copied them into every request (about 17 kB
+        # per worker per call, measured with Profile.Allocs). Suspected, not
+        # proven: that per-worker allocation during the wake is what made the
+        # fused region's wake grow at 16 threads. A Ref keeps the closure
+        # pointer-sized and the captured state concretely typed.
+        fused = Ref((; p, t, dynamic_effectors, sc_du, sc_state, du_data, u_data,
+            totals=fused_totals, slots, work_items, active_flags=p.is_active, spacecraft,
+            debug_control, direct_stride, rhs_kind, num_sats))
         finish_slice! = (item_start, item_end, n_items) -> begin
-            lo = item_start == 1 ? 1 : work_items[item_start - 1] + 1
-            hi = item_end == n_items ? num_sats : work_items[item_end]
+            c = fused[]
+            lo = item_start == 1 ? 1 : c.work_items[item_start - 1] + 1
+            hi = item_end == n_items ? c.num_sats : c.work_items[item_end]
             _reduce_flat_effector_slots_range!(
-                fused_totals, slots, dynamic_effectors, nothing, active_flags, lo, hi,
+                c.totals, c.slots, c.dynamic_effectors, nothing, c.active_flags, lo, hi,
             )
             for i in lo:hi
                 _assemble_flat_satellite!(
-                    sc_du, sc_state, du_data, u_data, p, t, fused_totals, spacecraft,
-                    debug_control, direct_stride, rhs_kind, i,
+                    c.sc_du, c.sc_state, c.du_data, c.u_data, c.p, c.t, c.totals, c.spacecraft,
+                    c.debug_control, c.direct_stride, c.rhs_kind, i,
                 )
             end
             return nothing

@@ -71,6 +71,8 @@ end
 end
 
 @inline function _requires_drag_state_callback(effectors::Tuple, args::SimulationConfiguration)::Bool
+    # Record the existing entry root even when phase tolerances are identical.
+    !isempty(_edg_heat_states(args)) && return true
     if !_requires_density_callback(effectors, args)
         return false
     end

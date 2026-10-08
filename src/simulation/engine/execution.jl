@@ -252,6 +252,8 @@ function run_simulation(
         end
     end
 
+    SimulationModel.ControlHooks._edg_initialize_heat_accounting!(args, u_start, Float64(t_start))
+
     # println("Initial conditions:")
     # println(initial_conditions)
     # println("ODE parameters:")

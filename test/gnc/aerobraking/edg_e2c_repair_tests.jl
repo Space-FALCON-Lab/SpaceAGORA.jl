@@ -131,6 +131,7 @@ _edg_in_drag_passage(args...) = true
 _edg_sat_state(u, i) = u
 _edg_pos_vel_mass(u) = (u.pos, u.vel, u.mass)
 _edg_max_heat_load_for_links(args...) = 0.0
+_edg_pass_heat_load_for_links(args...) = 0.0
 _edg_targeting_bracket_outcomes(args...; kwargs...) =
     ((energy_jkg=-20.0, periapsis_radius_m=2.0), (energy_jkg=-10.0, periapsis_radius_m=2.0))
 _edg_vacuum_drag_passage_exit(p, pos, vel, mass, t) =

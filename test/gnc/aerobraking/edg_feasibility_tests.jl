@@ -8,7 +8,7 @@ if !isdefined(@__MODULE__, :_edg_test_context)
 end
 using Test
 let SM=SimulationModel, CH=SimulationModel.ControlHooks
-@testset "E2c accumulated heat and physical-limit diagnostics" begin
+@testset "EDG command parity and physical-limit diagnostics" begin
     for modes in ((:max_energy_depletion,), (:targeting,:max_energy_depletion)),
             security in (false,true), base in (0.4,pi/2), load in (29.0,30.0,34.56)
         c=_edg_test_context(guidance_modes=modes,max_energy_submodes=(:heat_load,),heat_load_limit_j_cm2=30.0)
@@ -17,7 +17,7 @@ let SM=SimulationModel, CH=SimulationModel.ControlHooks
         model=SM.AerobrakingEnergyDepletionControlModel(config,c.state)
         env=CH._edg_environment_state(c.u,c.p,0.0,1)
         angle=CH._edg_command_alpha!(model,c.p,c.u,env,c.spacecraft,base,load,false,1)
-        @test angle == (load >= 30.0 ? config.min_alpha_rad : base)
+        @test angle == base # Diagnostic heat status must not add a new command policy.
         @test c.state.last_heat_budget_status[1] == (load >= 30.0 ? :exhausted : :available)
         @test c.state.last_heat_load_j_cm2[1] == load
         @test c.state.last_heat_rate_status[1] == :disabled
@@ -43,7 +43,7 @@ let SM=SimulationModel, CH=SimulationModel.ControlHooks
     env=CH._edg_environment_state(c.u,c.p,0.0,1)
     for scale in (1.0,1e-6)
         scaled=merge(env,(rho=env.rho*scale,dynamic_pressure=env.dynamic_pressure*scale))
-        angle=CH._edg_command_alpha!(c.control,c.p,c.u,scaled,c.spacecraft,pi/2,34.56,false,1)
+        angle=CH._edg_command_alpha!(c.control,c.p,c.u,scaled,c.spacecraft,c.config.min_alpha_rad,34.56,false,1)
         @test angle==c.config.min_alpha_rad
         @test c.state.last_heat_budget_status[1]==:exhausted
         @test c.state.last_heat_rate_w_cm2[1]==c.state.last_minimum_heat_rate_w_cm2[1]

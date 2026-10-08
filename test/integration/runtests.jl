@@ -234,6 +234,7 @@ end
 include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "energy_depletion_gnc_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "edg_e2c_repair_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "edg_feasibility_tests.jl"))
+include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "edg_pass_heat_tests.jl"))
 
 if !isdefined(@__MODULE__, :_solver_policy_mode)
     const build_initial_conditions = SimulationEngine.build_initial_conditions

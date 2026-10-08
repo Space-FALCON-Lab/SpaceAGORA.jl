@@ -143,6 +143,7 @@ function get_drag_state_callback(num_sats::Int)
         if callback_verbose(integrator)
             println("Switching to space integration at time $(integrator.t) seconds!")
         end
+        _edg_capture_exit_heat!(p.args, integrator.u, Int(idx))
         p.shared_buffers.in_atmosphere[idx] = false
         p.shared_buffers.in_atmosphere_sample_t[idx] = Float64(integrator.t)
         # Invalidate the vacuum-predicted GRAM cache so the next atmospheric entry
@@ -170,6 +171,7 @@ function get_drag_state_callback(num_sats::Int)
         if callback_verbose(integrator)
             println("Switching to atmosphere integration at time $(integrator.t) seconds!")
         end
+        _edg_capture_entry_heat!(p.args, integrator.u, Int(idx))
         p.shared_buffers.in_atmosphere[idx] = true
         p.shared_buffers.in_atmosphere_sample_t[idx] = Float64(integrator.t)
         integrator.opts.dtmax = p.args.integration_tolerances.dt_max_atmosphere # Decrease the maximum timestep when entering the atmosphere

@@ -256,7 +256,8 @@ function _edg_command_alpha!(
     base_alpha::Float64,
     heat_load_j_cm2::Float64,
     heat_load_low_drag_active::Bool,
-    i::Int,
+    i::Int;
+    pass_heat_load_j_cm2::Float64=heat_load_j_cm2,
 )
     config = model.config
     state = model.state
@@ -291,11 +292,10 @@ function _edg_command_alpha!(
         alpha = alpha_struct
     end
     alpha = clamp(alpha, config.min_alpha_rad, config.max_alpha_rad)
-    budget_status = _edg_heat_budget_status(config, heat_load_j_cm2)
-    # Cumulative heat is the state supplied by the simulator. Minimum angle limits
-    # further heating; nonzero residual heating can still exceed the budget.
-    # This protection also applies after a switch window expires and in targeting.
-    budget_status == :exhausted && (alpha = config.min_alpha_rad)
+    # Diagnostic only. The existing switch plan and optional predictive security
+    # mode own heat-load commands; cumulative telemetry is not a flight policy.
+    budget_status = _edg_heat_budget_status(config, pass_heat_load_j_cm2)
+    state.last_pass_heat_load_j_cm2[i] = pass_heat_load_j_cm2
     state.last_heat_budget_status[i] = budget_status
     state.last_alpha_rad[i] = alpha
     state.last_alpha_heat_rate_rad[i] = alpha_hr
@@ -376,10 +376,12 @@ function calcControlEffect!(
     spacecraft = p.args.dynamics_model.spacecraft[i]
     pos, vel, mass = _edg_control_pos_vel_mass(sc)
     heat_load = _edg_max_heat_load_for_links(sc, model.aoa_effector.controlled_panel_links)
-    _edg_recompute_switches!(model, p, env, spacecraft, pos, vel, mass, heat_load, Float64(t), i)
+    pass_heat_load = _edg_pass_heat_load_for_links(sc, model.aoa_effector.controlled_panel_links, state, i)
+    _edg_recompute_switches!(model, p, env, spacecraft, pos, vel, mass, pass_heat_load, Float64(t), i)
     heat_load_low_drag_active = _edg_heat_load_low_drag_active(model, Float64(t), i)
     base_alpha = _edg_base_alpha(model, Float64(t), i)
-    alpha = _edg_command_alpha!(model, p, u, env, spacecraft, base_alpha, heat_load, heat_load_low_drag_active, i)
+    alpha = _edg_command_alpha!(model, p, u, env, spacecraft, base_alpha, heat_load, heat_load_low_drag_active, i;
+        pass_heat_load_j_cm2=pass_heat_load)
     _apply_solar_panel_aoa!(model.aoa_effector, spacecraft, alpha)
     return nothing
 end

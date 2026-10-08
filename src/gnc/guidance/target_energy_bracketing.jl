@@ -113,6 +113,9 @@ mutable struct AerobrakingEnergyDepletionState
     last_heat_rate_status::Vector{Symbol}
     last_structural_load_status::Vector{Symbol}
     last_heat_budget_status::Vector{Symbol}
+    heat_load_entry_j_cm2::Vector{Vector{Float64}}
+    heat_load_exit_j_cm2::Vector{Vector{Float64}}
+    last_pass_heat_load_j_cm2::Vector{Float64}
 end
 
 function AerobrakingEnergyDepletionState(; num_sats::Integer)
@@ -149,6 +152,9 @@ function AerobrakingEnergyDepletionState(; num_sats::Integer)
         fill(:unobserved, n),
         fill(:unobserved, n),
         fill(:unobserved, n),
+        [Float64[] for _ in 1:n],
+        [Float64[] for _ in 1:n],
+        fill(NaN, n),
     )
 end
 
@@ -232,7 +238,7 @@ function _edg_run_target_energy_bracketing!(
     pos, vel, mass = _edg_pos_vel_mass(sc)
     spacecraft = p.args.dynamics_model.spacecraft[i]
     planet = p.args.environment_model.planet
-    heat_load = ctrl._edg_max_heat_load_for_links(sc, config.controlled_panel_links)
+    heat_load = ctrl._edg_pass_heat_load_for_links(sc, config.controlled_panel_links, state, i)
 
     low_drag, max_energy_depletion = ctrl._edg_targeting_bracket_outcomes(
         config,

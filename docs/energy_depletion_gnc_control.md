@@ -1071,37 +1071,38 @@ active, the single switch is at `43104.264115 s`, and the final osculating apoap
 `72450.407647 km`, 407.647 m above the 72,450 km target.
 
 
-## Accumulated heat protection and constraint observations
+## Passage heat accounting and constraint observations
 
-With the `:heat_load` submode enabled and a positive finite limit, the controller
-commands `min_alpha_rad` whenever the supplied accumulated heat reaches that limit.
-This guard applies to both targeting and maximum depletion, including after a
-scheduled low-drag window ends. It does not reset heat at passage boundaries and
-is independent of the optional predictive `heat_load_security_mode`.
+The heat-load limit applies to the current atmospheric passage. The physical
+`heat_loads` state and `last_heat_load_j_cm2` remain cumulative telemetry. EDG
+records each panel's cumulative heat at the simulator's existing atmospheric-entry
+root and supplies the maximum of the individual panel increments to heat planning,
+second-switch reevaluation, predictive security, and targeting energy bracketing.
+The passage total is frozen at the existing exit root, excluding coast heating.
+It does not subtract the maximum baseline from the maximum current heat: different
+panels can carry the largest loads on different passages. Starting a fresh run
+inside the atmosphere uses its initial zero-integral reference. Direct hook users
+must call `_edg_capture_entry_heat!` at subsequent entries, as the simulator does.
 
-Minimum angle can still produce positive heating. This guard limits further
-heating; it cannot undo a spent heat budget or certify the rest of the trajectory.
-It also does not stop the simulation. Impact and configured mission completion
-remain separate simulator events.
+`last_pass_heat_load_j_cm2` and `last_heat_budget_status` describe that passage
+quantity. Budget status is diagnostic only. There is no separate cumulative-heat
+command override in targeting or depletion. The original switch policy, optional
+security mode, minimum-angle remaining prediction, threshold, cadence, equations,
+physical limits and simulation termination rules are preserved.
 
-The control state reports `last_heat_budget_status` (`:available`, `:exhausted`,
-`:disabled`, `:unbounded`, `:invalid_limit`, or `:unobserved`). The heat-rate and
-structural observations use `last_heat_rate_status` and `last_structural_load_status`.
-Their active outcomes are `:within_limit`, `:command_above_limit`, and
-`:above_limit_at_minimum_angle`, with the same disabled/unbounded/invalid/unobserved
-qualifiers. Corresponding `last_minimum_heat_rate_w_cm2` and
-`last_minimum_structural_load_pa` retain the modeled values at the configured
-minimum angle. These are instantaneous observations, not global proofs that all
-possible control histories are infeasible.
+The current manuscript VI.C describes an every-update prediction using the planned
+command, while the original implementation uses minimum-angle prediction and
+additional gates. This is a recorded specification difference, not silently
+resolved by this bookkeeping repair. Targeting cadence and force/costate choices
+are likewise unchanged.
 
-`last_dynamic_pressure_pa` is atmosphere-relative dynamic pressure. The structural
-metric is dynamic pressure multiplied by the modeled drag area divided by its
-maximum-angle reference drag area. These quantities are distinct. Changing panel
-angle can reduce modeled load at a given state while dynamic pressure remains
-unchanged there. The existing legacy-plate structural model and all configured
-physical limits are preserved.
+The branch's checkpoint format stores only the physical state, not EDG passage
+baselines or guidance history. An EDG resume from a nonzero checkpoint time is
+rejected explicitly; it cannot safely reinterpret cumulative heat as passage heat.
+Other controllers retain their existing checkpoint behavior.
 
-The numerical optimizer's reduced costates remain an approximation to its
-Cartesian predictor. These diagnostics do not certify those sensitivities,
-final applied-profile terminal conditions, outbound-event coverage, continuous
-constraint satisfaction, or scientific mission acceptance.
+Heat-rate and structural diagnostics retain the actual and minimum-angle model
+values, including `:above_limit_at_minimum_angle`. They do not change commands or
+prove that every possible trajectory is infeasible. Raw dynamic pressure remains
+distinct from the angle-dependent structural-load proxy. A low-orbit exceedance
+is not by itself a reason to change the EDG law.

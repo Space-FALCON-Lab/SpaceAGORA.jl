@@ -86,9 +86,10 @@ julia --project=. src/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --outp
 
 `--output-dir` is what keeps this run's files apart from the script run above:
 they land under `output/cli_run/` with the same names. `--smoke` runs a
-two-minute mission that only checks the path end to end. Note its limitation:
-smoke mode ignores `--output-dir` and always writes to `output/` under the
-directory you run from, so it overwrites whatever a previous run left there.
+two-minute mission that only checks the path end to end and honors the same
+`--output-dir`. Without an explicit output directory, smoke mode writes to
+`output/` under the directory you run from. Reusing a directory overwrites its
+previous run's files.
 
 ## When to stop using this page
 

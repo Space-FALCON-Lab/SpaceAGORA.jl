@@ -6,10 +6,10 @@ example run.
 This page is for users generating verification reports, runtime measurements,
 GRAM comparison outputs, or paper-study artifacts.
 
-Shortest successful command:
+Inspect the benchmark command without starting a workload:
 
 ```text
-julia --project=. src/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/perf_smoke
+julia --project=. src/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/perf_smoke --print-only
 ```
 
 What to read next:
@@ -21,19 +21,22 @@ What to read next:
 
 ## Start here
 
-If you only need to check that the benchmark path works, run:
+After checking the prerequisites below, run a reduced benchmark workload:
 
 ```text
 julia --project=. src/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/perf_smoke
 ```
 
-All benchmark and study launchers, through the CLI or run directly with
-`--project=.`, need the `data/GRAMSuite.jl` submodule
-([GRAMSuite Setup](gramsuite_setup.md)); the GRAM-backed benchmark cases also
-need the native GRAM library built. Without the submodule the command stops
-with "Package GRAMSuite not found in current path". The CLI runs its child
-under the repository project, so nothing else is needed beyond
-`Pkg.instantiate()`.
+Benchmark `smoke` profiles execute workloads, including simulations. Executing
+the `runtime-analysis` or `smart-parallel-ladder` launcher needs the
+`data/GRAMSuite.jl` submodule ([GRAMSuite Setup](gramsuite_setup.md)) because
+both import the vendored package before parsing study options. GRAM-backed
+cases also need the native GRAM library built. The CLI runs its child under the
+repository project; instantiate that project's dependencies before execution.
+
+Other direct studies have their own prerequisites. For example, the aerobraking
+perturbation study's `--help` command loads SpaceAGORA and exits before GRAM
+setup, worker creation or simulation.
 
 If you need telemetry verification outputs, run:
 
@@ -109,7 +112,7 @@ julia --project=. benchmarks/studies/aerobraking_perturbation_mc/main.jl --help
 
 | Profile | Use for |
 |---|---|
-| `smoke` | New-machine checks and command wiring |
+| `smoke` | Reduced workload after its prerequisites are ready |
 | `quick` | Development and regression artifacts |
 | `full` | Full study or paper-grade artifacts |
 

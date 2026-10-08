@@ -29,11 +29,12 @@ function _example_smoke_args(args::SM.SimulationConfiguration)
         num_steps_to_save=max(50, min(mc.num_steps_to_save, 200)),
         data_rate=mc.data_rate
     )
+    output_override = strip(get(ENV, "SPACEAGORA_CLI_OUTPUT_DIR", ""))
     ss_smoke = SM.SimulationSettings(
         results=keep_results,
         verbose=false,
-        # Keep smoke outputs local to the current run directory to avoid cross-run collisions.
-        results_directory=joinpath(pwd(), "output"),
+        # Honor an explicit CLI destination; otherwise retain per-run smoke isolation.
+        results_directory=isempty(output_override) ? joinpath(pwd(), "output") : abspath(output_override),
         generate_plots=false,
         generate_filenames=ss.generate_filenames,
         normalize=false,

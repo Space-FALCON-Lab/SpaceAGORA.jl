@@ -786,7 +786,7 @@ No `0.92` prediction factor, switch-time scale factor, or balanced-window fallba
 The decision flow is:
 
 1. Evaluate both configured bracket endpoints.
-2. If their residuals have opposite signs, use Brent and re-evaluate the converged root to
+2. If their residuals have opposite signs, use Brent on those same endpoints and re-evaluate the converged root to
    store its trajectory and profile. Closed form uses relative tolerance `1e-5`; the numerical
    TPBVP uses `1e-3`, matching its 1-second switch grid.
 3. If the high-end residual is negative, return `(t,t)` because the requested heat load cannot
@@ -824,10 +824,9 @@ Security is considered only as an `elseif` after re-evaluation, and only when al
 - current heat load exceeds 98% of the limit;
 - heat-load increase since the previous 10 Hz callback is below 2 J/cm2.
 
-It predicts an all-minimum-AoA closed-form remainder. The current implementation explicitly
-sets predicted heat-rate samples with `track.time <= planet.T` to zero; `planet.T` is the
-planet temperature value numerically interpreted as seconds in this comparison. Remaining
-load then uses the rectangular expression. If current plus remaining load exceeds the limit,
+It predicts an all-minimum-AoA closed-form remainder, including every future sample from the
+current state. Remaining load uses the same rectangular expression as the other heat-load
+predictions. Planet temperature is not a time cutoff. If current plus remaining load exceeds the limit,
 the switch pair becomes `(current_time,predicted_outbound_end)` and security remains active for
 the rest of the passage. This is the physical two-transition interval reported by telemetry.
 
@@ -876,6 +875,11 @@ central/J2/N-body propagations with 1 s RK4:
 2. Propagate that exit state toward apoapsis. The time cap is the larger of 20,000 s and 1.25
    times the osculating two-body half-period, so high-apoapsis cases such as VEX can reach the
    event. Stop when radial velocity crosses from positive to nonpositive.
+
+Both results include `event_reached`, which is true only when their stated event is observed.
+Reaching a time cap alone does not certify the result. Guidance raises an explicit error before
+storing a bracket or selecting a targeting mode if either event is missing. The 1 s grid and
+existing event predicates are unchanged; this flag does not establish event-exact timing.
 
 The gravity predictor starts with the configured inverse-square or inverse-square/J2 model and
 adds every configured `NBodyGravityModel`. Third-body positions come from the simulation's
@@ -1011,6 +1015,9 @@ profile follows the unchanged current RHS. The closed-form option intentionally 
 deprecated aggregate flat-plate model and updated Chebyshev fits.
 
 ## Odyssey Configuration and Validation
+
+The numerical results in this section and the Venus section below are historical observations
+from before the E2c defect repairs. They have not been requalified on the repaired candidate.
 
 The validation example uses the deprecated Odyssey values: 411 kg dry spacecraft mass, 50 kg
 propellant, a `2.2 x 2.6 x 1.7 m` bus, two half-panels forming a `3.76 x 1.93 m` planform,

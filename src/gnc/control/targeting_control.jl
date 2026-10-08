@@ -164,12 +164,9 @@ function _edg_recompute_switches!(
                 (3.0 < remaining < 50.0 && since_reevaluation > 3.0) ||
                 (0.0 < remaining <= 3.0 && since_reevaluation > 0.8)
             )
-            degenerate_window_expired = config.heat_load_switch_solver == :tpbvp_integration &&
-                t >= switches[2] && switches[2] - switches[1] <= 2.0 &&
-                heat_load_j_cm2 < 0.98 * config.heat_load_limit_j_cm2 &&
-                since_reevaluation > 3.0
+            # Numerical plans remain cached for the passage; only closed form re-evaluates.
             if config.second_switch_reevaluation && config.heat_load_switch_solver == :closed_form &&
-                    (degenerate_window_expired || (start_reevaluation && reevaluation_due)) &&
+                    start_reevaluation && reevaluation_due &&
                     !state.heat_load_security_active[i]
                 reevaluation_mode = since_reevaluation > 3.0 ? 1 : 2
                 state.heat_load_switches_s[i] = _edg_recompute_second_heat_load_switch(
@@ -424,6 +421,7 @@ function _edg_vacuum_apoapsis_correction(
         pi * sqrt(semi_major_axis^3 / planet.μ) : 0.0
     max_duration = max(20_000.0, 1.25 * half_period)
     elapsed = 0.0
+    event_reached = false
 
     while elapsed < max_duration
         acceleration(r, v, tau) = _edg_prediction_gravity_acceleration(p, r, v, mass, t0 + tau)
@@ -441,6 +439,7 @@ function _edg_vacuum_apoapsis_correction(
         elapsed += dt
         pos, vel = next_pos, next_vel
         if radial_velocity > 0.0 && next_radial_velocity <= 0.0
+            event_reached = true
             break
         end
         radial_velocity = next_radial_velocity
@@ -453,6 +452,7 @@ function _edg_vacuum_apoapsis_correction(
         periapsis_radius_m=metrics.periapsis,
         apoapsis_radius_m=metrics.apoapsis,
         propagation_time_s=elapsed,
+        event_reached=event_reached,
     )
 end
 
@@ -471,6 +471,7 @@ function _edg_vacuum_drag_passage_exit(
     elapsed = 0.0
     max_duration = 2_000.0
     passed_periapsis = dot(pos, vel) >= 0.0
+    event_reached = false
 
     while elapsed < max_duration
         acceleration(r, v, tau) = _edg_prediction_gravity_acceleration(p, r, v, mass, t0 + tau)
@@ -491,10 +492,13 @@ function _edg_vacuum_drag_passage_exit(
             et = _edg_ephemeris_time(p, t0 + elapsed)
             pos_pp, _ = r_intor_p!(pos, vel, planet, et, p.args.environment_model.ephemerides_model)
             altitude_m = rtolatlong(pos_pp, planet)[1]
-            altitude_m >= exit_altitude_m && break
+            if altitude_m >= exit_altitude_m
+                event_reached = true
+                break
+            end
         end
     end
-    return (position=pos, velocity=vel, propagation_time_s=elapsed)
+    return (position=pos, velocity=vel, propagation_time_s=elapsed, event_reached=event_reached)
 end
 
 @inline function _edg_ephemeris_time(p::ODEParams, t_abs::Float64)::Float64

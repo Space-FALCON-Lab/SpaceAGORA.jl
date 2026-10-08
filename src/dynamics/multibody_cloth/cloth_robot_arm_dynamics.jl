@@ -333,7 +333,10 @@ function _coupled_parent_kinematics(sc_view, parent::Int, p_body)
     )
 end
 
-"""Write coupled cloth robot-arm derivatives into the simulation RHS vector."""
+"""Write coupled cloth robot-arm derivatives into the simulation RHS vector.
+
+`link_gravity_ii` is an optional callable `r_ii -> acceleration` evaluated at each link's own
+inertial position; `nothing` (default) applies no gravity to the links."""
 function assign_coupled_cloth_robot_arm_rhs!(
     du_view,
     sc_view,
@@ -346,6 +349,7 @@ function assign_coupled_cloth_robot_arm_rhs!(
     k_rotation_n_m_rad=15.0,
     c_rotation_n_m_s_rad=0.5,
     joint_actuators::AbstractVector{CompliantJointActuator}=CompliantJointActuator[],
+    link_gravity_ii=nothing,
 )
     hasproperty(sc_view, :arm_r) || return nothing
     n = length(plan.model.links)
@@ -417,7 +421,9 @@ function assign_coupled_cloth_robot_arm_rhs!(
         qdot = 0.5 .* _quat_raw_mul(state.q, SVector{4, Float64}(state.ω[1], state.ω[2], state.ω[3], 0.0))
         du_view.arm_r[:, i] .= state.v
         du_view.arm_q[:, i] .= qdot
-        du_view.arm_v[:, i] .= forces[i] / link.mass_kg
+        f_link = link_gravity_ii === nothing ? forces[i] :
+            forces[i] + link.mass_kg * SVector{3, Float64}(link_gravity_ii(state.r))
+        du_view.arm_v[:, i] .= f_link / link.mass_kg
         du_view.arm_ω[:, i] .= J \ (torques_body[i] - cross(state.ω, J * state.ω))
     end
     return nothing

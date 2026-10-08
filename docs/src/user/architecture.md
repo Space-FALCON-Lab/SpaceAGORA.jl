@@ -68,7 +68,9 @@ foundation. The current folder name retains its historical cloth terminology. `s
 with mass and inertia, compliant connections with translational and rotational
 stiffness and damping, and topology builders. The coupled robot-arm path in
 `cloth_robot_arm_dynamics.jl` supplies internal-state initialization and
-derivatives to the engine. This supports specified articulated and compliant
+derivatives to the engine. Each arm link feels gravity at its own inertial
+position, from the run's position-only gravity effectors, so the joint springs
+carry only the loads that differ from the bus's own free fall. This supports specified articulated and compliant
 models; it is not a claim that every arbitrary flexible surface or contact
 interaction is already coupled and validated. A mesh describes surface
 geometry, while a multibody model describes motion and loads.

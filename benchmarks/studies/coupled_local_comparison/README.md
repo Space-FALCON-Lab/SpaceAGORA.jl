@@ -67,8 +67,9 @@ static routes `inner_only` (R2), `rhs_satellite`, `rhs_per_satellite`,
 the same five routes at each `SWEEP_THREADS` count (default 12) for N = 32, 64,
 128, 256 on the post-#222 code. N = 32 repeats Stage A's case so that a sweep
 run on another host carries its own anchor; compare N only within one host. Override with
-`THREADS`, `ROUTES`, `SWEEP_N`, `SWEEP_THREADS`, `REPEATS` (default 6),
-`WARMUP` (default 3) and `PROFILE`.
+`A_CASE` (Stage A's case), `THREADS`, `ROUTES`, `SWEEP_N`, `SWEEP_THREADS`, `REPEATS` (default 6),
+`WARMUP` (default 3), `PROFILE` and `MEMORY_MAX` (per-point cap, default
+16G).
 
 Each point is a separate controller invocation with its own state-dump
 directory, under a 16 GB cap. A finished point is skipped when the script is

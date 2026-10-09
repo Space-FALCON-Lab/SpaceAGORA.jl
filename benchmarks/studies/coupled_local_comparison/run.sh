@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Coupled-case comparison on this host. See README.md for what each stage measures.
 #
-#   run.sh A <outdir>   32 spacecraft: code before vs after PR #222, every route, thread ladder
+#   run.sh A <outdir>   PRE_TREE vs POST_TREE on one case (A_CASE, default 32 spacecraft), every route, thread ladder
 #   run.sh B <outdir>   spacecraft-count sweep on the post-#222 code
 #
 # PRE_TREE and POST_TREE are checkouts of the two commits. The harness files from
@@ -62,7 +62,7 @@ if [[ "${1:-}" == __locked_point__ ]]; then
     echo "[quiet] $(date -Is) no busy Julia process; starting" >&2
     cd "$tree"
     exec env SPACEAGORA_PPC_DUMP_STATE_DIR="$dir/states" \
-        systemd-run --user --scope -p MemoryMax=16G -p MemorySwapMax=0 -q -- \
+        systemd-run --user --scope -p MemoryMax="$MEMORY_MAX" -p MemorySwapMax=0 -q -- \
         julia --startup-file=no --project=. benchmarks/studies/parallelization_performance.jl "$PROFILE" \
             --outdir="$dir" --cases="$case" --modes="$mode" --threads="$t" \
             --repeats="$REPEATS" --warmup="$WARMUP" --parity-cases=none
@@ -79,6 +79,9 @@ export PROFILE="${PROFILE:-smoke}"   # harness profile: smoke = 120 s mission, t
 export REPEATS="${REPEATS:-6}"
 export WARMUP="${WARMUP:-3}"
 export QUIET_SAMPLE_S QUIET_MAX_CORES MIN_AVAILABLE_GB
+# Memory cap per point. 16G on the shared workstation; a larger host may raise
+# it for cases whose compilation needs more (N = 256 exceeded 16G on TRX50).
+export MEMORY_MAX="${MEMORY_MAX:-16G}"
 THREADS="${THREADS:-2 4 8 12}"   # parallel rungs; 12 = physical cores of the reference workstation
 ROUTES="${ROUTES:-inner_only rhs_satellite rhs_per_satellite rhs_flat predictive}"
 LOCKS="${LOCKS:-/tmp/claude-1000/spaceagora-agents-julia.lock /tmp/claude-1000/-home-space-falcon-1-Documents-JAIS-2026-SpaceAGORA/julia-local-heavy.lock}"
@@ -142,8 +145,8 @@ ladder() {  # tree tag case
 
 case "$STAGE" in
     A)
-        ladder "$PRE_TREE" pre stack32_e6_actuated_saved
-        ladder "$POST_TREE" post stack32_e6_actuated_saved
+        ladder "$PRE_TREE" pre "${A_CASE:-stack32_e6_actuated_saved}"
+        ladder "$POST_TREE" post "${A_CASE:-stack32_e6_actuated_saved}"
         ;;
     B)
         for n in ${SWEEP_N:-32 64 128 256}; do

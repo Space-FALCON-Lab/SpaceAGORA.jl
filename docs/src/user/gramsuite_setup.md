@@ -42,9 +42,27 @@ binary GRAM data. Before running it, make sure the machine has enough free disk
 space for both the final files and Git LFS temporary downloads; 15-20 GB free is
 a practical minimum.
 
+If an existing wrapper checkout contains local work, preserve it and use a
+separate checkout for preparation; do not reset it to follow this guide.
+
 ```text
-git submodule update --init --recursive --remote
+git submodule update --init --recursive -- data/GRAMSuite.jl
 ```
+
+These commands use the exact submodule commit recorded by SpaceAGORA. Avoid
+`--remote`, which selects a branch tip instead of that reviewed commit.
+
+Verify the recorded commit and the wrapper's actual commit:
+
+```text
+git rev-parse HEAD:data/GRAMSuite.jl
+git -C data/GRAMSuite.jl rev-parse HEAD
+git -C data/GRAMSuite.jl status --short
+```
+
+The two commit identifiers must agree for the public wrapper route. The
+preparation helper below additionally checks the source bytes and the public
+pin in `.github/gramsuite-revisions`; matching a folder name is insufficient.
 
 This should populate the vendored Julia wrapper path:
 
@@ -62,7 +80,7 @@ downloading LFS objects immediately, skip LFS smudging during the submodule
 checkout:
 
 ```text
-GIT_LFS_SKIP_SMUDGE=1 git submodule update --init --recursive --remote
+GIT_LFS_SKIP_SMUDGE=1 git submodule update --init --recursive -- data/GRAMSuite.jl
 ```
 
 Later, after freeing enough disk space, fetch the LFS-backed GRAM files from
@@ -72,6 +90,65 @@ inside the submodule:
 cd data/GRAMSuite.jl
 git lfs pull
 ```
+
+## Prepare package-loading dependencies offline
+
+Use this bounded step when the pinned Julia wrapper source and SpaceAGORA's
+existing package depot are already available. A source-only wrapper can be
+missing its own dependency metadata even when SpaceAGORA imports successfully.
+That matters when a loading helper prepends the wrapper to Julia's search path.
+
+From the SpaceAGORA repository root, with Python 3.11 or later and Git available:
+
+```sh
+mkdir -p "$HOME/AgentScratch"
+python3.11 scripts/prepare_gram_loading_environment.py \
+  --gram-source "$PWD/data/GRAMSuite.jl" \
+  --output "$HOME/AgentScratch/gram-loading-prepared"
+```
+
+The output directory must be new and outside both checkouts. The helper verifies
+`Project.toml` and every file under `src/` against the configured exact GRAM
+commit using local Git objects. For an already retained source-only snapshot,
+pass its path as `--gram-source` and add `--gram-object-repo` pointing to a local
+GRAM repository that contains that commit. Missing objects are an unmet
+prerequisite; this offline helper does not fetch them. `--mode dev` selects the
+separately configured development pin and requires its own verified source and
+local objects. Public-wrapper results do not validate the development wrapper.
+
+The prepared directory contains the unchanged wrapper project, a source link,
+a dependency manifest and `preparation.json` with source and metadata hashes.
+The manifest retains exact versions, UUIDs, tree hashes and complete stanzas
+from SpaceAGORA's committed root manifest. Its closure includes required
+transitive dependencies and list-form weakdependencies whose stanzas Julia
+needs to identify extension triggers. Dictionary-form weakdependencies already
+carry UUIDs and remain unchanged. The root's `project_hash` is omitted because
+it describes SpaceAGORA's project, not the wrapper's.
+
+The helper rejects locally changed root project/manifest/pin metadata, modified
+or extra wrapper source files, ambiguous or missing dependency entries and path
+dependencies. It does not resolve, instantiate or install packages, create new
+versions, import Julia packages, copy licensed assets or modify either checkout.
+The source link remains dependent on the original source location and bytes;
+keep that source unchanged while using the preparation and retain its receipt.
+
+Run the separate loading diagnostic against this explicitly prepared input:
+
+```sh
+JULIA_PKG_PRECOMPILE_AUTO=0 JULIA_PKG_OFFLINE=true \
+  julia --startup-file=no --compiled-modules=existing \
+  test/smoke/gram_package_readiness.jl \
+  --gram-project "$HOME/AgentScratch/gram-loading-prepared" \
+  --output "$HOME/AgentScratch/gram-loading-report"
+```
+
+The report directory must also be new. Missing installed dependencies remain
+unmet acceptance; the preparation helper supplies metadata, not package files.
+See [Real-package loading readiness](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/blob/f3fde6c2251434be57cb9122f60b249ea5b5bbc4/docs/quality/gram_package_readiness.md)
+for the six import/failure cases and runtime limits. A passing loading report
+covers the observed package and extension identities only. It does not qualify
+production helper behavior, workers, native GRAM libraries/data or simulation
+results. Continue below separately for licensed native setup.
 
 ## Expected target location
 

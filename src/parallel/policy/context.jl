@@ -181,13 +181,34 @@ end
 # Spin-barrier pool: worker loop, creation, dispatch, teardown.
 # ---------------------------------------------------------------------------
 
+# One poll of a spin loop. Mostly a GC safepoint; every 1024th poll a yield().
+#
+# The pool's workers spin for the life of the pool, between dispatches too. Polling
+# with GC.safepoint() alone never gives the thread up, so a task pinned to that
+# thread could never run: Polyester's `@batch` workers are pinned, and the RHS
+# calibration sweep (predictive / R7 profiles) times a satellite_batch candidate
+# after a flat harmonics one on this pool. That hung for good (TRX50 job
+# 20261008-115111-1480699; test/unit/parallel/spin_barrier_yield_tests.jl). A
+# periodic yield lets such a task run; the 1023 polls in between keep the wake
+# latency of the spin barrier.
+@inline function _spin_poll!(polls::Int)::Int
+    polls += 1
+    if polls & 1023 == 0
+        yield()
+    else
+        GC.safepoint()
+    end
+    return polls
+end
+
 function _spin_barrier_worker_loop_w(worker_id::Int, pool::_SpinBarrierPool)::Nothing
     my_gen = 0
+    polls = 0
     while true
         # Spin-poll until the coordinator bumps our generation counter.
         while pool.worker_gen[worker_id][] == my_gen
             pool.stop[] && return nothing
-            GC.safepoint()
+            polls = _spin_poll!(polls)
         end
         my_gen += 1
         pool.stop[] && return nothing
@@ -283,9 +304,10 @@ function _spin_barrier_dispatch!(
         catch err
             coordinator_error = err
         end
-        # Spin-wait for pool workers to finish.
+        # Spin-wait for pool workers to finish (yielding now and then; see _spin_poll!).
+        polls = 0
         while pool.done_count[] < pool_workers
-            GC.safepoint()
+            polls = _spin_poll!(polls)
         end
         Threads.atomic_sub!(pool.done_count, pool_workers)
         # Propagate the first pool-worker error (by worker index), then any

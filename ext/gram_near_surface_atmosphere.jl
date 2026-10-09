@@ -10,6 +10,10 @@ function EM.GRAMNearSurfaceAtmosphereModel(; kwargs...)
     return EM.GRAMNearSurfaceAtmosphereModel(core)
 end
 
+# A wind layer exists only in format 2 payloads, which need a GRAMSuite that provides it.
+EM._near_surface_model_has_winds(model::EM.GRAMNearSurfaceAtmosphereModel) =
+    isdefined(GRAMSuite, :near_surface_winds_available) && GRAMSuite.near_surface_winds_available(model.core)
+
 @inline function EM.getDensity(
     model::EM.GRAMNearSurfaceAtmosphereModel,
     h::Float64,

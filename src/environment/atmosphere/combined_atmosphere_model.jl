@@ -10,8 +10,9 @@ blending, extrapolation or fallback between them, so a query the selected compon
 `DomainError`. With a near-surface lower component, coverage below the handover stops 5 m above supported terrain and
 excludes that component's refused regions; for the published preset these are latitudes beyond 85 degrees, volcano
 flanks and positions where a component is unavailable. Density, temperature and wind can change abruptly at the
-handover. A near-surface component stores no winds, so with a grid upper component the wind drops to zero below the
-handover.
+handover. A near-surface component with a format 1 payload (the published versions 1.0.0 and 1.1.0) stores no
+winds, so with a grid upper component the wind drops to zero below the handover. A format 2 near-surface payload
+returns its stored winds below the handover; the two components' winds still differ there.
 
 The constructor checks compatibility where both components record it: the planet, the frozen instant and the
 reference-ellipsoid radii must agree, and a grid component's height range must contain the handover. The caller must

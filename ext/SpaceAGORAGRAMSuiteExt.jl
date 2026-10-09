@@ -429,10 +429,14 @@ function EM.reset_density_model_history!(model::EM.GRAMAtmosphereModel)::Bool
     core = model.core
     hasfield(typeof(core), :gram) && hasfield(typeof(core), :gram_atmosphere) || return false
     gram = core.gram
-    isdefined(gram, :set_seed!) || return false
+    # Native bindings may have been loaded after the caller entered its world.
+    # The availability check and binding lookup need the same latest-world
+    # boundary as the call itself, including on the first construction/reset.
+    Base.invokelatest(isdefined, gram, :set_seed!) || return false
     _ensure_native_static_tables!(core)
     lock(_gram_call_lock(model)) do
-        Base.invokelatest(getfield(gram, :set_seed!), core.gram_atmosphere, seed)
+        set_seed! = Base.invokelatest(getfield, gram, :set_seed!)
+        Base.invokelatest(set_seed!, core.gram_atmosphere, seed)
     end
     return true
 end

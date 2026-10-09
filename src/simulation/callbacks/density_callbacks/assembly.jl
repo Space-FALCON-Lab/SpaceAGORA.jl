@@ -173,13 +173,13 @@ function get_callbacks(
         callbacks = _append_callback(callbacks, get_entry_end_callback(num_sats, args))
     end
 
-    if !backbone_mode && _requires_drag_state_callback(effectors, args)
-        callbacks = _append_callback(callbacks, get_drag_state_callback(num_sats))
-    end
-
-    # Install EDG heat roots independently of density and phase tolerances.
-    if !backbone_mode && !isempty(_edg_heat_states(args))
-        callbacks = _append_callback(callbacks, get_edg_heat_callback(num_sats))
+    if !backbone_mode
+        drag_callback = _requires_drag_state_callback(effectors, args) ? get_drag_state_callback(num_sats) : nothing
+        # Pair simultaneous roots, without installing drag side effects when
+        # phase tolerances would not otherwise require them.
+        boundary_callback = isempty(_edg_heat_states(args)) ? drag_callback :
+            get_edg_heat_callback(num_sats; drag_callback=drag_callback)
+        callbacks = _append_callback(callbacks, boundary_callback)
     end
 
     if !backbone_mode

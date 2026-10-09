@@ -1079,12 +1079,16 @@ records each panel's cumulative heat at EDG's existing geodetic entry boundary
 and supplies the maximum of the individual panel increments to heat planning,
 second-switch reevaluation, predictive security, and targeting energy bracketing.
 The passage total is frozen at the corresponding geodetic exit, excluding coast
-heating. A separate continuous callback uses the same frame, ephemeris time and
-altitude convention as EDG's passage gate. It only records heat snapshots; the
-original spherical callback still owns phase tolerances, the atmosphere mask,
-cache invalidation and thruster scheduling. Equal phase tolerances do not suppress
-the heat callback. These boundaries coincide on the equator but differ elsewhere
-on an oblate planet.
+heating. A continuous bookkeeping event uses the same frame, ephemeris time and
+altitude convention as EDG's passage gate. When the original spherical callback is
+also required, both surfaces are paired in one vector callback so coincident roots
+apply both effects. The original spherical handlers still own phase tolerances,
+the atmosphere mask, cache invalidation and thruster scheduling. Equal phase
+tolerances do not suppress the heat event or introduce those spherical side effects.
+Roundoff-equivalent root values are coalesced to avoid duplicate dispatch. These
+boundaries coincide on the equator but differ elsewhere on an oblate planet.
+Pairing preserves the old callback's save setting, so a distinct geodetic event
+may add an event-state save; identical solver output sampling is not claimed.
 It does not subtract the maximum baseline from the maximum current heat: different
 panels can carry the largest loads on different passages. Starting a fresh run
 inside the atmosphere uses its initial zero-integral reference. Direct hook users

@@ -83,47 +83,70 @@ if !isdefined(@__MODULE__, :SimulationEngine)
     include(joinpath(REPO_ROOT, "src/simulation/engine/simulation_engine.jl"))
 end
 using DifferentialEquations
-@testset "EDG baseline is captured at the actual entry root" begin
-    CH = SimulationModel.ControlHooks
-    c = _edg_test_context(heat_load_limit_j_cm2=30.0)
-    fields = (; (key=>getfield(c.args,key) for key in fieldnames(typeof(c.args)))...)
-    args = SimulationModel.SimulationConfiguration(;merge(fields,(
-        integration_tolerances=SimulationModel.IntegrationTolerances(
-            dt_max_atmosphere=0.1,dt_max_orbit=0.1,reltol_atmosphere=1e-12,reltol_orbit=1e-12,
-            abstol_atmosphere=1e-12,abstol_orbit=1e-12),))...)
-    c=merge(c,(args=args,p=SimulationModel.ODEParams{1}(args=args)))
-    radius = c.p.args.environment_model.planet.Rp_e
-    c.u.sc[1].pos .= [radius+170000.0,0.0,0.0]
-    c.u.sc[1].heat_loads .= [0.0,100.0,200.0]
-    CH._edg_initialize_heat_accounting!(c.args,c.u,0.0)
-    function analytic_passes!(du,u,p,t)
-        fill!(du,0.0)
-        du.sc[1].pos[1] = -4000pi*sin(pi*t/10)
-        du.sc[1].heat_loads .= [0.0,1.0,2.0]
-    end
-    callback = CallbackSet(SimulationModel.SimulationCallbacks.get_drag_state_callback(1),
-        SimulationModel.SimulationCallbacks.get_edg_heat_callback(1))
-    problem = ODEProblem(analytic_passes!,copy(c.u),(0.0,40.0),c.p)
-    sol = solve(problem,Tsit5();callback=callback,dtmax=0.1,reltol=1e-10,abstol=1e-10)
-    entry2 = 20.0 + 10acos(0.75)/pi
-    @test string(sol.retcode)=="Success"
-    @test c.state.heat_load_entry_j_cm2[1] ≈ [0.0,100+entry2,200+2entry2] atol=1e-5
-    @test sol.u[end].sc[1].heat_loads ≈ [0.0,140.0,280.0] atol=1e-8
-    exit2 = 40.0 - 10acos(0.75)/pi
-    @test c.state.heat_load_exit_j_cm2[1] ≈ [0.0,100+exit2,200+2exit2] atol=1e-5
-    @test CH._edg_pass_heat_load_for_links(sol.u[end].sc[1],(2,3),c.state,1) ≈ 2*(exit2-entry2) atol=1e-5
-    @test !c.p.shared_buffers.in_atmosphere[1]
-    # EDG still receives the entry root when integration tolerances match.
-    equal_args=SimulationModel.SimulationConfiguration(;merge(fields,(
-        integration_tolerances=SimulationModel.IntegrationTolerances(
-            dt_max_atmosphere=1.0,dt_max_orbit=1.0,reltol_atmosphere=1e-8,reltol_orbit=1e-8,
-            abstol_atmosphere=1e-8,abstol_orbit=1e-8),))...)
-    @test !SimulationModel.SimulationCallbacks._requires_drag_state_callback((),equal_args)
-    callbacks = SimulationModel.SimulationCallbacks.get_callbacks(1, (), equal_args)
-    heat_type = typeof(SimulationModel.SimulationCallbacks.get_edg_heat_callback(1))
-    @test any(cb -> cb isa heat_type, callbacks.continuous_callbacks)
+function _edg_counted_drag_callback(num_sats)
+    callback = SimulationModel.SimulationCallbacks.get_drag_state_callback(num_sats)
+    entries, exits = Float64[], Float64[]
+    up!(integrator, idx) = (push!(exits, Float64(integrator.t)); callback.affect!(integrator, idx))
+    down!(integrator, idx) = (push!(entries, Float64(integrator.t)); callback.affect_neg!(integrator, idx))
+    counted = NamedTuple{(:condition, :affect!, :affect_neg!, :save_positions)}(
+        (callback.condition, up!, down!, callback.save_positions))
+    return counted, entries, exits
 end
 
+@testset "EDG baseline is captured at the actual entry root" begin
+    for stationary in (false, true)
+        CH = SimulationModel.ControlHooks
+        c = _edg_test_context(heat_load_limit_j_cm2=30.0)
+        fields = (; (key=>getfield(c.args,key) for key in fieldnames(typeof(c.args)))...)
+        environment = c.args.environment_model
+        if stationary
+            planet = environment.planet
+            planet_fields = (; (key=>getfield(planet,key) for key in fieldnames(typeof(planet)))...)
+            stationary_planet = typeof(planet)(;merge(planet_fields, (ω=zero(planet.ω),))...)
+            environment_fields = (; (key=>getfield(environment,key) for key in fieldnames(typeof(environment)))...)
+            environment = SimulationModel.EnvironmentModel(;merge(environment_fields,(planet=stationary_planet,))...)
+        end
+        args = SimulationModel.SimulationConfiguration(;merge(fields,(
+            environment_model=environment,
+            integration_tolerances=SimulationModel.IntegrationTolerances(
+                dt_max_atmosphere=0.1,dt_max_orbit=0.1,reltol_atmosphere=1e-12,reltol_orbit=1e-12,
+                abstol_atmosphere=1e-12,abstol_orbit=1e-12),))...)
+        c=merge(c,(args=args,p=SimulationModel.ODEParams{1}(args=args)))
+        radius = c.p.args.environment_model.planet.Rp_e
+        c.u.sc[1].pos .= [radius+170000.0,0.0,0.0]
+        c.u.sc[1].heat_loads .= [0.0,100.0,200.0]
+        CH._edg_initialize_heat_accounting!(c.args,c.u,0.0)
+        function analytic_passes!(du,u,p,t)
+            fill!(du,0.0)
+            du.sc[1].pos[1] = -4000pi*sin(pi*t/10)
+            du.sc[1].heat_loads .= [0.0,1.0,2.0]
+        end
+        counted_drag, drag_entries, drag_exits = _edg_counted_drag_callback(1)
+        callback = SimulationModel.SimulationCallbacks.get_edg_heat_callback(1;
+            drag_callback=counted_drag)
+        problem = ODEProblem(analytic_passes!,copy(c.u),(0.0,40.0),c.p)
+        sol = solve(problem,Tsit5();callback=callback,dtmax=0.1,reltol=1e-10,abstol=1e-10)
+        @test length(drag_entries) == 2
+        @test length(drag_exits) == 2
+        entry2 = 20.0 + 10acos(0.75)/pi
+        @test string(sol.retcode)=="Success"
+        @test c.state.heat_load_entry_j_cm2[1] ≈ [0.0,100+entry2,200+2entry2] atol=1e-5
+        @test sol.u[end].sc[1].heat_loads ≈ [0.0,140.0,280.0] atol=1e-8
+        exit2 = 40.0 - 10acos(0.75)/pi
+        @test c.state.heat_load_exit_j_cm2[1] ≈ [0.0,100+exit2,200+2exit2] atol=1e-5
+        @test CH._edg_pass_heat_load_for_links(sol.u[end].sc[1],(2,3),c.state,1) ≈ 2*(exit2-entry2) atol=1e-5
+        @test !c.p.shared_buffers.in_atmosphere[1]
+        # EDG still receives the entry root when integration tolerances match.
+        equal_args=SimulationModel.SimulationConfiguration(;merge(fields,(
+            integration_tolerances=SimulationModel.IntegrationTolerances(
+                dt_max_atmosphere=1.0,dt_max_orbit=1.0,reltol_atmosphere=1e-8,reltol_orbit=1e-8,
+                abstol_atmosphere=1e-8,abstol_orbit=1e-8),))...)
+        @test !SimulationModel.SimulationCallbacks._requires_drag_state_callback((),equal_args)
+        callbacks = SimulationModel.SimulationCallbacks.get_callbacks(1, (), equal_args)
+        heat_type = typeof(SimulationModel.SimulationCallbacks.get_edg_heat_callback(1))
+        @test any(cb -> cb isa heat_type, callbacks.continuous_callbacks)
+    end
+end
 
 @testset "EDG heat uses its geodetic passage at high latitude" begin
     CH = SimulationModel.ControlHooks
@@ -173,9 +196,12 @@ end
         end
         # Both callbacks run together: the old spherical events must neither
         # replace nor freeze the geodetic snapshots.
-        callback = CallbackSet(CB.get_drag_state_callback(1), CB.get_edg_heat_callback(1))
+        counted_drag, drag_entries, drag_exits = _edg_counted_drag_callback(1)
+        callback = CB.get_edg_heat_callback(1; drag_callback=counted_drag)
         sol = solve(ODEProblem(analytic_high_latitude!, u, (0.0,40.0), p), Tsit5();
             callback=callback, dtmax=0.1, reltol=1e-10, abstol=1e-10)
+        @test length(drag_entries) == 2
+        @test length(drag_exits) == 2
         entry2 = 20.0 + 10acos(0.5)/pi
         exit2 = 40.0 - 10acos(0.5)/pi
         @test string(sol.retcode) == "Success"
@@ -195,11 +221,13 @@ end
             du.sc[1].pos .= 1000.0 * direction
             du.sc[1].heat_loads .= [0.0, 1.0, 2.0]
         end
-        exit_sol = solve(ODEProblem(analytic_exit!, inside, (0.0,25.0), p), Tsit5();
+        exit_sol = solve(ODEProblem(analytic_exit!, inside, (0.0,35.0), p), Tsit5();
             callback=callback, dtmax=0.1, reltol=1e-10, abstol=1e-10)
+        @test length(drag_entries) == 2
+        @test length(drag_exits) == 3
         @test c.state.heat_load_entry_j_cm2[1] == zeros(3)
         @test c.state.heat_load_exit_j_cm2[1] ≈ [0.0,10.0,20.0] atol=1e-5
         @test CH._edg_pass_heat_load_for_links(exit_sol.u[end].sc[1],(2,3),c.state,1) ≈ 20.0 atol=1e-5
-        @test exit_sol.u[end].sc[1].heat_loads ≈ [0.0,25.0,50.0] atol=1e-8
+        @test exit_sol.u[end].sc[1].heat_loads ≈ [0.0,35.0,70.0] atol=1e-8
     end
 end

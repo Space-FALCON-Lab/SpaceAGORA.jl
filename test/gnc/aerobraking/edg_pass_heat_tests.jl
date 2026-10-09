@@ -163,9 +163,12 @@ end
         env = CH._edg_environment_state(u, p, 0.0, 1)
         @test !CH._edg_in_drag_passage(p, env)
         @test CH._edg_heat_boundary_distance(u, p, 0.0, 1) ≈ env.altitude_m - 160000.0
+        # Start above both surfaces so both spherical and geodetic callbacks
+        # cross on every passage, with a clear shell between their events.
+        u.sc[1].pos .= (entry_radius + 30000.0) * direction
         function analytic_high_latitude!(du, u, p, t)
             fill!(du, 0.0)
-            du.sc[1].pos .= (-4000pi*sin(pi*t/10)) * direction
+            du.sc[1].pos .= (-6000pi*sin(pi*t/10)) * direction
             du.sc[1].heat_loads .= [0.0, 1.0, 2.0]
         end
         # Both callbacks run together: the old spherical events must neither
@@ -173,8 +176,8 @@ end
         callback = CallbackSet(CB.get_drag_state_callback(1), CB.get_edg_heat_callback(1))
         sol = solve(ODEProblem(analytic_high_latitude!, u, (0.0,40.0), p), Tsit5();
             callback=callback, dtmax=0.1, reltol=1e-10, abstol=1e-10)
-        entry2 = 20.0 + 10acos(0.75)/pi
-        exit2 = 40.0 - 10acos(0.75)/pi
+        entry2 = 20.0 + 10acos(0.5)/pi
+        exit2 = 40.0 - 10acos(0.5)/pi
         @test string(sol.retcode) == "Success"
         @test c.state.heat_load_entry_j_cm2[1] ≈ [0.0,100+entry2,200+2entry2] atol=1e-5
         @test c.state.heat_load_exit_j_cm2[1] ≈ [0.0,100+exit2,200+2exit2] atol=1e-5

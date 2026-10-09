@@ -33,6 +33,16 @@ function _edg_initialize_heat_accounting!(args, u, t_start::Float64)
     return nothing
 end
 
+# Use the same time, frame transform and geodetic altitude as
+# _edg_environment_state, without sampling density or invoking guidance.
+function _edg_heat_boundary_distance(u, p::ODEParams, t::Float64, i::Int)
+    sc = _edg_control_sat_state(u, i)
+    pos, vel, _ = _edg_control_pos_vel_mass(sc)
+    env = p.args.environment_model
+    pos_pp, _ = r_intor_p!(pos, vel, env.planet, _edg_ephemeris_time(p, t), env.ephemerides_model)
+    return Float64(rtolatlong(pos_pp, env.planet)[1]) - 1e3 * Float64(env.EI)
+end
+
 function _edg_capture_entry_heat!(args, u, i::Int)
     sc = _edg_control_sat_state(u, i)
     for state in _edg_heat_states(args)

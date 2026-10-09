@@ -71,8 +71,6 @@ end
 end
 
 @inline function _requires_drag_state_callback(effectors::Tuple, args::SimulationConfiguration)::Bool
-    # Record the existing entry root even when phase tolerances are identical.
-    !isempty(_edg_heat_states(args)) && return true
     if !_requires_density_callback(effectors, args)
         return false
     end
@@ -177,6 +175,11 @@ function get_callbacks(
 
     if !backbone_mode && _requires_drag_state_callback(effectors, args)
         callbacks = _append_callback(callbacks, get_drag_state_callback(num_sats))
+    end
+
+    # Install EDG heat roots independently of density and phase tolerances.
+    if !backbone_mode && !isempty(_edg_heat_states(args))
+        callbacks = _append_callback(callbacks, get_edg_heat_callback(num_sats))
     end
 
     if !backbone_mode

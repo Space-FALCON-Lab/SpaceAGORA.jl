@@ -131,6 +131,26 @@ function get_entry_end_callback(num_sats::Int, args::SimulationConfiguration)
     return VectorContinuousCallback(condition!, nothing, affect_downcrossing!, num_sats)
 end
 
+# Bookkeeping only: the original spherical drag-state callback below still
+# owns tolerance changes, the atmosphere mask, caches and thruster scheduling.
+function get_edg_heat_callback(num_sats::Int)
+    function condition!(out, u, t, integrator)
+        @inbounds for i in 1:num_sats
+            out[i] = _edg_heat_boundary_distance(u, integrator.p, Float64(t), i)
+        end
+    end
+    function affect_upcrossing!(integrator, idx::Int)
+        _edg_capture_exit_heat!(integrator.p.args, integrator.u, idx)
+        return nothing
+    end
+    function affect_downcrossing!(integrator, idx::Int)
+        _edg_capture_entry_heat!(integrator.p.args, integrator.u, idx)
+        return nothing
+    end
+    return VectorContinuousCallback(condition!, affect_upcrossing!, affect_downcrossing!, num_sats;
+        save_positions=(false, false))
+end
+
 function get_drag_state_callback(num_sats::Int)
     condition!(out, u, t, integrator) = begin
         @inbounds for i in 1:num_sats
@@ -143,7 +163,6 @@ function get_drag_state_callback(num_sats::Int)
         if callback_verbose(integrator)
             println("Switching to space integration at time $(integrator.t) seconds!")
         end
-        _edg_capture_exit_heat!(p.args, integrator.u, Int(idx))
         p.shared_buffers.in_atmosphere[idx] = false
         p.shared_buffers.in_atmosphere_sample_t[idx] = Float64(integrator.t)
         # Invalidate the vacuum-predicted GRAM cache so the next atmospheric entry
@@ -171,7 +190,6 @@ function get_drag_state_callback(num_sats::Int)
         if callback_verbose(integrator)
             println("Switching to atmosphere integration at time $(integrator.t) seconds!")
         end
-        _edg_capture_entry_heat!(p.args, integrator.u, Int(idx))
         p.shared_buffers.in_atmosphere[idx] = true
         p.shared_buffers.in_atmosphere_sample_t[idx] = Float64(integrator.t)
         integrator.opts.dtmax = p.args.integration_tolerances.dt_max_atmosphere # Decrease the maximum timestep when entering the atmosphere

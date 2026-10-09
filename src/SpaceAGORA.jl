@@ -75,6 +75,50 @@ using .RPOStationAssets: station_geometry_path, station_cad_path, load_rpo_stati
 using .RPOVisualization: rpo_path_plot, rpo_tracking_plot
 using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
 
+@doc """
+    AerobrakingEnergyDepletionConfig(; kwargs...)
+
+Configure experimental maximum-depletion or targeting guidance. Heat-rate limits
+use W/cm2, passage heat limits use J/cm2, and the structural-load proxy uses Pa.
+The configuration selects existing switch solvers, security options and update
+cadence; it does not certify trajectory feasibility or scientific acceptance.
+""" AerobrakingEnergyDepletionConfig
+
+@doc """
+    AerobrakingEnergyDepletionState(; num_sats=1)
+
+Allocate per-spacecraft EDG planning state and heat diagnostics. Share this state
+between the corresponding guidance and control models. Physical heat telemetry
+is cumulative; passage accounting uses each panel's geodetic entry/exit snapshots.
+Use fresh guidance state for a new mission; nonzero-time EDG checkpoint resume is
+unsupported because the checkpoint omits passage and guidance history.
+""" AerobrakingEnergyDepletionState
+
+@doc """
+    AerobrakingEnergyDepletionGuidanceModel(config, state)
+
+Experimental guidance model that selects maximum depletion or energy targeting
+using the supplied EDG configuration and shared per-spacecraft state. Install it
+in a guidance model with the desired existing update interval.
+""" AerobrakingEnergyDepletionGuidanceModel
+
+@doc """
+    AerobrakingEnergyDepletionControlModel(config, state; aoa_effector)
+
+Apply the existing EDG switch and constraint policy through a solar-panel
+angle-of-attack effector. The default effector uses `config.controlled_panel_links`.
+Share `state` with the matching guidance model; budget diagnostics do not add an
+independent cumulative-heat command override.
+""" AerobrakingEnergyDepletionControlModel
+
+@doc """
+    SolarPanelAngleOfAttackControlModel(; controlled_panel_links=(2, 3))
+
+Solar-panel angle-of-attack effector used by EDG control. Select a nonempty tuple
+of positive panel-link indices. This effector applies commands; it does not plan
+switches or establish heat, structural or terminal feasibility.
+""" SolarPanelAngleOfAttackControlModel
+
 @doc (@doc SimulationEngine.ParallelConfig) ParallelConfig
 @doc (@doc SimulationEngine.SolverConfig) SolverConfig
 @doc (@doc SimulationEngine.RuntimePolicyConfig) RuntimePolicyConfig

@@ -1075,10 +1075,16 @@ active, the single switch is at `43104.264115 s`, and the final osculating apoap
 
 The heat-load limit applies to the current atmospheric passage. The physical
 `heat_loads` state and `last_heat_load_j_cm2` remain cumulative telemetry. EDG
-records each panel's cumulative heat at the simulator's existing atmospheric-entry
-root and supplies the maximum of the individual panel increments to heat planning,
+records each panel's cumulative heat at EDG's existing geodetic entry boundary
+and supplies the maximum of the individual panel increments to heat planning,
 second-switch reevaluation, predictive security, and targeting energy bracketing.
-The passage total is frozen at the existing exit root, excluding coast heating.
+The passage total is frozen at the corresponding geodetic exit, excluding coast
+heating. A separate continuous callback uses the same frame, ephemeris time and
+altitude convention as EDG's passage gate. It only records heat snapshots; the
+original spherical callback still owns phase tolerances, the atmosphere mask,
+cache invalidation and thruster scheduling. Equal phase tolerances do not suppress
+the heat callback. These boundaries coincide on the equator but differ elsewhere
+on an oblate planet.
 It does not subtract the maximum baseline from the maximum current heat: different
 panels can carry the largest loads on different passages. Starting a fresh run
 inside the atmosphere uses its initial zero-integral reference. Direct hook users

@@ -101,7 +101,8 @@ using DifferentialEquations
         du.sc[1].pos[1] = -4000pi*sin(pi*t/10)
         du.sc[1].heat_loads .= [0.0,1.0,2.0]
     end
-    callback = SimulationModel.SimulationCallbacks.get_drag_state_callback(1)
+    callback = CallbackSet(SimulationModel.SimulationCallbacks.get_drag_state_callback(1),
+        SimulationModel.SimulationCallbacks.get_edg_heat_callback(1))
     problem = ODEProblem(analytic_passes!,copy(c.u),(0.0,40.0),c.p)
     sol = solve(problem,Tsit5();callback=callback,dtmax=0.1,reltol=1e-10,abstol=1e-10)
     entry2 = 20.0 + 10acos(0.75)/pi
@@ -117,5 +118,85 @@ using DifferentialEquations
         integration_tolerances=SimulationModel.IntegrationTolerances(
             dt_max_atmosphere=1.0,dt_max_orbit=1.0,reltol_atmosphere=1e-8,reltol_orbit=1e-8,
             abstol_atmosphere=1e-8,abstol_orbit=1e-8),))...)
-    @test SimulationModel.SimulationCallbacks._requires_drag_state_callback((),equal_args)
+    @test !SimulationModel.SimulationCallbacks._requires_drag_state_callback((),equal_args)
+    callbacks = SimulationModel.SimulationCallbacks.get_callbacks(1, (), equal_args)
+    heat_type = typeof(SimulationModel.SimulationCallbacks.get_edg_heat_callback(1))
+    @test any(cb -> cb isa heat_type, callbacks.continuous_callbacks)
+end
+
+
+@testset "EDG heat uses its geodetic passage at high latitude" begin
+    CH = SimulationModel.ControlHooks
+    CB = SimulationModel.SimulationCallbacks
+    for latitude in (60.0, 90.0, -90.0)
+        c = _edg_test_context(heat_load_limit_j_cm2=30.0)
+        planet = c.args.environment_model.planet
+        direction = SVector(cosd(latitude), 0.0, sind(latitude))
+        # Solve only the static geometric equation to give the analytic radial
+        # oscillator a known EDG entry radius. No atmospheric model is fitted.
+        lower, upper = planet.Rp_p + 150000.0, planet.Rp_e + 170000.0
+        for _ in 1:60
+            mid = (lower + upper) / 2
+            if CH.rtolatlong(mid * direction, planet)[1] < 160000.0
+                lower = mid
+            else
+                upper = mid
+            end
+        end
+        entry_radius = (lower + upper) / 2
+        fields = (; (key=>getfield(c.args,key) for key in fieldnames(typeof(c.args)))...)
+        args = SimulationModel.SimulationConfiguration(;merge(fields, (
+            integration_tolerances=SimulationModel.IntegrationTolerances(
+                dt_max_atmosphere=0.1, dt_max_orbit=0.1,
+                reltol_atmosphere=1e-10, reltol_orbit=1e-10,
+                abstol_atmosphere=1e-10, abstol_orbit=1e-10),))...)
+        p = SimulationModel.ODEParams{1}(args=args)
+        p.shared_buffers.et_start[] = c.p.shared_buffers.et_start[]
+        u = copy(c.u)
+        u.sc[1].pos .= (entry_radius + 10000.0) * direction
+        u.sc[1].heat_loads .= [0.0, 100.0, 200.0]
+        CH._edg_initialize_heat_accounting!(args, u, 0.0)
+        # The gate and bookkeeping must agree even in the shell between the
+        # old spherical callback and EDG's geodetic entry.
+        @test norm(u.sc[1].pos) - planet.Rp_e < 160000.0
+        @test CH._edg_heat_boundary_distance(u, p, 0.0, 1) > 0.0
+        env = CH._edg_environment_state(u, p, 0.0, 1)
+        @test !CH._edg_in_drag_passage(p, env)
+        @test CH._edg_heat_boundary_distance(u, p, 0.0, 1) ≈ env.altitude_m - 160000.0
+        function analytic_high_latitude!(du, u, p, t)
+            fill!(du, 0.0)
+            du.sc[1].pos .= (-4000pi*sin(pi*t/10)) * direction
+            du.sc[1].heat_loads .= [0.0, 1.0, 2.0]
+        end
+        # Both callbacks run together: the old spherical events must neither
+        # replace nor freeze the geodetic snapshots.
+        callback = CallbackSet(CB.get_drag_state_callback(1), CB.get_edg_heat_callback(1))
+        sol = solve(ODEProblem(analytic_high_latitude!, u, (0.0,40.0), p), Tsit5();
+            callback=callback, dtmax=0.1, reltol=1e-10, abstol=1e-10)
+        entry2 = 20.0 + 10acos(0.75)/pi
+        exit2 = 40.0 - 10acos(0.75)/pi
+        @test string(sol.retcode) == "Success"
+        @test c.state.heat_load_entry_j_cm2[1] ≈ [0.0,100+entry2,200+2entry2] atol=1e-5
+        @test c.state.heat_load_exit_j_cm2[1] ≈ [0.0,100+exit2,200+2exit2] atol=1e-5
+        @test CH._edg_pass_heat_load_for_links(sol.u[end].sc[1],(2,3),c.state,1) ≈ 2*(exit2-entry2) atol=1e-5
+        @test sol.u[end].sc[1].heat_loads ≈ [0.0,140.0,280.0] atol=1e-8
+        @test isempty(filter(x -> !isfinite(x), c.state.heat_load_entry_j_cm2[1]))
+        # A second solve genuinely starts within EDG's passage; its first exit
+        # freezes heat against the initial zero integral, without inventing an entry.
+        inside = copy(u)
+        inside.sc[1].pos .= (entry_radius - 10000.0) * direction
+        fill!(inside.sc[1].heat_loads, 0.0)
+        CH._edg_initialize_heat_accounting!(args, inside, 0.0)
+        function analytic_exit!(du, u, p, t)
+            fill!(du, 0.0)
+            du.sc[1].pos .= 1000.0 * direction
+            du.sc[1].heat_loads .= [0.0, 1.0, 2.0]
+        end
+        exit_sol = solve(ODEProblem(analytic_exit!, inside, (0.0,25.0), p), Tsit5();
+            callback=callback, dtmax=0.1, reltol=1e-10, abstol=1e-10)
+        @test c.state.heat_load_entry_j_cm2[1] == zeros(3)
+        @test c.state.heat_load_exit_j_cm2[1] ≈ [0.0,10.0,20.0] atol=1e-5
+        @test CH._edg_pass_heat_load_for_links(exit_sol.u[end].sc[1],(2,3),c.state,1) ≈ 20.0 atol=1e-5
+        @test exit_sol.u[end].sc[1].heat_loads ≈ [0.0,25.0,50.0] atol=1e-8
+    end
 end

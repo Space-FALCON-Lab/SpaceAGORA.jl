@@ -108,6 +108,14 @@ mutable struct AerobrakingEnergyDepletionState
     last_heat_load_j_cm2::Vector{Float64}
     last_dynamic_pressure_pa::Vector{Float64}
     last_structural_load_pa::Vector{Float64}
+    last_minimum_heat_rate_w_cm2::Vector{Float64}
+    last_minimum_structural_load_pa::Vector{Float64}
+    last_heat_rate_status::Vector{Symbol}
+    last_structural_load_status::Vector{Symbol}
+    last_heat_budget_status::Vector{Symbol}
+    heat_load_entry_j_cm2::Vector{Vector{Float64}}
+    heat_load_exit_j_cm2::Vector{Vector{Float64}}
+    last_pass_heat_load_j_cm2::Vector{Float64}
 end
 
 function AerobrakingEnergyDepletionState(; num_sats::Integer)
@@ -138,6 +146,14 @@ function AerobrakingEnergyDepletionState(; num_sats::Integer)
         fill(NaN, n),
         fill(NaN, n),
         fill(NaN, n),
+        fill(NaN, n),
+        fill(NaN, n),
+        fill(NaN, n),
+        fill(:unobserved, n),
+        fill(:unobserved, n),
+        fill(:unobserved, n),
+        [Float64[] for _ in 1:n],
+        [Float64[] for _ in 1:n],
         fill(NaN, n),
     )
 end
@@ -222,7 +238,7 @@ function _edg_run_target_energy_bracketing!(
     pos, vel, mass = _edg_pos_vel_mass(sc)
     spacecraft = p.args.dynamics_model.spacecraft[i]
     planet = p.args.environment_model.planet
-    heat_load = ctrl._edg_max_heat_load_for_links(sc, config.controlled_panel_links)
+    heat_load = ctrl._edg_pass_heat_load_for_links(sc, config.controlled_panel_links, state, i)
 
     low_drag, max_energy_depletion = ctrl._edg_targeting_bracket_outcomes(
         config,
@@ -240,12 +256,18 @@ function _edg_run_target_energy_bracketing!(
     energy_values = (low_drag.energy_jkg, max_energy_depletion.energy_jkg)
     energy_min, energy_max = extrema(energy_values)
     vacuum_exit = ctrl._edg_vacuum_drag_passage_exit(p, pos, vel, mass, t)
+    vacuum_exit.event_reached || error(
+        "EDG vacuum prediction did not reach outbound EI after $(vacuum_exit.propagation_time_s) s",
+    )
     vacuum_correction = ctrl._edg_vacuum_apoapsis_correction(
         p,
         vacuum_exit.position,
         vacuum_exit.velocity,
         mass,
         t + vacuum_exit.propagation_time_s,
+    )
+    vacuum_correction.event_reached || error(
+        "EDG vacuum prediction did not reach apoapsis after $(vacuum_correction.propagation_time_s) s",
     )
     target_periapsis = isfinite(vacuum_correction.periapsis_radius_m) ?
         vacuum_correction.periapsis_radius_m : low_drag.periapsis_radius_m

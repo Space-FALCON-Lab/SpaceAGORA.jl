@@ -13,6 +13,7 @@ module ControlHooks
     using ..AerodynamicModels: aerodynamic_coefficient_fM
     using ..GuidanceHooks: AerobrakingGuidanceInput, dispatch_aerobraking_guidance
     using ..GuidanceHooks: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
+    using ..GuidanceHooks: AerobrakingEnergyDepletionGuidanceModel
     using ..AerobrakingPolicy: AerobrakingPolicyConfig, DefaultAerobrakingPolicySelector
     using ..EnvironmentModels: getDensity
     using ..EphemeridesModels: ephemerides_requires_spice, planet_frame_lpi
@@ -41,6 +42,7 @@ module ControlHooks
     include(joinpath(@__DIR__, "struct_load_control.jl"))
     include(joinpath(@__DIR__, "heat_load_control.jl"))
     include(joinpath(@__DIR__, "targeting_control.jl"))
+    include(joinpath(@__DIR__, "edg_heat_accounting.jl"))
     include(joinpath(@__DIR__, "rpo_mpc", "lqmpc.jl"))
     include(joinpath(@__DIR__, "rpo_mpc", "rpo_control_types.jl"))
     include(joinpath(@__DIR__, "rpo_mpc", "thruster_allocator.jl"))

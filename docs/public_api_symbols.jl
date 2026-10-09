@@ -32,6 +32,16 @@ const PUBLIC_API_SECTIONS = [
         ]
     ),
     (
+        title = "Experimental Energy-Depletion Guidance",
+        items = [
+            (owner = :SpaceAGORA, symbol = :AerobrakingEnergyDepletionConfig, rendered = "SpaceAGORA.AerobrakingEnergyDepletionConfig"),
+            (owner = :SpaceAGORA, symbol = :AerobrakingEnergyDepletionState, rendered = "SpaceAGORA.AerobrakingEnergyDepletionState"),
+            (owner = :SpaceAGORA, symbol = :AerobrakingEnergyDepletionGuidanceModel, rendered = "SpaceAGORA.AerobrakingEnergyDepletionGuidanceModel"),
+            (owner = :SpaceAGORA, symbol = :AerobrakingEnergyDepletionControlModel, rendered = "SpaceAGORA.AerobrakingEnergyDepletionControlModel"),
+            (owner = :SpaceAGORA, symbol = :SolarPanelAngleOfAttackControlModel, rendered = "SpaceAGORA.SolarPanelAngleOfAttackControlModel")
+        ]
+    ),
+    (
         title = "No-GRAM and Baseline Models",
         items = [
             (owner = :SpaceAGORA, symbol = :NoAtmosphereModel, rendered = "SpaceAGORA.NoAtmosphereModel"),

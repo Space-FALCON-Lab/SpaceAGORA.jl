@@ -1015,11 +1015,8 @@ function _edg_solve_heat_load_switches(
     f_high = residual(high_k)
     f_low = residual(low_k)
     if f_high * f_low < 0.0
-        bracket = if config.heat_load_switch_solver == :closed_form
-            (0.0, 0.1)
-        else
-            (low_k, high_k)
-        end
+        # Brent must use the endpoints whose residuals bracketed the root.
+        bracket = (low_k, high_k)
         root_tolerance = config.heat_load_switch_solver == :tpbvp_integration ? 1e-3 : 1e-5
         k_sol = Roots.find_zero(residual, bracket, Roots.Brent(); rtol=root_tolerance)
         residual(k_sol)
@@ -1164,9 +1161,8 @@ function _edg_heat_load_security_required(
     mass = _edg_predict_mass(spacecraft, mass_state)
     track = _edg_closed_form_heat_load_trajectory(config, p, spacecraft, pos, vel, mass, t, env)
     low_profile = fill(config.min_alpha_rad, length(track.time))
-    qdot = _edg_profile_heat_rates(config, p, track, low_profile; heat_rate_control=false)
-    qdot[track.time .<= Float64(p.args.environment_model.planet.T)] .= 0.0
-    remaining_load = sum(qdot) * last(track.time) / length(track.time)
+    # The track starts at the current state: every sample belongs to the remainder.
+    remaining_load = _edg_profile_heat_load(config, p, track, low_profile; heat_rate_control=false)
     return heat_load_j_cm2 + remaining_load > config.heat_load_limit_j_cm2,
         t + last(track.time)
 end

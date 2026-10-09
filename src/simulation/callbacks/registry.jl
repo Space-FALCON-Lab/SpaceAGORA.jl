@@ -19,7 +19,7 @@ using ..AbstractTypes: AbstractPlanet, AbstractDensityModel
 using ..ConfigTypes: SaveData
 import ..ConfigTypes: GramTrackCache, VacuumPredictedGRAMCache
 import ..ConfigTypes: GramTrackCacheConfig, CallbackEnvConfig, PolicyDecisionEnvConfig
-using ..ControlHooks: calcControlEffect!
+using ..ControlHooks: calcControlEffect!, _edg_heat_states, _edg_heat_boundary_distance, _edg_capture_entry_heat!, _edg_capture_exit_heat!
 using ..GuidanceHooks: calcGuidanceEffect!
 using ..NavigationHooks: calcNavigationEffect!
 using ..SimConfig: SimulationConfiguration, MissionOrbits

@@ -164,12 +164,9 @@ function _edg_recompute_switches!(
                 (3.0 < remaining < 50.0 && since_reevaluation > 3.0) ||
                 (0.0 < remaining <= 3.0 && since_reevaluation > 0.8)
             )
-            degenerate_window_expired = config.heat_load_switch_solver == :tpbvp_integration &&
-                t >= switches[2] && switches[2] - switches[1] <= 2.0 &&
-                heat_load_j_cm2 < 0.98 * config.heat_load_limit_j_cm2 &&
-                since_reevaluation > 3.0
+            # Numerical plans remain cached for the passage; only closed form re-evaluates.
             if config.second_switch_reevaluation && config.heat_load_switch_solver == :closed_form &&
-                    (degenerate_window_expired || (start_reevaluation && reevaluation_due)) &&
+                    start_reevaluation && reevaluation_due &&
                     !state.heat_load_security_active[i]
                 reevaluation_mode = since_reevaluation > 3.0 ? 1 : 2
                 state.heat_load_switches_s[i] = _edg_recompute_second_heat_load_switch(
@@ -231,6 +228,25 @@ end
     return config.max_alpha_rad
 end
 
+# These are instantaneous model observations, not trajectory feasibility proofs.
+function _edg_constraint_status(enabled::Bool, limit::Float64, value::Float64, minimum_value::Float64)
+    enabled || return :disabled
+    limit == Inf && return :unbounded
+    isfinite(limit) && limit > 0.0 || return :invalid_limit
+    isfinite(value) && isfinite(minimum_value) || return :unobserved
+    value <= limit && return :within_limit
+    return minimum_value > limit ? :above_limit_at_minimum_angle : :command_above_limit
+end
+
+function _edg_heat_budget_status(config, heat_load_j_cm2::Float64)
+    :heat_load in config.max_energy_submodes || return :disabled
+    limit = config.heat_load_limit_j_cm2
+    limit == Inf && return :unbounded
+    isfinite(limit) && limit > 0.0 || return :invalid_limit
+    isfinite(heat_load_j_cm2) || return :unobserved
+    return heat_load_j_cm2 >= limit ? :exhausted : :available
+end
+
 function _edg_command_alpha!(
     model::AerobrakingEnergyDepletionControlModel,
     p::ODEParams,
@@ -240,7 +256,8 @@ function _edg_command_alpha!(
     base_alpha::Float64,
     heat_load_j_cm2::Float64,
     heat_load_low_drag_active::Bool,
-    i::Int,
+    i::Int;
+    pass_heat_load_j_cm2::Float64=heat_load_j_cm2,
 )
     config = model.config
     state = model.state
@@ -275,6 +292,11 @@ function _edg_command_alpha!(
         alpha = alpha_struct
     end
     alpha = clamp(alpha, config.min_alpha_rad, config.max_alpha_rad)
+    # Diagnostic only. The existing switch plan and optional predictive security
+    # mode own heat-load commands; cumulative telemetry is not a flight policy.
+    budget_status = _edg_heat_budget_status(config, pass_heat_load_j_cm2)
+    state.last_pass_heat_load_j_cm2[i] = pass_heat_load_j_cm2
+    state.last_heat_budget_status[i] = budget_status
     state.last_alpha_rad[i] = alpha
     state.last_alpha_heat_rate_rad[i] = alpha_hr
     state.last_alpha_structural_rad[i] = alpha_struct
@@ -299,6 +321,21 @@ function _edg_command_alpha!(
     )
     state.last_structural_load_pa[i] = env.dynamic_pressure * controlled_drag_area /
         max(reference_drag_area, eps(Float64))
+    minimum_drag_area = _energy_depletion_struct_drag_area(
+        spacecraft, env.temperature, env.molecular_speed_ratio,
+        model.aoa_effector.controlled_panel_links, config.min_alpha_rad, config,
+    )
+    state.last_minimum_heat_rate_w_cm2[i] = _edg_maxwellian_heat_rate(p, env, config.min_alpha_rad)
+    state.last_minimum_structural_load_pa[i] = env.dynamic_pressure * minimum_drag_area /
+        max(reference_drag_area, eps(Float64))
+    state.last_heat_rate_status[i] = _edg_constraint_status(
+        :heat_rate in config.max_energy_submodes, config.heat_rate_limit_w_cm2,
+        state.last_heat_rate_w_cm2[i], state.last_minimum_heat_rate_w_cm2[i],
+    )
+    state.last_structural_load_status[i] = _edg_constraint_status(
+        :structural_load in config.max_energy_submodes, config.structural_load_limit_pa,
+        state.last_structural_load_pa[i], state.last_minimum_structural_load_pa[i],
+    )
     return alpha
 end
 
@@ -339,10 +376,12 @@ function calcControlEffect!(
     spacecraft = p.args.dynamics_model.spacecraft[i]
     pos, vel, mass = _edg_control_pos_vel_mass(sc)
     heat_load = _edg_max_heat_load_for_links(sc, model.aoa_effector.controlled_panel_links)
-    _edg_recompute_switches!(model, p, env, spacecraft, pos, vel, mass, heat_load, Float64(t), i)
+    pass_heat_load = _edg_pass_heat_load_for_links(sc, model.aoa_effector.controlled_panel_links, state, i)
+    _edg_recompute_switches!(model, p, env, spacecraft, pos, vel, mass, pass_heat_load, Float64(t), i)
     heat_load_low_drag_active = _edg_heat_load_low_drag_active(model, Float64(t), i)
     base_alpha = _edg_base_alpha(model, Float64(t), i)
-    alpha = _edg_command_alpha!(model, p, u, env, spacecraft, base_alpha, heat_load, heat_load_low_drag_active, i)
+    alpha = _edg_command_alpha!(model, p, u, env, spacecraft, base_alpha, heat_load, heat_load_low_drag_active, i;
+        pass_heat_load_j_cm2=pass_heat_load)
     _apply_solar_panel_aoa!(model.aoa_effector, spacecraft, alpha)
     return nothing
 end
@@ -424,6 +463,7 @@ function _edg_vacuum_apoapsis_correction(
         pi * sqrt(semi_major_axis^3 / planet.μ) : 0.0
     max_duration = max(20_000.0, 1.25 * half_period)
     elapsed = 0.0
+    event_reached = false
 
     while elapsed < max_duration
         acceleration(r, v, tau) = _edg_prediction_gravity_acceleration(p, r, v, mass, t0 + tau)
@@ -441,6 +481,7 @@ function _edg_vacuum_apoapsis_correction(
         elapsed += dt
         pos, vel = next_pos, next_vel
         if radial_velocity > 0.0 && next_radial_velocity <= 0.0
+            event_reached = true
             break
         end
         radial_velocity = next_radial_velocity
@@ -453,6 +494,7 @@ function _edg_vacuum_apoapsis_correction(
         periapsis_radius_m=metrics.periapsis,
         apoapsis_radius_m=metrics.apoapsis,
         propagation_time_s=elapsed,
+        event_reached=event_reached,
     )
 end
 
@@ -471,6 +513,7 @@ function _edg_vacuum_drag_passage_exit(
     elapsed = 0.0
     max_duration = 2_000.0
     passed_periapsis = dot(pos, vel) >= 0.0
+    event_reached = false
 
     while elapsed < max_duration
         acceleration(r, v, tau) = _edg_prediction_gravity_acceleration(p, r, v, mass, t0 + tau)
@@ -491,10 +534,13 @@ function _edg_vacuum_drag_passage_exit(
             et = _edg_ephemeris_time(p, t0 + elapsed)
             pos_pp, _ = r_intor_p!(pos, vel, planet, et, p.args.environment_model.ephemerides_model)
             altitude_m = rtolatlong(pos_pp, planet)[1]
-            altitude_m >= exit_altitude_m && break
+            if altitude_m >= exit_altitude_m
+                event_reached = true
+                break
+            end
         end
     end
-    return (position=pos, velocity=vel, propagation_time_s=elapsed)
+    return (position=pos, velocity=vel, propagation_time_s=elapsed, event_reached=event_reached)
 end
 
 @inline function _edg_ephemeris_time(p::ODEParams, t_abs::Float64)::Float64

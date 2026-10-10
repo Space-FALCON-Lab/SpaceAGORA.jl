@@ -443,6 +443,14 @@ function _get_harmonics_batch_pool(
     lock(_HARMONICS_BATCH_POOL_LOCK) do
         pool = get(_HARMONICS_BATCH_POOL, key, nothing)
         if pool === nothing || length(pool) < n_workers || size(pool[1].A, 1) < batch_size
+            # Grow, never shrink either dimension: the per-region width search
+            # alternates widths, and rebuilding on every switch would allocate
+            # the whole pool each time. ponytail: keeps the widest x tallest
+            # pool for the model's lifetime; a per-width cache if memory matters.
+            if pool !== nothing
+                n_workers = max(n_workers, length(pool))
+                batch_size = max(batch_size, size(pool[1].A, 1))
+            end
             _HARMONICS_BATCH_POOL[key] = [_make_harmonics_batch_workspace(model, batch_size) for _ in 1:n_workers]
         end
     end

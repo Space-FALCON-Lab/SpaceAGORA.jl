@@ -28,7 +28,7 @@ export Initial_condition, Aerodynamics, Engines, Model, Cnf, Solution, ODEParams
 export SaveCache, SaveData
 export SRPSunEphemerisCache, NBodyEphemerisCache, PlanetFrameEphemerisCache, SpiceRuntimeCounters, SpiceRhsMemo
 export GramTrackCache, VacuumPredictedGRAMCache, GramDensityPerturbationState, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScratchWorkspace
-export PolicyDecisionEnvConfig, GramTrackCacheConfig, CallbackEnvConfig, RhsPlanEnvConfig
+export PolicyDecisionEnvConfig, GramTrackCacheConfig, CallbackEnvConfig, RhsPlanEnvConfig, RhsRegionTuner
 export AbstractPolicyContext
 export RhsEffectorDecision, RhsExecutionPlan
     @kwdef struct Mission
@@ -798,6 +798,21 @@ export RhsEffectorDecision, RhsExecutionPlan
     # specialization of the whole RHS/effector call graph per distinct
     # satellite count -- ruinous for constellation-size sweeps (see
     # benchmarks/studies/gram_mars_fix_and_constellation_scaling).
+    # Width chosen for one parallel region of the RHS (see _rhs_region_width in
+    # dynamics_rhs.jl): the widths tried so far, the fastest, and how many calls
+    # have run since the last search.
+    mutable struct RhsRegionTuner
+        allotment::Int
+        width::Int
+        best_width::Int
+        best_ns::Float64
+        full_ns::Float64
+        samples::Vector{Int64}
+        searching::Bool
+        calls::Int
+    end
+    RhsRegionTuner(allotment::Int) = RhsRegionTuner(allotment, allotment, allotment, Inf, Inf, Int64[], true, 0)
+
     @kwdef struct SharedBuffers
         n_sats::Int
         densities::Vector{Float64} = zeros(Float64, n_sats)
@@ -869,6 +884,10 @@ export RhsEffectorDecision, RhsExecutionPlan
         rhs_atmosphere_prefilled::Base.RefValue{Bool} = Ref(false)
         rhs_solar_prefilled::Base.RefValue{Bool} = Ref(false)
         rhs_harmonics_batch_pool::Base.RefValue{Any} = Ref{Any}(nothing)
+        # Per-region width search, on only under the adaptive policy and only
+        # once the pre-solve calibration is done (execution.jl).
+        rhs_region_tuning::Base.RefValue{Bool} = Ref(false)
+        rhs_region_tuners::Dict{Symbol, RhsRegionTuner} = Dict{Symbol, RhsRegionTuner}()
         # Per-satellite atmosphere presence flag, maintained by get_drag_state_callback.
         # The timestamp is NaN until the callback has staged a value for a known
         # integrator time, so RHS code can distinguish current state from defaults.

@@ -342,3 +342,92 @@ end
     # Stop the spin-barrier workers so they do not hold threads for later tests.
     PP._destroy_persistent_foreach_scope!(PP._active_policy_scope_id())
 end
+
+# The per-region width search halves the width while the region keeps within
+# the stop ratio of its best time, then keeps the fastest width only if it beats
+# the full allotment by the margin.
+@testset "Per-region width search" begin
+    T = SpaceAGORA.SimulationModel.RhsRegionTuner
+    feed!(t, cost) = for _ in 1:RHSDA_SE._REGION_SAMPLES
+        RHSDA_SE._region_tuner_observe!(t, Int64(cost(t.width)))
+    end
+    # Dispatch dominated: every halving is faster, so the search runs to serial.
+    t = T(16)
+    while t.searching
+        feed!(t, w -> 1000 + 100 * w)
+    end
+    @test t.width == 1
+    # Work dominated: halving doubles the time, so it stops after one probe.
+    t = T(16)
+    while t.searching
+        feed!(t, w -> 160_000 ÷ w)
+    end
+    @test t.width == 16
+    # Interior optimum of work/w + d*w at w = 4.
+    t = T(32)
+    while t.searching
+        feed!(t, w -> 16_000 ÷ w + 1000 * w)
+    end
+    @test t.width == 4
+    # A narrower width within the margin does not displace the allotment.
+    t = T(8)
+    while t.searching
+        feed!(t, w -> w == 8 ? 1000 : 980)
+    end
+    @test t.width == 8
+    # The search re-runs after the reprobe interval.
+    for _ in 1:RHSDA_SE._REGION_REPROBE
+        RHSDA_SE._region_tuner_observe!(t, Int64(1))
+    end
+    @test t.searching && t.width == 8
+end
+
+# With the search on, the width of every region changes from call to call
+# while it searches; the derivative must not.
+@testset "Per-region width search leaves the RHS bit-identical" begin
+    planet = Earth()
+    gravity_file = joinpath(normpath(joinpath(@__DIR__, "..", "..", "..")),
+        "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+    model = GravitationalHarmonicsModel(20, 20, gravity_file, planet)
+    n = 37
+    args = _rhs_direct_assembly_config(n_sats=n, effectors=(model, InverseSquaredGravityModel()))
+    u = RHSDA_SE.build_initial_conditions(args)
+    plan = (
+        mode=:flat_constellation_effector_queue, allotment=max(2, Threads.nthreads()),
+        scheduler=:static, dominant_axis=:flat_effector, policy_applied=false,
+        effector_decision=(use_threads=false, allotment=1, mode=:off, policy_applied=false),
+    )
+    for effectors in ((model,), (model, InverseSquaredGravityModel()))
+        a = _rhs_direct_assembly_config(n_sats=n, effectors=effectors)
+        fresh_p() = begin
+            p = ODEParams(n_sats=n, args=a)
+            p.is_active .= true
+            p.shared_buffers.rhs_env_config[] = withenv(
+                "SPACEAGORA_RHS_REDUCTION_MIN_SATS_PER_WORKER" => "1",
+            ) do
+                RHSDA_SE._snapshot_rhs_plan_env_config()
+            end
+            p
+        end
+        p_ref = fresh_p()
+        ref = zero(u)
+        withenv("SPACEAGORA_RHS_REDUCTION_MIN_SATS_PER_WORKER" => "1") do
+            RHSDA_SE._spacecraft_dynamics_flat_constellation_effector_queue!(ref, u, p_ref, 30.0, plan; rhs_kind=:full)
+        end
+        p = fresh_p()
+        p.shared_buffers.rhs_region_tuning[] = true
+        widths = Set{Int}()
+        for _ in 1:60
+            du = fill!(zero(u), 99.0)
+            withenv("SPACEAGORA_RHS_REDUCTION_MIN_SATS_PER_WORKER" => "1") do
+                RHSDA_SE._spacecraft_dynamics_flat_constellation_effector_queue!(du, u, p, 30.0, plan; rhs_kind=:full)
+            end
+            @test isequal(ComponentArrays.getdata(du), ComponentArrays.getdata(ref))
+            for t in values(p.shared_buffers.rhs_region_tuners)
+                push!(widths, t.width)
+            end
+        end
+        @test !isempty(p.shared_buffers.rhs_region_tuners)
+        Threads.nthreads() > 1 && @test length(widths) > 1
+    end
+end

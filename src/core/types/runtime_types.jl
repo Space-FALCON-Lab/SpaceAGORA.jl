@@ -791,16 +791,9 @@ export RhsEffectorDecision, RhsExecutionPlan
         return out
     end
 
-    # A struct to hold the data shared between the callback and the integrator.
-    # n_sats is a plain runtime field (not a type parameter): none of these
-    # buffers are StaticArrays sized by it, so making it part of the type
-    # bought no runtime performance and instead forced a fresh JIT
-    # specialization of the whole RHS/effector call graph per distinct
-    # satellite count -- ruinous for constellation-size sweeps (see
-    # benchmarks/studies/gram_mars_fix_and_constellation_scaling).
-    # Width chosen for one parallel region of the RHS (see _rhs_region_width in
-    # dynamics_rhs.jl): the widths tried so far, the fastest, and how many calls
-    # have run since the last search.
+    # Width chosen for one parallel region of the RHS (see _rhs_region in
+    # dynamics_rhs.jl): the widths tried so far, the fastest, how many calls
+    # have run since the last search, and the width the latest call ran at.
     mutable struct RhsRegionTuner
         allotment::Int
         width::Int
@@ -810,9 +803,17 @@ export RhsEffectorDecision, RhsExecutionPlan
         samples::Vector{Int64}
         searching::Bool
         calls::Int
+        last_width::Int
     end
-    RhsRegionTuner(allotment::Int) = RhsRegionTuner(allotment, allotment, allotment, Inf, Inf, Int64[], true, 0)
+    RhsRegionTuner(allotment::Int) = RhsRegionTuner(allotment, allotment, allotment, Inf, Inf, Int64[], true, 0, allotment)
 
+    # A struct to hold the data shared between the callback and the integrator.
+    # n_sats is a plain runtime field (not a type parameter): none of these
+    # buffers are StaticArrays sized by it, so making it part of the type
+    # bought no runtime performance and instead forced a fresh JIT
+    # specialization of the whole RHS/effector call graph per distinct
+    # satellite count -- ruinous for constellation-size sweeps (see
+    # benchmarks/studies/gram_mars_fix_and_constellation_scaling).
     @kwdef struct SharedBuffers
         n_sats::Int
         densities::Vector{Float64} = zeros(Float64, n_sats)

@@ -877,6 +877,9 @@ function _rhs_region_width_enabled()::Bool
     raw = lowercase(strip(_engine_env_get("SPACEAGORA_RHS_REGION_WIDTH", "auto")))
     raw in ("off", "0", "false", "no") && return false
     raw in ("on", "1", "true", "yes") && return true
+    raw == "auto" || throw(ArgumentError(
+        "SPACEAGORA_RHS_REGION_WIDTH must be auto, on, or off; got '$raw'"
+    ))
     return SimulationModel.ParallelPolicy.adaptive_policy_enabled()
 end
 
@@ -919,9 +922,20 @@ end
         sb.rhs_region_tuners[source] = t = SimulationModel.RhsRegionTuner(allotment)
     end
     started = time_ns()
+    t.last_width = t.width
     result = f(t.width)
     _region_tuner_observe!(t, Int64(time_ns() - started))
     return result
+end
+
+# Whether the latest call of region `source` ran at the allotment it was given.
+# The cost model and the policy record observations under the plan's allotment,
+# so a call the search ran narrower must not be recorded as one at full width.
+@inline function _rhs_region_ran_full(p, source::Symbol)::Bool
+    sb = p.shared_buffers
+    sb.rhs_region_tuning[] || return true
+    t = get(sb.rhs_region_tuners, source, nothing)
+    return t === nothing || t.last_width >= t.allotment
 end
 
 @inline _batchable_effector(::Any)::Bool = false
@@ -1243,7 +1257,7 @@ function _accumulate_harmonics_flat_batch!(
             pert._harmonics_flat_batch_kernel!(
                 slots, eff_idx, model, sc_state, work_items, item_start, item_end, lpi, pool[w],
             )
-            # The fused RHS (`_fused_harmonics_direct_rhs!`) finishes the slice's
+            # The fused RHS finishes the slice's
             # spacecraft here, on the same worker, instead of in two more regions.
             after_slice === nothing || after_slice(item_start, item_end, n_items)
             return nothing
@@ -1267,7 +1281,7 @@ function _accumulate_harmonics_flat_batch!(
             end
         end
     end
-    if needs_timing
+    if needs_timing && _rhs_region_ran_full(p, :rhs_harmonics_batch)
         elapsed_ns = Int64(time_ns() - started_ns)
         _update_effector_cost_model!(p.shared_buffers, max(1, active_sats), elapsed_ns, plan.allotment)
         SimulationModel.ParallelPolicy.record_policy_observation!(
@@ -1433,7 +1447,7 @@ function _accumulate_aero_flat_batch!(
         end
         nw
     end
-    if needs_timing
+    if needs_timing && _rhs_region_ran_full(p, :rhs_aero_batch)
         elapsed_ns = Int64(time_ns() - started_ns)
         _update_effector_cost_model!(p.shared_buffers, max(1, n_items), elapsed_ns, plan.allotment)
         SimulationModel.ParallelPolicy.record_policy_observation!(
@@ -1688,10 +1702,11 @@ function _accumulate_dynamic_effectors_flat_slots!(
         if needs_timing
             packet_overhead_ns += Int64(time_ns() - packet_prepare_started_ns)
         end
+        n_packets = packet_count   # assigned once, so the closure below does not box it
 
         _rhs_region(p, :rhs_flat_queue_packets, plan.allotment) do allotment
             SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(
-                :rhs_flat_queue_packets, packet_count, allotment; scheduler=_dispatch_scheduler(p, plan)
+                :rhs_flat_queue_packets, n_packets, allotment; scheduler=_dispatch_scheduler(p, plan)
             ) do worker_id, packet_idx
                 packet_started_ns = needs_timing ? time_ns() : UInt64(0)
                 @inbounds for item_idx in packet_starts[packet_idx]:packet_ends[packet_idx]
@@ -1768,21 +1783,23 @@ function _accumulate_dynamic_effectors_flat_slots!(
     # access sequential.
     if needs_timing
         elapsed_ns = Int64(time_ns() - started_ns)
-        _update_effector_cost_model!(
-            p.shared_buffers,
-            max(1, count_items),
-            elapsed_ns,
-            plan.allotment,
-        )
-        SimulationModel.ParallelPolicy.record_policy_observation!(
-            :dynamic_effectors;
-            mode=:flat_constellation_effector_queue,
-            num_items=max(1, count_items),
-            use_threads=true,
-            elapsed_ns=elapsed_ns,
-            env=_policy_env_config(p),
-            ctx=SimulationModel.ParallelPolicy.policy_context_hint(p),
-        )
+        if _rhs_region_ran_full(p, exec_plan.use_packets ? :rhs_flat_queue_packets : :rhs_flat_queue)
+            _update_effector_cost_model!(
+                p.shared_buffers,
+                max(1, count_items),
+                elapsed_ns,
+                plan.allotment,
+            )
+            SimulationModel.ParallelPolicy.record_policy_observation!(
+                :dynamic_effectors;
+                mode=:flat_constellation_effector_queue,
+                num_items=max(1, count_items),
+                use_threads=true,
+                elapsed_ns=elapsed_ns,
+                env=_policy_env_config(p),
+                ctx=SimulationModel.ParallelPolicy.policy_context_hint(p),
+            )
+        end
         if exec_plan.use_packets
             feedback_started_ns = time_ns()
             _update_rhs_flat_packet_cost_model!(
@@ -2200,10 +2217,11 @@ function _spacecraft_dynamics_flat_constellation_effector_queue!(
         slots = p.shared_buffers.rhs_flat_effector_partials[]
         work_items = p.shared_buffers.rhs_flat_work_items[]   # filled in place by the pre-pass
         # Everything the finisher needs, behind ONE Ref. The channel pool boxes
-        # one request per worker per call, closure included, and the model and
-        # ODEParams are immutable structs that hold the planet inline, so
-        # capturing them directly copied them into every request (about 17 kB
-        # per worker per call, measured with Profile.Allocs). Suspected, not
+        # one request per worker per call, closure included, and the model
+        # (and, before ODEParams became mutable, ODEParams) holds the planet
+        # inline, so capturing them directly copied them into every request
+        # (about 17 kB per worker per call, measured with Profile.Allocs; the
+        # harmonics pre-pass closure still captures the model this way). Suspected, not
         # proven: that per-worker allocation during the wake is what made the
         # fused region's wake grow at 16 threads. A Ref keeps the closure
         # pointer-sized and the captured state concretely typed.

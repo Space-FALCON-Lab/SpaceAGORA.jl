@@ -382,6 +382,28 @@ end
     @test t.searching && t.width == 8
 end
 
+@testset "Per-region width search labels its observations" begin
+    T = SpaceAGORA.SimulationModel.RhsRegionTuner
+    fake(tuning) = (; shared_buffers=(; rhs_region_tuning=Ref(tuning), rhs_region_tuners=Dict{Symbol, T}()))
+    p = fake(true)
+    # The first samples run at the full allotment; once the search narrows the
+    # region, its calls must not be recorded as full-width observations.
+    for _ in 1:RHSDA_SE._REGION_SAMPLES
+        RHSDA_SE._rhs_region(w -> nothing, p, :probe, 8)
+        @test RHSDA_SE._rhs_region_ran_full(p, :probe)
+    end
+    RHSDA_SE._rhs_region(w -> nothing, p, :probe, 8)
+    @test p.shared_buffers.rhs_region_tuners[:probe].last_width < 8
+    @test !RHSDA_SE._rhs_region_ran_full(p, :probe)
+    # Search off, or a region never run: every observation is at full width.
+    @test RHSDA_SE._rhs_region_ran_full(fake(false), :probe)
+    @test RHSDA_SE._rhs_region_ran_full(fake(true), :never_run)
+    # An unrecognised setting is an error, not a silent "auto".
+    withenv("SPACEAGORA_RHS_REGION_WIDTH" => "8") do
+        @test_throws ArgumentError RHSDA_SE._rhs_region_width_enabled()
+    end
+end
+
 # With the search on, the width of every region changes from call to call
 # while it searches; the derivative must not.
 @testset "Per-region width search leaves the RHS bit-identical" begin

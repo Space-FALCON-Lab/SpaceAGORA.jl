@@ -193,4 +193,34 @@ end
     budget = Base.JLOptions().code_coverage == 0 ? 64 : 4096
     @test bytes <= budget * repetitions
 end
+# The time argument varies per call here, as it does in a solve, so a boxed
+# Float64 at the dispatch boundary cannot be served from a constant.
+@noinline function readout_batch_t!(p, state, forces, torques, wheels, repetitions)
+    checksum = 0.0
+    for k in 1:repetitions
+        fill!(forces, 0.0); fill!(torques, 0.0); fill!(wheels, 0.0)
+        i = mod1(k, p.n_sats)
+        rate = SE._accumulate_control_effectors!(forces, torques, wheels, state, p, i, 0.5 * k, false)
+        checksum += forces[1] + torques[1] + wheels[1] + rate
+    end
+    return checksum
+end
+function readout_allocated_t(p, state, forces, torques, wheels, repetitions, checksum)
+    return @allocated checksum[] = readout_batch_t!(p, state, forces, torques, wheels, repetitions)
+end
+@testset "empty control model returns before the dispatch boundary" begin
+    # A constellation without controllers must not pay the per-spacecraft
+    # runtime dispatch: no boxed time argument, and the caller's accumulators
+    # stay where they are. Unlike the 32-manager bound above, this one is zero.
+    p = readout_params((); n_sats=4)
+    state = Float64[]
+    f, tq, rw = MVector{3,Float64}(ZERO3), MVector{3,Float64}(ZERO3), MVector{3,Float64}(ZERO3)
+    checksum = Ref(0.0)
+    repetitions = 64
+    readout_batch_t!(p, state, f, tq, rw, repetitions)
+    readout_allocated_t(p, state, f, tq, rw, repetitions, checksum)
+    bytes = readout_allocated_t(p, state, f, tq, rw, repetitions, checksum)
+    @test checksum[] == 0.0
+    @test bytes == 0 || Base.JLOptions().code_coverage != 0
+end
 end # module ControlReadoutTests

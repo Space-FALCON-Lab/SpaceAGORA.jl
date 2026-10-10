@@ -291,10 +291,37 @@ end
     # all three hook results for every controller during every RHS evaluation.
     # Pass the ControlModel itself, which an abstractly typed field already
     # holds by reference; reading its tuple out here would box the tuple.
+    #
+    # With no control effectors there is nothing to add, and the dispatch alone
+    # costs a boxed argument per spacecraft per evaluation. A type check on the
+    # field allocates nothing, so the empty model returns before the boundary.
+    p.args.control_model isa SimulationModel.ControlModel{Tuple{}} && return 0.0
     return _accumulate_control_effectors_from_model!(
         forces, torques, rw_torque_body, sc_view, p, sat_idx, t, debug_control,
         p.args.control_model,
     )
+end
+
+# Control effectors for one spacecraft of the RHS assembly: the mass rate and
+# the body-frame wheel torque. The wheel accumulator is created only when there
+# are controllers. Passed into the runtime-dispatched controller call it
+# escapes and is heap-allocated, so creating it unconditionally cost one
+# allocation per spacecraft per evaluation even with no controllers (about
+# 0.87 GB per solve on a 4096-spacecraft constellation).
+@inline function _control_effectors_with_wheels!(
+    forces::MVector{3, Float64},
+    torques::MVector{3, Float64},
+    sc_view,
+    p,
+    sat_idx::Int,
+    t::Float64,
+    debug_control::Bool,
+)::Tuple{Float64, SVector{3, Float64}}
+    p.args.control_model isa SimulationModel.ControlModel{Tuple{}} &&
+        return (0.0, SVector{3, Float64}(0.0, 0.0, 0.0))
+    rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
+    mass_rate = _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, sat_idx, t, debug_control)
+    return (mass_rate, SVector{3, Float64}(rw_torque_body))
 end
 
 _accumulate_control_effectors_from_model!(
@@ -2336,11 +2363,10 @@ end
             end
             _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
         else
-            rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
-            mass_rate = if rhs_kind == :explicit || rhs_kind == :full
-                _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, i, t, debug_control)
+            mass_rate, rw_torque_body = if rhs_kind == :explicit || rhs_kind == :full
+                _control_effectors_with_wheels!(forces, torques, sc_view, p, i, t, debug_control)
             else
-                0.0
+                (0.0, SVector{3, Float64}(0.0, 0.0, 0.0))
             end
             heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                 p,
@@ -2712,8 +2738,7 @@ function _spacecraft_dynamics_dispatch!(du::ComponentVector, u::ComponentVector,
                 forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
-                rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
-                mass_rate = _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, i, t, debug_control)
+                mass_rate, rw_torque_body = _control_effectors_with_wheels!(forces, torques, sc_view, p, i, t, debug_control)
                 _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
@@ -2759,8 +2784,7 @@ function _spacecraft_dynamics_dispatch!(du::ComponentVector, u::ComponentVector,
                 forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
-                rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
-                mass_rate = _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, i, t, debug_control)
+                mass_rate, rw_torque_body = _control_effectors_with_wheels!(forces, torques, sc_view, p, i, t, debug_control)
                 _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
@@ -3086,8 +3110,7 @@ function spacecraft_dynamics_explicit_remainder!(du::ComponentVector, u::Compone
                 forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors_partitioned!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision, :explicit)
-                rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
-                mass_rate = _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, i, t, debug_control)
+                mass_rate, rw_torque_body = _control_effectors_with_wheels!(forces, torques, sc_view, p, i, t, debug_control)
                 _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
@@ -3133,8 +3156,7 @@ function spacecraft_dynamics_explicit_remainder!(du::ComponentVector, u::Compone
                 forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors_partitioned!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision, :explicit)
-                rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
-                mass_rate = _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, i, t, debug_control)
+                mass_rate, rw_torque_body = _control_effectors_with_wheels!(forces, torques, sc_view, p, i, t, debug_control)
                 _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
@@ -3190,8 +3212,7 @@ function spacecraft_dynamics_fast_control!(du::ComponentVector, u::ComponentVect
                 du_view = sc_du[i]
                 forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-                rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
-                mass_rate = _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, i, t, debug_control)
+                mass_rate, rw_torque_body = _control_effectors_with_wheels!(forces, torques, sc_view, p, i, t, debug_control)
                 _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
 
                 SimulationModel.DynamicsTranslational.assign_control_only_translational_rhs!(
@@ -3229,8 +3250,7 @@ function spacecraft_dynamics_fast_control!(du::ComponentVector, u::ComponentVect
                 du_view = sc_du[i]
                 forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-                rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
-                mass_rate = _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, i, t, debug_control)
+                mass_rate, rw_torque_body = _control_effectors_with_wheels!(forces, torques, sc_view, p, i, t, debug_control)
                 _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
 
                 SimulationModel.DynamicsTranslational.assign_control_only_translational_rhs!(

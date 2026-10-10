@@ -710,7 +710,14 @@ function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan;
         # for real) so a newly-added worker's large one-time JIT/specialization
         # cost (see ensure_process_workers!'s docstring) is paid here, once,
         # rather than silently inside this call's own timed dispatch below.
-        worker_ids = ensure_process_workers!(pool, worker_count; warmup_fn=() -> f(first(spec.seeds)))
+        # PROCESS_WARMUP lets a caller swap in a cheaper representative call,
+        # or skip the warm-up, for campaigns whose samples are long.
+        warm = PROCESS_WARMUP[]
+        warmup_fn = warm === nothing ? (() -> f(first(spec.seeds))) : warm === false ? nothing : warm
+        # The implicit warm-up repeats the same sample, which may own output
+        # or checkpoint files. Only an explicit custom warm-up opts into overlap.
+        worker_ids = ensure_process_workers!(pool, worker_count; warmup_fn=warmup_fn,
+                                             warmup_concurrent=(warm !== nothing))
         active_workers = worker_ids[1:min(worker_count, length(worker_ids))]
         # Mixed dispatch: the coordinator's spare threads take samples from the
         # same queue as the workers. Their inner budget is their share of this

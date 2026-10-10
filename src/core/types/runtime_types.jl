@@ -997,7 +997,15 @@ export RhsEffectorDecision, RhsExecutionPlan
     # constructor below (with defaults/validation) is the only public API and
     # has a genuinely different signature (0 positional args vs. 6), so the
     # two coexist without conflict.
-    struct ODEParams{A <: SimulationConfiguration}
+    #
+    # Mutable with every field `const`, so it lives on the heap and is passed
+    # by reference. As an immutable it was stored inline, about 2.4 KB with the
+    # whole SimulationConfiguration, and every runtime-dispatched call or
+    # closure that took `p` copied it to the heap: once per spacecraft per RHS
+    # evaluation at the control-effector barrier, about 40% of a coupled solve's
+    # allocation. `const` keeps the fields as fixed as before, so the compiler
+    # may still hoist their loads.
+    mutable struct ODEParams{A <: SimulationConfiguration}
         # m::Model = Model()                      # Model struct
         # cnf::Cnf = Cnf()            # Configuration parameters
         # solution::Solution = Solution() # Solution struct
@@ -1012,12 +1020,12 @@ export RhsEffectorDecision, RhsExecutionPlan
         # gram::Any = nothing              # GRAM object
         # numberofpassage::Int64 = 0       # Current passage number
         # orientation_sim::Bool = false    # Flag for orientation simulation
-        n_sats::Int
-        args::A # Arguments dictionary
-        shared_buffers::SharedBuffers # Shared buffers for callback and integrator
-        is_active::Vector{Bool} # Vector to track which satellites are still active in the simulation
-        orbit_counter::Vector{Int64} # Counter for the number of orbits completed
-        save_cache::SaveCache # Cache for saving results
+        const n_sats::Int
+        const args::A # Arguments dictionary
+        const shared_buffers::SharedBuffers # Shared buffers for callback and integrator
+        const is_active::Vector{Bool} # Vector to track which satellites are still active in the simulation
+        const orbit_counter::Vector{Int64} # Counter for the number of orbits completed
+        const save_cache::SaveCache # Cache for saving results
     end
 
     function ODEParams(;

@@ -35,18 +35,15 @@ end
     dynamic_effectors::Tuple,
     partition::Symbol,
 )::Bool
-    return any(_effector_in_partition(effector, partition) && _wrench_method_available(effector) for effector in dynamic_effectors)
+    # `any(f, tuple)` unrolls over the heterogeneous tuple; a generator boxes it.
+    return any(e -> _effector_in_partition(e, partition) && _wrench_method_available(e), dynamic_effectors)
 end
 
 @inline function _partition_selected_count(
     dynamic_effectors::Tuple,
     partition::Symbol,
 )::Int
-    count = 0
-    @inbounds for effector in dynamic_effectors
-        count += _effector_in_partition(effector, partition) ? 1 : 0
-    end
-    return count
+    return count(e -> _effector_in_partition(e, partition), dynamic_effectors)
 end
 
 # Type-stable replacement for `for effector in dynamic_effectors`.
@@ -159,7 +156,9 @@ end
         (penv === nothing || !penv.policy_v2 || sat_idx == 1)
     effector_started_ns = needs_timing ? time_ns() : UInt64(0)
     n_effectors = length(dynamic_effectors)
-    needs_state_sample = any(_wrench_method_available(effector) for effector in dynamic_effectors)
+    # `any(f, tuple)` unrolls over the heterogeneous tuple; a generator over it
+    # does not infer and boxed the whole effector tuple on every call.
+    needs_state_sample = any(_wrench_method_available, dynamic_effectors)
     state_sample = if needs_state_sample
         spacecraft = p.args.dynamics_model.spacecraft[sat_idx]
         build_state_sample(sc_view, spacecraft, p.args.mission_configuration.orientation_sim)
@@ -290,11 +289,21 @@ end
     # SimulationConfiguration stores ControlModel without its tuple parameter.
     # Cross that type-erased boundary once per spacecraft, rather than boxing
     # all three hook results for every controller during every RHS evaluation.
-    return _accumulate_control_effectors_from_tuple!(
+    # Pass the ControlModel itself, which an abstractly typed field already
+    # holds by reference; reading its tuple out here would box the tuple.
+    return _accumulate_control_effectors_from_model!(
         forces, torques, rw_torque_body, sc_view, p, sat_idx, t, debug_control,
-        p.args.control_model.control_effectors,
+        p.args.control_model,
     )
 end
+
+_accumulate_control_effectors_from_model!(
+    forces, torques, rw_torque_body, sc_view, p, sat_idx::Int, t::Float64, debug_control::Bool,
+    control_model::SimulationModel.ControlModel,
+)::Float64 = _accumulate_control_effectors_from_tuple!(
+    forces, torques, rw_torque_body, sc_view, p, sat_idx, t, debug_control,
+    control_model.control_effectors,
+)
 
 function _accumulate_control_effectors_from_tuple!(
     forces::MVector{3, Float64},
@@ -1495,7 +1504,7 @@ function _accumulate_dynamic_effectors_flat_slots!(
     _ensure_rhs_effector_cost_model!(p.shared_buffers, n_effectors)
 
     needs_state_sample = if partition === nothing
-        any(_wrench_method_available(effector) for effector in dynamic_effectors) ||
+        any(_wrench_method_available, dynamic_effectors) ||
             _has_any_batchable_effector(dynamic_effectors)
     else
         _partition_needs_state_sample(dynamic_effectors, partition)

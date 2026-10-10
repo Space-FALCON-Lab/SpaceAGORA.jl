@@ -534,18 +534,18 @@ end
 @inline _dynamic_effector_threadsafe(::SimulationModel.AerodynamicCoefficientfM)::Bool = true
 @inline _dynamic_effector_threadsafe(::SimulationModel.AerodynamicCoefficientMeshSurrogate)::Bool = true
 
+# Box and mesh aerodynamic effectors write the same per-satellite drag/lift/
+# cross slots. Only one writer may run in an effector queue.
+@inline _writes_aero_cache(effector)::Bool =
+    effector isa SimulationModel.AerodynamicCoefficientfM ||
+    effector isa SimulationModel.AerodynamicCoefficientMeshSurrogate
+
+# Tuple-specialized `all` and `count` rather than a `for` loop: iterating a
+# heterogeneous tuple in a loop does not infer and boxed the tuple per call.
+# (Past 32 effectors Base stops specializing on tuples, as the loop did.)
 @inline function _dynamic_effectors_parallel_supported(dynamic_effectors::Tuple)::Bool
-    aero_cache_writers = 0
-    @inbounds for effector in dynamic_effectors
-        # Box and mesh aerodynamic effectors write the same per-satellite
-        # drag/lift/cross slots. Only one writer may run in an effector queue.
-        if effector isa SimulationModel.AerodynamicCoefficientfM ||
-           effector isa SimulationModel.AerodynamicCoefficientMeshSurrogate
-            aero_cache_writers += 1
-        end
-        _dynamic_effector_threadsafe(effector) || return false
-    end
-    return aero_cache_writers <= 1
+    all(_dynamic_effector_threadsafe, dynamic_effectors) || return false
+    return count(_writes_aero_cache, dynamic_effectors) <= 1
 end
 
 @inline function _mission_is_long_for_effector_threads(args)::Bool

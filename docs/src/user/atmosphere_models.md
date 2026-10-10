@@ -27,7 +27,7 @@ What to read next:
 | `PiecewiseExponentialAtmosphereModel(...)` | Low–medium | None | Multi-layer; better altitude-shape fit |
 | `NRLMSISE00AtmosphereModel(...)` | Medium | None (fixed indices) or internet (live indices) | Standard empirical model; ~0–1000 km |
 | `GRAMGridAtmosphereModel(...)` | Fixed snapshot | GRAMSuite with its grid API and a trusted grid payload | Native-free evaluation within documented grid coverage |
-| `GRAMNearSurfaceAtmosphereModel(...)` | Fixed snapshot | GRAMSuite with its near-surface API and a trusted near-surface payload | Native-free Mars density and temperature from 5 m above the surface to 75 km; no winds |
+| `GRAMNearSurfaceAtmosphereModel(...)` | Fixed snapshot | GRAMSuite with its near-surface API and a trusted near-surface payload | Native-free Mars atmosphere from 5 m above the surface to the payload's top; format 1 returns zero wind, explicit format 2 returns stored winds |
 | `GRAMAtmosphereModel(...)` | High | Licensed NASA GRAM | Requires GRAM asset setup |
 
 For GRAM setup, see [GRAMSuite Setup](gramsuite_setup.md).

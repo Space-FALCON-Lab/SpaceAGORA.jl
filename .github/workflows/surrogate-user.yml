@@ -81,6 +81,8 @@ jobs:
           path: |
             ${{ runner.temp }}/odyssey-precompile
             examples/odyssey_surrogate_env/Manifest.toml
+      - name: Public GRAM dependency integration contract
+        run: julia --startup-file=no --project=examples/odyssey_surrogate_env test/gram_dependency_integration_tests.jl
       - name: Preset resolution and failure regressions
         run: julia --startup-file=no --project=examples/odyssey_surrogate_env test/surrogate_presets_tests.jl
       - name: Public preset and active control exercise

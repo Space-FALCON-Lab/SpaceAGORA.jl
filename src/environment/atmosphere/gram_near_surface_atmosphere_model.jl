@@ -2,15 +2,16 @@
     GRAMNearSurfaceAtmosphereModel(; planet="Mars", surrogate_file, expected_sha256=nothing)
 
 SpaceAGORA adapter for a native-free near-surface Mars atmosphere: density and temperature from 5 m above the local
-terrain to the payload's areoid-height top (75 km for the published preset), following native Mars-GRAM's own
+terrain to the payload's areoid-height top (75 or 81 km for the published format-1 presets), following native Mars-GRAM's own
 near-surface rule. Load `GRAMSuite` with its near-surface API before keyword construction. Its loader validates the
 payload and owns the contained arrays; no native GRAM installation is needed. `core` holds the
 `GRAMSuite.GRAMNearSurfaceAtmosphereModel`.
 
 `getDensity` takes height above the reference ellipsoid in metres, geodetic latitude and east longitude in radians,
-and elapsed time in seconds. It returns density in kg/m^3, temperature in kelvin and a zero wind vector: the payload
-stores no winds, so a simulation with this model has no atmospheric wind. Elapsed time is not applied to the frozen
-snapshot. Pressure, the regime and the surface-layer model status are available from
+and elapsed time in seconds. It returns density in kg/m^3, temperature in kelvin and an east/north/up wind vector.
+Format-1 payloads store no winds and return zero. An explicitly supplied format-2 payload returns its stored winds;
+as with fixed grids, the engine masks them when `EnvironmentModel.wind = false`. Elapsed time is not applied to the
+frozen snapshot. Existing named near-surface presets remain format-1. Pressure, the regime and the surface-layer model status are available from
 `GRAMSuite.near_surface_state(model.core, lat_deg, lon_deg, h_m)`.
 
 Queries outside the supported domain throw `DomainError` naming the reason: planetocentric latitude beyond the

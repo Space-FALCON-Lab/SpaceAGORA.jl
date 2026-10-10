@@ -325,6 +325,96 @@ SM.FilePaths(
 )
 ```
 
+## Joint types and articulated spacecraft
+
+A spacecraft is **articulated** if and only if at least one of its `Joint`s is not
+`:fixed`. Articulated spacecraft integrate their joint coordinates beside the bus state;
+every other spacecraft, including one whose joints are all `:fixed`, runs exactly as before
+(no tree is built and nothing is validated). Run `examples/Articulated_Panels_Demo.jl` for a
+working case.
+
+### Declaring joints
+
+```julia
+bus = Link(root=true, m=620.0, dims=MVector(2.05, 2.05, 2.8))
+panel = Link(m=10.0, dims=MVector(0.01, 2.85, 1.0), r=MVector(0.0, 2.45, 0.0))   # COM in the bus frame
+add_joint!(sc, Joint(bus, SVector(0.0, 1.025, 0.0), panel, SVector(0.0, -1.425, 0.0);
+    joint_type=:hinge, axis=[1.0, 0.0, 0.0], stiffness=60.0, damping=4.0, initial_q=0.2))
+```
+
+`Joint(link1, p1ᵇ, link2, p2ᵇ; joint_type=...)` connects the parent `link1` to the child `link2`
+at a joint point given in the parent frame (`p1ᵇ`) and in the child frame (`p2ᵇ`). Joint
+coordinate 0 is the configured geometry: the links' `r` (COM, bus frame) and `q` (attitude
+relative to the bus, scalar-last). For non-fixed joints `p1ᵇ` and `p2ᵇ` must map to the same
+point in that geometry (1e-9 m); fixed joints merge at the configured geometry as given.
+
+| `joint_type` | Coordinates | `axis` | `stiffness`, `damping` | `rest` | `initial_q`, `initial_qd` |
+|---|---|---|---|---|---|
+| `:fixed` (default) | none; the child is merged into the parent body | unused | unused | unused | unused |
+| `:hinge` | 1 angle (rad) about `axis` | required, parent frame, normalized | scalars (N m/rad, N m s/rad) | angle (default 0) | scalars (default 0) |
+| `:slide` | 1 displacement (m) along `axis` | required, parent frame, normalized | scalars (N/m, N s/m) | displacement (default 0) | scalars (default 0) |
+| `:ball` | scalar-last quaternion (3 rate components) | unused | scalar or 3x3 PSD matrix | quaternion (default identity) | quaternion (default identity), parent-frame angular velocity 3-vector (default 0) |
+
+Gains must be `>= 0`. Springs and dampers act in joint space: `τ = -k (q - rest) - c q̇`; for a
+ball joint the spring uses the axis-angle of `rest⁻¹ ⊗ q` and the damper the relative angular
+velocity (the 3x3 stiffness is exact for an isotropic `k I`, first-order for an anisotropic one).
+Existing joints keep working and are `:fixed`; the legacy `Kx/Kt/Cx/Ct` fields are unused by this
+feature. Links whose joint is `:fixed` move rigidly with their parent body.
+
+### Conventions and state
+
+- The root body is the root link plus every link merged into it through `:fixed` joints plus
+  the propellant. The engine's `pos` and `vel` are the **root composite center of mass**; the
+  system center of mass is saved as `sc{i}_system_com_*`.
+- Quaternions are scalar-last and are the body-to-inertial rotation, like the bus `q`.
+- `joint_q` and `joint_qd` are appended to the spacecraft's state, listing the non-fixed
+  joints in `spacecraft.joints` order. A ball joint has four coordinates and three rates, and
+  its rate is the angular velocity of the child relative to its parent in the parent frame.
+- Saved outputs: `joint_q`, `joint_qd`, `articulated_link_pose` (every link's inertial COM and
+  attitude from the joint kinematics) and `system_com`; see [Simulation Outputs](outputs.md).
+- Checkpoint and resume work: the joint state is part of the checkpointed state.
+
+### Mass and inertia
+
+- `mass` in the state keeps its meaning: total spacecraft mass, dry plus propellant, so mass flow
+  and `sc1_mass` are unchanged. The root body mass at run time is the state mass minus the
+  moving bodies' masses (which never change).
+- The link masses and inertias are used. The spacecraft's `inertia_tensor` is **ignored** in
+  articulated mode, and `dry_mass` must equal the sum of the link masses (checked at setup).
+- Propellant is a point mass at the root composite COM: it adds mass and no inertia and never
+  moves the COM, so the root inertia stays the configured composite.
+
+### Loads in v1
+
+Every non-gravity load (aerodynamics, SRP, thrusters, control torques, third-body gravity) is
+evaluated by the existing effectors from the rigid configured geometry and applied to the root
+body. Gravity from the position-only gravity models (point mass, J2, harmonics) is evaluated per
+body at its own COM, so the gravity-gradient effect of the layout, including joint motion, emerges
+from the dynamics; a gravity effector's own `gravity_gradient` flag is superseded by this. A
+separate `GravityGradientTorqueModel` still uses the spacecraft `inertia_tensor` on the root: a
+known v1 limitation. Per-link aerodynamics and SRP on moving links, joint motors and joint limits
+are not implemented.
+
+### Solver advice and supported routes
+
+| Route | Support |
+|---|---|
+| Single-RHS first-order solver modes `:tsit5`, `:auto_stiff`, `:rodas5p`, `:dp8` | supported |
+| `:split_imex`, `:multirate`, `:symplectic`, `:gravity_backbone_split` | refused with an `ArgumentError` |
+| Serial, `satellite_batch` and per-satellite RHS routes | supported (one workspace per spacecraft) |
+| Flat constellation queue | automatically rerouted to the per-satellite route; forcing `SPACEAGORA_RHS_EXECUTION_MODE=flat` is refused |
+| Process routes and `isolate_state` copies | supported: runtime data is rebuilt from the configuration inside each run |
+| `orientation_sim=false`, reaction wheels, a robot-arm effector on the same spacecraft | refused |
+| Kinematic panel-angle control (`SolarPanelAngleOfAttackControlModel`) | works on links of the root body exactly as before; an error on links of a moving body until joint motors exist |
+| Mixing articulated and rigid spacecraft in one run | refused (the state holds equal-sized blocks); articulated spacecraft must share link and joint counts |
+
+Joint dynamics can be stiff: for a stiff hinge keep `dt_max_orbit` below a fraction of the hinge
+period, and use tight tolerances; `:dp8` was used for the conservation checks. The joint
+coordinates use the quaternion and angular-rate tolerances.
+
+!!! note
+    Per-link loads, motors and limits are not part of this release; see "Loads in v1" above.
+
 ## Using `make_example_config`
 
 For quick studies and all repository examples, `make_example_config` from

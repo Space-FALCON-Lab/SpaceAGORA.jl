@@ -324,6 +324,21 @@ function get_drag_state_callback(num_sats::Int)
     return VectorContinuousCallback(condition!, affect_events!, num_sats)
 end
 
+# Ball-joint quaternions in `joint_q` stay on the unit sphere with the attitude quaternion. The
+# articulated dynamics normalize on use, so this is bookkeeping, not a requirement.
+function _project_ball_joint_quaternions!(joint_q, tree)
+    @inbounds for b in 2:tree.nb
+        tree.jtype[b] === :ball || continue
+        o = tree.qoff[b]
+        n = sqrt(joint_q[o]^2 + joint_q[o + 1]^2 + joint_q[o + 2]^2 + joint_q[o + 3]^2)
+        (isfinite(n) && n > 0.0) || continue
+        for k in 0:3
+            joint_q[o + k] /= n
+        end
+    end
+    return nothing
+end
+
 function get_quaternion_projection_callback(num_sats::Int, args::SimulationConfiguration)
     correction_tol = max(32 * eps(Float64), args.integration_tolerances.abstol_quaternion)
     condition(u, t, integrator) = begin
@@ -343,6 +358,10 @@ function get_quaternion_projection_callback(num_sats::Int, args::SimulationConfi
         @inbounds for i in 1:num_sats
             if !p.is_active[i]
                 continue
+            end
+            if p.shared_buffers.articulated_present[]
+                art = p.shared_buffers.articulated_runtimes[i]
+                art === nothing || _project_ball_joint_quaternions!(u.sc[i].joint_q, art.tree)
             end
             q = _simulation_engine_module()._state_quaternion(u, i)
             q === nothing && continue

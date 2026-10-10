@@ -153,7 +153,14 @@ frame fixed to the spacecraft bus, in which the inertia tensor is given.
 | `q` | 4 | Attitude quaternion rotating inertial coordinates into bus coordinates, stored **scalar-last** as `[x, y, z, w]`; `[0, 0, 0, 1]` is "bus axes aligned with inertial axes". Kept on the unit sphere by a projection after every step. | – | inertial to bus | `orientation_sim = true` |
 | `ω` | 3 | Angular velocity of the bus. Its rate comes from the bus-frame torques and the inertia tensor (Euler's rotational equation). | rad/s | bus | `orientation_sim = true` |
 | `h_wheels` | number of wheels | Angular momentum stored in each reaction wheel. Changes only when a control effector commands wheel torque. | N·m·s | wheel axes | `orientation_sim = true` and the root link is built as `SM.Link(; J_rw=...)` with a 3-by-`N` wheel-axis mapping, `N > 0`; the current constructor takes the wheel count from the columns of `J_rw` |
+| `joint_q`, `joint_qd` | `nq`, `nv` | Joint coordinates and rates of an articulated spacecraft, one entry per hinge or slide and four (quaternion) or three (rate) per ball joint, in the order of the spacecraft's non-fixed `joints`. A hinge/slide coordinate is an angle/displacement from the configured geometry; a ball coordinate is a scalar-last quaternion and its rate is the parent-frame angular velocity. | rad or m; rad/s or m/s | parent link frame | `orientation_sim = true` and at least one joint is not `:fixed` ([Joint types](simulation_configuration.md#Joint-types-and-articulated-spacecraft)) |
 | `arm_r`, `arm_q`, `arm_v`, `arm_ω` | 3×n, 4×n, 3×n, 3×n | Position, attitude quaternion (scalar-last), velocity and angular velocity of each of the `n` links of a robot arm coupled to a cloth model. The rotation convention of the arm quaternions is documented with the robot-arm subsystem and was not verified here. | m, –, m/s, rad/s | inertial for `arm_r` and `arm_v`; link-related for `arm_q` and `arm_ω` | a coupled cloth robot-arm plan is configured (the robot-arm demo); not in ordinary runs |
+
+For an articulated spacecraft `pos` and `vel` are the position and velocity of the
+**root composite centre of mass** (the root link, the links merged into it through `:fixed`
+joints, and the propellant), not of the whole spacecraft; `mass` is still the total mass
+(dry plus propellant), and `q`, `ω` are the root attitude and body rate. The
+`sc1_system_com_*` columns give the whole-spacecraft centre of mass.
 
 Two things are worth knowing about how the state is advanced:
 

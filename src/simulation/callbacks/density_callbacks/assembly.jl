@@ -133,6 +133,12 @@ function _callback_tolerances_for_phase(template_reltol, template_abstol, args::
             reltol_new.sc[i].ω .= reltol_ω
             abstol_new.sc[i].ω .= abstol_ω
         end
+        if hasproperty(reltol_new.sc[i], :joint_q)
+            reltol_new.sc[i].joint_q .= tol.reltol_quaternion
+            abstol_new.sc[i].joint_q .= tol.abstol_quaternion
+            reltol_new.sc[i].joint_qd .= reltol_ω
+            abstol_new.sc[i].joint_qd .= abstol_ω
+        end
     end
     return reltol_new, abstol_new
 end

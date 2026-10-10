@@ -45,6 +45,13 @@ function _build_solver_tolerances(u_state::ComponentVector, args)
             reltol_state.sc[i].q .= reltol_q
             abstol_state.sc[i].q .= abstol_q
         end
+        if hasproperty(reltol_state.sc[i], :joint_q)
+            # Joint coordinates are angles/lengths and rates: use the attitude tolerances.
+            reltol_state.sc[i].joint_q .= reltol_q
+            abstol_state.sc[i].joint_q .= abstol_q
+            reltol_state.sc[i].joint_qd .= reltol_ω
+            abstol_state.sc[i].joint_qd .= abstol_ω
+        end
     end
     return reltol_state, abstol_state
 end

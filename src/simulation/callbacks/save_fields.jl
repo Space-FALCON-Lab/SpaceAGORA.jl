@@ -335,6 +335,86 @@ end
 @inline _thruster_level_field_enabled(args::SimulationConfiguration)::Bool =
     args.simulation_settings.save_visualization_scene && any(>(0), thruster_level_counts(args))
 
+# Articulated spacecraft (any non-fixed Joint): joint coordinates and rates, every link's inertial
+# COM pose from the forward kinematics, and the system COM. Rigid spacecraft contribute empty vectors.
+@inline function _save_joint_state(name::Symbol, num_sats::Int, u, t, integrator)
+    out = Vector{Vector{Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        sc_view = hasproperty(u, :sc) ? u.sc[i] : nothing
+        out[i] = (sc_view !== nothing && hasproperty(sc_view, name)) ? Float64.(getproperty(sc_view, name)) : Float64[]
+    end
+    return out
+end
+
+@inline function _articulated_runtime_for(integrator, i::Int)
+    runtimes = integrator.p.shared_buffers.articulated_runtimes
+    return i <= length(runtimes) ? runtimes[i] : nothing
+end
+
+@inline function _save_articulated_link_poses(num_sats::Int, u, t, integrator)
+    out = Vector{Vector{Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        art = _articulated_runtime_for(integrator, i)
+        if art === nothing
+            out[i] = Float64[]
+            continue
+        end
+        sc_view = u.sc[i]
+        pos, quat = articulated_forward_kinematics(art.tree, sc_view.pos, sc_view.q, sc_view.joint_q)
+        lp, lq = articulated_link_poses(art.tree, pos, quat)
+        pose = Vector{Float64}(undef, 7 * length(lp))
+        for l in eachindex(lp)
+            pose[(7l - 6):(7l - 4)] .= lp[l]
+            pose[(7l - 3):(7l)] .= lq[l]
+        end
+        out[i] = pose
+    end
+    return out
+end
+
+@inline function _save_system_com(num_sats::Int, u, t, integrator)
+    out = Vector{Vector{Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        art = _articulated_runtime_for(integrator, i)
+        if art === nothing
+            out[i] = Float64[]
+            continue
+        end
+        sc_view = u.sc[i]
+        tree = art.tree
+        pos, _ = articulated_forward_kinematics(tree, sc_view.pos, sc_view.q, sc_view.joint_q)
+        root_mass = sc_view.mass - art.moving_mass
+        total = root_mass + art.moving_mass
+        com = root_mass * pos[1]
+        for b in 2:tree.nb
+            com += tree.mass[b] * pos[b]
+        end
+        out[i] = Float64.(com / total)
+    end
+    return out
+end
+
+"""
+    articulated_save_fields(args) -> Vector{SaveField}
+
+Fields for articulated spacecraft (any non-fixed `Joint`); empty when there are none. `joint_q`
+and `joint_qd` list the non-fixed joints in `spacecraft.joints` order (`sc{i}_joint_q_{k}`,
+`sc{i}_joint_qd_{k}`); `articulated_link_pose` holds, per link in `spacecraft.links` order,
+the inertial COM position (3) and attitude quaternion (4, scalar-last, body-to-inertial)
+from the forward kinematics, including links merged through `:fixed` joints; `system_com`
+is the inertial system center of mass (3).
+"""
+function articulated_save_fields(args::SimulationConfiguration)
+    any(sc -> articulated_has_moving_joints(sc), args.dynamics_model.spacecraft) || return SaveField[]
+    n = length(args.dynamics_model.spacecraft)
+    return SaveField[
+        SaveField(:joint_q, (u, t, integrator) -> _save_joint_state(:joint_q, n, u, t, integrator); per_satellite=true, column_prefix="joint_q"),
+        SaveField(:joint_qd, (u, t, integrator) -> _save_joint_state(:joint_qd, n, u, t, integrator); per_satellite=true, column_prefix="joint_qd"),
+        SaveField(:articulated_link_pose, (u, t, integrator) -> _save_articulated_link_poses(n, u, t, integrator); per_satellite=true, column_prefix="articulated_link_pose"),
+        SaveField(:system_com, (u, t, integrator) -> _save_system_com(n, u, t, integrator); per_satellite=true, column_prefix="system_com"),
+    ]
+end
+
 @inline function _arm_pose_field_enabled(args::SimulationConfiguration)::Bool
     args.simulation_settings.save_visualization_scene || return false
     return any(i -> robot_arm_plan_for(args, i) !== nothing, eachindex(args.dynamics_model.spacecraft))
@@ -387,6 +467,7 @@ function default_save_fields(args::SimulationConfiguration)
     if args.mission_configuration.orientation_sim
         push!(fields, SaveField(:quaternion, (u, t, integrator) -> _save_quaternion(num_sats, u, t, integrator); per_satellite=true, column_prefix="q"))
     end
+    append!(fields, articulated_save_fields(args))
     append!(fields, plume_save_fields(args))
     for field in visualization_save_fields(args)
         push!(fields, field)

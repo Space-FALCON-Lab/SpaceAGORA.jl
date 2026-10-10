@@ -158,6 +158,16 @@ the [CSV column reference](#Visualization-fields) below:
   a cloth robot-arm plan, `[rx, ry, rz, qx, qy, qz, qw]` per arm link: the
   link centre of mass relative to the spacecraft position, in inertial metres,
   and the link's inertial attitude quaternion.
+- Articulated spacecraft (any non-fixed `Joint`) add four fields to the default
+  set: `joint_q` (`sc{N}_joint_q_1` ..) and `joint_qd` (`sc{N}_joint_qd_1` ..)
+  list the non-fixed joints in `spacecraft.joints` order (a ball joint takes four
+  and three columns); `articulated_link_pose` (`sc{N}_articulated_link_pose_1` ..
+  `7n`) is `[rx, ry, rz, qx, qy, qz, qw]` per link in `spacecraft.links` order:
+  the link's COM in inertial metres and its scalar-last body-to-inertial
+  attitude, from the joint kinematics (links merged through `:fixed` joints
+  included); `system_com` (`sc{N}_system_com_1..3`) is the inertial center of
+  mass of the whole spacecraft. The `link_pose` viewer field still holds the
+  configured rigid geometry.
 - `density`: `sc{N}_density`, the atmospheric density along the trajectory in
   kg/m³, for a run with an atmosphere model.
 

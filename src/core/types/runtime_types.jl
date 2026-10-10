@@ -3,6 +3,7 @@ module ConfigTypes
 # import .SpacecraftModel
 # include("core/simulation_model.jl")
 using ..SpacecraftModels: SpacecraftModel
+using ..ArticulatedBody: ArticulatedRuntime
 using ..SimConfig: SimulationConfiguration
 using ..EnvironmentModels: GRAMAtmosphereModel, GRAMAtmosphereModelSurrogate
 using ..LegacyModelCodes:
@@ -932,6 +933,14 @@ export RhsEffectorDecision, RhsExecutionPlan
         # satellite is pure waste in the (overwhelmingly common) no-robot-arm
         # case. Effector tuples are fixed for a run, so no invalidation needed.
         robot_arm_present::Base.RefValue{Union{Nothing, Bool}} = Ref{Union{Nothing, Bool}}(nothing)
+        # Articulated spacecraft (any non-fixed `Joint`): per-satellite tree + Float64 workspace,
+        # built once per run by `_initialize_articulated_runtimes!` (`nothing` for rigid
+        # spacecraft). `articulated_present` is the run-constant flag the RHS tests first, so a
+        # run without articulated spacecraft pays one Bool load per RHS call. Each satellite's
+        # workspace is only touched while that satellite is being evaluated, i.e. by one thread
+        # at a time (the `@batch` and serial loops partition by satellite).
+        articulated_runtimes::Vector{Union{Nothing, ArticulatedRuntime}} = _typed_nothing_vector(ArticulatedRuntime, n_sats)
+        articulated_present::Base.RefValue{Bool} = Ref(false)
         policy_env_config::Base.RefValue{Union{Nothing, PolicyDecisionEnvConfig}} = Ref{Union{Nothing, PolicyDecisionEnvConfig}}(nothing)
         # The run's scoped ParallelPolicy.PolicyContext, captured at setup in the
         # task that owns the solve (SPACEAGORA_PARALLEL_POLICY_V2 only; `nothing`

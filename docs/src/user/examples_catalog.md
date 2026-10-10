@@ -114,6 +114,17 @@ Related mission scripts:
 - `AGORA_Magellan.jl`
 - `AGORA_LOFTID.jl`
 
+### Articulated spacecraft
+
+`Articulated_Panels_Demo.jl` flies the standard bus with two solar panels that
+hang on spring-damper `:hinge` joints, starts them off their rest angle, and
+saves a plot of the hinge angles and the bus roll reaction. It needs no GRAM and
+no SPICE. See [Joint types](simulation_configuration.md#Joint-types-and-articulated-spacecraft).
+
+```text
+julia --project=. examples/Articulated_Panels_Demo.jl
+```
+
 ### Controls, torque, and navigation checks
 
 Use these when the question is about one force, torque, control, or navigation

@@ -755,6 +755,10 @@ function run_simulation(
     SimulationModel.DynamicEffectors.AerodynamicEffectors.refresh_multibody_parallel_mode!()
     _calibrate_rhs_plan_if_needed!(p, u_start, args)
     _calibrate_density_callback_width!(p, u_start, args)
+    # Per-region widths are searched during the solve, never during the sweep
+    # above, which times whole plans and would read a search in progress.
+    empty!(p.shared_buffers.rhs_region_tuners)
+    p.shared_buffers.rhs_region_tuning[] = _rhs_region_width_enabled()
 
     # In-run width identification, AFTER the sweep and only where the sweep
     # produced no plan.
@@ -951,6 +955,13 @@ function run_simulation(
     # ~0.1 s sweep is worth paying. Placed here rather than at the end of the
     # function so results/telemetry work is not counted as solve cost.
     _rhs_calib_record_solve_time!()
+    if !isempty(p.shared_buffers.rhs_region_tuners) &&
+       lowercase(strip(_engine_env_get("SPACEAGORA_RHS_REGION_WIDTH_TRACE", "0"))) in ("1", "true", "yes", "on")
+        println("[SpaceAGORA] RHS region widths: " * join(
+            ("$(k)=$(t.width)/$(t.allotment)(best $(t.best_width) $(round(t.best_ns / 1e3; digits=1))us, " *
+             "full $(round(t.full_ns / 1e3; digits=1))us$(t.searching ? ", searching" : ""))"
+             for (k, t) in sort!(collect(p.shared_buffers.rhs_region_tuners); by=first)), " "))
+    end
 
     # Process and save results
     saved_results = _save_simulation_results_if_enabled!(

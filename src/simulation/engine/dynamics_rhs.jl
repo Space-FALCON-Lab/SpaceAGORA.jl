@@ -845,6 +845,99 @@ end
     return max(1, v)
 end
 
+# ── Per-region width ─────────────────────────────────────────────────────────
+#
+# One RHS evaluation opens several parallel regions, and each costs a wake and a
+# join that grows with its width, against work that shrinks as 1/width. The
+# plan's allotment is one width for all of them, and no single width suits
+# every region: at 4096 spacecraft on 32 threads the harmonics pass wants all
+# 32 while the force reduction does 1-2 us of work per call and pays 60-220 us
+# to dispatch it (logs: thread ceiling 2026-10-06, thread scaling 2026-10-10).
+#
+# So under the adaptive policy each region searches its own width, measured in
+# place, where the wake latency it pays is the real one rather than a hot-loop
+# microbenchmark's. Starting at the allotment, the width halves while that
+# keeps the region's median call time within STOP of the best seen, and the
+# fastest is kept; a narrower width displaces the allotment only if it is
+# faster by MARGIN. The search re-runs every REPROBE calls, since a region's
+# work can change during a solve (drag passes, the active set).
+#
+# Only regions whose result does not depend on the width are routed here: each
+# writes per-spacecraft (or per-item) slots in a fixed order, so the final
+# state is bit-identical at any width, including a width that changes mid-solve.
+#
+# SPACEAGORA_RHS_REGION_WIDTH=off disables it; =on forces it on outside the
+# adaptive policy.
+const _REGION_SAMPLES = 3
+const _REGION_STOP = 1.25
+const _REGION_MARGIN = 0.05
+const _REGION_REPROBE = 1024
+
+function _rhs_region_width_enabled()::Bool
+    raw = lowercase(strip(_engine_env_get("SPACEAGORA_RHS_REGION_WIDTH", "auto")))
+    raw in ("off", "0", "false", "no") && return false
+    raw in ("on", "1", "true", "yes") && return true
+    raw == "auto" || throw(ArgumentError(
+        "SPACEAGORA_RHS_REGION_WIDTH must be auto, on, or off; got '$raw'"
+    ))
+    return SimulationModel.ParallelPolicy.adaptive_policy_enabled()
+end
+
+# Advance a tuner by one timed call at `t.width`.
+function _region_tuner_observe!(t::SimulationModel.RhsRegionTuner, elapsed_ns::Int64)::Nothing
+    if !t.searching
+        t.calls += 1
+        if t.calls >= _REGION_REPROBE
+            t.width = t.allotment; t.best_width = t.allotment
+            t.best_ns = Inf; t.full_ns = Inf; t.searching = true; t.calls = 0
+        end
+        return nothing
+    end
+    push!(t.samples, elapsed_ns)
+    length(t.samples) < _REGION_SAMPLES && return nothing
+    ns = Float64(sort!(t.samples)[(_REGION_SAMPLES + 1) ÷ 2])
+    empty!(t.samples)
+    t.width == t.allotment && (t.full_ns = ns)
+    if ns < t.best_ns
+        t.best_ns = ns
+        t.best_width = t.width
+    end
+    if t.width > 1 && ns <= _REGION_STOP * t.best_ns
+        t.width = max(1, t.width ÷ 2)
+        return nothing
+    end
+    t.width = t.best_ns < (1.0 - _REGION_MARGIN) * t.full_ns ? t.best_width : t.allotment
+    t.searching = false
+    t.calls = 0
+    return nothing
+end
+
+# Run `f(width)` for one call of the region `source`, at the searched width when
+# the search is on and at `allotment` otherwise.
+@inline function _rhs_region(f::F, p, source::Symbol, allotment::Int) where {F}
+    sb = p.shared_buffers
+    (allotment > 1 && sb.rhs_region_tuning[]) || return f(allotment)
+    t = get!(() -> SimulationModel.RhsRegionTuner(allotment), sb.rhs_region_tuners, source)
+    if t.allotment != allotment
+        sb.rhs_region_tuners[source] = t = SimulationModel.RhsRegionTuner(allotment)
+    end
+    started = time_ns()
+    t.last_width = t.width
+    result = f(t.width)
+    _region_tuner_observe!(t, Int64(time_ns() - started))
+    return result
+end
+
+# Whether the latest call of region `source` ran at the allotment it was given.
+# The cost model and the policy record observations under the plan's allotment,
+# so a call the search ran narrower must not be recorded as one at full width.
+@inline function _rhs_region_ran_full(p, source::Symbol)::Bool
+    sb = p.shared_buffers
+    sb.rhs_region_tuning[] || return true
+    t = get(sb.rhs_region_tuners, source, nothing)
+    return t === nothing || t.last_width >= t.allotment
+end
+
 @inline _batchable_effector(::Any)::Bool = false
 @inline _batchable_effector(::SimulationModel.NBodyGravityModel)::Bool = true
 @inline _batchable_effector(::SimulationModel.SolarRadiationPressureModel)::Bool = true
@@ -1115,7 +1208,8 @@ function _accumulate_harmonics_flat_batch!(
     model::SimulationModel.GravitationalHarmonicsModel,
     plan;
     eff_idx::Int=1,
-)::Nothing
+    after_slice::A=nothing,
+)::Nothing where {A}
     num_sats = length(sc_state)
     active_sats = count(identity, p.is_active)
     active_sats <= 0 && return nothing
@@ -1123,7 +1217,6 @@ function _accumulate_harmonics_flat_batch!(
     min_sats = rhs_env.harmonics_batch_spin_barrier ?
         1 : rhs_env.harmonics_batch_min_sats_per_worker
     capped_allotment = max(1, min(plan.allotment, fld(active_sats, max(1, min_sats))))
-    workers = SimulationModel.ParallelPolicy.thread_worker_count(active_sats, capped_allotment)
     slots = p.shared_buffers.rhs_flat_effector_partials[]
     work_items = p.shared_buffers.rhs_flat_work_items[]
     if length(work_items) < active_sats
@@ -1136,6 +1229,7 @@ function _accumulate_harmonics_flat_batch!(
         count_items += 1
         work_items[count_items] = sat_idx
     end
+    n_items = count_items   # assigned once, so the closure below does not box it
 
     et = p.shared_buffers.et_start[] + t
     lpi = SimulationModel.DynamicEffectors.PerturbationEffectors._harmonics_lpi_at!(model, p, et)
@@ -1143,45 +1237,51 @@ function _accumulate_harmonics_flat_batch!(
     needs_timing = plan.policy_applied
     started_ns = needs_timing ? time_ns() : UInt64(0)
 
-    n_workers = min(workers, count_items)
-    batch_size = cld(count_items, max(1, n_workers))
     pert = SimulationModel.DynamicEffectors.PerturbationEffectors
-    # Batched, and still bit-identical to the serial route. The batch kernel
-    # loads each (degree, order) coefficient once and reuses it across the
-    # slice, which is the whole reason this pre-pass is worth batching; it
-    # carries no `@turbo`/`@fastmath`/`@simd`, and its loop nesting leaves every
-    # satellite's accumulation in the scalar kernel's order, so it rounds
-    # exactly as `_harmonics_scalar_force_ii` does. Workers take contiguous
-    # slices of the active satellites and each writes only its own satellites'
-    # per-effector slots, so the reduction afterwards is unaffected.
-    pool = pert._get_harmonics_batch_pool_cached!(
-        p.shared_buffers.rhs_harmonics_batch_pool, model, n_workers, batch_size,
-    )
-    run_slice! = (item_start, item_end, w) -> begin
-        pert._harmonics_flat_batch_kernel!(
-            slots, eff_idx, model, sc_state, work_items, item_start, item_end, lpi, pool[w],
+    _rhs_region(p, :rhs_harmonics_batch, capped_allotment) do allotment
+        workers = SimulationModel.ParallelPolicy.thread_worker_count(active_sats, allotment)
+        n_workers = min(workers, n_items)
+        batch_size = cld(n_items, max(1, n_workers))
+        # Batched, and still bit-identical to the serial route. The batch kernel
+        # loads each (degree, order) coefficient once and reuses it across the
+        # slice, which is the whole reason this pre-pass is worth batching; it
+        # carries no `@turbo`/`@fastmath`/`@simd`, and its loop nesting leaves every
+        # satellite's accumulation in the scalar kernel's order, so it rounds
+        # exactly as `_harmonics_scalar_force_ii` does. Workers take contiguous
+        # slices of the active satellites and each writes only its own satellites'
+        # per-effector slots, so the reduction afterwards is unaffected.
+        pool = pert._get_harmonics_batch_pool_cached!(
+            p.shared_buffers.rhs_harmonics_batch_pool, model, n_workers, batch_size,
         )
-        return nothing
-    end
-    if n_workers <= 1
-        run_slice!(1, count_items, 1)
-    else
-        dispatch_fn = rhs_env.harmonics_batch_spin_barrier ?
-            SimulationModel.ParallelPolicy.threaded_foreach_worker_spin :
-            SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent
-        dispatch_fn(
-            :rhs_harmonics_batch,
-            n_workers,
-            plan.allotment;
-            scheduler=_dispatch_scheduler(p, plan),
-        ) do _worker_id, w
-            item_start = (w - 1) * batch_size + 1
-            item_end   = min(w * batch_size, count_items)
-            item_start > count_items && return
-            run_slice!(item_start, item_end, w)
+        run_slice! = (item_start, item_end, w) -> begin
+            pert._harmonics_flat_batch_kernel!(
+                slots, eff_idx, model, sc_state, work_items, item_start, item_end, lpi, pool[w],
+            )
+            # The fused RHS finishes the slice's
+            # spacecraft here, on the same worker, instead of in two more regions.
+            after_slice === nothing || after_slice(item_start, item_end, n_items)
+            return nothing
+        end
+        if n_workers <= 1
+            run_slice!(1, n_items, 1)
+        else
+            dispatch_fn = rhs_env.harmonics_batch_spin_barrier ?
+                SimulationModel.ParallelPolicy.threaded_foreach_worker_spin :
+                SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent
+            dispatch_fn(
+                :rhs_harmonics_batch,
+                n_workers,
+                plan.allotment;
+                scheduler=_dispatch_scheduler(p, plan),
+            ) do _worker_id, w
+                item_start = (w - 1) * batch_size + 1
+                item_end   = min(w * batch_size, n_items)
+                item_start > n_items && return
+                run_slice!(item_start, item_end, w)
+            end
         end
     end
-    if needs_timing
+    if needs_timing && _rhs_region_ran_full(p, :rhs_harmonics_batch)
         elapsed_ns = Int64(time_ns() - started_ns)
         _update_effector_cost_model!(p.shared_buffers, max(1, active_sats), elapsed_ns, plan.allotment)
         SimulationModel.ParallelPolicy.record_policy_observation!(
@@ -1315,9 +1415,6 @@ function _accumulate_aero_flat_batch!(
     needs_timing = plan.policy_applied
     started_ns = needs_timing ? time_ns() : UInt64(0)
 
-    workers = SimulationModel.ParallelPolicy.thread_worker_count(n_items, plan.allotment)
-    n_workers = max(1, min(workers, n_items))
-    batch_size = cld(n_items, n_workers)
     run_slice! = (item_start, item_end) -> begin
         @inbounds for item_idx in item_start:item_end
             _aero_prepass_satellite!(
@@ -1328,23 +1425,29 @@ function _accumulate_aero_flat_batch!(
         end
         return nothing
     end
-    if n_workers <= 1
-        run_slice!(1, n_items)
-    else
-        SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(
-            :rhs_aero_batch,
-            n_workers,
-            plan.allotment;
-            scheduler=_dispatch_scheduler(p, plan),
-        ) do _worker_id, w
-            item_start = (w - 1) * batch_size + 1
-            item_end = min(w * batch_size, n_items)
-            item_start > n_items && return nothing
-            run_slice!(item_start, item_end)
-            return nothing
+    n_workers = _rhs_region(p, :rhs_aero_batch, plan.allotment) do allotment
+        workers = SimulationModel.ParallelPolicy.thread_worker_count(n_items, allotment)
+        nw = max(1, min(workers, n_items))
+        batch_size = cld(n_items, nw)
+        if nw <= 1
+            run_slice!(1, n_items)
+        else
+            SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(
+                :rhs_aero_batch,
+                nw,
+                plan.allotment;
+                scheduler=_dispatch_scheduler(p, plan),
+            ) do _worker_id, w
+                item_start = (w - 1) * batch_size + 1
+                item_end = min(w * batch_size, n_items)
+                item_start > n_items && return nothing
+                run_slice!(item_start, item_end)
+                return nothing
+            end
         end
+        nw
     end
-    if needs_timing
+    if needs_timing && _rhs_region_ran_full(p, :rhs_aero_batch)
         elapsed_ns = Int64(time_ns() - started_ns)
         _update_effector_cost_model!(p.shared_buffers, max(1, n_items), elapsed_ns, plan.allotment)
         SimulationModel.ParallelPolicy.record_policy_observation!(
@@ -1424,6 +1527,7 @@ function _reduce_flat_effector_slots_range!(
 end
 
 function _reduce_flat_effector_slots!(
+    p,
     totals::Matrix{Float64},
     slots::Array{Float64, 3},
     dynamic_effectors::Tuple,
@@ -1437,15 +1541,21 @@ function _reduce_flat_effector_slots!(
         _reduce_flat_effector_slots_range!(totals, slots, dynamic_effectors, partition, is_active, 1, num_sats)
         return nothing
     end
-    chunk = cld(num_sats, reduce_workers)
-    SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(
-        :rhs_flat_reduce, reduce_workers, reduce_workers; scheduler = :static
-    ) do _worker_id, slice_idx
-        lo = (slice_idx - 1) * chunk + 1
-        hi = min(num_sats, slice_idx * chunk)
-        lo > num_sats && return nothing
-        _reduce_flat_effector_slots_range!(totals, slots, dynamic_effectors, partition, is_active, lo, hi)
-        return nothing
+    _rhs_region(p, :rhs_flat_reduce, reduce_workers) do w
+        if w <= 1
+            _reduce_flat_effector_slots_range!(totals, slots, dynamic_effectors, partition, is_active, 1, num_sats)
+            return nothing
+        end
+        chunk = cld(num_sats, w)
+        SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(
+            :rhs_flat_reduce, w, w; scheduler = :static
+        ) do _worker_id, slice_idx
+            lo = (slice_idx - 1) * chunk + 1
+            hi = min(num_sats, slice_idx * chunk)
+            lo > num_sats && return nothing
+            _reduce_flat_effector_slots_range!(totals, slots, dynamic_effectors, partition, is_active, lo, hi)
+            return nothing
+        end
     end
     return nothing
 end
@@ -1466,6 +1576,7 @@ function _accumulate_dynamic_effectors_flat_batch!(
     _ensure_rhs_flat_effector_scratch!(p.shared_buffers, num_sats, n_effectors)
     _accumulate_dynamic_effectors_flat_slots!(sc_state, p, t, dynamic_effectors, plan, workers, partition)
     _reduce_flat_effector_slots!(
+        p,
         p.shared_buffers.rhs_flat_effector_totals[],
         p.shared_buffers.rhs_flat_effector_partials[],
         dynamic_effectors,
@@ -1591,18 +1702,49 @@ function _accumulate_dynamic_effectors_flat_slots!(
         if needs_timing
             packet_overhead_ns += Int64(time_ns() - packet_prepare_started_ns)
         end
+        n_packets = packet_count   # assigned once, so the closure below does not box it
 
-        SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(
-            :rhs_flat_queue_packets, packet_count, plan.allotment; scheduler=_dispatch_scheduler(p, plan)
-        ) do worker_id, packet_idx
-            packet_started_ns = needs_timing ? time_ns() : UInt64(0)
-            @inbounds for item_idx in packet_starts[packet_idx]:packet_ends[packet_idx]
+        _rhs_region(p, :rhs_flat_queue_packets, plan.allotment) do allotment
+            SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(
+                :rhs_flat_queue_packets, n_packets, allotment; scheduler=_dispatch_scheduler(p, plan)
+            ) do worker_id, packet_idx
+                packet_started_ns = needs_timing ? time_ns() : UInt64(0)
+                @inbounds for item_idx in packet_starts[packet_idx]:packet_ends[packet_idx]
+                    item = work_items[item_idx]
+                    sat_idx = _constellation_node_sat_idx(item, exec_plan.n_effectors)
+                    eff_idx = _constellation_node_eff_idx(item, exec_plan.n_effectors)
+                    effector = dynamic_effectors[eff_idx]
+                    partition === nothing && (_batchable_effector(effector) || _harmonics_prepass_effector(effector) ||
+                                                      _aero_prepass_effector(effector)) && continue
+                    @views sc_view = sc_state[sat_idx]
+                    state_sample = _wrench_method_available(effector) ?
+                        _rhs_flat_state_sample_from_buffers(p.shared_buffers, spacecraft, sat_idx, orientation_sim) :
+                        nothing
+                    force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
+                    slots[1, eff_idx, sat_idx] = force[1]
+                    slots[2, eff_idx, sat_idx] = force[2]
+                    slots[3, eff_idx, sat_idx] = force[3]
+                    slots[4, eff_idx, sat_idx] = torque[1]
+                    slots[5, eff_idx, sat_idx] = torque[2]
+                    slots[6, eff_idx, sat_idx] = torque[3]
+                end
+                if needs_timing
+                    @inbounds packet_elapsed_ns[packet_idx] = Int64(time_ns() - packet_started_ns)
+                end
+                return nothing
+            end
+        end
+    else
+        _rhs_region(p, :rhs_flat_queue, plan.allotment) do allotment
+            SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(
+                :rhs_flat_queue, count_items, allotment; scheduler=_dispatch_scheduler(p, plan)
+            ) do worker_id, item_idx
                 item = work_items[item_idx]
                 sat_idx = _constellation_node_sat_idx(item, exec_plan.n_effectors)
                 eff_idx = _constellation_node_eff_idx(item, exec_plan.n_effectors)
                 effector = dynamic_effectors[eff_idx]
                 partition === nothing && (_batchable_effector(effector) || _harmonics_prepass_effector(effector) ||
-                                                  _aero_prepass_effector(effector)) && continue
+                                          _aero_prepass_effector(effector)) && return nothing
                 @views sc_view = sc_state[sat_idx]
                 state_sample = _wrench_method_available(effector) ?
                     _rhs_flat_state_sample_from_buffers(p.shared_buffers, spacecraft, sat_idx, orientation_sim) :
@@ -1614,34 +1756,8 @@ function _accumulate_dynamic_effectors_flat_slots!(
                 slots[4, eff_idx, sat_idx] = torque[1]
                 slots[5, eff_idx, sat_idx] = torque[2]
                 slots[6, eff_idx, sat_idx] = torque[3]
+                return nothing
             end
-            if needs_timing
-                @inbounds packet_elapsed_ns[packet_idx] = Int64(time_ns() - packet_started_ns)
-            end
-            return nothing
-        end
-    else
-        SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(
-            :rhs_flat_queue, count_items, plan.allotment; scheduler=_dispatch_scheduler(p, plan)
-        ) do worker_id, item_idx
-            item = work_items[item_idx]
-            sat_idx = _constellation_node_sat_idx(item, exec_plan.n_effectors)
-            eff_idx = _constellation_node_eff_idx(item, exec_plan.n_effectors)
-            effector = dynamic_effectors[eff_idx]
-            partition === nothing && (_batchable_effector(effector) || _harmonics_prepass_effector(effector) ||
-                                      _aero_prepass_effector(effector)) && return nothing
-            @views sc_view = sc_state[sat_idx]
-            state_sample = _wrench_method_available(effector) ?
-                _rhs_flat_state_sample_from_buffers(p.shared_buffers, spacecraft, sat_idx, orientation_sim) :
-                nothing
-            force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
-            slots[1, eff_idx, sat_idx] = force[1]
-            slots[2, eff_idx, sat_idx] = force[2]
-            slots[3, eff_idx, sat_idx] = force[3]
-            slots[4, eff_idx, sat_idx] = torque[1]
-            slots[5, eff_idx, sat_idx] = torque[2]
-            slots[6, eff_idx, sat_idx] = torque[3]
-            return nothing
         end
     end
 
@@ -1667,21 +1783,23 @@ function _accumulate_dynamic_effectors_flat_slots!(
     # access sequential.
     if needs_timing
         elapsed_ns = Int64(time_ns() - started_ns)
-        _update_effector_cost_model!(
-            p.shared_buffers,
-            max(1, count_items),
-            elapsed_ns,
-            plan.allotment,
-        )
-        SimulationModel.ParallelPolicy.record_policy_observation!(
-            :dynamic_effectors;
-            mode=:flat_constellation_effector_queue,
-            num_items=max(1, count_items),
-            use_threads=true,
-            elapsed_ns=elapsed_ns,
-            env=_policy_env_config(p),
-            ctx=SimulationModel.ParallelPolicy.policy_context_hint(p),
-        )
+        if _rhs_region_ran_full(p, exec_plan.use_packets ? :rhs_flat_queue_packets : :rhs_flat_queue)
+            _update_effector_cost_model!(
+                p.shared_buffers,
+                max(1, count_items),
+                elapsed_ns,
+                plan.allotment,
+            )
+            SimulationModel.ParallelPolicy.record_policy_observation!(
+                :dynamic_effectors;
+                mode=:flat_constellation_effector_queue,
+                num_items=max(1, count_items),
+                use_threads=true,
+                elapsed_ns=elapsed_ns,
+                env=_policy_env_config(p),
+                ctx=SimulationModel.ParallelPolicy.policy_context_hint(p),
+            )
+        end
         if exec_plan.use_packets
             feedback_started_ns = time_ns()
             _update_rhs_flat_packet_cost_model!(
@@ -1828,6 +1946,48 @@ end
     return nothing
 end
 
+# Stride of the raw state layout the direct assembly writes, or 0 when this
+# RHS call must take the generic assembly.
+function _flat_translational_direct_layout_stride(
+    du::ComponentVector,
+    u::ComponentVector,
+    p,
+    env::SimulationModel.RhsPlanEnvConfig,
+    rhs_kind::Symbol,
+)::Int
+    env.final_assembly_direct_layout || return 0
+    _rhs_final_assembly_direct_supported_kind(rhs_kind) || return 0
+    p.args.mission_configuration.orientation_sim && return 0
+    !isempty(p.args.control_model.control_effectors) && return 0
+    _robot_arm_present(p) && return 0
+    _rhs_heat_rates_active(p) && return 0
+    length(u) == length(du) || return 0
+    return _rhs_final_assembly_direct_stride!(p.shared_buffers, u.sc, du.sc, u, du)
+end
+
+# One spacecraft of the direct assembly: d(pos) = vel, d(vel) = F/m, the rest 0.
+@inline function _assign_rhs_direct_satellite!(
+    du_data, u_data, totals, active_flags, stride::Int, sat_idx::Int,
+)::Nothing
+    base = (sat_idx - 1) * stride
+    @inbounds if !active_flags[sat_idx]
+        _zero_rhs_direct_segment!(du_data, base, stride)
+        return nothing
+    end
+
+    @inbounds begin
+        du_data[base + 1] = Float64(u_data[base + 4])
+        du_data[base + 2] = Float64(u_data[base + 5])
+        du_data[base + 3] = Float64(u_data[base + 6])
+    end
+    _assign_rhs_direct_acceleration!(du_data, base, totals, u_data[base + 7], sat_idx)
+    @inbounds du_data[base + 7] = 0.0
+    @inbounds for offset in 8:stride
+        du_data[base + offset] = 0.0
+    end
+    return nothing
+end
+
 function _try_assign_flat_translational_rhs_direct_layout!(
     du::ComponentVector,
     u::ComponentVector,
@@ -1837,41 +1997,17 @@ function _try_assign_flat_translational_rhs_direct_layout!(
     rhs_kind::Symbol,
     assembly_allotment::Int,
 )::Bool
-    env.final_assembly_direct_layout || return false
-    _rhs_final_assembly_direct_supported_kind(rhs_kind) || return false
-    p.args.mission_configuration.orientation_sim && return false
-    !isempty(p.args.control_model.control_effectors) && return false
-    _robot_arm_present(p) && return false
-    _rhs_heat_rates_active(p) && return false
-    length(u) == length(du) || return false
-
-    sc_state = u.sc
-    sc_du = du.sc
-    num_sats = length(sc_state)
-    stride = _rhs_final_assembly_direct_stride!(p.shared_buffers, sc_state, sc_du, u, du)
+    stride = _flat_translational_direct_layout_stride(du, u, p, env, rhs_kind)
     stride > 0 || return false
 
     u_data = ComponentArrays.getdata(u)
     du_data = ComponentArrays.getdata(du)
     active_flags = p.is_active
-    SimulationModel.ParallelPolicy.threaded_foreach(num_sats, assembly_allotment) do sat_idx
-        base = (sat_idx - 1) * stride
-        @inbounds if !active_flags[sat_idx]
-            _zero_rhs_direct_segment!(du_data, base, stride)
+    _rhs_region(p, :rhs_assembly_direct, assembly_allotment) do w
+        SimulationModel.ParallelPolicy.threaded_foreach(length(u.sc), w) do sat_idx
+            _assign_rhs_direct_satellite!(du_data, u_data, totals, active_flags, stride, sat_idx)
             return nothing
         end
-
-        @inbounds begin
-            du_data[base + 1] = Float64(u_data[base + 4])
-            du_data[base + 2] = Float64(u_data[base + 5])
-            du_data[base + 3] = Float64(u_data[base + 6])
-        end
-        _assign_rhs_direct_acceleration!(du_data, base, totals, u_data[base + 7], sat_idx)
-        @inbounds du_data[base + 7] = 0.0
-        @inbounds for offset in 8:stride
-            du_data[base + offset] = 0.0
-        end
-        return nothing
     end
     return true
 end
@@ -1958,19 +2094,21 @@ function _prefill_environment_samples!(p, t::Float64, sc_state; atmosphere::Bool
     uniform_model = (atmosphere && !batch_atmosphere) ? _uniform_light_density_model(p, num_sats) : nothing
     per_sat_atmosphere = atmosphere && !batch_atmosphere && uniform_model === nothing
 
-    SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(:rhs_atmosphere, num_sats, worker_allotment) do _, sat_idx
-        if p.is_active[sat_idx]
-            @views sc_view = sc_state[sat_idx]
-            planet_frame = sample_planet_frame_with_lpi(sc_view, planet, l_pi)
-            @inbounds begin
-                planet_pos[sat_idx] = planet_frame.pos_pp
-                planet_vel[sat_idx] = planet_frame.vel_pp
-                planet_alt[sat_idx] = planet_frame.alt_m
-                planet_lat[sat_idx] = planet_frame.lat_rad
-                planet_lon[sat_idx] = planet_frame.lon_rad
-            end
-            if per_sat_atmosphere
-                _sample_atmosphere_from_planet_frame(sc_view, planet_frame, p, sat_idx, t; write_buffers=true)
+    _rhs_region(p, :rhs_atmosphere, worker_allotment) do w
+        SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(:rhs_atmosphere, num_sats, w) do _, sat_idx
+            if p.is_active[sat_idx]
+                @views sc_view = sc_state[sat_idx]
+                planet_frame = sample_planet_frame_with_lpi(sc_view, planet, l_pi)
+                @inbounds begin
+                    planet_pos[sat_idx] = planet_frame.pos_pp
+                    planet_vel[sat_idx] = planet_frame.vel_pp
+                    planet_alt[sat_idx] = planet_frame.alt_m
+                    planet_lat[sat_idx] = planet_frame.lat_rad
+                    planet_lon[sat_idx] = planet_frame.lon_rad
+                end
+                if per_sat_atmosphere
+                    _sample_atmosphere_from_planet_frame(sc_view, planet_frame, p, sat_idx, t; write_buffers=true)
+                end
             end
         end
     end
@@ -2041,6 +2179,76 @@ function _spacecraft_dynamics_flat_constellation_effector_queue!(
         p.shared_buffers.rhs_atmosphere_prefilled[] = needs_atm_prefill
     end
 
+    rhs_env = _rhs_env_config(p)
+    # 0 selects the generic assembly; otherwise the direct layout's stride.
+    direct_stride = _flat_translational_direct_layout_stride(du, u, p, rhs_env, rhs_kind)
+    u_data = ComponentArrays.getdata(u)
+    du_data = ComponentArrays.getdata(du)
+
+    # Harmonics-only constellation: ONE parallel region per RHS call instead of
+    # three (harmonics pre-pass, flat reduction, final assembly), each of which
+    # is a fork-join over every worker whose wake-and-join cost grows with the
+    # thread count (thread-ceiling record, 2026-10-06). Nothing forces the two
+    # barriers between them: spacecraft i's total depends only on its own slot,
+    # and its derivative only on its own total and state. So each harmonics
+    # worker, right after its slice, reduces and assembles the contiguous
+    # spacecraft range that slice covers (inactive spacecraft between active
+    # ones included; the last non-empty slice runs to the end).
+    #
+    # Bit-identical by construction: the same kernel, the same
+    # `_reduce_flat_effector_slots_range!` (per spacecraft, effector order, from
+    # zero), the same per-spacecraft assembly. Only which worker runs a
+    # spacecraft, and when, changes; no value is shared between spacecraft.
+    # The harmonics pass's cost-model observation now times the fused region,
+    # which is what one RHS call costs on this route.
+    #
+    # The pre-pass's own dispatch is unchanged: the channel-woken persistent
+    # pool by default, the spin-barrier pool under
+    # SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER=1. Unfused, the spin barrier lost
+    # because its spinning workers held the threads the spawned assembly tasks
+    # needed; fused, there are no such tasks on this route.
+    if partition === nothing && !needs_planet_frame_prefill &&
+       length(dynamic_effectors) == 1 &&
+       dynamic_effectors[1] isa SimulationModel.GravitationalHarmonicsModel &&
+       any(p.is_active)
+        num_sats = length(sc_state)
+        _ensure_rhs_flat_effector_scratch!(p.shared_buffers, num_sats, 1)
+        fused_totals = p.shared_buffers.rhs_flat_effector_totals[]
+        slots = p.shared_buffers.rhs_flat_effector_partials[]
+        work_items = p.shared_buffers.rhs_flat_work_items[]   # filled in place by the pre-pass
+        # Everything the finisher needs, behind ONE Ref. The channel pool boxes
+        # one request per worker per call, closure included, and the model
+        # (and, before ODEParams became mutable, ODEParams) holds the planet
+        # inline, so capturing them directly copied them into every request
+        # (about 17 kB per worker per call, measured with Profile.Allocs; the
+        # harmonics pre-pass closure still captures the model this way). Suspected, not
+        # proven: that per-worker allocation during the wake is what made the
+        # fused region's wake grow at 16 threads. A Ref keeps the closure
+        # pointer-sized and the captured state concretely typed.
+        fused = Ref((; p, t, dynamic_effectors, sc_du, sc_state, du_data, u_data,
+            totals=fused_totals, slots, work_items, active_flags=p.is_active, spacecraft,
+            debug_control, direct_stride, rhs_kind, num_sats))
+        finish_slice! = (item_start, item_end, n_items) -> begin
+            c = fused[]
+            lo = item_start == 1 ? 1 : c.work_items[item_start - 1] + 1
+            hi = item_end == n_items ? c.num_sats : c.work_items[item_end]
+            _reduce_flat_effector_slots_range!(
+                c.totals, c.slots, c.dynamic_effectors, nothing, c.active_flags, lo, hi,
+            )
+            for i in lo:hi
+                _assemble_flat_satellite!(
+                    c.sc_du, c.sc_state, c.du_data, c.u_data, c.p, c.t, c.totals, c.spacecraft,
+                    c.debug_control, c.direct_stride, c.rhs_kind, i,
+                )
+            end
+            return nothing
+        end
+        _accumulate_harmonics_flat_batch!(
+            sc_state, p, t, dynamic_effectors[1], plan; eff_idx=1, after_slice=finish_slice!,
+        )
+        return nothing
+    end
+
     try
         _accumulate_dynamic_effectors_flat_batch!(sc_state, p, t, dynamic_effectors, plan; partition=partition)
     finally
@@ -2050,111 +2258,117 @@ function _spacecraft_dynamics_flat_constellation_effector_queue!(
         end
     end
     totals = p.shared_buffers.rhs_flat_effector_totals[]
+    _rhs_region(p, :rhs_assembly, plan.allotment) do w
+        SimulationModel.ParallelPolicy.threaded_foreach(length(sc_state), w) do i
+            _assemble_flat_satellite!(
+                sc_du, sc_state, du_data, u_data, p, t, totals, spacecraft,
+                debug_control, direct_stride, rhs_kind, i,
+            )
+        end
+    end
+    return nothing
+end
 
-    rhs_env = _rhs_env_config(p)
-    if rhs_env.final_assembly_direct_layout &&
-       _try_assign_flat_translational_rhs_direct_layout!(
-            du,
-            u,
-            p,
-            totals,
-            rhs_env,
-            rhs_kind,
-            plan.allotment,
-        )
+# Final assembly of spacecraft i from its reduced totals: the direct layout's
+# raw writes when `direct_stride > 0`, otherwise the generic per-spacecraft
+# assembly. Shared by the unfused route's `threaded_foreach` and the fused
+# harmonics route, so both run the same statements.
+@inline function _assemble_flat_satellite!(
+    sc_du, sc_state, du_data, u_data, p, t::Float64, totals, spacecraft,
+    debug_control, direct_stride::Int, rhs_kind::Symbol, i::Int,
+)::Nothing
+    if direct_stride > 0
+        _assign_rhs_direct_satellite!(du_data, u_data, totals, p.is_active, direct_stride, i)
         return nothing
     end
-
-    SimulationModel.ParallelPolicy.threaded_foreach(length(sc_state), plan.allotment) do i
-        @inbounds if !p.is_active[i] ||
-                     (rhs_kind == :implicit && _spacecraft_outside_atmosphere_for_current_state(sc_state[i], p, i, t))
-            sc_du[i] .= 0.0
-            return
-        end
-        @inbounds @views begin
-            sc_view = sc_state[i]
-            du_view = sc_du[i]
-            forces, torques = _flat_totals_force_torque(totals, i)
-            if rhs_kind == :implicit
-                SimulationModel.DynamicsTranslational.assign_force_only_translational_rhs!(
+    @inbounds if !p.is_active[i] ||
+                 (rhs_kind == :implicit && _spacecraft_outside_atmosphere_for_current_state(sc_state[i], p, i, t))
+        sc_du[i] .= 0.0
+        return nothing
+    end
+    @inbounds @views begin
+        sc_view = sc_state[i]
+        du_view = sc_du[i]
+        forces, torques = _flat_totals_force_torque(totals, i)
+        if rhs_kind == :implicit
+            SimulationModel.DynamicsTranslational.assign_force_only_translational_rhs!(
+                du_view,
+                sc_view,
+                forces,
+            )
+            if p.args.mission_configuration.orientation_sim
+                inertia_tensor = spacecraft[i].inertia_tensor
+                _assign_orientation_rhs!(
                     du_view,
                     sc_view,
-                    forces,
+                    inertia_tensor,
+                    torques;
+                    propagate_quaternion=false,
+                    include_gyroscopic=false,
+                    rw_assembly=spacecraft[i].root.rw_assembly,
                 )
-                if p.args.mission_configuration.orientation_sim
-                    inertia_tensor = spacecraft[i].inertia_tensor
-                    _assign_orientation_rhs!(
-                        du_view,
-                        sc_view,
-                        inertia_tensor,
-                        torques;
-                        propagate_quaternion=false,
-                        include_gyroscopic=false,
-                        rw_assembly=spacecraft[i].root.rw_assembly,
-                    )
-                end
-                du_view.heat_loads .= 0.0
-            elseif rhs_kind == :slow
-                heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
-                    p,
-                    sc_view,
-                    i,
-                    t;
-                    use_buffered_density=false,
-                )
-                SimulationModel.DynamicsTranslational.assign_slow_translational_rhs!(
-                    du_view,
-                    sc_view,
-                    forces,
-                )
-                if p.args.mission_configuration.orientation_sim
-                    inertia_tensor = spacecraft[i].inertia_tensor
-                    _assign_orientation_rhs!(
-                        du_view,
-                        sc_view,
-                        inertia_tensor,
-                        torques;
-                        propagate_quaternion=true,
-                        include_gyroscopic=true,
-                        rw_assembly=spacecraft[i].root.rw_assembly,
-                    )
-                end
-                _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
-            else
-                rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
-                mass_rate = if rhs_kind == :explicit || rhs_kind == :full
-                    _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, i, t, debug_control)
-                else
-                    0.0
-                end
-                heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
-                    p,
-                    sc_view,
-                    i,
-                    t;
-                    use_buffered_density=false,
-                )
-                SimulationModel.DynamicsTranslational.assign_full_translational_rhs!(
-                    du_view,
-                    sc_view,
-                    forces,
-                    mass_rate,
-                )
-                if p.args.mission_configuration.orientation_sim
-                    inertia_tensor = spacecraft[i].inertia_tensor
-                    _assign_orientation_rhs!(
-                        du_view,
-                        sc_view,
-                        inertia_tensor,
-                        torques;
-                        propagate_quaternion=true,
-                        include_gyroscopic=true,
-                        rw_assembly=spacecraft[i].root.rw_assembly,
-                        rw_torque_body=SVector{3, Float64}(rw_torque_body),
-                    )
-                end
-                _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
             end
+            du_view.heat_loads .= 0.0
+        elseif rhs_kind == :slow
+            heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
+                p,
+                sc_view,
+                i,
+                t;
+                use_buffered_density=false,
+            )
+            SimulationModel.DynamicsTranslational.assign_slow_translational_rhs!(
+                du_view,
+                sc_view,
+                forces,
+            )
+            if p.args.mission_configuration.orientation_sim
+                inertia_tensor = spacecraft[i].inertia_tensor
+                _assign_orientation_rhs!(
+                    du_view,
+                    sc_view,
+                    inertia_tensor,
+                    torques;
+                    propagate_quaternion=true,
+                    include_gyroscopic=true,
+                    rw_assembly=spacecraft[i].root.rw_assembly,
+                )
+            end
+            _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
+        else
+            rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
+            mass_rate = if rhs_kind == :explicit || rhs_kind == :full
+                _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, i, t, debug_control)
+            else
+                0.0
+            end
+            heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
+                p,
+                sc_view,
+                i,
+                t;
+                use_buffered_density=false,
+            )
+            SimulationModel.DynamicsTranslational.assign_full_translational_rhs!(
+                du_view,
+                sc_view,
+                forces,
+                mass_rate,
+            )
+            if p.args.mission_configuration.orientation_sim
+                inertia_tensor = spacecraft[i].inertia_tensor
+                _assign_orientation_rhs!(
+                    du_view,
+                    sc_view,
+                    inertia_tensor,
+                    torques;
+                    propagate_quaternion=true,
+                    include_gyroscopic=true,
+                    rw_assembly=spacecraft[i].root.rw_assembly,
+                    rw_torque_body=SVector{3, Float64}(rw_torque_body),
+                )
+            end
+            _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
         end
     end
     return nothing

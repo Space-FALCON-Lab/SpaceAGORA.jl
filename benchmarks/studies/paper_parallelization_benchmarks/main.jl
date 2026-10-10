@@ -309,12 +309,32 @@ function _ppb_run_full_budget!(
     return nothing
 end
 
+# SPACEAGORA_PPB_SKIP_MODES=policy_v2,... drops those modes from every phase, so
+# a rerun can leave out an arm the paper does not report without editing the
+# catalog.
+function _ppb_skip_modes(phase::PPBPhase)::PPBPhase
+    raw = strip(get(ENV, "SPACEAGORA_PPB_SKIP_MODES", ""))
+    isempty(raw) && return phase
+    skip = Set(strip.(split(raw, ",")))
+    modes = [m for m in phase.modes if !(m in skip)]
+    modes == phase.modes && return phase
+    println("[paper-benchmarks] phase $(phase.id): skipping modes $(join(sort!(collect(skip ∩ Set(phase.modes))), ", "))")
+    return _ppb_phase_with(phase; modes = modes)
+end
+
+# SPACEAGORA_PPB_SERIAL_RUNGS=ends times serial only at the first and last rung
+# of a budget grid. Serial does not depend on the rung, and the paper's analysis
+# pools every serial repeat of a (phase, case) into one baseline, so the middle
+# rungs only repeat it; the two ends still bracket the phase for drift.
+_ppb_serial_at_ends_only()::Bool = lowercase(strip(get(ENV, "SPACEAGORA_PPB_SERIAL_RUNGS", "all"))) == "ends"
+
 function _ppb_run_phase(
     phase::PPBPhase, ppb::PPBConfig, phase_dir::String;
     on_run_complete::Union{Nothing, Function}=nothing,
 )::NamedTuple
     started  = time()
     errors   = String[]
+    phase = _ppb_skip_modes(phase)
 
     if !isempty(phase.budget_grid)
         # Paired (process_workers, threads) sweep at a fixed total budget.
@@ -341,18 +361,24 @@ function _ppb_run_phase(
         split_phase = _ppb_phase_with(phase; modes = _ppb_split_modes(phase))
         full_modes = _ppb_full_budget_modes(phase)
         runs = (isempty(split_phase.modes) ? 0 : length(grid)) + (isempty(full_modes) ? 0 : 1)
-        for (w, t) in grid
+        serial_ends = _ppb_serial_at_ends_only()
+        for (i, (w, t)) in enumerate(grid)
             isempty(split_phase.modes) && break
+            rung_phase = split_phase
+            if serial_ends && 1 < i < length(grid)
+                rung_phase = _ppb_phase_with(split_phase; modes = filter(!=("serial"), split_phase.modes))
+                isempty(rung_phase.modes) && continue
+            end
             sub_dir = joinpath(phase_dir, "split_w$(lpad(w, 2, '0'))_t$(lpad(t, 2, '0'))")
             if ppb.dry_run
                 budget_note = phase.budget_grid_fixed ? "per-route budget $(w)" : "budget $(w * t)"
                 println("[dry-run] phase=$(phase.id) — workers=$(w) x threads=$(t) ($(budget_note))")
-                _ppb_dry_print(split_phase, ppb, sub_dir; process_workers=w, threads=[t])
+                _ppb_dry_print(rung_phase, ppb, sub_dir; process_workers=w, threads=[t])
             else
                 try
                     mkpath(sub_dir)
                     cfg = _ppb_build_ppc_config(
-                        split_phase, ppb, sub_dir; process_workers=w, threads=[t],
+                        rung_phase, ppb, sub_dir; process_workers=w, threads=[t],
                         preview_worker_cap=worker_cap,
                     )
                     ppc_run_controller(cfg; on_run_complete)

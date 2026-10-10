@@ -50,6 +50,10 @@ Usage:
                         builds it before the job when the command runs the
                         paper harness; on builds it for any command. The harness
                         itself uses the image only when it is current.
+  spaceagora-remote run        [--remote NAME] [--cwd DIR] [--no-watch]
+                          [--poll-interval SEC] -- <command> [args...]
+                        Run a command detached (tmux) in an existing remote
+                        directory, no code sync. Survives a lost connection.
   spaceagora-remote seed-data [--remote NAME]
   spaceagora-remote list       [--remote NAME]
   spaceagora-remote status     [--remote NAME] <job-id>
@@ -98,7 +102,11 @@ resolve_remote() {
   # rather than shipping a literal "~" through to remote mkdir/rsync/cd calls.
   if [[ "$REMOTE_BASE" == "~"* ]]; then
     local remote_home
-    remote_home="$(rsh 'printf %s "$HOME"')"
+    remote_home="$(rsh 'printf %s "$HOME"')" || remote_home=""
+    if [[ -z "$remote_home" ]]; then
+      echo "state: unreachable ($name: ssh failed)" >&2
+      exit 255
+    fi
     REMOTE_BASE="${remote_home}${REMOTE_BASE#\~}"
   fi
 }
@@ -113,7 +121,12 @@ data_allowlist() {
   fi
 }
 
-rsh() { ssh "$SSH_ALIAS" "$@"; }
+# Fail fast on an unreachable host and notice a dead link within about a
+# minute, instead of hanging on TCP timeouts. Exit status 255 from ssh means
+# "could not reach the host", never "the job finished"; callers rely on that.
+SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
+export RSYNC_RSH="ssh ${SSH_OPTS[*]}"
+rsh() { ssh "${SSH_OPTS[@]}" "$SSH_ALIAS" "$@"; }
 
 ensure_remote_dirs() {
   rsh "mkdir -p '$REMOTE_BASE/canonical_code' '$REMOTE_BASE/canonical_data' '$REMOTE_BASE/releases' '$REMOTE_BASE/jobs' '$REMOTE_BASE/shared_depot'"
@@ -358,6 +371,62 @@ EOF
   fi
 }
 
+# Run an ad-hoc command on the remote inside tmux, without syncing code or
+# building a release: for jobs that live in a directory already on the remote
+# (a hand-built env, a Basilisk install, a copied worktree). The command survives
+# a lost ssh connection exactly like a push job, and status/log/watch/kill/pull
+# work on it the same way (pull fetches job.log and job.meta only).
+cmd_run() {
+  local remote="" cwd="" watch=1 poll_interval="$DEFAULT_POLL_INTERVAL"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --remote) remote="$2"; shift 2 ;;
+      --cwd) cwd="$2"; shift 2 ;;
+      --no-watch) watch=0; shift ;;
+      --poll-interval) poll_interval="$2"; shift 2 ;;
+      --) shift; break ;;
+      *) echo "error: unexpected run argument '$1'" >&2; exit 1 ;;
+    esac
+  done
+  if [[ $# -eq 0 ]]; then
+    echo "error: no command given after --" >&2
+    exit 1
+  fi
+  resolve_remote "$remote"
+  ensure_remote_dirs || { echo "state: unreachable ($REMOTE_NAME: ssh failed)" >&2; exit 255; }
+
+  local job_id session job_dir cmd_str run_sh
+  job_id="$(new_job_id)"
+  session="spaceagora-$job_id"
+  job_dir="$REMOTE_BASE/jobs/$job_id"
+  cmd_str="$(printf '%q ' "$@")"
+  run_sh="$(mktemp)"
+  cat > "$run_sh" <<EOF
+#!/usr/bin/env bash
+cd ${cwd:-\$HOME} || { echo "EXIT_CODE=cd-failed" >> "$job_dir/job.meta"; exit 1; }
+echo "PID=\$\$" >> "$job_dir/job.meta"
+echo "START=\$(date -Iseconds)" >> "$job_dir/job.meta"
+$cmd_str > "$job_dir/job.log" 2>&1
+EXIT_CODE=\$?
+echo "END=\$(date -Iseconds)" >> "$job_dir/job.meta"
+echo "EXIT_CODE=\$EXIT_CODE" >> "$job_dir/job.meta"
+EOF
+  rsh "mkdir -p '$job_dir' && cat > '$job_dir/run.sh' && chmod +x '$job_dir/run.sh'" < "$run_sh"
+  rm -f "$run_sh"
+  printf 'JOB_ID=%s\nREMOTE=%s\nSESSION=%s\nCWD=%s\nCOMMAND=%s\n' \
+    "$job_id" "$REMOTE_NAME" "$session" "${cwd:-~}" "$cmd_str" | rsh "cat > '$job_dir/job.meta'"
+  rsh "$(printf 'tmux new-session -d -s %q %q' "$session" "bash '$job_dir/run.sh'")" || {
+    echo "error: could not start tmux session on $REMOTE_NAME" >&2; exit 1; }
+
+  echo "job id: $job_id"
+  echo "log:    spaceagora-remote log --remote $REMOTE_NAME $job_id"
+  echo "status: spaceagora-remote status --remote $REMOTE_NAME $job_id"
+  if [[ $watch -eq 1 ]]; then
+    spawn_watcher "$job_id" "$poll_interval"
+    echo "watcher: backgrounded locally, pulls job.log/job.meta on completion"
+  fi
+}
+
 cmd_seed_data() {
   local remote=""
   while [[ $# -gt 0 ]]; do
@@ -383,14 +452,30 @@ cmd_list() {
   done
   resolve_remote "$remote"
   rsh "cd '$REMOTE_BASE/jobs' 2>/dev/null && for j in \$(ls -1t 2>/dev/null | head -20); do
-    running=\$(tmux has-session -t \"spaceagora-\$j\" 2>/dev/null && echo running || echo done)
+    state=\$($(job_state_sh '$j') | cut -d' ' -f2)
     cmd=\$(grep '^COMMAND=' \"\$j/job.meta\" 2>/dev/null | cut -d= -f2- | cut -c1-60)
-    printf '%-28s %-8s %s\n' \"\$j\" \"\$running\" \"\$cmd\"
+    printf '%-28s %-9s %s\n' \"\$j\" \"\$state\" \"\$cmd\"
   done"
+  local rc=$?
+  [[ $rc -eq 255 ]] && { echo "state: unreachable ($REMOTE_NAME: ssh failed)"; exit 255; }
+  return 0
+}
+
+# Remote shell snippet printing one line, "state: running|finished|died ...",
+# for job $1 (a literal job id, or a remote shell variable such as \$j).
+# "died" means no EXIT_CODE was written and no tmux session is left: the job was
+# killed from outside (reboot, OOM killer, someone's kill), not by a lost ssh
+# connection, which tmux survives.
+job_state_sh() {
+  local j="$1" m="$REMOTE_BASE/jobs/$1/job.meta"
+  echo "if grep -q '^EXIT_CODE=' \"$m\" 2>/dev/null; then echo \"state: finished (\$(grep '^EXIT_CODE=' \"$m\" | tail -1))\";
+elif tmux has-session -t \"spaceagora-$j\" 2>/dev/null; then echo 'state: running';
+elif [ -f \"$m\" ]; then echo 'state: died (no EXIT_CODE and no tmux session)';
+else echo 'state: unknown job'; fi"
 }
 
 require_job_id() {
-  if [[ $# -eq 0 ]]; then
+  if [[ -z "${1:-}" ]]; then
     echo "error: job-id required" >&2
     exit 1
   fi
@@ -406,7 +491,16 @@ cmd_status() {
   done
   require_job_id "$job_id"
   resolve_remote "$remote"
-  rsh "tmux has-session -t 'spaceagora-$job_id' 2>/dev/null && echo 'state: running' || echo 'state: not running (see EXIT_CODE below if finished)'; echo; cat '$REMOTE_BASE/jobs/$job_id/job.meta' 2>/dev/null || echo 'no job.meta found'"
+  # First line is always "state: running|finished|died|unknown|unreachable".
+  # Exit status 255 means the host could not be reached; it says nothing about
+  # the job, which keeps running in its tmux session.
+  local out
+  out="$(rsh "$(job_state_sh "$job_id"); echo; cat '$REMOTE_BASE/jobs/$job_id/job.meta' 2>/dev/null")"
+  if [[ $? -eq 255 || -z "$out" ]]; then
+    echo "state: unreachable ($REMOTE_NAME: ssh failed)"
+    exit 255
+  fi
+  echo "$out"
 }
 
 cmd_attach() {
@@ -499,13 +593,16 @@ spawn_watcher() {
   cat > "$watch_sh" <<EOF
 #!/usr/bin/env bash
 while true; do
-  meta=\$(ssh "$SSH_ALIAS" "cat '$REMOTE_BASE/jobs/$job_id/job.meta' 2>/dev/null")
-  if echo "\$meta" | grep -q '^EXIT_CODE='; then
-    "$SCRIPT_DIR/spaceagora-remote" pull --remote "$REMOTE_NAME" "$job_id"
-    echo "watch complete: \$(echo "\$meta" | grep '^EXIT_CODE=')"
-    command -v notify-send >/dev/null 2>&1 && notify-send 'spaceagora-remote' 'job $job_id finished'
-    break
-  fi
+  # An unreachable host (status exit 255) only means "ask again later".
+  state=\$("$SCRIPT_DIR/spaceagora-remote" status --remote "$REMOTE_NAME" "$job_id" 2>/dev/null | head -1)
+  case "\$state" in
+    "state: finished"*|"state: died"*)
+      "$SCRIPT_DIR/spaceagora-remote" pull --remote "$REMOTE_NAME" "$job_id"
+      echo "watch complete: \$state"
+      command -v notify-send >/dev/null 2>&1 && notify-send 'spaceagora-remote' "job $job_id: \$state"
+      break ;;
+    *) [ "\$state" != "\$last" ] && echo "\$(date -Iseconds) \$state"; last="\$state" ;;
+  esac
   sleep "$poll_interval"
 done
 EOF
@@ -538,6 +635,7 @@ main() {
   local sub="$1"; shift
   case "$sub" in
     push) cmd_push "$@" ;;
+    run) cmd_run "$@" ;;
     seed-data) cmd_seed_data "$@" ;;
     list) cmd_list "$@" ;;
     status) cmd_status "$@" ;;

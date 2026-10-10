@@ -16,12 +16,17 @@ end
 # SPACEAGORA_PPC_DUMP_STATE_DIR=<dir>: write each successful sample's step times
 # and final state, as raw Float64, to <dir>. For byte-for-byte comparison of two
 # runs of the same point (the precompile workload's validation compares a run
-# with the workload against one without). Off by default.
+# with the workload against one without). Off by default. Files carry a
+# per-process call counter, so the timed repeats of one point each keep their
+# own dump instead of overwriting the previous one.
+const _PPC_DUMP_STATE_CALLS = Threads.Atomic{Int}(0)
+
 function _ppc_dump_state(case_name::String, sample_idx::Int, sample_seed::Int, sol)
     dir = get(ENV, "SPACEAGORA_PPC_DUMP_STATE_DIR", "")
     isempty(dir) && return nothing
     mkpath(dir)
-    open(joinpath(dir, "state_$(case_name)_i$(sample_idx)_s$(sample_seed).bin"), "w") do io
+    call = Threads.atomic_add!(_PPC_DUMP_STATE_CALLS, 1) + 1
+    open(joinpath(dir, "state_$(case_name)_i$(sample_idx)_s$(sample_seed)_c$(call).bin"), "w") do io
         write(io, Float64.(sol.t))
         isempty(sol.u) || write(io, Float64[x for x in sol.u[end]])
     end

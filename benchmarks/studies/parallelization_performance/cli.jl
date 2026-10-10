@@ -428,7 +428,12 @@ function parse_parallelization_performance_cli(args::Vector{String}=ARGS)::PPCCo
     defaults = _ppc_defaults(profile)
     isempty(modes) && (modes = defaults.modes)
     isempty(cases) && (cases = defaults.cases)
-    isempty(parity_cases) && (parity_cases = defaults.parity_cases)
+    # `--parity-cases=none` runs no parity points; an empty list means the defaults.
+    if parity_cases == ["none"]
+        parity_cases = String[]
+    elseif isempty(parity_cases)
+        parity_cases = defaults.parity_cases
+    end
     isempty(threads) && (threads = defaults.threads)
     repeats <= 0 && (repeats = defaults.repeats)
     warmup < 0 && (warmup = defaults.warmup)

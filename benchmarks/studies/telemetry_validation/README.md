@@ -52,6 +52,15 @@ julia --project=. benchmarks/studies/telemetry_validation/run_validation.jl full
 # Fast pipeline check (first orbits only; does NOT reproduce record values):
 julia --project=. benchmarks/studies/telemetry_validation/run_validation.jl quick --runs=odyssey_tolson
 
+# Venus Express against ESA's reconstructed orbit (ORVM_T19). Download the kernel
+# ORVM_T19___________00001.BSP (SHA-256 6b422c69...ab512dc9) from
+# https://naif.jpl.nasa.gov/pub/naif/pds/data/vex-e_v-spice-6-v2.0/vexsp_2000/DATA/SPK/,
+# build the reference files (not tracked), then run the five vex_orvm_* manifests.
+# SPACEAGORA_TELEMETRY_STATE_OUT=<csv> also writes the final run's state history.
+julia --project=. benchmarks/studies/telemetry_validation/vex_orvm/build_reference.jl \
+    data/spice_external/vex/ORVM_T19___________00001.BSP data/telemetry/VEx/orvm
+julia --project=. benchmarks/studies/telemetry_validation/run_validation.jl full --runs=vex_orvm
+
 # Figure 1 input: matched accelerometer-vs-MarsGRAM density comparison
 # (needs native GRAM + the m01_ab_v2.bsp kernel under the GRAM Suite SPICE tree):
 julia --project=. benchmarks/studies/telemetry_validation/density_compare.jl

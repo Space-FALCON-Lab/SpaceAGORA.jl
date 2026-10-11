@@ -23,10 +23,23 @@ function _scenario_state_anchors(cfg::OrbitEventsScenarioConfig)
 end
 _scenario_state_anchors(::AbstractScenarioConfig) = SimulationModel.StateAnchor[]
 
+# Periapsis pulses of a scenario (manifest block [scenarios.thruster_pulse]);
+# none unless its delta-v is positive.
+function _scenario_periapsis_pulses(cfg::OrbitEventsScenarioConfig)
+    cfg.thruster_pulse_dv_mps > 0.0 || return ()
+    println("thruster_pulse: dv=$(cfg.thruster_pulse_dv_mps) m/s at each periapsis of passes " *
+            "$(cfg.thruster_pulse_first_pass)..$(cfg.thruster_pulse_last_pass) (counter + $(cfg.thruster_pulse_counter_pass_offset))")
+    return (SimulationModel.get_periapsis_pulse_callback(
+        cfg.thruster_pulse_dv_mps, cfg.thruster_pulse_first_pass:cfg.thruster_pulse_last_pass;
+        counter_pass_offset=cfg.thruster_pulse_counter_pass_offset),)
+end
+_scenario_periapsis_pulses(::AbstractScenarioConfig) = ()
+
 function _scenario_extra_callbacks(cfg::AbstractScenarioConfig)
     anchors = _scenario_state_anchors(cfg)
-    isempty(anchors) && return ()
-    return (SimulationModel.get_state_anchor_callback(anchors),)
+    pulses = _scenario_periapsis_pulses(cfg)
+    isempty(anchors) && return pulses
+    return (SimulationModel.get_state_anchor_callback(anchors), pulses...)
 end
 
 function _run_simulation_dataframe(
@@ -213,6 +226,10 @@ function _run_single_scenario(cfg::OrbitEventsScenarioConfig, profile::Symbol)
         _run_simulation_dataframe(args_final, cfg.name, cfg.atmosphere_truth, profile; extra_callbacks=_scenario_extra_callbacks(cfg))
     end
     final_df = final_run.results_df
+    # Opt-in dump of the final run's spacecraft state history, for comparisons the scorer does not make (apsis timing,
+    # position against an ephemeris).
+    state_out = get(ENV, "SPACEAGORA_TELEMETRY_STATE_OUT", "")
+    isempty(state_out) || CSV.write(state_out, final_df[:, filter(n -> occursin(r"^(time|sc1_pos(ition)?_[123]|sc1_vel(ocity)?_[123])$", n), names(final_df))])
     selected_runtime_s = final_run.elapsed_s
     solver_info = final_run.solver_info
     final_rows, final_errors = _orbit_rows_errors(cfg, args_final, final_df, final_points)

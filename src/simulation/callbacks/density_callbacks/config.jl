@@ -237,6 +237,7 @@ end
 @inline density_model_work_is_heavy(::AbstractDensityModel)::Bool = false
 @inline density_model_work_is_heavy(::EnvironmentModels.GRAMAtmosphereModel)::Bool = true
 @inline density_model_work_is_heavy(::EnvironmentModels.GRAMAtmosphereModelSurrogate)::Bool = true
+@inline density_model_work_is_heavy(m::EnvironmentModels.PassKeyedExponentialAtmosphereModel)::Bool = density_model_work_is_heavy(m.fallback)
 
 """
     _density_callback_work_is_heavy(p, num_sats) -> Bool

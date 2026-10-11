@@ -927,6 +927,94 @@ end
 end
 
 """
+PassKeyedExponentialAtmosphereModel — a per-pass exponential density, keyed to
+the simulated pass, wrapped around a fallback model.
+
+For simulated pass `k` (`orbit_counter`, flight pass `k + counter_pass_offset`)
+below `entry_interface_m`, the density is
+
+    rho(h) = rho_p * exp(-(h - h_p) / H)        rho_p = 2 pdyn / V_p^2
+
+with `h_p` the flight pericentre altitude and `H` the scale height of that
+pass, and `pdyn` either tabulated (`pdyn_Nm2`) or recovered from the flight
+drag impulse `dv_mps` by Damiani et al. Eq. (4),
+`dv = pdyn (Cd S / m) sqrt(2 pi H r_p) / V_p`. `V_p` and `r_p` are the speed and
+radius at pericentre of the osculating two-body orbit of the queried state, so
+the density is a pure function of the state and the pass counter; the flight
+pericentre speed is not available. Above the entry interface, and for any pass
+with no tabulated profile, the density is the fallback model's, unchanged.
+Temperature and wind always come from the fallback. The state-free `getDensity`
+methods answer with the fallback alone; the profile is applied only by the
+density callback (`pass_exponential_density`).
+"""
+struct PassKeyedExponentialAtmosphereModel{M <: AbstractDensityModel} <: AbstractDensityModel
+    fallback::M
+    pass_id::Vector{Int}          # flight pass numbers, strictly ascending
+    pdyn_Nm2::Vector{Float64}     # dynamic pressure at pericentre; NaN if dv_mps is used
+    dv_mps::Vector{Float64}       # drag delta-V per pass; NaN if pdyn_Nm2 is used
+    h_peri_m::Vector{Float64}
+    scale_height_m::Vector{Float64}
+    cd::Float64                   # flight drag model, only for the dv_mps inversion
+    area_m2::Float64
+    mass_kg::Float64
+    counter_pass_offset::Int      # flight pass = orbit_counter + counter_pass_offset
+    entry_interface_m::Float64
+    rho_scale::Float64            # constant factor on every profile density; 1.0 leaves it unchanged
+end
+
+function PassKeyedExponentialAtmosphereModel(fallback::AbstractDensityModel, pass_id, pdyn_Nm2, dv_mps, h_peri_m, scale_height_m;
+        cd::Real=2.2, area_m2::Real=10.4, mass_kg::Real=650.0, counter_pass_offset::Integer, entry_interface_m::Real, rho_scale::Real=1.0)
+    isfinite(rho_scale) && rho_scale > 0 || throw(ArgumentError("PassKeyedExponentialAtmosphereModel: rho_scale must be finite and > 0"))
+    n = length(pass_id)
+    all(length(v) == n for v in (pdyn_Nm2, dv_mps, h_peri_m, scale_height_m)) ||
+        throw(ArgumentError("PassKeyedExponentialAtmosphereModel: column lengths differ"))
+    issorted(pass_id; lt=<=) || throw(ArgumentError("PassKeyedExponentialAtmosphereModel: pass numbers must be strictly ascending"))
+    for i in 1:n
+        isnan(pdyn_Nm2[i]) != isnan(dv_mps[i]) || throw(ArgumentError("pass $(pass_id[i]): give exactly one of pdyn_Nm2 and dv_mps"))
+        scale_height_m[i] > 0 || throw(ArgumentError("pass $(pass_id[i]): scale height must be > 0"))
+    end
+    return PassKeyedExponentialAtmosphereModel(fallback, collect(Int, pass_id), collect(Float64, pdyn_Nm2), collect(Float64, dv_mps),
+        collect(Float64, h_peri_m), collect(Float64, scale_height_m), Float64(cd), Float64(area_m2), Float64(mass_kg),
+        Int(counter_pass_offset), Float64(entry_interface_m), Float64(rho_scale))
+end
+
+getDensity(model::PassKeyedExponentialAtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool) =
+    getDensity(model.fallback, h, lat, lon, el_time, wind)
+getDensity(model::PassKeyedExponentialAtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool, p) =
+    getDensity(model.fallback, h, lat, lon, el_time, wind, p)
+
+"""
+    pass_exponential_density(model, h, pos_ii, vel_ii, orbit_counter, mu) -> Union{Nothing, Float64}
+
+Density of [`PassKeyedExponentialAtmosphereModel`](@ref) at altitude `h` [m] for
+the inertial state (`pos_ii` [m], `vel_ii` [m/s]) on simulated pass
+`orbit_counter`, with planet gravitational parameter `mu` [m^3/s^2]. `nothing`
+means the fallback applies (at or above the entry interface, or no profile for
+this pass: exact pass match, no nearest-pass substitution). NaN for a
+non-finite altitude, so the solver rejects the step.
+"""
+function pass_exponential_density(model::PassKeyedExponentialAtmosphereModel, h::Float64, pos_ii::SVector{3, Float64},
+        vel_ii::SVector{3, Float64}, orbit_counter::Int, mu::Float64)::Union{Nothing, Float64}
+    isfinite(h) || return NaN
+    h >= model.entry_interface_m && return nothing
+    ids = model.pass_id
+    target = orbit_counter + model.counter_pass_offset
+    k = searchsortedfirst(ids, target)
+    (k > length(ids) || ids[k] != target) && return nothing
+    r = norm(pos_ii)
+    hvec = cross(pos_ii, vel_ii)
+    h2 = dot(hvec, hvec)
+    ecc = sqrt(max(1.0 + 2.0 * (0.5 * dot(vel_ii, vel_ii) - mu / r) * h2 / (mu * mu), 0.0))
+    r_p = h2 / mu / (1.0 + ecc)
+    v_p = sqrt(h2) / r_p
+    H = model.scale_height_m[k]
+    pdyn = isnan(model.pdyn_Nm2[k]) ?
+        model.dv_mps[k] * model.mass_kg * v_p / (model.cd * model.area_m2 * sqrt(2.0 * pi * H * r_p)) :
+        model.pdyn_Nm2[k]
+    return 2.0 * pdyn / (v_p * v_p) * exp(-(h - model.h_peri_m[k]) / H) * model.rho_scale
+end
+
+"""
 TimeTabulatedAtmosphereModel — density as a pure function of scenario elapsed
 time, log-linearly interpolated from a sorted (t_s, rho) table and held
 constant beyond the table's ends. The orbital-arc counterpart of

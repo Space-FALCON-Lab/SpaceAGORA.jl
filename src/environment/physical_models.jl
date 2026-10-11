@@ -5,6 +5,7 @@ module EnvironmentModels
     using Reexport
 
     export NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosphereModel, TabulatedFlightAtmosphereModel, TimeTabulatedAtmosphereModel
+    export PassKeyedExponentialAtmosphereModel, pass_exponential_density
     export NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
     export GRAMAtmosphereModel, GRAMAtmosphereModelSurrogate, GRAMGridAtmosphereModel, GRAMNearSurfaceAtmosphereModel, CombinedAtmosphereModel, ConstantDensityModel
     export with_density_model_epoch

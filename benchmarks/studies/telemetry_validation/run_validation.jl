@@ -8,7 +8,7 @@
 #
 # Usage:
 #   julia --project=. benchmarks/studies/telemetry_validation/run_validation.jl \
-#       [quick|full] [--runs=core|all|envelope|<name,...>] [--enforce=true|false] \
+#       [quick|full] [--runs=core|all|envelope|vex_orvm|<name,...>] [--enforce=true|false] \
 #       [--plots=true|false] [--out-root=DIR]
 #
 # The benchmark-of-record command is:

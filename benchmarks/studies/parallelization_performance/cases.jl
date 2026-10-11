@@ -1448,7 +1448,15 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
                 raan_deg=30.0,
                 nu_deg=180.0 + randn(rng) * 4.0
             )],
-            mission_time_s=ppc_mission_time(cfg.profile; test=10.0, smoke=600.0, full=21600.0),
+            # One drag pass per sample rather than montecarlo_heavy_aerobraking's
+            # two: each sample starts near apoapsis of a ~13,100 s orbit, so its
+            # first periapsis falls near 6,500 s (later by up to ~950 s for a
+            # sample 2 sigma low in true anomaly and high in apoapsis), and 9,000 s
+            # leaves the whole first pass inside the arc with margin. The second
+            # pass only doubled the serial baseline (about 24 s per sample at
+            # 21,600 s against 11-12 s here on TRX50) without changing what the
+            # campaign tests. See sec7_main_rerun_preregistration_2026-10-10.md.
+            mission_time_s=ppc_mission_time(cfg.profile; test=10.0, smoke=600.0, full=9000.0),
             orientation_sim=false,
             dynamic_effectors=(InverseSquaredGravityModel(), AerodynamicCoefficientfM()),
             density_model=ppc_gram_atmosphere_model("mars", 1000 + mc_index),

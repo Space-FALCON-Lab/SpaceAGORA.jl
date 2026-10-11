@@ -2,6 +2,7 @@ module PassExponentialDensityTests
 
 using Test
 using SpaceAGORA
+using SpaceAGORA.SimulationModel
 using StaticArrays
 using LinearAlgebra
 using Statistics: median
@@ -134,6 +135,47 @@ end
     f = _load("vex_orvm_f")
     @test f.thruster_pulse_dv_mps == 0.04
     @test (f.thruster_pulse_first_pass, f.thruster_pulse_last_pass, f.thruster_pulse_counter_pass_offset) == (2950, 3005, 2948)
+end
+
+
+@testset "periapsis pulse in a propagation" begin
+    # Regression: under DiffEqBase 7 the pulse callback and the orbit counter's apsis callback both locate
+    # the periapsis root of r.v and re-detected it in turn forever after the first pulse. Over about
+    # two orbits from just after apoapsis (orbit counting on), each pass gets exactly one pulse and the run completes.
+    planet = Earth("", joinpath(@__DIR__, "..", "..", "..", "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE"))
+    root = Link(root=true, m=140.0, ref_area=1.2)
+    ic = InitialCondition(ra=planet.Rp_e + 900e3, rp=planet.Rp_e + 800e3, i=28.0, ω=15.0, Ω=20.0, ν=181.0)
+    sc = SpacecraftModel(joints=Joint[], links=Link[root], root=root, instant_actuation=true, prop_mass=15.0,
+        inertia_tensor=root.inertia, n_reaction_wheels=0, n_thrusters=0, initial_condition=ic, id=1)
+    period = 2pi * sqrt((planet.Rp_e + 850e3)^3 / planet.μ)
+    cfg = SimulationConfiguration(
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
+        mission_configuration=MissionConfiguration(mission_type=MissionOrbits, keplerian=true, number_of_orbits=2,
+            mission_time=4.0 * period, orientation_sim=false, num_steps_to_save=50),
+        environment_model=EnvironmentModel(planet=planet, EI=120.0, density_model=ExponentialAtmosphereModel(planet),
+            thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet), topography=false, wind=false),
+        dynamics_model=DynamicsModel([sc], (InverseSquaredGravityModel(),)),
+        guidance_model=GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
+        navigation_model=NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
+        control_model=ControlModel(control_effectors=(), control_rates=Float64[]),
+        initial_time=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+        integration_tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=5.0))
+    text = withenv("SPACEAGORA_RHS_CALIBRATE" => "off") do
+        mktempdir() do tmp
+            cd(tmp) do
+                log_path = joinpath(tmp, "pulse_log.txt")
+                open(log_path, "w") do f
+                    redirect_stdout(f) do
+                        run_simulation(cfg; return_solution=true,
+                            extra_callbacks=(SM.SimulationCallbacks.get_periapsis_pulse_callback(0.04, 1:10),))
+                    end
+                end
+                read(log_path, String)
+            end
+        end
+    end
+    pulses = [parse(Int, m.captures[1]) for m in eachmatch(r"periapsis_pulse sat=1 pass=(\d+)", text)]
+    @test pulses == [1, 2]
 end
 
 

@@ -39,6 +39,17 @@ Base.@kwdef struct AtmosphereTruthConfig
     tabulated_time_file::String = ""
     tabulated_time_scale::Float64 = 1.0
     tabulated_time_temperature_k::Float64 = 900.0
+    # Per-pass exponential density mode: atmosphere_model = "gram_pass_exponential"
+    # keeps the GRAM model of this truth block as the fallback and, on the
+    # passes listed in pass_exponential_file (CSV: pass, h_peri_km,
+    # scale_height_km, pdyn_Nm2, dv_mps), replaces its density below the
+    # scenario EI by the pass's exponential profile (see
+    # PassKeyedExponentialAtmosphereModel). Flight pass = orbit_counter +
+    # pass_exponential_counter_offset.
+    pass_exponential_file::String = ""
+    pass_exponential_counter_offset::Int = 0
+    # Constant factor on every pass's periapsis density (1.0 = the profile as given).
+    pass_exponential_scale::Float64 = 1.0
 end
 
 Base.@kwdef struct CalibrationConfig
@@ -119,6 +130,17 @@ Base.@kwdef struct OrbitEventsScenarioConfig <: AbstractScenarioConfig
     # set, sim apsis events are placed at epoch_orbit_offset + k with unit step
     # (one apsis per orbit) and scoring is masked to the simulated span.
     epoch_orbit_offset::Union{Nothing, Float64} = nothing
+    # Comparison axis of the apsis series: :legacy (stretch the simulated events over the
+    # digitized grid at its median step and interpolate at the digitized labels) or
+    # :pass_aligned (flight point i is compared with simulated apsis event i, no
+    # interpolation; the digitized series are one point per orbit). See
+    # docs/vex_pass_aligned_axis_amendment_2026-10-09.md.
+    comparison_axis::Symbol = :legacy
+    # With :pass_aligned: index of one simulated apsis event (>= 1) with no flight counterpart because the
+    # digitized series skips that orbit; later events pair with the next flight point (0 = none).
+    pass_aligned_skipped_event::Int = 0
+    # Same for the apoapsis series: -1 follows pass_aligned_skipped_event, 0 = no skipped event, >= 1 = that event.
+    pass_aligned_apoapsis_skipped_event::Int = -1
     spacecraft::SpacecraftConfig
     gravity_model::Symbol
     gravity_harmonics_degree::Int = 0
@@ -174,6 +196,14 @@ Base.@kwdef struct OrbitEventsScenarioConfig <: AbstractScenarioConfig
     state_anchor_burn_orbit_numbers::Vector{Int64} = Int64[]
     state_anchor_elapsed_s::Vector{Float64} = Float64[]
     state_anchor_states_j2000_m::Vector{NTuple{6, Float64}} = NTuple{6, Float64}[]
+    # Per-pass impulsive velocity change at periapsis, antiparallel to the
+    # velocity relative to the atmosphere (manifest block [scenarios.thruster_pulse]);
+    # applied to passes first_pass..last_pass, where simulated orbit counter c is
+    # pass c + counter_pass_offset. Off (0.0) by default.
+    thruster_pulse_dv_mps::Float64 = 0.0
+    thruster_pulse_first_pass::Int = 0
+    thruster_pulse_last_pass::Int = -1
+    thruster_pulse_counter_pass_offset::Int = 0
     atmosphere_truth::AtmosphereTruthConfig = AtmosphereTruthConfig()
     calibration::CalibrationConfig = CalibrationConfig()
     EI_km::Float64

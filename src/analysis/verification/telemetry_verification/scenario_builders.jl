@@ -222,6 +222,9 @@ end
     if cfg.atmosphere_truth.atmosphere_model == "tabulated_flight"
         return _make_tabulated_flight_density_model(cfg.initial_time, cfg.atmosphere_truth)
     end
+    if cfg.atmosphere_truth.atmosphere_model == "gram_pass_exponential"
+        return _make_pass_exponential_density_model(cfg.planet_name, cfg.initial_time, cfg.atmosphere_truth, cfg.EI_km)
+    end
     if cfg.atmosphere_truth.atmosphere_model == "tabulated_time"
         return _make_time_tabulated_density_model(cfg.atmosphere_truth)
     end
@@ -286,6 +289,42 @@ function _make_tabulated_flight_density_model(
         peri_el[ord], alt_pairs[ord], log_pairs[ord], sig_pairs[ord],
         truth.tabulated_flight_sigma, 3.4, 188.92
     )
+end
+
+# GRAM fallback plus the per-pass exponential profiles of pass_exponential_file
+# (CSV columns pass, h_peri_km, scale_height_km, pdyn_Nm2, dv_mps; an empty
+# pdyn_Nm2 or dv_mps cell means that quantity is not given for the pass, and
+# exactly one of the two must be). The profile applies below the scenario EI.
+function _make_pass_exponential_density_model(
+    planet_name::String,
+    initial_time::InitialTime,
+    truth::AtmosphereTruthConfig,
+    EI_km::Float64
+)
+    path = truth.pass_exponential_file
+    isfile(path) || throw(ArgumentError("pass_exponential_file not found: $path"))
+    tbl = DataFrame(CSV.File(path))
+    for col in ("pass", "h_peri_km", "scale_height_km", "pdyn_Nm2", "dv_mps")
+        hasproperty(tbl, Symbol(col)) || throw(ArgumentError("pass_exponential_file missing column '$col'"))
+    end
+    nanmiss(x) = ismissing(x) ? NaN : Float64(x)
+    ord = sortperm(Int.(tbl.pass))
+    fallback = _make_required_gram_density_model(planet_name, initial_time, truth)
+    model = SimulationModel.PassKeyedExponentialAtmosphereModel(
+        fallback,
+        Int.(tbl.pass)[ord],
+        nanmiss.(tbl.pdyn_Nm2)[ord],
+        nanmiss.(tbl.dv_mps)[ord],
+        Float64.(tbl.h_peri_km)[ord] .* 1000.0,
+        Float64.(tbl.scale_height_km)[ord] .* 1000.0;
+        counter_pass_offset=truth.pass_exponential_counter_offset,
+        entry_interface_m=EI_km * 1000.0,
+        rho_scale=truth.pass_exponential_scale
+    )
+    println("pass_exponential: $(length(model.pass_id)) passes ($(isempty(model.pass_id) ? "none" : "$(first(model.pass_id))..$(last(model.pass_id))")), " *
+            "$(count(!isnan, model.pdyn_Nm2)) by pdyn and $(count(!isnan, model.dv_mps)) by dv, " *
+            "counter_pass_offset=$(model.counter_pass_offset), rho_scale=$(model.rho_scale), EI=$(EI_km) km, fallback=$(nameof(typeof(fallback)))")
+    return model
 end
 
 # Loads a rho(t) table (CSV or Arrow; columns time_s, rho_kgm3) for the

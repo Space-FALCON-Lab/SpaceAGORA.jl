@@ -40,12 +40,46 @@ const RUN_SPECS = (
         needs_gram=true,
         description="Venus Express 2014 reconstruction with VenusGRAM (~18 min)"
     ),
+    # Venus Express scored against ESA's reconstructed orbit (ORVM_T19). The
+    # reference files are built from the kernel by vex_orvm/build_reference.jl
+    # into data/telemetry/VEx/orvm/ (not tracked); see that script.
+    (
+        name="vex_orvm_g115",
+        manifest=joinpath(MANIFEST_DIR, "vex_orvm_g115.toml"),
+        needs_gram=true,
+        description="VenusGRAM from the published elements, Cr 1.15, against ORVM"
+    ),
+    (
+        name="vex_orvm_gfit",
+        manifest=joinpath(MANIFEST_DIR, "vex_orvm_gfit.toml"),
+        needs_gram=true,
+        description="As vex_orvm_g115 with the Cr grid refit against ORVM"
+    ),
+    (
+        name="vex_orvm_f",
+        manifest=joinpath(MANIFEST_DIR, "vex_orvm_f.toml"),
+        needs_gram=true,
+        description="Measured-drag density (per-pass profile, thruster pulses), against ORVM"
+    ),
+    (
+        name="vex_orvm_vg",
+        manifest=joinpath(MANIFEST_DIR, "vex_orvm_vg.toml"),
+        needs_gram=true,
+        description="VenusGRAM from the ORVM initial state and burn counts, Cr 1.15"
+    ),
+    (
+        name="vex_orvm_vgfit",
+        manifest=joinpath(MANIFEST_DIR, "vex_orvm_vgfit.toml"),
+        needs_gram=true,
+        description="As vex_orvm_vg with the Cr grid refit against ORVM"
+    ),
 )
 
 const RUN_ALIASES = Dict(
     "core" => ["odyssey_tolson", "vex_venusgram"],
     "envelope" => ["odyssey_tolson_sigma_minus", "odyssey_tolson_sigma_plus"],
-    "all" => [spec.name for spec in RUN_SPECS],
+    "vex_orvm" => ["vex_orvm_g115", "vex_orvm_gfit", "vex_orvm_f", "vex_orvm_vg", "vex_orvm_vgfit"],
+    "all" => ["odyssey_tolson", "odyssey_marsgram", "odyssey_tolson_sigma_minus", "odyssey_tolson_sigma_plus", "vex_venusgram"],
 )
 
 run_spec(name::AbstractString) = begin

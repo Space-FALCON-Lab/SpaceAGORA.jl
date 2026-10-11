@@ -142,3 +142,98 @@ function get_state_anchor_callback(anchors::AbstractVector{StateAnchor}; verbose
 end
 
 export StateAnchor, get_state_anchor_callback
+
+# Periapsis impulses.
+#
+# An impulsive velocity change applied at each periapsis of a listed set of
+# passes, antiparallel to the velocity relative to the atmosphere. It stands in
+# for a published per-pass average (the Venus Express attitude-thruster pulses)
+# in a 3-DOF run. Off unless a callback is built from it.
+
+"""
+    periapsis_pulse_osculating(pos, vel, mu) -> (period_s, periapsis_radius_m)
+
+Two-body period and periapsis radius of the state; `(Inf, r_p)` or `(NaN, NaN)`
+outside the elliptic case is not special-cased beyond returning what the
+formulas give.
+"""
+function periapsis_pulse_osculating(pos::SVector{3, Float64}, vel::SVector{3, Float64}, mu::Float64)
+    r = norm(pos)
+    h2 = dot(cross(pos, vel), cross(pos, vel))
+    a = -mu / (2.0 * (0.5 * dot(vel, vel) - mu / r))
+    ecc = sqrt(max(1.0 + 2.0 * (0.5 * dot(vel, vel) - mu / r) * h2 / (mu * mu), 0.0))
+    return 2.0 * pi * sqrt(abs(a)^3 / mu), h2 / mu / (1.0 + ecc)
+end
+
+"""
+    get_periapsis_pulse_callback(delta_v_mps, passes; counter_pass_offset=0, sat_idx=1, verbose=true)
+
+Continuous callback that, at every periapsis (radial velocity crossing from
+negative to positive) of satellite `sat_idx` whose pass number
+`orbit_counter + counter_pass_offset` is in `passes`, subtracts `delta_v_mps`
+from the velocity along the unit vector of the velocity relative to the
+rotating atmosphere (no wind). With `verbose` on, one `periapsis_pulse` line per
+pulse reports the pass, the time, the altitude and the two-body change in period
+and periapsis radius the pulse makes.
+"""
+const _PULSE_RDOTV_OFFSET = 1.0   # m^2/s; see the condition in get_periapsis_pulse_callback
+
+function get_periapsis_pulse_callback(delta_v_mps::Real, passes; counter_pass_offset::Integer=0, sat_idx::Integer=1, verbose::Bool=true)
+    isfinite(delta_v_mps) && delta_v_mps >= 0 || throw(ArgumentError("periapsis pulse delta_v_mps must be finite and >= 0; got $delta_v_mps."))
+    pass_set = Set{Int}(Int.(collect(passes)))
+    dv = Float64(delta_v_mps)
+    sat = Int(sat_idx)
+    last_pulsed = Ref(typemin(Int))   # pass already pulsed: the root can be reported more than once at one time
+
+    # The orbit counter's apsis callback also locates the r.v root at periapsis (as an ignored
+    # downcrossing). Under DiffEqBase 7, two callbacks sharing one root either re-detect it in turn at
+    # the same time indefinitely or the loser of the tie misses it, so the pulse fires at
+    # r.v = -_PULSE_RDOTV_OFFSET instead, strictly before periapsis (by r_p / (mu e), about 23 ns at
+    # Venus Express). Once a pass is pulsed, the condition holds a positive constant until the pass
+    # counter moves on, so the pass cannot be pulsed or its root located again.
+    function condition(u, t, integrator)
+        p = integrator.p
+        sat <= length(p.orbit_counter) && Int(p.orbit_counter[sat]) + Int(counter_pass_offset) == last_pulsed[] && return 1.0
+        engine = _simulation_engine_module()
+        return dot(engine._state_position_ii(u, sat), engine._state_velocity_ii(u, sat)) + _PULSE_RDOTV_OFFSET
+    end
+
+    function affect!(integrator)
+        p = integrator.p
+        u = integrator.u
+        t = Float64(integrator.t)
+        pass = sat <= length(p.orbit_counter) ? Int(p.orbit_counter[sat]) + Int(counter_pass_offset) : typemin(Int)
+        if !(pass in pass_set) || pass == last_pulsed[]
+            # No pulse: the state is untouched, so this event is not a discontinuity.
+            if applicable(DiffEqBase.derivative_discontinuity!, integrator, false)
+                DiffEqBase.derivative_discontinuity!(integrator, false)
+            end
+            return nothing
+        end
+        last_pulsed[] = pass
+        engine = _simulation_engine_module()
+        pos = engine._state_position_ii(u, sat)
+        vel = engine._state_velocity_ii(u, sat)
+        kin = _stage_environment_kinematics(u.sc[sat], p, t)
+        vrel = kin.l_pi' * kin.vel_pp                  # velocity relative to the atmosphere, inertial axes
+        new_vel = SVector{3, Float64}(vel - dv * vrel / norm(vrel))
+        engine._set_state_position_velocity_ii!(u, sat, pos, new_vel)
+        _invalidate_environment_samples!(p, sat)
+        if verbose
+            mu = Float64(p.args.environment_model.planet.μ)
+            P0, rp0 = periapsis_pulse_osculating(pos, vel, mu)
+            P1, rp1 = periapsis_pulse_osculating(pos, new_vel, mu)
+            println("periapsis_pulse sat=$sat pass=$pass counter=$(p.orbit_counter[sat]) t_s=$t alt_m=$(kin.alt) dv_mps=$dv dperiod_s=$(P1 - P0) dperiapsis_m=$(rp1 - rp0)")
+        end
+        if applicable(DiffEqBase.derivative_discontinuity!, integrator, true)
+            DiffEqBase.derivative_discontinuity!(integrator, true)
+        end
+        return nothing
+    end
+
+    initialize(cb, u, t, integrator) = (last_pulsed[] = typemin(Int); nothing)
+
+    return ContinuousCallback(condition, affect!, nothing; initialize=initialize)
+end
+
+export get_periapsis_pulse_callback

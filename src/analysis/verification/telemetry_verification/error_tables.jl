@@ -1,3 +1,22 @@
+# Pass-aligned simulated axis: the compared flight points keep their own labels and the simulated events
+# take the same labels one for one (event k <-> flight point k), so interpolating the simulation at the
+# flight labels returns the event of the same index. Events beyond the compared points extend at the
+# median step. `tele_axis` is the compared digitized axis.
+function _pass_aligned_sim_axis(tele_axis::Vector{Float64}, n_events::Int; skipped_event::Int=0)::Vector{Float64}
+    n_tele = length(tele_axis)
+    n_tele >= 1 || throw(ArgumentError("pass-aligned axis needs at least one telemetry point"))
+    step = n_tele >= 2 ? median(diff(tele_axis)) : 1.0
+    s = skipped_event
+    s == 0 || (1 <= s < n_tele) || throw(ArgumentError("pass_aligned_skipped_event=$s outside 1..$(n_tele - 1)"))
+    # 0-based event e: flight point e (1-based tele[e + 1]) before the skipped event; the skipped event sits between
+    # flight points s - 1 and s; later events take flight point e - 1 (tele[e]).
+    label(e) = s == 0 ? (e < n_tele ? tele_axis[e + 1] : tele_axis[end] + step * (e - n_tele + 1)) :
+        e < s ? tele_axis[e + 1] :
+        e == s ? 0.5 * (tele_axis[s] + tele_axis[s + 1]) :
+        (e <= n_tele ? tele_axis[e] : tele_axis[end] + step * (e - n_tele))
+    return [label(e) for e in 0:(n_events - 1)]
+end
+
 function _orbit_rows_errors(
     cfg::OrbitEventsScenarioConfig,
     args::SimulationConfiguration,
@@ -15,7 +34,12 @@ function _orbit_rows_errors(
     # simulation actually reached; the legacy fallback stretches events across the
     # telemetry sampling grid (median step) and clamp-scores beyond coverage.
     mask_to_sim = cfg.epoch_orbit_offset !== nothing
-    if mask_to_sim
+    if cfg.comparison_axis === :pass_aligned
+        mask_to_sim = false
+        peri_sim_axis = _pass_aligned_sim_axis(tele_peri.orbit, length(extrema.peri.altitude); skipped_event=cfg.pass_aligned_skipped_event)
+        apo_skip = cfg.pass_aligned_apoapsis_skipped_event < 0 ? cfg.pass_aligned_skipped_event : cfg.pass_aligned_apoapsis_skipped_event
+        apo_sim_axis = _pass_aligned_sim_axis(tele_apo.orbit, length(extrema.apo.altitude); skipped_event=apo_skip)
+    elseif mask_to_sim
         peri_sim_axis = cfg.epoch_orbit_offset .+ collect(0.0:(length(extrema.peri.altitude) - 1))
         apo_sim_axis = cfg.epoch_orbit_offset .+ collect(0.0:(length(extrema.apo.altitude) - 1))
     else

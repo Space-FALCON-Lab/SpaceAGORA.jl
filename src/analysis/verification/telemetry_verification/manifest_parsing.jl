@@ -348,6 +348,38 @@ end
     return values
 end
 
+function _parse_comparison_axis(tbl, context::String)::Symbol
+    name = lowercase(strip(_optional_str(tbl, "comparison_axis", "legacy")))
+    name in ("legacy", "pass_aligned") || throw(ArgumentError(
+        "Unsupported comparison_axis='$name' in $context; use legacy|pass_aligned."
+    ))
+    sym = Symbol(name)
+    sym === :pass_aligned && haskey(tbl, "epoch_orbit_offset") && throw(ArgumentError(
+        "comparison_axis=\"pass_aligned\" cannot be combined with epoch_orbit_offset in $context."
+    ))
+    return sym
+end
+
+function _parse_pass_aligned_skipped_event(tbl, context::String)::Int
+    haskey(tbl, "pass_aligned_skipped_event") || return 0
+    n = _require_int(tbl, "pass_aligned_skipped_event", context)
+    n >= 1 || throw(ArgumentError("pass_aligned_skipped_event must be >= 1 in $context"))
+    lowercase(strip(_optional_str(tbl, "comparison_axis", "legacy"))) == "pass_aligned" || throw(ArgumentError(
+        "pass_aligned_skipped_event requires comparison_axis=\"pass_aligned\" in $context"
+    ))
+    return n
+end
+
+function _parse_pass_aligned_apoapsis_skipped_event(tbl, context::String)::Int
+    haskey(tbl, "pass_aligned_apoapsis_skipped_event") || return -1
+    n = _require_int(tbl, "pass_aligned_apoapsis_skipped_event", context)
+    n >= 0 || throw(ArgumentError("pass_aligned_apoapsis_skipped_event must be >= 0 in $context"))
+    lowercase(strip(_optional_str(tbl, "comparison_axis", "legacy"))) == "pass_aligned" || throw(ArgumentError(
+        "pass_aligned_apoapsis_skipped_event requires comparison_axis=\"pass_aligned\" in $context"
+    ))
+    return n
+end
+
 function _parse_atmosphere_truth_config(tbl, context::String)::AtmosphereTruthConfig
     if !haskey(tbl, "atmosphere_truth")
         return AtmosphereTruthConfig()
@@ -355,8 +387,8 @@ function _parse_atmosphere_truth_config(tbl, context::String)::AtmosphereTruthCo
     t = _require_table(tbl, "atmosphere_truth", context)
     assumption_id = _optional_str(t, "assumption_id", "gram_default")
     atmosphere_model = _require_str(t, "atmosphere_model", "$context.atmosphere_truth")
-    atmosphere_model in ("GRAM", "tabulated_flight", "nrlmsise00", "tabulated_time") || throw(ArgumentError(
-        "Unsupported atmosphere_truth.atmosphere_model='$atmosphere_model' in $context; use GRAM|tabulated_flight|nrlmsise00|tabulated_time."
+    atmosphere_model in ("GRAM", "tabulated_flight", "nrlmsise00", "tabulated_time", "gram_pass_exponential") || throw(ArgumentError(
+        "Unsupported atmosphere_truth.atmosphere_model='$atmosphere_model' in $context; use GRAM|tabulated_flight|nrlmsise00|tabulated_time|gram_pass_exponential."
     ))
     tabulated_flight_file = _optional_str(t, "tabulated_flight_file", "")
     tabulated_flight_sigma = _optional_float(t, "tabulated_flight_sigma", 0.0)
@@ -387,6 +419,23 @@ function _parse_atmosphere_truth_config(tbl, context::String)::AtmosphereTruthCo
             "atmosphere_truth.tabulated_time_file requires atmosphere_model=\"tabulated_time\" in $context"
         ))
     end
+    pass_exponential_file = _optional_str(t, "pass_exponential_file", "")
+    if atmosphere_model == "gram_pass_exponential"
+        isempty(pass_exponential_file) && throw(ArgumentError(
+            "atmosphere_truth.pass_exponential_file is required when atmosphere_model=\"gram_pass_exponential\" in $context"
+        ))
+    elseif !isempty(pass_exponential_file)
+        throw(ArgumentError(
+            "atmosphere_truth.pass_exponential_file requires atmosphere_model=\"gram_pass_exponential\" in $context"
+        ))
+    end
+    pass_exponential_scale = _optional_float(t, "pass_exponential_scale", 1.0)
+    pass_exponential_scale > 0.0 && isfinite(pass_exponential_scale) || throw(ArgumentError(
+        "atmosphere_truth.pass_exponential_scale must be finite and > 0 in $context"
+    ))
+    (atmosphere_model == "gram_pass_exponential" || pass_exponential_scale == 1.0) || throw(ArgumentError(
+        "atmosphere_truth.pass_exponential_scale requires atmosphere_model=\"gram_pass_exponential\" in $context"
+    ))
     atmosphere_dataset = _require_str(t, "atmosphere_dataset", "$context.atmosphere_truth")
     space_weather_model = _require_str(t, "space_weather_model", "$context.atmosphere_truth")
     solar_flux_model = _require_str(t, "solar_flux_model", "$context.atmosphere_truth")
@@ -434,6 +483,9 @@ function _parse_atmosphere_truth_config(tbl, context::String)::AtmosphereTruthCo
         tabulated_time_file=isempty(tabulated_time_file) ? "" : _resolve_repo_path(tabulated_time_file),
         tabulated_time_scale=tabulated_time_scale,
         tabulated_time_temperature_k=tabulated_time_temperature_k,
+        pass_exponential_file=isempty(pass_exponential_file) ? "" : _resolve_repo_path(pass_exponential_file),
+        pass_exponential_counter_offset=_optional_int(t, "pass_exponential_counter_offset", 0),
+        pass_exponential_scale=pass_exponential_scale,
         mars_mola_heights=haskey(t, "mars_mola_heights") ? _optional_bool(t, "mars_mola_heights", true) : nothing,
         mars_min_max=haskey(t, "mars_min_max") ? _optional_int(t, "mars_min_max", 0) : nothing
     )
@@ -630,6 +682,9 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
         orbit_altitude_mode = _parse_orbit_altitude_mode(_optional_str(tbl, "orbit_altitude_mode", "vacuum"), context)
         maneuver = _parse_maneuver_config(tbl, context)
         anchors = _parse_state_anchor_config(tbl, context)
+        pulse = haskey(tbl, "thruster_pulse") ? _require_table(tbl, "thruster_pulse", context) : nothing
+        pulse_dv = pulse === nothing ? 0.0 : _require_float(pulse, "delta_v_mps", "$context.thruster_pulse")
+        pulse_dv >= 0.0 || throw(ArgumentError("thruster_pulse.delta_v_mps must be >= 0 in $context"))
         atmosphere_truth = _parse_atmosphere_truth_config(tbl, context)
         calibration = _parse_calibration_config(tbl, context)
 
@@ -659,6 +714,9 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
                 initial_state_j2000_m=_optional_float_tuple(tbl, "initial_state_j2000_m", 6, context),
                 epoch_orbit_offset=haskey(tbl, "epoch_orbit_offset") ?
                     _require_float(tbl, "epoch_orbit_offset", context) : nothing,
+                comparison_axis=_parse_comparison_axis(tbl, context),
+                pass_aligned_skipped_event=_parse_pass_aligned_skipped_event(tbl, context),
+                pass_aligned_apoapsis_skipped_event=_parse_pass_aligned_apoapsis_skipped_event(tbl, context),
                 spacecraft=spacecraft,
                 gravity_model=gravity_model,
                 gravity_harmonics_degree=gravity_harmonics_degree,
@@ -687,6 +745,10 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
                 state_anchor_burn_orbit_numbers=anchors.burn_orbit_numbers,
                 state_anchor_elapsed_s=anchors.elapsed_s,
                 state_anchor_states_j2000_m=anchors.states_j2000_m,
+                thruster_pulse_dv_mps=pulse_dv,
+                thruster_pulse_first_pass=pulse === nothing ? 0 : _require_int(pulse, "first_pass", "$context.thruster_pulse"),
+                thruster_pulse_last_pass=pulse === nothing ? -1 : _require_int(pulse, "last_pass", "$context.thruster_pulse"),
+                thruster_pulse_counter_pass_offset=pulse === nothing ? 0 : _require_int(pulse, "counter_pass_offset", "$context.thruster_pulse"),
                 atmosphere_truth=atmosphere_truth,
                 calibration=calibration,
                 EI_km=EI_km

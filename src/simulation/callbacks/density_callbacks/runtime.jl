@@ -118,6 +118,21 @@ function _density_state_from_kinematics_unmasked!(
     target_include_j2::Bool,
     caches::Vector{Union{Nothing, GramTrackCache}}
 )::Tuple{Float64, Float64, SVector{3, Float64}}
+    # Per-pass exponential density keyed to the simulated pass: the profile
+    # replaces only the density, and only where a profile applies; temperature,
+    # wind and every other altitude and pass come from the fallback model
+    # through the unchanged path below.
+    if density_model isa EnvironmentModels.PassKeyedExponentialAtmosphereModel
+        rho_fb, T_fb, wind_fb = _density_state_from_kinematics_unmasked!(
+            p, sat_idx, pos_ii, vel_ii, current_mass_kg, alt, lat, lon, t, density_model.fallback,
+            cache_cfg, stats_enabled, target_include_j2, caches)
+        (hasproperty(p, :orbit_counter) && sat_idx <= length(p.orbit_counter)) || return rho_fb, T_fb, wind_fb
+        rho_pass = EnvironmentModels.pass_exponential_density(
+            density_model, alt, pos_ii, vel_ii, Int(p.orbit_counter[sat_idx]), Float64(p.args.environment_model.planet.μ))
+        rho_used = rho_pass === nothing ? rho_fb : rho_pass
+        _log_pass_density(p, sat_idx, t, alt, vel_ii, rho_used, rho_fb)
+        return rho_used, T_fb, wind_fb
+    end
     env = _callback_env_config(p)
     # Vacuum-predicted GRAM density cache: interpolate from a pre-built spline on
     # log(ρ) along the drag-free trajectory.  Only active inside the atmosphere
@@ -274,6 +289,46 @@ function _stage_environment_state(x, p, sat_idx::Int, t::Float64; write_buffers:
         _simulation_engine_module().sample_buffered_atmosphere(x, p, sat_idx, t) :
         _simulation_engine_module().sample_atmosphere(x, p, sat_idx, t; write_buffers=false)
     return merge(kin, (rho=atmosphere.rho_kg_m3, T=atmosphere.temperature_k, wind=atmosphere.wind_pp))
+end
+
+# Opt-in diagnostic (SPACEAGORA_PASS_DENSITY_LOG=<csv>), written by the
+# pass-keyed exponential density only: one row per density evaluation below
+# 300 km with the time, pass counter, altitude, inertial speed, the density
+# used, the fallback model's density at the same state, and the magnitude of
+# the aerodynamic force stored by the PREVIOUS right-hand-side evaluation
+# (aero runs after the density sample inside one RHS call, so a row's force
+# belongs to the row before it). Evaluations include solver stages and
+# rejected steps. Off unless the variable is set.
+const _PASS_LOG_IO = Ref{Union{Nothing, IO}}(nothing)
+const _PASS_LOG_STATE = Ref(0)   # 0 unchecked, 1 off, 2 on
+const _PASS_LOG_LOCK = ReentrantLock()
+
+function _pass_log_io()
+    _PASS_LOG_STATE[] == 1 && return nothing
+    if _PASS_LOG_STATE[] == 0
+        path = get(ENV, "SPACEAGORA_PASS_DENSITY_LOG", "")
+        if isempty(path)
+            _PASS_LOG_STATE[] = 1
+            return nothing
+        end
+        io = open(path, "w")
+        println(io, "t_s,orbit_counter,alt_m,speed_mps,rho_used_kgm3,rho_fallback_kgm3,prev_drag_force_n")
+        atexit(() -> close(io))
+        _PASS_LOG_IO[] = io
+        _PASS_LOG_STATE[] = 2
+    end
+    return _PASS_LOG_IO[]
+end
+
+function _log_pass_density(p, i::Int, t::Float64, alt::Float64, vel_ii, rho_used::Float64, rho_fb::Float64)
+    io = _pass_log_io()
+    (io === nothing || !(alt < 3.0e5)) && return nothing
+    dc = p.save_cache.drag_cache
+    f = i <= length(dc) ? norm(dc[i]) : 0.0
+    lock(_PASS_LOG_LOCK) do
+        println(io, t, ",", Int(p.orbit_counter[i]), ",", alt, ",", norm(vel_ii), ",", rho_used, ",", rho_fb, ",", f)
+    end
+    return nothing
 end
 
 function get_density_callback(num_sats::Int, args::SimulationConfiguration)

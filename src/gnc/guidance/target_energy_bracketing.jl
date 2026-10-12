@@ -116,6 +116,7 @@ mutable struct AerobrakingEnergyDepletionState
     heat_load_entry_j_cm2::Vector{Vector{Float64}}
     heat_load_exit_j_cm2::Vector{Vector{Float64}}
     last_pass_heat_load_j_cm2::Vector{Float64}
+    control_clock_origin_s::Float64
 end
 
 function AerobrakingEnergyDepletionState(; num_sats::Integer)
@@ -155,6 +156,7 @@ function AerobrakingEnergyDepletionState(; num_sats::Integer)
         [Float64[] for _ in 1:n],
         [Float64[] for _ in 1:n],
         fill(NaN, n),
+        0.0,
     )
 end
 

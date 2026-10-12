@@ -220,7 +220,7 @@ end
     if mode == :safe_low_drag || state.safe_low_drag[i]
         return config.min_alpha_rad
     elseif mode == :targeting && state.targeting_active[i]
-        return t >= state.targeting_switch_s[i] ? config.min_alpha_rad : config.max_alpha_rad
+        return _edg_switch_due(t, state.targeting_switch_s[i]) ? config.min_alpha_rad : config.max_alpha_rad
     elseif mode == :max_energy_depletion
         if _edg_heat_load_low_drag_active(model, t, i)
             return config.min_alpha_rad
@@ -669,10 +669,111 @@ function _edg_targeting_constrained_alpha(
     return clamp(min(alpha_hr, alpha_struct), config.min_alpha_rad, config.max_alpha_rad)
 end
 
-function _edg_targeting_prediction_time_grid(duration::Float64)
-    step = 1.0
-    n = clamp(ceil(Int, duration / step) + 1, 64, 20_000)
-    return collect(range(0.0, duration; length=n))
+# PeriodicCallback uses its solve-start clock, including when a prediction starts
+# between control ticks. Never stretch the command grid to fit its horizon.
+function _edg_targeting_control_clock(config, p::ODEParams)
+    model = p.args.control_model
+    periods = Float64[model.control_rates[i] for i in eachindex(model.control_effectors)
+        if model.control_effectors[i] isa AerobrakingEnergyDepletionControlModel &&
+            model.control_effectors[i].config === config]
+    isempty(periods) && throw(ArgumentError("EDG prediction requires its configured control effector."))
+    all(x -> isfinite(x) && x > 0.0 && x == first(periods), periods) ||
+        throw(ArgumentError("EDG prediction requires one unambiguous positive control period."))
+    origins = Float64[effector.state.control_clock_origin_s for effector in model.control_effectors
+        if effector isa AerobrakingEnergyDepletionControlModel && effector.config === config]
+    all(x -> isfinite(x) && x == first(origins), origins) ||
+        throw(ArgumentError("EDG prediction requires one finite control-clock origin."))
+    return (period=first(periods), origin=first(origins))
+end
+
+_edg_targeting_control_period(config, p) = _edg_targeting_control_clock(config, p).period
+
+@inline function _edg_switch_due(t::Float64, switch_s::Float64)
+    # Equal callback ticks may differ by a few floating-point ulps.
+    return isfinite(switch_s) && t >= switch_s - 8eps(max(abs(t), abs(switch_s), 1.0))
+end
+
+@inline function _edg_at_control_tick(t::Float64, period::Float64, origin::Float64=0.0)
+    return abs(t - (origin + round((t - origin) / period) * period)) <= 8eps(max(abs(t), period, 1.0))
+end
+
+function _edg_targeting_prediction_time_grid(duration::Float64; t0::Float64=0.0, period::Float64=1.0, origin::Float64=0.0)
+    isfinite(duration) && duration > 0.0 || throw(ArgumentError("Prediction duration must be positive and finite."))
+    isfinite(period) && period > 0.0 || throw(ArgumentError("Control period must be positive and finite."))
+    isfinite(t0) || throw(ArgumentError("Prediction start time must be finite."))
+    isfinite(origin) || throw(ArgumentError("Control-clock origin must be finite."))
+    first_tick = floor(Int, (t0 - origin) / period) + 1
+    while _edg_switch_due(t0, origin + first_tick * period)
+        first_tick += 1
+    end
+    last_tick = floor(Int, (t0 + duration - origin) / period)
+    last_tick - first_tick < 100_000 || throw(ArgumentError("EDG prediction exceeds 100000 control intervals."))
+    times = Float64[0.0]
+    for tick in first_tick:last_tick
+        tau = origin + tick * period - t0
+        0.0 < tau < duration && push!(times, tau)
+    end
+    push!(times, duration)
+    return times
+end
+
+function _edg_prediction_step(acceleration, r, v, t, dt)
+    k1r, k1v = v, acceleration(r, v, t)
+    k2r = v + 0.5dt * k1v
+    k2v = acceleration(r + 0.5dt * k1r, k2r, t + 0.5dt)
+    k3r = v + 0.5dt * k2v
+    k3v = acceleration(r + 0.5dt * k2r, k3r, t + 0.5dt)
+    k4r = v + dt * k3v
+    k4v = acceleration(r + dt * k3r, k4r, t + dt)
+    return (r + dt * (k1r + 2k2r + 2k3r + k4r) / 6,
+        v + dt * (k1v + 2k2v + 2k3v + k4v) / 6)
+end
+
+# Control holding and integration accuracy are separate. Slow controllers must
+# not force a coarse RK4 step; subdivision never updates the held command.
+function _edg_prediction_advance(acceleration, r, v, t, dt)
+    count = max(1, ceil(Int, dt))
+    step = dt / count
+    for k in 0:count-1
+        r, v = _edg_prediction_step(acceleration, r, v, t + k * step, step)
+    end
+    return r, v
+end
+
+function _edg_prediction_event(acceleration, event, r, v, t, dt)
+    left, right = 0.0, dt
+    initial = event(r, v, t)
+    for _ in 1:48
+        middle = (left + right) / 2
+        rm, vm = _edg_prediction_advance(acceleration, r, v, t, middle)
+        value = event(rm, vm, t + middle)
+        if signbit(value) == signbit(initial)
+            left = middle
+        else
+            right = middle
+        end
+        right - left <= 1e-9 && break
+    end
+    elapsed = (left + right) / 2
+    re, ve = _edg_prediction_advance(acceleration, r, v, t, elapsed)
+    return re, ve, elapsed
+end
+
+function _edg_exact_targeting_exit(config, p, spacecraft, mass, t, track)
+    altitude = 1e3 * Float64(p.args.environment_model.EI)
+    if abs(track.h[1] - altitude) <= 1e-6 && dot(track.positions[1], track.velocities[1]) > 0.0
+        return (position=track.positions[1], velocity=track.velocities[1], time=track.time[1])
+    end
+    j = findfirst(k -> track.h[k] < altitude <= track.h[k + 1] &&
+        dot(track.positions[k + 1], track.velocities[k + 1]) > 0.0, 1:length(track.time)-1)
+    j === nothing && error("EDG targeting prediction did not reach outbound EI within its horizon.")
+    alpha = track.alpha_profile[j]
+    acceleration(r, v, tau) = _edg_prediction_gravity_acceleration(p, r, v, mass, t + tau) +
+        _edg_targeting_aero_acceleration(config, p, spacecraft, r, v, mass, t + tau, alpha)
+    event(r, v, tau) = _edg_targeting_prediction_environment(p, r, v, t + tau).altitude_m - altitude
+    r, v, dt = _edg_prediction_event(acceleration, event, track.positions[j],
+        track.velocities[j], track.time[j], track.time[j + 1] - track.time[j])
+    return (position=r, velocity=v, time=track.time[j] + dt)
 end
 
 function _edg_outbound_exit_index(track, p::ODEParams)::Int
@@ -748,7 +849,8 @@ function _edg_integrated_targeting_trajectory(
     alpha_profile = Vector{Float64}(undef, n)
     positions[1] = pos0
     velocities[1] = vel0
-    alpha_past = config.max_alpha_rad
+    alpha_past = Float64(spacecraft.links[first(config.controlled_panel_links)].α)
+    control_clock = _edg_targeting_control_clock(config, p)
 
     function acceleration(r, v, tau, alpha)
         gravity = _edg_prediction_gravity_acceleration(p, r, v, mass, t + tau)
@@ -760,7 +862,7 @@ function _edg_integrated_targeting_trajectory(
         tau = times[j]
         r = positions[j]
         v = velocities[j]
-        base_alpha = (t + tau) >= switch_time_s ? config.min_alpha_rad : config.max_alpha_rad
+        base_alpha = _edg_switch_due(t + tau, switch_time_s) ? config.min_alpha_rad : config.max_alpha_rad
         env = _edg_targeting_prediction_environment(p, r, v, t + tau)
         alpha = _edg_targeting_constrained_alpha(
             config,
@@ -772,24 +874,19 @@ function _edg_integrated_targeting_trajectory(
             heat_rate_control=heat_rate_control,
             structural_control=structural_control,
         )
+        if j == 1 && !_edg_at_control_tick(t, control_clock.period, control_clock.origin)
+            alpha = alpha_past
+        end
         alpha_profile[j] = alpha
         alpha_past = alpha
 
         dt = times[j + 1] - times[j]
-        a1 = acceleration(r, v, tau, alpha)
-        k1r, k1v = v, a1
-        a2 = acceleration(r + 0.5 * dt * k1r, v + 0.5 * dt * k1v, tau + 0.5 * dt, alpha)
-        k2r, k2v = v + 0.5 * dt * k1v, a2
-        a3 = acceleration(r + 0.5 * dt * k2r, v + 0.5 * dt * k2v, tau + 0.5 * dt, alpha)
-        k3r, k3v = v + 0.5 * dt * k2v, a3
-        a4 = acceleration(r + dt * k3r, v + dt * k3v, times[j + 1], alpha)
-        k4r, k4v = v + dt * k3v, a4
-        positions[j + 1] = r + dt * (k1r + 2.0 * k2r + 2.0 * k3r + k4r) / 6.0
-        velocities[j + 1] = v + dt * (k1v + 2.0 * k2v + 2.0 * k3v + k4v) / 6.0
+        positions[j + 1], velocities[j + 1] = _edg_prediction_advance(
+            (rr, vv, tt) -> acceleration(rr, vv, tt, alpha), r, v, tau, dt)
     end
 
     final_tau = times[end]
-    final_base = (t + final_tau) >= switch_time_s ? config.min_alpha_rad : config.max_alpha_rad
+    final_base = _edg_switch_due(t + final_tau, switch_time_s) ? config.min_alpha_rad : config.max_alpha_rad
     final_env = _edg_targeting_prediction_environment(p, positions[end], velocities[end], t + final_tau)
     alpha_profile[end] = _edg_targeting_constrained_alpha(
         config,
@@ -801,6 +898,9 @@ function _edg_integrated_targeting_trajectory(
         heat_rate_control=heat_rate_control,
         structural_control=structural_control,
     )
+    if !_edg_at_control_tick(t + final_tau, control_clock.period, control_clock.origin)
+        alpha_profile[end] = alpha_past
+    end
 
     h = Vector{Float64}(undef, n)
     gamma = Vector{Float64}(undef, n)
@@ -853,7 +953,8 @@ function _edg_integrated_max_energy_depletion_trajectory(
     alpha_profile = Vector{Float64}(undef, n)
     positions[1] = pos0
     velocities[1] = vel0
-    alpha_past = config.max_alpha_rad
+    alpha_past = Float64(spacecraft.links[first(config.controlled_panel_links)].α)
+    control_clock = _edg_targeting_control_clock(config, p)
 
     function acceleration(r, v, tau, alpha)
         gravity = _edg_prediction_gravity_acceleration(p, r, v, mass, t + tau)
@@ -890,24 +991,20 @@ function _edg_integrated_max_energy_depletion_trajectory(
         r = positions[j]
         v = velocities[j]
         alpha = max_energy_alpha(r, v, tau)
+        if j == 1 && !_edg_at_control_tick(t, control_clock.period, control_clock.origin)
+            alpha = alpha_past
+        end
         alpha_profile[j] = alpha
         alpha_past = alpha
 
         dt = times[j + 1] - times[j]
-        a1 = acceleration(r, v, tau, alpha)
-        k1r, k1v = v, a1
-        a2 = acceleration(r + 0.5 * dt * k1r, v + 0.5 * dt * k1v, tau + 0.5 * dt, alpha)
-        k2r, k2v = v + 0.5 * dt * k1v, a2
-        a3 = acceleration(r + 0.5 * dt * k2r, v + 0.5 * dt * k2v, tau + 0.5 * dt, alpha)
-        k3r, k3v = v + 0.5 * dt * k2v, a3
-        a4 = acceleration(r + dt * k3r, v + dt * k3v, times[j + 1], alpha)
-        k4r, k4v = v + dt * k3v, a4
-        positions[j + 1] = r + dt * (k1r + 2.0 * k2r + 2.0 * k3r + k4r) / 6.0
-        velocities[j + 1] = v + dt * (k1v + 2.0 * k2v + 2.0 * k3v + k4v) / 6.0
+        positions[j + 1], velocities[j + 1] = _edg_prediction_advance(
+            (rr, vv, tt) -> acceleration(rr, vv, tt, alpha), r, v, tau, dt)
     end
 
     final_tau = times[end]
-    alpha_profile[end] = max_energy_alpha(positions[end], velocities[end], final_tau)
+    alpha_profile[end] = _edg_at_control_tick(t + final_tau, control_clock.period, control_clock.origin) ?
+        max_energy_alpha(positions[end], velocities[end], final_tau) : alpha_past
 
     h = Vector{Float64}(undef, n)
     gamma = Vector{Float64}(undef, n)
@@ -957,7 +1054,8 @@ function _edg_predict_targeting_outcome(
         _edg_drag_passage_duration(config, p, pos, vel, mass) + 120.0,
         config.planning_horizon_s,
     )
-    times = _edg_targeting_prediction_time_grid(duration)
+    clock = _edg_targeting_control_clock(config, p)
+    times = _edg_targeting_prediction_time_grid(duration; t0=t, period=clock.period, origin=clock.origin)
     track = _edg_integrated_targeting_trajectory(
         config,
         p,
@@ -972,16 +1070,16 @@ function _edg_predict_targeting_outcome(
         structural_control=structural_control,
     )
     planet = p.args.environment_model.planet
-    exit_index = _edg_outbound_exit_index(track, p)
-    final_metrics = _edg_orbit_metrics_from_rv(track.positions[exit_index], track.velocities[exit_index], mass, planet)
+    exit = _edg_exact_targeting_exit(config, p, spacecraft, mass, t, track)
+    final_metrics = _edg_orbit_metrics_from_rv(exit.position, exit.velocity, mass, planet)
     return (
         switch_time_s=switch_time_s,
-        duration_s=track.time[exit_index],
+        duration_s=exit.time,
         energy_jkg=final_metrics.energy,
         periapsis_radius_m=final_metrics.periapsis,
         apoapsis_radius_m=final_metrics.apoapsis,
-        exit_position=track.positions[exit_index],
-        exit_velocity=track.velocities[exit_index],
+        exit_position=exit.position,
+        exit_velocity=exit.velocity,
         track=track,
         alpha_profile=track.alpha_profile,
     )
@@ -1005,7 +1103,8 @@ function _edg_predict_max_energy_depletion_outcome(
         _edg_drag_passage_duration(config, p, pos, vel, mass) + 120.0,
         config.planning_horizon_s,
     )
-    times = _edg_targeting_prediction_time_grid(duration)
+    clock = _edg_targeting_control_clock(config, p)
+    times = _edg_targeting_prediction_time_grid(duration; t0=t, period=clock.period, origin=clock.origin)
     heat_load_switches = (:heat_load in config.max_energy_submodes) ?
         _edg_solve_heat_load_switches(
             config,
@@ -1035,17 +1134,17 @@ function _edg_predict_max_energy_depletion_outcome(
         structural_control=structural_control,
     )
     planet = p.args.environment_model.planet
-    exit_index = _edg_outbound_exit_index(track, p)
-    final_metrics = _edg_orbit_metrics_from_rv(track.positions[exit_index], track.velocities[exit_index], mass, planet)
+    exit = _edg_exact_targeting_exit(config, p, spacecraft, mass, t, track)
+    final_metrics = _edg_orbit_metrics_from_rv(exit.position, exit.velocity, mass, planet)
     return (
         switch_time_s=NaN,
         heat_load_switches_s=heat_load_switches,
-        duration_s=track.time[exit_index],
+        duration_s=exit.time,
         energy_jkg=final_metrics.energy,
         periapsis_radius_m=final_metrics.periapsis,
         apoapsis_radius_m=final_metrics.apoapsis,
-        exit_position=track.positions[exit_index],
-        exit_velocity=track.velocities[exit_index],
+        exit_position=exit.position,
+        exit_velocity=exit.velocity,
         track=track,
         alpha_profile=track.alpha_profile,
     )
@@ -1130,7 +1229,7 @@ function _edg_targeting_bracket_outcomes(
     return low_drag, max_energy_depletion
 end
 
-function _edg_solve_targeting_switch(
+function _edg_targeting_switch_solution(
     config::AerobrakingEnergyDepletionConfig,
     state::AerobrakingEnergyDepletionState,
     p::ODEParams,
@@ -1145,50 +1244,60 @@ function _edg_solve_targeting_switch(
     structural_control::Bool,
 )
     target_energy = state.target_energy_jkg[i]
-    isfinite(target_energy) || return Inf
+    isfinite(target_energy) || return (switch_s=Inf, residual_jkg=NaN, status=:invalid_target, left_switch_s=NaN, right_switch_s=NaN, left_residual_jkg=NaN, right_residual_jkg=NaN)
 
-    evaluate_delay(delay_s) = _edg_predict_targeting_outcome(
-        config,
-        p,
-        spacecraft,
-        pos,
-        vel,
-        mass,
-        t,
-        t + delay_s;
-        heat_rate_control=heat_rate_control,
-        structural_control=structural_control,
-    )
-    residual(delay_s) = (evaluate_delay(delay_s).energy_jkg - target_energy) / 1e6
-
-    min_delay = 0.0
-    max_delay = 2_000.0
-    min_error = residual(min_delay)
-    max_error = residual(max_delay)
-    state.bracket_min_energy_jkg[i], state.bracket_max_energy_jkg[i] = extrema((
-        min_error * 1e6 + target_energy,
-        max_error * 1e6 + target_energy,
-    ))
-
-    switch_delay = if min_error == 0.0
-        min_delay
-    elseif max_error == 0.0
-        max_delay
-    elseif isfinite(min_error) && isfinite(max_error) && signbit(min_error) != signbit(max_error)
-        Roots.find_zero(residual, (min_delay, max_delay), Roots.Brent(); rtol=1e-8, atol=1e-8)
-    else
-        abs(min_error) <= abs(max_error) ? min_delay : max_delay
+    clock = _edg_targeting_control_clock(config, p)
+    period, origin = clock.period, clock.origin
+    next_tick = floor(Int, (t - origin) / period) + 1
+    while _edg_switch_due(t, origin + next_tick * period)
+        next_tick += 1
     end
-    if min_delay < switch_delay < max_delay
-        left_delay = max(min_delay, switch_delay - 1.0)
-        right_delay = min(max_delay, switch_delay + 1.0)
-        left_error = residual(left_delay)
-        right_error = residual(right_delay)
-        if isfinite(left_error) && isfinite(right_error) && left_error != right_error
-            interpolated_delay = left_delay - left_error * (right_delay - left_delay) /
-                (right_error - left_error)
-            switch_delay = clamp(interpolated_delay, left_delay, right_delay)
+    first_tick = 0
+    on_tick = _edg_at_control_tick(t, period, origin)
+    last_tick = floor(Int, (t + 2_000.0 - origin) / period) - next_tick + (on_tick ? 1 : 0)
+    last_tick >= 0 || throw(ArgumentError("No executable EDG control tick within the 2000 s switch horizon."))
+    # Index zero denotes the first executable command. Between callback ticks,
+    # retain the current held angle and wait until the next callback.
+    switch_at(k) = k == 0 ? (on_tick ? t : origin + next_tick * period) :
+        origin + (next_tick + k - (on_tick ? 1 : 0)) * period
+    cache = Dict{Int, Float64}()
+    function residual(k)
+        return get!(cache, k) do
+            outcome = _edg_predict_targeting_outcome(config, p, spacecraft,
+                pos, vel, mass, t, switch_at(k);
+                heat_rate_control=heat_rate_control, structural_control=structural_control)
+            value = outcome.energy_jkg - target_energy
+            isfinite(value) || error("EDG targeting prediction returned a nonfinite energy residual.")
+            value
         end
     end
-    return t + switch_delay
+    left, right = first_tick, last_tick
+    fleft, fright = residual(left), residual(right)
+    state.bracket_min_energy_jkg[i], state.bracket_max_energy_jkg[i] =
+        extrema((fleft + target_energy, fright + target_energy))
+    if fleft != 0.0 && fright != 0.0 && signbit(fleft) != signbit(fright)
+        while right - left > 1
+            middle = left + (right - left) ÷ 2
+            fmiddle = residual(middle)
+            if fmiddle == 0.0
+                left = right = middle
+                fleft = fright = fmiddle
+            elseif signbit(fmiddle) == signbit(fleft)
+                left, fleft = middle, fmiddle
+            else
+                right, fright = middle, fmiddle
+            end
+        end
+    end
+    # A held command generally has no exact continuous root. Retain and compare
+    # the actual adjacent residuals, rather than interpolating an unevaluated time.
+    chosen = abs(fleft) <= abs(fright) ? left : right
+    selected_residual = residual(chosen)
+    status = selected_residual == 0.0 ? :exact_sample :
+        (signbit(fleft) != signbit(fright) ? :quantized_bracket : :endpoint_fallback)
+    return (switch_s=switch_at(chosen), residual_jkg=selected_residual, status=status,
+        left_switch_s=switch_at(left), right_switch_s=switch_at(right),
+        left_residual_jkg=fleft, right_residual_jkg=fright)
 end
+
+_edg_solve_targeting_switch(args...; kwargs...) = _edg_targeting_switch_solution(args...; kwargs...).switch_s

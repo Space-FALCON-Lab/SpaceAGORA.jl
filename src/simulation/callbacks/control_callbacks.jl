@@ -146,7 +146,17 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
                 )
             end
         end
-        push!(callbacks, PeriodicCallback(control_func, control_rate))
+        if control_model isa _simulation_model_module.AerobrakingEnergyDepletionControlModel
+            initialize_control_clock = (cb, u, t, integrator) -> begin
+                # Match PeriodicCallback's actual solve-start phase on resumes.
+                control_model.state.control_clock_origin_s = Float64(t)
+                u_modified!(integrator, false)
+            end
+            push!(callbacks, PeriodicCallback(control_func, control_rate;
+                initialize=initialize_control_clock))
+        else
+            push!(callbacks, PeriodicCallback(control_func, control_rate))
+        end
     end
     return callbacks
 end

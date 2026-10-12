@@ -847,9 +847,12 @@ control, switches are `(Inf,Inf)` and high phases are constrained only by select
 submodes.
 
 Both trajectories extend predicted passage duration by 120 s, capped by the planning horizon,
-and use a grid with nominal maximum 1 s spacing, at least 64 points, and at most 20,000 points.
-Outbound exit is the first sample at or above EI after the minimum-altitude sample. If none is
-found, the final sample is used.
+and hold commands on the configured control callback grid. The clock origin is initialized
+with the actual solve start, including checkpoint resumes. A prediction between ticks retains
+the already applied panel angle until the next tick. The final partial interval does not stretch
+the command grid. Each held interval uses RK4 substeps no longer than 1 s.
+Outbound geodetic EI is refined inside its crossing interval with the same held command and
+forces. A missing outbound crossing is an explicit prediction failure, never a final-sample substitute.
 
 ### Target-energy construction
 
@@ -883,8 +886,11 @@ central/J2/N-body propagations with 1 s RK4:
 
 Both results include `event_reached`, which is true only when their stated event is observed.
 Reaching a time cap alone does not certify the result. Guidance raises an explicit error before
-storing a bracket or selecting a targeting mode if either event is missing. The 1 s grid and
-existing event predicates are unchanged; this flag does not establish event-exact timing.
+storing a bracket or selecting a targeting mode if either event is missing. These vacuum
+propagations retain their original 1 s event sampling and target-energy approximation.
+They are separate from the refined atmospheric exit in the sampled-command predictor.
+Neither a refined vacuum mapping nor the journal's nested perturbed-target mapping is
+introduced by this predictor repair.
 
 The gravity predictor starts with the configured inverse-square or inverse-square/J2 model and
 adds every configured `NBodyGravityModel`. Third-body positions come from the simulation's
@@ -931,30 +937,31 @@ Thus it runs once. A nonfinite target returns an infinite switch.
 For delay `tau`, define
 
 ```math
-F(\tau)=\frac{epsilon_{exit}(\tau)-epsilon_{target}}{10^6}.
+F(\tau)=epsilon_{exit}(\tau)-epsilon_{target}\quad [\mathrm{J/kg}].
 ```
 
-The implemented root interval is `[0,2000 s]`. Both endpoint predictions overwrite the stored
-energy bracket with their extrema. Delay selection is:
+The search retains the first executable command and configured control ticks within the
+2000 s delay horizon. Endpoint predictions overwrite the stored energy bracket with their
+extrema. Finite opposite-sign residuals are narrowed by integer bisection until the neighboring
+executable ticks are adjacent; choose the evaluated endpoint with smaller absolute energy
+residual, choosing the earlier on a tie. With no sign change, preserve the nearest-energy
+endpoint fallback. Nonfinite predictions fail explicitly.
 
-1. If the zero-delay residual is exactly zero, choose zero.
-2. Else, if the 2000 s residual is exactly zero, choose 2000 s.
-3. Else, if both are finite and have opposite signs, solve with Brent using `rtol=atol=1e-8`.
-4. Otherwise choose whichever endpoint has smaller absolute residual.
-
-Unlike the instantaneous constraint roots and second-switch correction, this Brent call is not
-wrapped in `try/catch`; a root-solver exception propagates to the caller.
-
-For an interior solution, evaluate residuals one second to either side. If both are finite and
-unequal, linearly interpolate a zero and clamp it between those neighboring delays. The stored
-absolute switch is `current_time + delay`.
+`_edg_targeting_switch_solution` returns the selected and adjacent switch times and energy
+residuals in J/kg, with status `:exact_sample`, `:quantized_bracket`, `:endpoint_fallback`, or
+`:invalid_target`. The scalar wrapper preserves the existing scheduler interface. A quantized
+bracket is not an exact continuous root. There is no interpolation of an unevaluated switch and
+no claim of the journal's continuous reachability theorem for a finite set of held commands.
+Ticks equal within floating-point roundoff activate consistently in prediction and control.
 
 The targeting-switch function accepts `heat_load_j_cm2` for interface consistency, but the
 current one-switch residual does not read it. Targeting itself has no two-switch heat-load
 phase; heat-load control enters only the maximum-energy endpoint used by guidance bracketing.
 
 After the switch becomes finite, all later control callbacks skip targeting planning. The
-current targeting state and switch are not reset at outbound EI.
+current targeting state and switch are not reset at outbound EI. The journal Sec. VI.D specifies
+2 s recomputation, whereas retained historical source uses 20 s. That policy discrepancy remains
+separate from this predictor repair; neither cadence is silently introduced here.
 
 `_edg_targeting_switch_outcomes` is a support helper that predicts immediate low drag and a
 high-drag switch one second after the low-drag predicted duration. It is not called by the live

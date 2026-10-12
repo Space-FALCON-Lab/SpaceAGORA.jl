@@ -53,8 +53,10 @@ end
     end
     @testset "Real controller and planner ignore prior-passage offsets" begin
         for modes in ((:max_energy_depletion,), (:targeting,:max_energy_depletion))
-            zero = _edg_test_context(guidance_modes=modes, heat_load_limit_j_cm2=30.0)
-            offset = _edg_test_context(guidance_modes=modes, heat_load_limit_j_cm2=30.0)
+            zero = _edg_test_context(guidance_modes=modes, heat_load_limit_j_cm2=30.0,
+                density_reference_kg_m3=(:targeting in modes ? 1e-7 : 1e-4))
+            offset = _edg_test_context(guidance_modes=modes, heat_load_limit_j_cm2=30.0,
+                density_reference_kg_m3=(:targeting in modes ? 1e-7 : 1e-4))
             for (c, prior) in ((zero, [0.0,0.0,0.0]), (offset,[1000.0,26.0,40.0]))
                 CH._edg_initialize_heat_accounting!(c.args,c.u,0.0)
                 c.u.sc[1].heat_loads .= prior

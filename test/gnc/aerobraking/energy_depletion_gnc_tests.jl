@@ -596,3 +596,66 @@ end
     @test state.targeting_switch_s[1] == first_switch
     @test state.last_switch_solve_t[1] == first_solve_time
 end
+
+@testset "EDG no-switch plans are cached without a low-drag pulse" begin
+    ctx = _edg_test_context(
+        heat_load_limit_j_cm2=1e12,
+        heat_rate_limit_w_cm2=Inf,
+        structural_load_limit_pa=Inf,
+    )
+    _EDG_SM.calcGuidanceEffect!(ctx.guidance, ctx.u, ctx.p, 0.0, 1)
+    _EDG_SM.calcControlEffect!(ctx.control, ctx.u, ctx.p, 30.0, 1)
+    @test ctx.state.heat_load_switches_s[1] == (30.0, 30.0)
+    @test ctx.state.heat_load_switch_solved[1]
+    @test ctx.state.last_alpha_rad[1] == ctx.config.max_alpha_rad
+    for t in (30.0 + 1/3, 31.0, 35.0)
+        _EDG_SM.calcControlEffect!(ctx.control, ctx.u, ctx.p, t, 1)
+        @test ctx.state.last_alpha_rad[1] == ctx.config.max_alpha_rad
+        @test ctx.state.heat_load_switches_s[1] == (30.0, 30.0)
+        @test ctx.state.last_switch_solve_t[1] == 30.0
+    end
+    # A cached no-switch decision belongs only to this atmospheric passage.
+    original_position = copy(ctx.u.sc[1].pos)
+    ctx.u.sc[1].pos .= (ctx.args.environment_model.planet.Rp_e + 300e3, 0.0, 0.0)
+    _EDG_SM.calcControlEffect!(ctx.control, ctx.u, ctx.p, 40.0, 1)
+    @test !ctx.state.heat_load_switch_solved[1]
+    @test !ctx.state.heat_load_drag_passage_active[1]
+    @test ctx.state.heat_load_switches_s[1] == (Inf, Inf)
+    ctx.u.sc[1].pos .= original_position
+    _EDG_SM.calcControlEffect!(ctx.control, ctx.u, ctx.p, 41.0, 1)
+    @test ctx.state.heat_load_switch_solved[1]
+    @test ctx.state.heat_load_switches_s[1] == (41.0, 41.0)
+    @test ctx.state.last_switch_solve_t[1] == 41.0
+    @test ctx.state.last_alpha_rad[1] == ctx.config.max_alpha_rad
+
+    hooks = _EDG_SM.ControlHooks
+    for switches in ((30.0,30.0), (Inf,Inf), (NaN,NaN), (40.0,30.0))
+        ctx.state.heat_load_switches_s[1] = switches
+        @test !hooks._edg_heat_load_low_drag_active(ctx.control,30.0,1)
+    end
+    ctx.state.heat_load_switches_s[1] = (30.0,40.0)
+    for t in (30.0,35.0,40.0)
+        @test hooks._edg_heat_load_low_drag_active(ctx.control,t,1)
+    end
+    for t in (29.0,41.0)
+        @test !hooks._edg_heat_load_low_drag_active(ctx.control,t,1)
+    end
+    ctx.state.selected_mode[1] = :targeting
+    @test !hooks._edg_heat_load_low_drag_active(ctx.control,35.0,1)
+end
+
+@testset "EDG prediction treats a zero-duration plan as no switch" begin
+    ctx=_edg_test_context(heat_load_limit_j_cm2=1e12,heat_rate_limit_w_cm2=Inf,structural_load_limit_pa=Inf)
+    sc=ctx.u.sc[1];pos=SVector{3,Float64}(sc.pos);vel=SVector{3,Float64}(sc.vel)
+    times=[0.0,1/3,2/3,1.0]
+    predict(sw)=_EDG_SM.ControlHooks._edg_integrated_max_energy_depletion_trajectory(
+        ctx.config,ctx.p,ctx.spacecraft,pos,vel,Float64(sc.mass),30.0,times,sw;
+        heat_rate_control=false,structural_control=false)
+    empty=predict((Inf,Inf));zero=predict((30.0,30.0));window=predict((30.0,30.0+1/3))
+    @test zero.alpha_profile == empty.alpha_profile
+    @test zero.positions == empty.positions
+    @test zero.velocities == empty.velocities
+    @test zero.alpha_profile == fill(ctx.config.max_alpha_rad,length(times))
+    @test window.alpha_profile[1:2] == fill(ctx.config.min_alpha_rad,2)
+    @test window.alpha_profile[end] == ctx.config.max_alpha_rad
+end

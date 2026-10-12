@@ -1175,6 +1175,7 @@ end
         (:heat_load in config.max_energy_submodes) &&
         isfinite(switches[1]) &&
         isfinite(switches[2]) &&
+        switches[1] < switches[2] &&
         t >= switches[1] &&
         t <= switches[2]
 end

@@ -803,6 +803,11 @@ Scheduling runs only in selected maximum energy depletion with the heat-load sub
 entry the state is initialized, but planning waits until the vehicle is 500 m below the entry
 interface so the predictor has a meaningful in-atmosphere state. Failed plans may retry no
 faster than once per second; a finite ordered pair marks the passage solved.
+Equal finite endpoints are a completed no-switch plan and are cached as such. They do not
+activate a low-AoA interval, either in the applied control or in the integrated trajectory
+predictor. A low-AoA interval must have strictly positive duration; its existing inclusive
+endpoints are preserved. This avoids a one-update low-drag pulse and repeated initial solves
+for a no-switch decision. Passage reset and the configured security logic remain unchanged.
 
 The numerical shooting plan is calculated once for that drag passage. It is not re-planned and
 has no online correction factor. Closed form may retain the configured legacy second-switch

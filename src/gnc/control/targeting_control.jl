@@ -148,7 +148,8 @@ function _edg_recompute_switches!(
                 structural_control=structural_control,
             )
             state.heat_load_switches_s[i] = switches
-            state.heat_load_switch_solved[i] = all(isfinite, switches) && switches[1] < switches[2]
+            # A finite zero-width result is a completed no-switch plan.
+            state.heat_load_switch_solved[i] = all(isfinite, switches) && switches[1] <= switches[2]
             state.last_switch_solve_t[i] = t
         else
             switches = state.heat_load_switches_s[i]
@@ -865,6 +866,7 @@ function _edg_integrated_max_energy_depletion_trajectory(
         heat_load_low_drag = (:heat_load in config.max_energy_submodes) &&
             isfinite(heat_load_switches[1]) &&
             isfinite(heat_load_switches[2]) &&
+            heat_load_switches[1] < heat_load_switches[2] &&
             heat_load_switches[1] <= t_abs <= heat_load_switches[2]
         heat_load_low_drag && return config.min_alpha_rad
 

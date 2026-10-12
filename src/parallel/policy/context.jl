@@ -346,15 +346,40 @@ function _shutdown_spin_barrier_pool!(pool::_SpinBarrierPool)::Nothing
     return nothing
 end
 
-function _spin_barrier_pool_for(source::Symbol)::_SpinBarrierPool
+# Spinners the pool for a dispatch width gets. `pool_width = 0` is the shipped
+# size, nthreads()-1; a positive width (the solve's measured inner width) needs
+# only width-1, since the coordinator runs one slot itself. Spinners beyond that
+# would occupy threads the solve chose not to use.
+@inline function _spin_pool_worker_count(pool_width::Int)::Int
+    full = max(1, Threads.nthreads() - 1)
+    return pool_width > 0 ? max(1, min(full, pool_width - 1)) : full
+end
+
+function _spin_barrier_pool_for(source::Symbol, pool_width::Int = 0)::_SpinBarrierPool
     key = _persistent_pool_key(source)
-    lock(_spin_barrier_lock) do
-        return get!(_spin_barrier_pools, key) do
-            # Pool needs nthreads-1 workers: the coordinator occupies 1 thread itself,
-            # so only nthreads-1 threads are available for spinning pool tasks.
-            _create_spin_barrier_pool(max(1, Threads.nthreads() - 1))
+    want = _spin_pool_worker_count(pool_width)
+    stale = nothing
+    pool = lock(_spin_barrier_lock) do
+        cur = get(_spin_barrier_pools, key, nothing)
+        # A pool from an earlier, wider solve in this scope is replaced, not
+        # reused: its extra spinners would stay awake. Width 0 never replaces.
+        if cur !== nothing && pool_width > 0 && cur.workers != want
+            delete!(_spin_barrier_pools, key)
+            stale = cur
+            cur = nothing
         end
+        if cur === nothing
+            # The coordinator occupies 1 thread itself, so at most nthreads-1
+            # threads are available for spinning pool tasks.
+            cur = _create_spin_barrier_pool(want)
+            _spin_barrier_pools[key] = cur
+        end
+        cur
     end
+    stale === nothing || lock(stale.run_lock) do
+        _shutdown_spin_barrier_pool!(stale)
+    end
+    return pool
 end
 
 function _destroy_persistent_foreach_scope!(scope_id::UInt)::Nothing

@@ -23,6 +23,7 @@
         "rhs_batch_budget_tests.jl",
         "rhs_reverify_budget_tests.jl",
         "rhs_reverify_unconfirmed_tests.jl",
+        "inner_width_search_tests.jl",
         "steady_credit_tests.jl",
         "streaming_trial_tests.jl",
         "usl_tests.jl",

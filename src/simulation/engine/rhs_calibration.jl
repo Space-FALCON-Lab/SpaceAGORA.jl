@@ -2199,3 +2199,212 @@ function _calibrate_density_callback_width!(p, u0, args)::Nothing
     end
     return nothing
 end
+
+# ── Pre-solve inner-width search ──────────────────────────────────────────────
+#
+# Every inner width in a solve derives from the thread budget, and the budget is
+# the whole pool. That is wrong for workloads that stop scaling before the pool
+# ends: on TRX50, GRAM-lookahead at 4096 satellites runs 10.30 s on 16 threads
+# and 10.95 s on 32, and the plan sweep and the per-region search cannot see it
+# because each region's own narrowing must clear a 5-10% margin, and the loss
+# is spread over every region plus GC and idle spinners.
+#
+# So the budget itself is searched. Once per case signature, before the solve,
+# the heuristic (or the sweep's pinned plan, clamped) is timed at the full budget
+# B, then at 3B/4, B/2, and further halvings while the narrower width keeps
+# winning. Each rung is timed against B in alternating calls, so drift cancels
+# in the ratio. A narrower width is adopted only if it is at least
+# `_WIDTH_SEARCH_MARGIN` faster than B; otherwise B stays. The verdict is stored
+# in the RHS calibration store under a `width|` signature, so later solves and
+# processes reuse it without measuring, and it is never revised during a solve.
+# There is no solve-length gate: the estimate from mission time and dt_max is
+# wrong by orders of magnitude for atmospheric cases (4096 spacecraft, 100 s
+# mission), and the cost is paid once per signature, about 2 x reps x rungs RHS
+# calls (~100).
+#
+# Adopting a width W replaces `policy_env_config.inner_thread_budget` with W for
+# the solve (it is the budget every inner region, the RHS plan and the callbacks
+# read, and it is per solve, so concurrent solves do not interfere) and sizes
+# the spin-barrier pool to W (`SharedBuffers.inner_width_chosen`).
+#
+#   SPACEAGORA_RHS_WIDTH_SEARCH          on/off (default on; applies only to the
+#                                        adaptive V2 route with calibration on)
+#   SPACEAGORA_RHS_WIDTH_SEARCH_N_TIMED  paired calls per rung (12)
+#   SPACEAGORA_RHS_WIDTH_SEARCH_TRACE    print the ladder and the choice
+
+# How much faster than the full budget a narrower width must be to be adopted.
+# Three percent sits above the within-process noise of the paired reading
+# (about 1-2% at the default call count) and below the 4-7% losses at 32
+# threads that motivate the search.
+const _WIDTH_SEARCH_MARGIN = 0.03
+const _WIDTH_SEARCH_PREFIX = "width|"
+const _WIDTH_SEARCH_MODE = "inner_width"
+
+@inline function _env_off(name::String, default::String)::Bool
+    return lowercase(strip(_engine_env_get(name, default))) in ("0", "off", "false", "no")
+end
+
+@inline _rhs_width_search_enabled()::Bool = !_env_off("SPACEAGORA_RHS_WIDTH_SEARCH", "on")
+
+@inline function _width_search_n_timed()::Int
+    n = tryparse(Int, strip(_engine_env_get("SPACEAGORA_RHS_WIDTH_SEARCH_N_TIMED", "12")))
+    return max(3, n === nothing ? 12 : n)
+end
+
+@inline _round_half_up(x::Real)::Int = floor(Int, x + 0.5)
+
+# B, 3B/4, B/2, B/4, B/8, ... rounded to integers >= 1, strictly decreasing.
+function _width_search_rungs(budget::Int)::Vector{Int}
+    out = Int[max(1, budget)]
+    for frac in (0.75, 0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625)
+        w = max(1, _round_half_up(budget * frac))
+        w < out[end] && push!(out, w)
+        out[end] == 1 && break
+    end
+    return out
+end
+
+"""
+    _search_inner_width(budget, measure; margin) -> (chosen, ratios)
+
+The width search proper. `measure(w)` returns `(t_budget, t_w)`, a paired timing
+of the full budget and of width `w`. Rungs are `_width_search_rungs(budget)`;
+3B/4 and B/2 are always measured, and each further halving only while the rung
+before it beat the best ratio so far. `chosen` is the best rung if its ratio is
+at most `1 - margin`, else `budget`. `ratios` lists `w => t_w / t_budget` for
+every rung measured.
+"""
+function _search_inner_width(budget::Int, measure::F;
+                             margin::Float64 = _WIDTH_SEARCH_MARGIN) where {F}
+    rungs = _width_search_rungs(budget)
+    best_w, best_ratio = budget, 1.0
+    ratios = Pair{Int, Float64}[]
+    for i in 2:length(rungs)
+        w = rungs[i]
+        t_b, t_w = measure(w)
+        r = (isfinite(t_b) && isfinite(t_w) && t_b > 0.0) ? t_w / t_b : Inf
+        push!(ratios, w => r)
+        won = r < best_ratio
+        won && ((best_w, best_ratio) = (w, r))
+        i >= 3 && !won && break
+    end
+    return (best_ratio <= 1.0 - margin ? best_w : budget), ratios
+end
+
+function _inner_width_lookup(sig::String)::Union{Nothing, Int}
+    _rhs_calib_load!()
+    entry = lock(_rhs_calib_lock) do
+        get(_rhs_calib_cache, sig, nothing)
+    end
+    (entry === nothing || get(entry, "mode", "") != _WIDTH_SEARCH_MODE) && return nothing
+    return max(1, Int(get(entry, "allotment", 1)))
+end
+
+function _inner_width_store!(sig::String, width::Int)::Nothing
+    _rhs_calib_load!()
+    lock(_rhs_calib_lock) do
+        _rhs_calib_cache[sig] = Dict{String, Any}(
+            "mode" => _WIDTH_SEARCH_MODE, "allotment" => max(1, width),
+            "scheduler" => "auto", "elapsed_mean_ns" => 0.0)
+    end
+    return nothing
+end
+
+@inline _solve_inner_width(p)::Int = begin
+    w = p.shared_buffers.inner_width_chosen[]
+    w > 0 ? w : SimulationModel.ParallelPolicy.effective_inner_thread_budget()
+end
+
+function _penv_with_budget(penv::SimulationModel.PolicyDecisionEnvConfig, w::Int)
+    return SimulationModel.PolicyDecisionEnvConfig(
+        w, ntuple(i -> getfield(penv, i + 1), fieldcount(typeof(penv)) - 1)...)
+end
+
+# Run the solve at width `w` (`w >= budget` restores the full budget). A pinned
+# flat plan is clamped to `w`; satellite_batch takes its width from the budget.
+function _apply_inner_width!(sb, penv_full, pinned, budget::Int, w::Int)::Nothing
+    narrow = w < budget
+    sb.policy_env_config[] = narrow ? _penv_with_budget(penv_full, w) : penv_full
+    sb.rhs_plan_override[] = (pinned !== nothing && narrow && Int(pinned.allotment) > w) ?
+        merge(pinned, (allotment = w,)) : pinned
+    sb.rhs_plan_step_cache[] = nothing
+    sb.inner_width_chosen[] = narrow ? w : 0
+    return nothing
+end
+
+# `timing` replaces the RHS timing (a function `w -> (t_budget, t_w)`); tests
+# use it to drive the search without a solve.
+function _calibrate_inner_width!(p, u0, args; timing = nothing)::Nothing
+    sb = p.shared_buffers
+    sb.inner_width_chosen[] = 0
+    penv = sb.policy_env_config[]
+    (penv !== nothing && penv.adaptive_enabled && penv.policy_v2) || return nothing
+    _rhs_width_search_enabled() || return nothing
+    _rhs_calibration_mode() == :off && return nothing
+    sb.adaptation_gated[] && return nothing
+    budget = SimulationModel.ParallelPolicy.effective_inner_thread_budget()
+    budget >= 2 || return nothing
+    effectors = args.dynamics_model.dynamic_effectors
+    isempty(effectors) && return nothing
+    count(identity, p.is_active) >= 2 || return nothing
+
+    penv_full = _penv_with_budget(penv, budget)
+    pinned = sb.rhs_plan_override[]
+    sig = _WIDTH_SEARCH_PREFIX *
+          _rhs_calib_signature(p, effectors, args.environment_model.density_model)
+    trace = args.simulation_settings.verbose ||
+        !_env_off("SPACEAGORA_RHS_WIDTH_SEARCH_TRACE", "0")
+
+    chosen = _inner_width_lookup(sig)
+    source = "cache"
+    ladder = ""
+    if chosen === nothing
+        reps = _width_search_n_timed()
+        du = timing === nothing ? zero(u0) : nothing
+        statistic = _rhs_calibrate_score_statistic()
+        tuning = sb.rhs_region_tuning[]
+        sb.rhs_region_tuning[] = false
+        measure = function (w)
+            _apply_inner_width!(sb, penv_full, pinned, budget, w)
+            spacecraft_dynamics!(du, u0, p, 0.0)
+            s_b = Float64[]; s_w = Float64[]
+            # Alternate which width goes first, so a first-position bias cancels.
+            one_call(width, out) = begin
+                _apply_inner_width!(sb, penv_full, pinned, budget, width)
+                t0 = time_ns(); spacecraft_dynamics!(du, u0, p, 0.0)
+                push!(out, Float64(time_ns() - t0))
+            end
+            for i in 1:reps
+                if isodd(i)
+                    one_call(budget, s_b); one_call(w, s_w)
+                else
+                    one_call(w, s_w); one_call(budget, s_b)
+                end
+            end
+            return _rhs_reduce_samples(s_b, statistic), _rhs_reduce_samples(s_w, statistic)
+        end
+        try
+            if timing === nothing
+                _apply_inner_width!(sb, penv_full, pinned, budget, budget)
+                for _ in 1:_rhs_calibrate_n_warmup()
+                    spacecraft_dynamics!(du, u0, p, 0.0)
+                end
+            end
+            chosen, ratios = _search_inner_width(budget, timing === nothing ? measure : timing)
+            ladder = join(("$(w)=$(round(r; digits=3))" for (w, r) in ratios), " ")
+            _inner_width_store!(sig, chosen)
+            _rhs_calib_save!()
+            source = "search"
+        catch e
+            @debug "inner width search failed; full budget retained" exception=e
+            chosen = budget
+            source = "failed"
+        finally
+            sb.rhs_region_tuning[] = tuning
+        end
+    end
+    _apply_inner_width!(sb, penv_full, pinned, budget, min(budget, chosen))
+    trace && println("[SpaceAGORA] RHS width search ($(source)): budget=$(budget) " *
+                     "chosen=$(min(budget, chosen)) ratios vs budget: $(ladder)")
+    return nothing
+end

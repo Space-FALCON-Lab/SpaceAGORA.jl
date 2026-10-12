@@ -756,6 +756,8 @@ function run_simulation(
     # The sweep times whole plans with the barrier off; no probe may switch it.
     _spin_barrier_tuner_reset!(p.shared_buffers.spin_barrier_tuner, false)
     _calibrate_rhs_plan_if_needed!(p, u_start, args)
+    # Before the callback calibration, so callbacks see the narrowed budget.
+    _calibrate_inner_width!(p, u_start, args)
     _calibrate_density_callback_width!(p, u_start, args)
     # Per-region widths are searched during the solve, never during the sweep
     # above, which times whole plans and would read a search in progress.
@@ -765,7 +767,7 @@ function run_simulation(
     # reason, and only where there is more than one thread to dispatch to.
     _spin_barrier_tuner_reset!(p.shared_buffers.spin_barrier_tuner,
         _rhs_env_config(p).harmonics_batch_spin_barrier === :auto &&
-        SimulationModel.ParallelPolicy.effective_inner_thread_budget() > 1)
+        _solve_inner_width(p) > 1)
 
     # In-run width identification, AFTER the sweep and only where the sweep
     # produced no plan.

@@ -832,6 +832,8 @@ function ppc_run_worker_performance(cfg::PPCConfig)
         thread_count=cfg.worker_threads,
         process_workers=cfg.process_workers,
         repeat=repeat_index,
+        process_replicate=_ppc_current_replicate(),
+        worker_pid=getpid(),
         seed=repeat_cfg.worker_seed,
         mc_samples=samples,
         solver_mode=cfg.solver_mode,
@@ -1252,6 +1254,36 @@ end
 #     line, and GRAM models are cached per process.
 _ppc_shared_process()::Bool = _ppc_bool(get(ENV, "SPACEAGORA_PPB_SHARED_PROCESS", "0"))
 
+# SPACEAGORA_PPB_SERIAL_REPEATS=<n> (default unset: serial uses the same repeat
+# count as every other mode). Serial points run n timed repeats instead of the
+# phase's count; warm-ups are unchanged. Serial timings are tight but not free of
+# process-to-process spread (~0.2%: 10.213 s vs 10.230 s on the same point in two
+# processes), and the serial baselines were 128 of the 258 timed minutes of the
+# 2026-10-11 TRX50 Part B run, so the repeat count of this one mode is worth
+# setting on its own. The count lands in each row's `repeat` column.
+function _ppc_serial_repeats()::Int
+    n = tryparse(Int, strip(get(ENV, "SPACEAGORA_PPB_SERIAL_REPEATS", "")))
+    return (n === nothing || n < 1) ? 0 : n
+end
+_ppc_repeats_for(mode::String, cfg::PPCConfig)::Int =
+    (mode == "serial" && _ppc_serial_repeats() > 0) ? _ppc_serial_repeats() : cfg.repeats
+
+# SPACEAGORA_PPB_PROCESS_REPLICATES=N (default 1: unchanged). Every point is
+# measured in N independent worker processes, each doing the configured warm-ups
+# and repeats; rows carry `process_replicate` 1..N. Replicates are interleaved
+# (replicate 1 of every point, then replicate 2, ...) so slow drift in machine
+# load spreads over the points instead of landing on one. Adaptive and native-GRAM
+# points get a fresh process per replicate as always; with SHARED_PROCESS=1 the
+# static points of one replicate share a process per thread count, in an order
+# shuffled with a per-replicate seed. The MC sample seeds are NOT varied: a
+# replicate must time the same work, only in a different process.
+function _ppc_process_replicates()::Int
+    n = tryparse(Int, strip(get(ENV, "SPACEAGORA_PPB_PROCESS_REPLICATES", "")))
+    return (n === nothing || n < 1) ? 1 : n
+end
+_ppc_current_replicate()::Int =
+    something(tryparse(Int, strip(get(ENV, "SPACEAGORA_PPC_PROCESS_REPLICATE", ""))), 1)
+
 # ── Child-process supervision ────────────────────────────────────────────────
 # A failed child used to abort the controller: `run(cmd)` threw a
 # ProcessFailedException whose text opens with the whole command line (and its
@@ -1338,14 +1370,15 @@ end
 # hole (success=false, retcode and error_message lead with the status) instead
 # of the point silently missing. A rerun with --resume retries it.
 function ppc_write_failure_row(outfile::String, cfg::PPCConfig, case::String, mode::String,
-                               threads::Int, mc::Int, retcode::String, message::String, attempts::Int)
+                               threads::Int, mc::Int, retcode::String, message::String, attempts::Int;
+                               replicate::Int=1)
     isfile(outfile) && return nothing
     hw = ppc_hardware_snapshot()
     ppc_write_rows(outfile, NamedTuple[(
         timestamp_utc=hw.timestamp_utc, git_commit=hw.git_commit, budget_condition=hw.budget_condition,
         core_budget=hw.core_budget, hardware_class=hw.hardware_class, machine=hw.machine,
         case=case, mode=mode, thread_count=threads, process_workers=cfg.process_workers,
-        repeat=0, mc_samples=mc, solver_mode=cfg.solver_mode, success=false,
+        repeat=0, process_replicate=replicate, mc_samples=mc, solver_mode=cfg.solver_mode, success=false,
         retcode=retcode, error_message=first(message, 2000), child_attempts=attempts,
         wall_time_s=NaN, throughput_samples_per_s=NaN,
         execution_scope="not_run", outer_backend_actual="not_run")])
@@ -1371,23 +1404,29 @@ function ppc_forced_plan_infeasible(mode::String, threads::Int)::Union{Nothing, 
     return nothing
 end
 
+_ppc_label_rep(rep::Int)::String = _ppc_process_replicates() > 1 ? "/r$(rep)" : ""
+_ppc_rep_tag(rep::Int)::String = _ppc_process_replicates() > 1 ? " replicate=$(rep)" : ""
+
 function _ppc_shared_key(case::String, mode::PPCModeSpec, threads::Int, cmd::Cmd)
     _ppc_shared_process() || return nothing
     (mode.policy_adaptive || ppc_workload_skips_case(case)) && return nothing
     return (threads, cmd.env)
 end
 
-function _ppc_run_shared!(points::Vector{Any}, scratch::String, cfg::PPCConfig)
+function _ppc_run_shared!(points::Vector{Any}, scratch::String, cfg::PPCConfig, rep::Int=1)
     first_pt = first(points)
     events = joinpath(dirname(scratch), "child_attempts.csv")
     outfiles = String[p.outfile for p in points]
-    label = "shared[" * join(("$(p.case)/$(p.mode)/mc$(p.mc_count)" for p in points), ", ") * "]"
+    label = "shared[" * join(("$(p.case)/$(p.mode)/mc$(p.mc_count)" for p in points), ", ") * "]" * _ppc_label_rep(rep)
     if length(points) == 1
-        println("[run] $(first_pt.case) mode=$(first_pt.mode) repeats=$(cfg.repeats) mc=$(first_pt.mc_count)")
+        println("[run] $(first_pt.case) mode=$(first_pt.mode) repeats=$(_ppc_repeats_for(first_pt.mode, cfg)) mc=$(first_pt.mc_count)$(_ppc_rep_tag(rep))")
         return ppc_run_child(first_pt.cmd, label; outfiles, events)
     end
     path = joinpath(scratch, "shared_points_$(basename(first_pt.outfile)).tsv")
-    write(path, join(("$(p.case)\t$(p.mode)\t$(p.mc_count)\t$(p.outfile)\n" for p in points)))
+    # The repeat count rides in the file: it can differ per mode (serial's
+    # SPACEAGORA_PPB_SERIAL_REPEATS), and the shared command only carries the first
+    # point's.
+    write(path, join(("$(p.case)\t$(p.mode)\t$(p.mc_count)\t$(p.outfile)\t$(_ppc_repeats_for(p.mode, cfg))\n" for p in points)))
     println("[run-shared] $(length(points)) points in one process: " *
             join(("$(p.case)/$(p.mode)/mc$(p.mc_count)" for p in points), ", "))
     return ppc_run_child(addenv(first_pt.cmd, "SPACEAGORA_PPC_POINTS_FILE" => path), label; outfiles, events)
@@ -1396,15 +1435,16 @@ end
 # Worker side of the shared process: the points file's points, shuffled.
 function ppc_run_worker_points(cfg::PPCConfig, path::String)
     points = [split(l, '\t') for l in eachline(path) if !isempty(strip(l))]
-    shuffle!(MersenneTwister(cfg.worker_seed), points)
-    for (case, mode, mc, outfile) in points
+    shuffle!(MersenneTwister(cfg.worker_seed + 7919 * (_ppc_current_replicate() - 1)), points)
+    for (case, mode, mc, outfile, reps) in points
         println("[shared] $(case) mode=$(mode) mc=$(mc) threads=$(cfg.worker_threads)")
         flush(stdout)
         # Per-point harness state, as a fresh process would have it.
         _PPC_ADAPTIVE_ROUTE_STATE[] = nothing
         _PPC_SAMPLE_FN_CACHE[] = nothing
         ppc_run_worker_performance(_ppc_with(cfg; worker_case=String(case), worker_mode=String(mode),
-            worker_mc_samples=parse(Int, mc), worker_outfile=String(outfile)))
+            worker_mc_samples=parse(Int, mc), worker_outfile=String(outfile),
+            worker_repeats=parse(Int, reps)))
     end
     return nothing
 end
@@ -1448,85 +1488,91 @@ function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Func
     perf_paths = String[]
     failures = NamedTuple[]
     events = joinpath(outdir, "child_attempts.csv")
+    nrep = _ppc_process_replicates()
+    nrep > 1 && println("[parallelization-performance] process_replicates=$(nrep) (interleaved)")
+    for rep in 1:nrep
     shared = Dict{Any, Vector{Any}}()
     shared_order = Any[]
-    for case in cases
-        case_meta = ppc_case_catalog()[case]
-        is_mc = case_meta.montecarlo
-        # A joint_routing rung is a (spacecraft, samples) pair whose product is
-        # the fixed total work the grid compares aspect ratios at, so running it
-        # at the profile's sample ladder would measure a different total at every
-        # rung and the comparison the grid exists for would not hold. Those cases
-        # therefore supply their own sample count, unless the caller named one.
-        sample_counts = if !is_mc
-            [1]
-        elseif case_meta.family == "joint_routing" && !cfg.mc_samples_explicit
-            [case_meta.default_samples]
-        else
-            cfg.mc_samples
-        end
-        # One subprocess per (case, mode, threads, mc) point, running all of that
-        # point's repeats inside it -- not one subprocess per repeat. A worker
-        # spends ~80 s on Julia startup plus JIT of the RHS/solver stack before it
-        # can time anything, so per-repeat subprocesses paid that cost `repeats`
-        # times to collect `repeats` samples of the same point; at three repeats
-        # that was two thirds of the entire run. Resume granularity is coarser as a
-        # result (a point's repeats complete together or not at all), which is the
-        # trade this makes. See PPCConfig.worker_repeats.
-        for mode in cfg.modes, thread_count in cfg.threads, mc_count in sample_counts
-            if mode == "serial" && thread_count != minimum(cfg.threads)
-                continue
-            end
-            outfile = joinpath(scratch, "perf_$(case)_$(mode)_t$(thread_count)_mc$(mc_count).csv")
-            infeasible = ppc_forced_plan_infeasible(mode, thread_count)
-            if _ppc_worker_already_done(outfile; budget_condition=condition)
-                println("[skip] $(case) mode=$(mode) threads=$(thread_count) mc=$(mc_count) (already completed — resume)")
-            elseif infeasible !== nothing
-                println("[infeasible] $(case) mode=$(mode) threads=$(thread_count) mc=$(mc_count): $(infeasible); not run")
-                ppc_write_failure_row(outfile, cfg, case, mode, thread_count, mc_count,
-                                      "infeasible_at_budget", infeasible, 0)
+        for case in cases
+            case_meta = ppc_case_catalog()[case]
+            is_mc = case_meta.montecarlo
+            # A joint_routing rung is a (spacecraft, samples) pair whose product is
+            # the fixed total work the grid compares aspect ratios at, so running it
+            # at the profile's sample ladder would measure a different total at every
+            # rung and the comparison the grid exists for would not hold. Those cases
+            # therefore supply their own sample count, unless the caller named one.
+            sample_counts = if !is_mc
+                [1]
+            elseif case_meta.family == "joint_routing" && !cfg.mc_samples_explicit
+                [case_meta.default_samples]
             else
-                cmd = ppc_worker_cmd(
-                    cfg;
-                    case=case,
-                    mode=mode,
-                    threads=thread_count,
-                    repeat=1,
-                    repeats=cfg.repeats,
-                    seed=cfg.seed + 1,
-                    mc_samples=mc_count,
-                    outfile=outfile,
-                    parity=false,
-                    workload_env=workload_env
-                )
-                key = _ppc_shared_key(case, modes[mode], thread_count, cmd)
-                if key === nothing
-                    println("[run] $(case) mode=$(mode) threads=$(thread_count) repeats=$(cfg.repeats) mc=$(mc_count)")
-                    res = ppc_run_child(cmd, "$(case)/$(mode)/t$(thread_count)/mc$(mc_count)"; outfiles=[outfile], events)
-                    res.ok || begin
-                        ppc_write_failure_row(outfile, cfg, case, mode, thread_count, mc_count,
-                                              "child_$(res.kind)_$(res.code)", res.text, res.attempts)
-                        push!(failures, (; case, mode, threads=thread_count, mc=mc_count, res.attempts, res.text))
-                    end
-                    on_run_complete === nothing || on_run_complete()
+                cfg.mc_samples
+            end
+            # One subprocess per (case, mode, threads, mc) point, running all of that
+            # point's repeats inside it -- not one subprocess per repeat. A worker
+            # spends ~80 s on Julia startup plus JIT of the RHS/solver stack before it
+            # can time anything, so per-repeat subprocesses paid that cost `repeats`
+            # times to collect `repeats` samples of the same point; at three repeats
+            # that was two thirds of the entire run. Resume granularity is coarser as a
+            # result (a point's repeats complete together or not at all), which is the
+            # trade this makes. See PPCConfig.worker_repeats.
+            for mode in cfg.modes, thread_count in cfg.threads, mc_count in sample_counts
+                if mode == "serial" && thread_count != minimum(cfg.threads)
+                    continue
+                end
+                outfile = joinpath(scratch, "perf_$(case)_$(mode)_t$(thread_count)_mc$(mc_count)$(nrep > 1 ? "_r$(rep)" : "").csv")
+                infeasible = ppc_forced_plan_infeasible(mode, thread_count)
+                if _ppc_worker_already_done(outfile; budget_condition=condition)
+                    println("[skip] $(case) mode=$(mode) threads=$(thread_count) mc=$(mc_count) (already completed — resume)")
+                elseif infeasible !== nothing
+                    println("[infeasible] $(case) mode=$(mode) threads=$(thread_count) mc=$(mc_count): $(infeasible); not run")
+                    ppc_write_failure_row(outfile, cfg, case, mode, thread_count, mc_count,
+                                          "infeasible_at_budget", infeasible, 0; replicate=rep)
                 else
-                    haskey(shared, key) || push!(shared_order, key)
-                    push!(get!(Vector{Any}, shared, key), (; case, mode, mc_count, outfile, cmd))
+                    cmd = ppc_worker_cmd(
+                        cfg;
+                        case=case,
+                        mode=mode,
+                        threads=thread_count,
+                        repeat=1,
+                        repeats=_ppc_repeats_for(mode, cfg),
+                        seed=cfg.seed + 1,
+                        mc_samples=mc_count,
+                        outfile=outfile,
+                        parity=false,
+                        workload_env=workload_env
+                    )
+                    nrep > 1 && (cmd = addenv(cmd, "SPACEAGORA_PPC_PROCESS_REPLICATE" => string(rep)))
+                    key = _ppc_shared_key(case, modes[mode], thread_count, cmd)
+                    if key === nothing
+                        println("[run] $(case) mode=$(mode) threads=$(thread_count) repeats=$(_ppc_repeats_for(mode, cfg)) mc=$(mc_count)$(_ppc_rep_tag(rep))")
+                        res = ppc_run_child(cmd, "$(case)/$(mode)/t$(thread_count)/mc$(mc_count)$(_ppc_label_rep(rep))"; outfiles=[outfile], events)
+                        res.ok || begin
+                            ppc_write_failure_row(outfile, cfg, case, mode, thread_count, mc_count,
+                                                  "child_$(res.kind)_$(res.code)", res.text, res.attempts; replicate=rep)
+                            push!(failures, (; case, mode, threads=thread_count, mc=mc_count, replicate=rep, res.attempts, res.text))
+                        end
+                        on_run_complete === nothing || on_run_complete()
+                    else
+                        haskey(shared, key) || push!(shared_order, key)
+                        push!(get!(Vector{Any}, shared, key), (; case, mode, mc_count, outfile, cmd))
+                    end
+                end
+                push!(perf_paths, outfile)
+            end
+        end
+        for key in shared_order
+            res = _ppc_run_shared!(shared[key], scratch, cfg, rep)
+            if res !== nothing && !res.ok
+                for p in shared[key]
+                    ppc_write_failure_row(p.outfile, cfg, p.case, p.mode, key[1], p.mc_count,
+                                          "child_$(res.kind)_$(res.code)", res.text, res.attempts; replicate=rep)
+                    push!(failures, (; p.case, p.mode, threads=key[1], mc=p.mc_count, replicate=rep, res.attempts, res.text))
                 end
             end
-            push!(perf_paths, outfile)
+            on_run_complete === nothing || on_run_complete()
         end
-    end
-    for key in shared_order
-        res = _ppc_run_shared!(shared[key], scratch, cfg)
-        if res !== nothing && !res.ok
-            for p in shared[key]
-                ppc_write_failure_row(p.outfile, cfg, p.case, p.mode, key[1], p.mc_count,
-                                      "child_$(res.kind)_$(res.code)", res.text, res.attempts)
-                push!(failures, (; p.case, p.mode, threads=key[1], mc=p.mc_count, res.attempts, res.text))
-            end
-        end
-        on_run_complete === nothing || on_run_complete()
+
     end
 
     parity_paths = String[]
@@ -1586,7 +1632,7 @@ function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Func
     println("[done] report=$(report_path)")
     println("[done] plots=$(length(plot_paths))")
     for f in failures
-        println("[failed-point] $(f.case) mode=$(f.mode) threads=$(f.threads) mc=$(f.mc) attempts=$(f.attempts): $(f.text)")
+        println("[failed-point] $(f.case) mode=$(f.mode) threads=$(f.threads) mc=$(f.mc)$(haskey(f, :replicate) && nrep > 1 ? " replicate=$(f.replicate)" : "") attempts=$(f.attempts): $(f.text)")
     end
     return failures
 end

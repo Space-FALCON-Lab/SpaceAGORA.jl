@@ -244,6 +244,15 @@ function _ppb_fmt_elapsed(s::Float64)::String
     return "$(h)h$(rm)m$(rs)s"
 end
 
+# The repeat counts a phase actually runs: its own, serial's when
+# SPACEAGORA_PPB_SERIAL_REPEATS overrides it, and the process-replicate count.
+function _ppb_repeats_note(phase::PPBPhase)::String
+    note = string(phase.repeats)
+    "serial" in phase.modes && _ppc_serial_repeats() > 0 && (note *= " (serial $(_ppc_serial_repeats()))")
+    _ppc_process_replicates() > 1 && (note *= " x $(_ppc_process_replicates()) process replicates")
+    return note
+end
+
 function _ppb_dry_print(
     phase::PPBPhase, ppb::PPBConfig, outdir::String;
     process_workers::Int=ppb.process_workers,
@@ -256,7 +265,7 @@ function _ppb_dry_print(
     println("[dry-run]   threads         = $(threads === nothing ? _ppb_thread_ladder(phase, ppb) : threads)")
     println("[dry-run]   mc_samples      = $(_ppb_capped_mc_samples(phase, ppb))")
     println("[dry-run]   process_workers = $(process_workers)")
-    println("[dry-run]   repeats         = $(phase.repeats), warmup = $(phase.warmup)")
+    println("[dry-run]   repeats         = $(_ppb_repeats_note(phase)), warmup = $(phase.warmup)")
 end
 
 # The budget a phase's full-budget modes are handed: the largest total any
@@ -475,7 +484,7 @@ function _ppb_run_controller!(errors::Vector{String}, tag::AbstractString, cfg, 
     failures = ppc_run_controller(cfg; on_run_complete)
     failures isa AbstractVector || return nothing
     for f in failures
-        push!(errors, "$(tag)$(f.case) $(f.mode) t$(f.threads) mc$(f.mc) (attempts=$(f.attempts)): $(f.text)")
+        push!(errors, "$(tag)$(f.case) $(f.mode) t$(f.threads) mc$(f.mc)$(haskey(f, :replicate) && _ppc_process_replicates() > 1 ? " r$(f.replicate)" : "") (attempts=$(f.attempts)): $(f.text)")
     end
     return nothing
 end
@@ -557,7 +566,7 @@ function main_paper_benchmarks()
         println("[phase $(phase.id)] $(phase.label)")
         result = _ppb_run_phase(phase, ppb, phase_dir; on_run_complete)
         push!(results, result)
-        println("[phase $(phase.id)] done — status=$(result.status)  elapsed=$(_ppb_fmt_elapsed(result.elapsed))")
+        println("[phase $(phase.id)] done — status=$(result.status)  elapsed=$(_ppb_fmt_elapsed(result.elapsed))  repeats=$(_ppb_repeats_note(phase))")
         println()
     end
 

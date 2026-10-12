@@ -149,6 +149,13 @@ the unit tests drive a plan space the host machine does not have).
   `docs/architecture/predictive_routing_r7.md`. Machine constants are loaded
   and traced under every model; `:none` declines to use them for contention, it
   does not hide them.
+- `measured_margin` (`SPACEAGORA_PREDICTIVE_MEASURED_MARGIN`, default `0.07`):
+  the margin a plan must clear when its inner width was timed on this very
+  campaign (`InnerSpeedupCurve.measured`) rather than predicted from the RHS
+  store. The 15% `margin` exists because a predicted edge can be model error;
+  a measured same-width edge carries only run-to-run noise (X5b: b2 beat b1 by
+  9.6% and X5a: b4 beat b1 by 10% on the TRX50, both under 15%). The smaller of
+  the two applies, so lowering `margin` below this lowers both.
 - `local_thrash` (`SPACEAGORA_PREDICTIVE_LOCAL_THRASH`, default `3.0`,
   ASSUMED): the observed local-slot slowdown, relative to a pool worker, past
   which the guard trims the local slots even though the pool is unharmed. Well
@@ -178,6 +185,7 @@ struct PredictivePlannerConfig
     route_switch::Bool
     heap_model::Symbol
     local_thrash::Float64
+    measured_margin::Float64
 end
 
 function PredictivePlannerConfig(;
@@ -193,7 +201,10 @@ function PredictivePlannerConfig(;
         "SPACEAGORA_PREDICTIVE_HEAP_MODEL", :locals),
     local_thrash::Real = _predictive_env_float(
         "SPACEAGORA_PREDICTIVE_LOCAL_THRASH", 3.0),
+    measured_margin::Real = _predictive_env_float("SPACEAGORA_PREDICTIVE_MEASURED_MARGIN", 0.07),
 )
+    measured_margin >= 0.0 || throw(ArgumentError(
+        "PredictivePlannerConfig measured_margin must be >= 0; got $(measured_margin)."))
     margin >= 0.0 || throw(ArgumentError("PredictivePlannerConfig margin must be >= 0; got $(margin)."))
     guard_factor >= 1.0 ||
         throw(ArgumentError("PredictivePlannerConfig guard_factor must be >= 1; got $(guard_factor)."))
@@ -207,7 +218,7 @@ function PredictivePlannerConfig(;
         "PredictivePlannerConfig local_thrash must be >= 1; got $(local_thrash)."))
     return PredictivePlannerConfig(Float64(margin), Float64(guard_factor), Int(local_slots_max),
                                    Float64(remote_overhead), route_switch, heap_model,
-                                   Float64(local_thrash))
+                                   Float64(local_thrash), Float64(measured_margin))
 end
 
 """
@@ -343,7 +354,14 @@ measured the same way (`rhs_inner_speedup_curve(stem; outer = ...)`); see
 struct InnerSpeedupCurve
     speedup::Vector{Float64}
     source::String
-    function InnerSpeedupCurve(speedup::AbstractVector{<:Real}, source::AbstractString)
+    # Widths whose speedup was timed on the campaign itself (campaign walls at
+    # that width, see `_predictive_measured_inner_curve`) rather than read from
+    # the RHS store. A plan at one of these widths is priced from the workload
+    # it will run, which is what lets it clear `measured_margin` instead of
+    # `margin`.
+    measured::Vector{Int}
+    function InnerSpeedupCurve(speedup::AbstractVector{<:Real}, source::AbstractString,
+                               measured::AbstractVector{<:Integer} = Int[])
         isempty(speedup) && throw(ArgumentError("InnerSpeedupCurve needs at least one width."))
         v = Float64.(collect(speedup))
         all(x -> isfinite(x) && x > 0.0, v) || throw(ArgumentError(
@@ -354,12 +372,13 @@ struct InnerSpeedupCurve
         for b in 2:length(v)
             v[b] = max(v[b], v[b - 1])
         end
-        return new(v, String(source))
+        return new(v, String(source), Int.(collect(measured)))
     end
 end
 
-InnerSpeedupCurve(speedup::AbstractVector{<:Real}; source::AbstractString = "") =
-    InnerSpeedupCurve(speedup, source)
+InnerSpeedupCurve(speedup::AbstractVector{<:Real}; source::AbstractString = "",
+                  measured::AbstractVector{<:Integer} = Int[]) =
+    InnerSpeedupCurve(speedup, source, measured)
 
 @inline inner_speedup(c::InnerSpeedupCurve, b::Integer)::Float64 =
     c.speedup[clamp(Int(b), 1, length(c.speedup))]
@@ -835,7 +854,13 @@ function predictive_plan(;
     end
     gain = best_static.makespan > 0.0 ?
         (best_static.makespan - best.makespan) / best_static.makespan : 0.0
-    if gain >= config.margin
+    # A plan whose inner width was timed on this campaign is a measured edge,
+    # not a modelled one, and clears the smaller margin.
+    mcurve = best.route === :none ? inner_curve_unsplit : inner_curve
+    margin = (mcurve !== nothing && best.inner_thread_budget > 1 &&
+              best.inner_thread_budget in mcurve.measured) ?
+        min(config.margin, config.measured_margin) : config.margin
+    if gain >= margin
         return PredictivePlanning(plans, best, best_static, gain, :predicted_gain,
                                   constants !== nothing)
     end

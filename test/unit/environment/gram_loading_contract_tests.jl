@@ -4,6 +4,7 @@ module GramLoadingContractTests
 using Test
 
 const ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
+const SERVICES = joinpath(ROOT, "src", "simulation", "runtime_services.jl")
 const EXAMPLES = joinpath(ROOT, "examples", "common.jl")
 const RUNTIME = joinpath(ROOT, "benchmarks", "studies", "performance_runtime_analysis", "main.jl")
 const PACKAGE = joinpath(ROOT, "benchmarks", "studies", "parallelization_performance", "cases.jl")
@@ -86,17 +87,20 @@ const SAFE_CALLS = Set{Any}((
     :pushfirst!, :push!, :throw, :*, :(===), :isdefined, :joinpath,
     :(Base.UUID), :(Base.PkgId), :(Pkg.activate), :(Pkg.instantiate), :(Core.eval),
     :_instantiate_vendored_gramsuite!, :_missing_dependency_error,
+    :_prepare_gramsuite_load_path!, :(RuntimeServices._prepare_gramsuite_load_path!),
+    :(SpaceAGORA.RuntimeServices._prepare_gramsuite_load_path!),
     :ensure_gramsuite_loaded!, :setup_gram_example!,
     :_ensure_perf_gramsuite_loaded!, :ppc_ensure_gramsuite_loaded!,
 ))
 const IMPORT_EXPR = :(import GRAMSuite)
 const EXPECTED_SEAMS = Dict(
+    :_prepare_gramsuite_load_path! => Dict(:find_package => 1, :vendor_isdir => 1),
     :_instantiate_vendored_gramsuite! => Dict(:require_pkg => 1, :active_project => 1),
     :_missing_dependency_error => Dict{Symbol, Int}(),
-    :ensure_gramsuite_loaded! => Dict(:find_package => 1, :vendor_isdir => 2, :import_gram! => 2),
+    :ensure_gramsuite_loaded! => Dict(:vendor_isdir => 1, :import_gram! => 2),
     :setup_gram_example! => Dict{Symbol, Int}(),
-    :_ensure_perf_gramsuite_loaded! => Dict(:find_package => 1, :vendor_isdir => 1, :import_gram! => 1),
-    :ppc_ensure_gramsuite_loaded! => Dict(:find_package => 1, :vendor_isdir => 1, :import_gram! => 1),
+    :_ensure_perf_gramsuite_loaded! => Dict(:import_gram! => 1),
+    :ppc_ensure_gramsuite_loaded! => Dict(:import_gram! => 1),
 )
 function redirect(ex, counts)
     ex isa Expr || return ex
@@ -128,6 +132,10 @@ function definition_name(ex)
 end
 function source_definition(path, name)
     tree = Meta.parseall(read(path, String); filename=path)
+    if path == SERVICES
+        modules = filter(ex -> ex isa Expr && ex.head === :module && ex.args[2] === :RuntimeServices, tree.args)
+        tree = only(modules).args[end]
+    end
     matches = filter(ex -> definition_name(ex) === name, tree.args)
     length(matches) == 1 || error("Expected one $name definition in $path")
     return only(matches)
@@ -144,9 +152,14 @@ struct AtmosphereSentinel end
 function new_caller(route; guarded=false, env=Environment())
     caller = Module(gensym(:GramLoadingCaller))
     package = Module(gensym(:SyntheticSpaceAGORA))
+    services = Module(gensym(:SyntheticRuntimeServices))
+    Core.eval(services, :(const LOAD_PATH = $(env.load_path)))
+    Core.eval(services, :(const _GRAM_FIXTURE = $env))
+    load_definition!(services, SERVICES, :_prepare_gramsuite_load_path!)
+    Core.eval(package, :(const RuntimeServices = $services))
     guarded && Core.eval(package, :(const GRAMSuite = $(env.gram)))
     sm = (InitialTime=InitialTimeSentinel, GRAMAtmosphereModel=AtmosphereSentinel)
-    for (name, value) in (:SpaceAGORA => package, :SM => sm, :REPO_ROOT => REPO_SENTINEL,
+    for (name, value) in (:SpaceAGORA => package, :RuntimeServices => services, :SM => sm, :REPO_ROOT => REPO_SENTINEL,
                           :PPC_REPO_ROOT => REPO_SENTINEL, :LOAD_PATH => env.load_path,
                           :_GRAM_FIXTURE => env)
         Core.eval(caller, :(const $name = $value))

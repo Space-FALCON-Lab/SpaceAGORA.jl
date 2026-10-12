@@ -23,9 +23,7 @@ using SpaceAGORA.SimulationModel: GRAMAtmosphereModel, GRAMAtmosphereModelSurrog
 function ppc_ensure_gramsuite_loaded!()
     isdefined(SpaceAGORA, :GRAMSuite) && return nothing
     vendored_gramsuite = joinpath(PPC_REPO_ROOT, "data", "GRAMSuite.jl")
-    if Base.find_package("GRAMSuite") === nothing && isdir(vendored_gramsuite)
-        pushfirst!(LOAD_PATH, vendored_gramsuite)
-    end
+    SpaceAGORA.RuntimeServices._prepare_gramsuite_load_path!(vendored_gramsuite; prepend=true)
     @eval import GRAMSuite
     return nothing
 end

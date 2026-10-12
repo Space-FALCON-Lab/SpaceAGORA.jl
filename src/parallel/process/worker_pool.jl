@@ -195,9 +195,7 @@ function _bootstrap_process_worker!(worker::Int, project_path::String)::Nothing
         repo_root = dirname(project_path)
         vendored_gramsuite = joinpath(repo_root, "data", "GRAMSuite.jl")
         remotecall_wait(worker, vendored_gramsuite) do path
-            if Base.find_package("GRAMSuite") === nothing && isdir(path)
-                pushfirst!(LOAD_PATH, path)
-            end
+            Main.SpaceAGORA.RuntimeServices._prepare_gramsuite_load_path!(path; prepend=true)
             nothing
         end
         Distributed.remotecall_eval(Main, [worker], :(import GRAMSuite))

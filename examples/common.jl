@@ -69,9 +69,7 @@ function ensure_gramsuite_loaded!()
     if !isdefined(SpaceAGORA, :GRAMSuite)
         vendored_gramsuite = joinpath(REPO_ROOT, "data", "GRAMSuite.jl")
         try
-            if Base.find_package("GRAMSuite") === nothing && isdir(vendored_gramsuite)
-                pushfirst!(LOAD_PATH, vendored_gramsuite)
-            end
+            RuntimeServices._prepare_gramsuite_load_path!(vendored_gramsuite; prepend=true)
             @eval import GRAMSuite
         catch err
             if isdir(vendored_gramsuite) && _missing_dependency_error(err)

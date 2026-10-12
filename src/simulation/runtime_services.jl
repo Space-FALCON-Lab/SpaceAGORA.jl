@@ -1,5 +1,19 @@
 module RuntimeServices
 
+# Shared discovery bookkeeping only. Each consumer keeps its import in its
+# original module and owns its guard, errors/retries, project and native assets.
+# Prepending and appending are distinct existing policies; duplicates are kept.
+function _prepare_gramsuite_load_path!(vendored_gramsuite::String; prepend::Bool)
+    if Base.find_package("GRAMSuite") === nothing && isdir(vendored_gramsuite)
+        if prepend
+            pushfirst!(LOAD_PATH, vendored_gramsuite)
+        else
+            push!(LOAD_PATH, vendored_gramsuite)
+        end
+    end
+    return nothing
+end
+
 # Despite living in separate files (`libGRAM.dylib`'s statically-linked CSPICE
 # copy vs. SPICE.jl's own libcspice), the two are not isolated at the OS
 # symbol-resolution level: `nm -gU libGRAM.dylib` shows it globally exports

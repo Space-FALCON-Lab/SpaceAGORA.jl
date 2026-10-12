@@ -74,9 +74,7 @@ const AerobrakingCampaignPropulsiveManeuverGuidanceModel =
 
 function _ensure_perf_gramsuite_loaded!()
     vendored_gramsuite = joinpath(REPO_ROOT, "data", "GRAMSuite.jl")
-    if Base.find_package("GRAMSuite") === nothing && isdir(vendored_gramsuite)
-        push!(LOAD_PATH, vendored_gramsuite)
-    end
+    RuntimeServices._prepare_gramsuite_load_path!(vendored_gramsuite; prepend=false)
     @eval import GRAMSuite
     return nothing
 end

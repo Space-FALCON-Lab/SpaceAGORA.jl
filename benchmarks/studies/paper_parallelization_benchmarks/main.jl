@@ -247,7 +247,7 @@ end
 # The repeat counts a phase actually runs: its own, serial's when
 # SPACEAGORA_PPB_SERIAL_REPEATS overrides it, and the process-replicate count.
 function _ppb_repeats_note(phase::PPBPhase)::String
-    note = string(phase.repeats)
+    note = string(_ppc_replicate_repeats() > 0 ? _ppc_replicate_repeats() : phase.repeats)
     "serial" in phase.modes && _ppc_serial_repeats() > 0 && (note *= " (serial $(_ppc_serial_repeats()))")
     _ppc_process_replicates() > 1 && (note *= " x $(_ppc_process_replicates()) process replicates")
     return note

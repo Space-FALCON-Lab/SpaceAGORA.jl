@@ -1265,8 +1265,19 @@ function _ppc_serial_repeats()::Int
     n = tryparse(Int, strip(get(ENV, "SPACEAGORA_PPB_SERIAL_REPEATS", "")))
     return (n === nothing || n < 1) ? 0 : n
 end
-_ppc_repeats_for(mode::String, cfg::PPCConfig)::Int =
-    (mode == "serial" && _ppc_serial_repeats() > 0) ? _ppc_serial_repeats() : cfg.repeats
+
+# SPACEAGORA_PPB_REPLICATE_REPEATS=<n> (default unset): the timed repeats of every
+# non-serial point, exactly, overriding the phase's declared count and
+# SPACEAGORA_PPB_MIN_REPEATS (a floor, so it cannot express e.g. 4 replicates x 3
+# repeats on a phase that declares 11). SERIAL_REPEATS still wins for serial.
+function _ppc_replicate_repeats()::Int
+    n = tryparse(Int, strip(get(ENV, "SPACEAGORA_PPB_REPLICATE_REPEATS", "")))
+    return (n === nothing || n < 1) ? 0 : n
+end
+function _ppc_repeats_for(mode::String, cfg::PPCConfig)::Int
+    mode == "serial" && _ppc_serial_repeats() > 0 && return _ppc_serial_repeats()
+    return _ppc_replicate_repeats() > 0 ? _ppc_replicate_repeats() : cfg.repeats
+end
 
 # SPACEAGORA_PPB_PROCESS_REPLICATES=N (default 1: unchanged). Every point is
 # measured in N independent worker processes, each doing the configured warm-ups

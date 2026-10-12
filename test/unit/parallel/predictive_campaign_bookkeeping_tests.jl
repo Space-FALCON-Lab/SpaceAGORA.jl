@@ -151,3 +151,21 @@ end
     # No pool means no local slots to guard: the campaign runs unguarded.
     @test occursin("n=8 failures=0 unguarded", out)
 end
+
+@testset "pool cost needs no corrections: the last sample time of the process converts it" begin
+    C = SpaceAGORA.SimulationCampaigns
+    rules = C.CampaignCorrectionRules()
+    consts = C.PredictiveCampaignConstants()
+    terms(fallback) = C.predictive_cost_terms(nothing, consts, rules; signature = "sig",
+                                              pool_cold = false, fallback_sample_time_s = fallback).terms
+    route(t) = C.predictive_plan(n_samples = 8, threads = 8, process_workers = 8,
+                                 threads_candidate = true, terms = t).chosen.route
+    # No prior campaign in the process: unchanged choice.
+    @test terms(nothing).pool_fixed == 0.0
+    @test route(terms(nothing)) === :process
+    # One short campaign (0.28 s samples) later: threads.
+    C._predictive_record_sample_time!("sig", 0.28)
+    @test C._predictive_last_sample_time("sig") == 0.28
+    @test C._predictive_last_sample_time("other") === nothing
+    @test route(terms(C._predictive_last_sample_time("sig"))) === :threads
+end

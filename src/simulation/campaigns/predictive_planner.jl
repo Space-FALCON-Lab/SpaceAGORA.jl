@@ -102,6 +102,20 @@ end
 # roughly 1.6x a thread rather than 1.0x. The default stays zero because one
 # point on one machine is not a value to hard-code; it is now a named field, so
 # a machine that has measured its own can declare it.
+# Fixed seconds a WARM process pool costs a campaign beyond its samples:
+# dispatch, the CachingPool round trip and the post-dispatch worker collection.
+# Measured on the TRX50 Part B mcgrid_16sat_8mc point (2026-10-12, 11 repeats):
+# `process dispatch=0.319 s` against 0.282-0.31 s of worker first-sample work,
+# i.e. 0.02-0.03 s; threads beat the pool by 0.031 s (0.293 vs 0.324). The
+# midpoint is used. Distinct from `pool_startup_s` (0.81 s), which is a COLD
+# pool's spin-up and is charged separately.
+const PREDICTIVE_POOL_FIXED_S = 0.025
+
+# A fixed cost reorders plans only when it is at least this share of the
+# campaign it would be added to. mcgrid_16sat_8mc (~0.3 s) is 8%; P4 rung 32
+# (pool 0.70 s against threads 1.7 s) is 3.6% and must stay on the pool.
+const PREDICTIVE_POOL_FIXED_MIN_SHARE = 0.05
+
 const PREDICTIVE_REMOTE_OVERHEAD = 0.0
 
 """
@@ -272,14 +286,19 @@ existed, and it prices every plan exactly as that model did.
 - `startup`: delay, in sample units, before each pool worker takes its first
   sample, for a pool that has not dispatched in this process yet. The local
   slots start at once, so a cold pool shifts the first samples onto them.
+- `pool_fixed`: the fixed per-campaign cost of dispatching to a pool at all
+  (`PREDICTIVE_POOL_FIXED_S` over the sample time), in sample units. Charged to
+  a process plan only on a single-round campaign short enough for it to matter;
+  see [`predictive_plan_makespan`](@ref).
 """
 struct PredictiveCostTerms
     heap_scale::Float64
     round_tail::Float64
     startup::Float64
     local_heap_slope::Float64
+    pool_fixed::Float64
     function PredictiveCostTerms(heap_scale::Real, round_tail::Real, startup::Real,
-                                 local_heap_slope::Real = NaN)
+                                 local_heap_slope::Real = NaN, pool_fixed::Real = 0.0)
         (isfinite(heap_scale) && heap_scale > 0.0) || throw(ArgumentError(
             "PredictiveCostTerms heap_scale must be finite and > 0; got $(heap_scale)."))
         (isfinite(round_tail) && round_tail >= 0.0) || throw(ArgumentError(
@@ -288,14 +307,16 @@ struct PredictiveCostTerms
             "PredictiveCostTerms startup must be finite and >= 0; got $(startup)."))
         (isnan(local_heap_slope) || local_heap_slope >= 0.0) || throw(ArgumentError(
             "PredictiveCostTerms local_heap_slope must be >= 0 or NaN; got $(local_heap_slope)."))
+        (isfinite(pool_fixed) && pool_fixed >= 0.0) || throw(ArgumentError(
+            "PredictiveCostTerms pool_fixed must be finite and >= 0; got $(pool_fixed)."))
         return new(Float64(heap_scale), Float64(round_tail), Float64(startup),
-                   Float64(local_heap_slope))
+                   Float64(local_heap_slope), Float64(pool_fixed))
     end
 end
 
 PredictiveCostTerms(; heap_scale::Real = 1.0, round_tail::Real = 0.0, startup::Real = 0.0,
-                    local_heap_slope::Real = NaN) =
-    PredictiveCostTerms(heap_scale, round_tail, startup, local_heap_slope)
+                    local_heap_slope::Real = NaN, pool_fixed::Real = 0.0) =
+    PredictiveCostTerms(heap_scale, round_tail, startup, local_heap_slope, pool_fixed)
 
 """
     InnerSpeedupCurve(speedup; source = "")
@@ -500,6 +521,18 @@ function predictive_plan_makespan(n_samples::Integer, pool_workers::Integer,
                                   slowdowns::Vector{Float64},
                                   terms::PredictiveCostTerms)::Float64
     W = clamp(Int(pool_workers), 0, length(slowdowns))
+    base = _predictive_pool_core(n_samples, W, slowdowns, terms)
+    # Single round on the pool, and the fixed cost is a visible share of it:
+    # price the cost so an exact tie with the threads route resolves to threads.
+    # Multi-round campaigns amortise it (P3 rung 16 is 16 rounds) and a longer
+    # single round (P4 rung 32) makes it noise, so neither is charged.
+    (W > 0 && Int(n_samples) <= W && terms.pool_fixed > 0.0 &&
+     terms.pool_fixed >= PREDICTIVE_POOL_FIXED_MIN_SHARE * base) && return base + terms.pool_fixed
+    return base
+end
+
+function _predictive_pool_core(n_samples::Integer, W::Int, slowdowns::Vector{Float64},
+                               terms::PredictiveCostTerms)::Float64
     if terms.round_tail == 0.0 && (W == 0 || terms.startup == 0.0)
         return predictive_makespan(n_samples, slowdowns)
     end
@@ -1531,7 +1564,8 @@ constants file's priors and this machine's corrections.
 function predictive_cost_terms(corrections::Union{Nothing, CampaignCorrections},
                                campaign_constants::PredictiveCampaignConstants,
                                rules::CampaignCorrectionRules;
-                               signature::AbstractString, pool_cold::Bool)
+                               signature::AbstractString, pool_cold::Bool,
+                               fallback_sample_time_s::Union{Nothing, Real} = nothing)
     k = corrections === nothing ? 0 : corrections.campaigns
     heap = corrections === nothing ? 1.0 : correction_value(corrections.heap_scale, 1.0, k, rules)
     tail_prior = campaign_constants.round_tail
@@ -1547,7 +1581,14 @@ function predictive_cost_terms(corrections::Union{Nothing, CampaignCorrections},
     startup_s = campaign_constants.pool_startup_s
     startup = (pool_cold && t1 !== nothing && startup_s !== nothing) ? startup_s / t1 : 0.0
     slope = campaign_constants.local_heap_slope === nothing ? NaN : campaign_constants.local_heap_slope
-    return (terms = PredictiveCostTerms(heap, max(0.0, tail), startup, slope), sample_time_s = t1)
+    # Needs a sample time to turn seconds into sample units; without one (the
+    # process's first campaign of this signature) no fixed cost is charged.
+    # With corrections off there is no t1; the process's last measured sample
+    # time stands in for this conversion only (no correction is applied).
+    t_pool = t1 === nothing ? fallback_sample_time_s : t1
+    pool_fixed = (t_pool === nothing || !(t_pool > 0)) ? 0.0 : PREDICTIVE_POOL_FIXED_S / t_pool
+    return (terms = PredictiveCostTerms(heap, max(0.0, tail), startup, slope, pool_fixed),
+            sample_time_s = t1)
 end
 
 """

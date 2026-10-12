@@ -881,6 +881,16 @@ end
 # lower, so this leaves the bandit's own use of that function untouched. A
 # plan's budget never exceeds its share (`W * b <= T`, `L * b <= T - 1`), which
 # is the same cap the split applies.
+# The environment a sample sees on the static serial route (the harness's R0-R3
+# modes): no adaptive policy, no pre-solve RHS sweep, callbacks never threaded.
+const _SERIAL_SAMPLE_ENV = (
+    "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "0",
+    "SPACEAGORA_RHS_CALIBRATE" => "off",
+    "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "off",
+    "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "off",
+    "SPACEAGORA_THERMAL_CALLBACK_PARALLEL" => "off",
+)
+
 function _predictive_dispatch(f, batch::Vector, plan::PredictivePlan, tuning::OuterRouteTuning;
                               fail_fast::Bool, class_sink::Union{Nothing, Vector{Symbol}}=nothing,
                               take_sink::Union{Nothing, Vector{Float64}}=nothing,
@@ -897,14 +907,24 @@ function _predictive_dispatch(f, batch::Vector, plan::PredictivePlan, tuning::Ou
     # A serial plan with no declared budget retains the caller's environment.
     # An explicit budget (including an off-list forced serial plan) is still a
     # ceiling, even though the serial dispatcher returns before route setup.
-    plan.consumers <= 1 && plan.inner_thread_budget <= 0 &&
-        return _run_campaign_with_route_env(f, spec, dispatch_plan; class_sink=class_sink,
-                                            take_sink=take_sink, admission=admission,
-                                            on_complete=on_complete)
+    undeclared = plan.consumers <= 1 && plan.inner_thread_budget <= 0
     budget = _predictive_declared_budget(plan)
     # A serial ceiling may narrow an inherited budget, never widen it.
     plan.consumers <= 1 && (budget = min(budget, ParallelPolicy.effective_inner_thread_budget()))
-    return withenv("SPACEAGORA_INNER_THREAD_BUDGET" => string(budget)) do
+    # One consumer with one thread can parallelise nothing, so the R7 inner
+    # machinery (adaptive policy, region search, RHS sweep, callback threading
+    # decisions) could only cost: measured +2.7% (P3 rung 1) to +6.5% (P6p, one
+    # worker) over the serial path. Run the sample as the static serial route does.
+    effective = undeclared ? ParallelPolicy.effective_inner_thread_budget() : budget
+    inert = plan.consumers <= 1 && effective <= 1 ? _SERIAL_SAMPLE_ENV : ()
+    if undeclared
+        return withenv(inert...) do
+            _run_campaign_with_route_env(f, spec, dispatch_plan; class_sink=class_sink,
+                                         take_sink=take_sink, admission=admission,
+                                         on_complete=on_complete)
+        end
+    end
+    return withenv("SPACEAGORA_INNER_THREAD_BUDGET" => string(budget), inert...) do
         _run_campaign_with_route_env(f, spec, dispatch_plan; class_sink=class_sink,
                                      take_sink=take_sink, admission=admission,
                                      on_complete=on_complete)
@@ -1042,6 +1062,26 @@ function _predictive_mark_pool_warm!()::Nothing
     end
     return nothing
 end
+
+# The last mean pool-worker sample time seen in this process, per workload
+# signature, kept whatever SPACEAGORA_CAMPAIGN_CORRECTIONS says. It is read only
+# to turn the fixed pool cost from seconds into sample units; nothing is
+# corrected from it. Absent until a pool campaign of that signature has run.
+const _LAST_SAMPLE_TIME_S = Dict{String, Float64}()
+const _LAST_SAMPLE_TIME_LOCK = ReentrantLock()
+
+function _predictive_record_sample_time!(signature::AbstractString, seconds::Real)::Nothing
+    (isfinite(seconds) && seconds > 0.0) || return nothing
+    lock(_LAST_SAMPLE_TIME_LOCK) do
+        _LAST_SAMPLE_TIME_S[String(signature)] = Float64(seconds)
+    end
+    return nothing
+end
+
+_predictive_last_sample_time(signature::AbstractString)::Union{Nothing, Float64} =
+    lock(_LAST_SAMPLE_TIME_LOCK) do
+        get(_LAST_SAMPLE_TIME_S, String(signature), nothing)
+    end
 
 function _predictive_mean_work(samples)::Float64
     total = 0.0
@@ -1221,7 +1261,8 @@ function _run_campaign_predictive(
     shape_key = "$(signature)|n=$(n)|threads=$(threads)|pool=$(pool_workers)"
     pool_cold = pool_workers >= 2 && _predictive_pool_cold(pool_workers)
     priced = predictive_cost_terms(corrections, campaign_constants, rules;
-                                   signature=signature, pool_cold=pool_cold)
+                                   signature=signature, pool_cold=pool_cold,
+                                   fallback_sample_time_s=_predictive_last_sample_time(signature))
     terms = priced.terms
     inner_curve = _predictive_inner_curve(features; outer=true)
     inner_curve_unsplit = _predictive_inner_curve(features; outer=false)
@@ -1285,6 +1326,7 @@ function _run_campaign_predictive(
                          "n=$(length(result.samples)) failures=$(length(result.failed)) unguarded")
         on_pool = plan.route === :process
         on_pool && _predictive_mark_pool_warm!()
+        on_pool && _predictive_record_sample_time!(signature, _predictive_mean_work(result.samples))
         if fold
             worker_s = on_pool ? _predictive_mean_work(result.samples) : NaN
             tail = (on_pool && !pool_cold && isempty(result.failed)) ?
@@ -1365,6 +1407,8 @@ function _run_campaign_predictive(
     final_consumers = max(1, open_workers + open_locals)
     final_slots = open_workers > 0 ? open_locals : 0
     _predictive_mark_pool_warm!()
+    open_workers > 0 && _predictive_record_sample_time!(
+        signature, _predictive_guard_mean(guard.worker_work_s, guard.worker_n))
     if fold
         verdict = guard.verdict
         # The heap scale that would have predicted what the guard saw. Only a

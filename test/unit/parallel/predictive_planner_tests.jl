@@ -863,3 +863,17 @@ end
     @test moved.heap_slowdown == SCamp.predictive_heap_slowdown(nothing, 4)
     @test moved.makespan == SCamp.predictive_makespan(53, fill(moved.heap_slowdown, 4))
 end
+
+@testset "a fixed pool cost moves a short single-round campaign to threads" begin
+    plan(; n, T, pool_fixed) = SCamp.predictive_plan(
+        n_samples = n, threads = T, process_workers = T, threads_candidate = true,
+        local_slots_cap = 0, config = _cfg(),
+        terms = SCamp.PredictiveCostTerms(pool_fixed = pool_fixed)).chosen.route
+    # mcgrid_16sat_8mc: 8 samples of ~0.28 s, 0.025 s of pool cost = 0.089 samples.
+    @test plan(n = 8, T = 8, pool_fixed = 0.0) === :process      # exact tie goes to the pool
+    @test plan(n = 8, T = 8, pool_fixed = 0.025 / 0.28) === :threads
+    # P4 rung 32: one round of ~0.7 s samples, the cost is 3.6% of it: pool stays.
+    @test plan(n = 32, T = 32, pool_fixed = 0.025 / 0.7) === :process
+    # P3 rung 16: sixteen rounds of 38 ms samples; the cost is amortised: pool stays.
+    @test plan(n = 256, T = 16, pool_fixed = 0.025 / 0.038) === :process
+end

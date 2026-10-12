@@ -999,6 +999,12 @@ export RhsEffectorDecision, RhsExecutionPlan
         # returned by _density_callback_thread_decision without consulting the
         # policy, with policy_applied=false since nothing was decided per call.
         density_callback_width::Base.RefValue{Int} = Ref{Int}(0)
+        # Pre-solve measured inner thread width (see _calibrate_inner_width! in
+        # rhs_calibration.jl). 0 means no narrower width was chosen: the solve runs
+        # at the full budget and the spin-barrier pool keeps its nthreads()-1 size.
+        # A positive value is the width policy_env_config.inner_thread_budget was
+        # narrowed to, and sizes the spin-barrier pool so idle threads park.
+        inner_width_chosen::Base.RefValue{Int} = Ref{Int}(0)
         rhs_env_config::Base.RefValue{Union{Nothing, RhsPlanEnvConfig}} = Ref{Union{Nothing, RhsPlanEnvConfig}}(nothing)
         callback_env_config::Base.RefValue{Union{Nothing, CallbackEnvConfig}} = Ref{Union{Nothing, CallbackEnvConfig}}(nothing)
     end

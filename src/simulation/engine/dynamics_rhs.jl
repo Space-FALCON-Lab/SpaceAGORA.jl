@@ -1403,11 +1403,15 @@ function _accumulate_harmonics_flat_batch!(
             dispatch_fn = spin ?
                 SimulationModel.ParallelPolicy.threaded_foreach_worker_spin :
                 SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent
+            # A measured inner width sizes the spin pool, so the threads the solve
+            # does not use park instead of spinning.
+            pool_kw = spin ? (pool_width = p.shared_buffers.inner_width_chosen[],) : (;)
             dispatch_fn(
                 :rhs_harmonics_batch,
                 n_workers,
                 plan.allotment;
                 scheduler=_dispatch_scheduler(p, plan),
+                pool_kw...,
             ) do _worker_id, w
                 item_start = (w - 1) * batch_size + 1
                 item_end   = min(w * batch_size, n_items)

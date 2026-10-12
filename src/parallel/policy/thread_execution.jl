@@ -233,9 +233,13 @@ function threaded_foreach_worker_spin(
     f::F;
     scheduler::Symbol=:auto,
     chunk::Int=0,
+    pool_width::Int=0,
 ) where {F <: Function}
     num_items <= 0 && return nothing
     workers = _thread_worker_count(num_items, allotment)
+    # `pool_width > 0`: the solve's measured inner width. It sizes the pool and
+    # bounds the dispatch to it; 0 leaves both as they were.
+    pool_width > 0 && (workers = min(workers, pool_width))
     if workers <= 1
         @inbounds for idx in 1:num_items
             f(1, idx)
@@ -245,7 +249,7 @@ function threaded_foreach_worker_spin(
     # A pool released between the lookup and the dispatch (release_spin_barrier_pool!)
     # refuses the round; take the fresh one.
     while true
-        pool = _spin_barrier_pool_for(source)
+        pool = _spin_barrier_pool_for(source, pool_width)
         _spin_barrier_dispatch!(pool, num_items, workers, f) && return nothing
     end
 end
@@ -274,9 +278,10 @@ function threaded_foreach_worker_spin(
     allotment::Int;
     scheduler::Symbol=:auto,
     chunk::Int=0,
+    pool_width::Int=0,
 ) where {F <: Function}
     return threaded_foreach_worker_spin(
-        source, num_items, allotment, f; scheduler=scheduler, chunk=chunk
+        source, num_items, allotment, f; scheduler=scheduler, chunk=chunk, pool_width=pool_width
     )
 end
 

@@ -2217,6 +2217,10 @@ end
 # `_WIDTH_SEARCH_MARGIN` faster than B; otherwise B stays. The verdict is stored
 # in the RHS calibration store under a `width|` signature, so later solves and
 # processes reuse it without measuring, and it is never revised during a solve.
+# There is no solve-length gate: the estimate from mission time and dt_max is
+# wrong by orders of magnitude for atmospheric cases (4096 spacecraft, 100 s
+# mission), and the cost is paid once per signature, about 2 x reps x rungs RHS
+# calls (~100).
 #
 # Adopting a width W replaces `policy_env_config.inner_thread_budget` with W for
 # the solve (it is the budget every inner region, the RHS plan and the callbacks
@@ -2235,8 +2239,6 @@ end
 const _WIDTH_SEARCH_MARGIN = 0.03
 const _WIDTH_SEARCH_PREFIX = "width|"
 const _WIDTH_SEARCH_MODE = "inner_width"
-# The estimated solve must be this many times the search's own RHS calls.
-const _WIDTH_SEARCH_MIN_SOLVE_RATIO = 20.0
 
 @inline function _env_off(name::String, default::String)::Bool
     return lowercase(strip(_engine_env_get(name, default))) in ("0", "off", "false", "no")
@@ -2358,9 +2360,6 @@ function _calibrate_inner_width!(p, u0, args; timing = nothing)::Nothing
     ladder = ""
     if chosen === nothing
         reps = _width_search_n_timed()
-        calls = _rhs_calibrate_n_warmup() + 2 * reps * (length(_width_search_rungs(budget)) - 1)
-        timing !== nothing || _rhs_estimated_evaluations(p) >= _WIDTH_SEARCH_MIN_SOLVE_RATIO * calls ||
-            return nothing
         du = timing === nothing ? zero(u0) : nothing
         statistic = _rhs_calibrate_score_statistic()
         tuning = sb.rhs_region_tuning[]

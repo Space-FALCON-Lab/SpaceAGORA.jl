@@ -881,6 +881,16 @@ end
 # lower, so this leaves the bandit's own use of that function untouched. A
 # plan's budget never exceeds its share (`W * b <= T`, `L * b <= T - 1`), which
 # is the same cap the split applies.
+# The environment a sample sees on the static serial route (the harness's R0-R3
+# modes): no adaptive policy, no pre-solve RHS sweep, callbacks never threaded.
+const _SERIAL_SAMPLE_ENV = (
+    "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "0",
+    "SPACEAGORA_RHS_CALIBRATE" => "off",
+    "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "off",
+    "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "off",
+    "SPACEAGORA_THERMAL_CALLBACK_PARALLEL" => "off",
+)
+
 function _predictive_dispatch(f, batch::Vector, plan::PredictivePlan, tuning::OuterRouteTuning;
                               fail_fast::Bool, class_sink::Union{Nothing, Vector{Symbol}}=nothing,
                               take_sink::Union{Nothing, Vector{Float64}}=nothing,
@@ -897,14 +907,24 @@ function _predictive_dispatch(f, batch::Vector, plan::PredictivePlan, tuning::Ou
     # A serial plan with no declared budget retains the caller's environment.
     # An explicit budget (including an off-list forced serial plan) is still a
     # ceiling, even though the serial dispatcher returns before route setup.
-    plan.consumers <= 1 && plan.inner_thread_budget <= 0 &&
-        return _run_campaign_with_route_env(f, spec, dispatch_plan; class_sink=class_sink,
-                                            take_sink=take_sink, admission=admission,
-                                            on_complete=on_complete)
+    undeclared = plan.consumers <= 1 && plan.inner_thread_budget <= 0
     budget = _predictive_declared_budget(plan)
     # A serial ceiling may narrow an inherited budget, never widen it.
     plan.consumers <= 1 && (budget = min(budget, ParallelPolicy.effective_inner_thread_budget()))
-    return withenv("SPACEAGORA_INNER_THREAD_BUDGET" => string(budget)) do
+    # One consumer with one thread can parallelise nothing, so the R7 inner
+    # machinery (adaptive policy, region search, RHS sweep, callback threading
+    # decisions) could only cost: measured +2.7% (P3 rung 1) to +6.5% (P6p, one
+    # worker) over the serial path. Run the sample as the static serial route does.
+    effective = undeclared ? ParallelPolicy.effective_inner_thread_budget() : budget
+    inert = plan.consumers <= 1 && effective <= 1 ? _SERIAL_SAMPLE_ENV : ()
+    if undeclared
+        return withenv(inert...) do
+            _run_campaign_with_route_env(f, spec, dispatch_plan; class_sink=class_sink,
+                                         take_sink=take_sink, admission=admission,
+                                         on_complete=on_complete)
+        end
+    end
+    return withenv("SPACEAGORA_INNER_THREAD_BUDGET" => string(budget), inert...) do
         _run_campaign_with_route_env(f, spec, dispatch_plan; class_sink=class_sink,
                                      take_sink=take_sink, admission=admission,
                                      on_complete=on_complete)
@@ -1039,6 +1059,133 @@ function _predictive_mark_pool_warm!()::Nothing
     workers = campaign_process_pool().workers
     lock(_PREDICTIVE_WARM_LOCK) do
         union!(_PREDICTIVE_WARM_WORKERS, workers)
+    end
+    return nothing
+end
+
+# The last mean pool-worker sample time seen in this process, per workload
+# signature, kept whatever SPACEAGORA_CAMPAIGN_CORRECTIONS says. It is read only
+# to turn the fixed pool cost from seconds into sample units; nothing is
+# corrected from it. Absent until a pool campaign of that signature has run.
+const _LAST_SAMPLE_TIME_S = Dict{String, Float64}()
+const _LAST_SAMPLE_TIME_LOCK = ReentrantLock()
+
+function _predictive_record_sample_time!(signature::AbstractString, seconds::Real)::Nothing
+    (isfinite(seconds) && seconds > 0.0) || return nothing
+    lock(_LAST_SAMPLE_TIME_LOCK) do
+        _LAST_SAMPLE_TIME_S[String(signature)] = Float64(seconds)
+    end
+    return nothing
+end
+
+_predictive_last_sample_time(signature::AbstractString)::Union{Nothing, Float64} =
+    lock(_LAST_SAMPLE_TIME_LOCK) do
+        get(_LAST_SAMPLE_TIME_S, String(signature), nothing)
+    end
+
+# Campaign walls of the threads route, per workload shape and inner width.
+#
+# The RHS store's curve times one RHS evaluation, and on the workloads that
+# matter here it is flat (X5a/X5b traces: inner_curve=1.0,...,1.02) while whole
+# samples at b = 2 or 4 threads each were 10% faster than at b = 1 on the TRX50
+# (the effector, callback and GC-side work the RHS curve never sees). So the
+# planner times what it prices: every threads-route campaign records its
+# dispatch wall under (signature, n, T, W, b), and the pinned width's curve is
+# wall(b = 1) / wall(b). In-process and independent of
+# SPACEAGORA_CAMPAIGN_CORRECTIONS, like `_LAST_SAMPLE_TIME_S`. The minimum is
+# kept (over the last three), with the observation count: the first campaign of a shape carries JIT
+# time and the minimum drops it, but a width seen once is not trusted (see
+# `_predictive_inner_probe`): both ends of a ratio need two observations, because
+# the first campaign at a width is the one that compiles its threaded paths (a
+# 1.5-2x wall on the local X5-like shapes).
+# ponytail: per process, minimum of the last three walls; persist to disk if long-lived
+# sessions drift.
+const _INNER_WALLS = Dict{String, Vector{Float64}}()
+const _INNER_WALLS_LOCK = ReentrantLock()
+
+_inner_wall_key(signature, n, T, W, b) = "$(signature)|n=$(n)|T=$(T)|w=$(W)|b=$(b)"
+
+function _predictive_record_inner_wall!(signature::AbstractString, n::Int, T::Int,
+                                        plan::PredictivePlan, seconds::Real)::Nothing
+    (plan.route === :threads && isfinite(seconds) && seconds > 0.0) || return nothing
+    key = _inner_wall_key(signature, n, T, plan.workers, max(1, plan.inner_thread_budget))
+    lock(_INNER_WALLS_LOCK) do
+        walls = get!(_INNER_WALLS, key, Float64[])
+        push!(walls, Float64(seconds))
+        length(walls) > 3 && popfirst!(walls)
+    end
+    return nothing
+end
+
+# (observations kept, their minimum). Only the last three are kept: the plan the
+# planner settles on keeps being timed and the one it left does not, and a
+# minimum over every run of the first would drift below the second's frozen
+# value without the plan getting any faster.
+function _predictive_inner_wall(signature, n, T, W, b)::Tuple{Int, Float64}
+    walls = lock(() -> get(_INNER_WALLS, _inner_wall_key(signature, n, T, W, b), Float64[]),
+                 _INNER_WALLS_LOCK)
+    return (length(walls), isempty(walls) ? Inf : minimum(walls))
+end
+
+# The split curve with the widths this process has timed overwritten by their
+# measured speedup, at the pinned width min(n, T): wall(b = 1) / wall(b). Widths
+# nothing timed keep the store's value (or 1). `base` unchanged when b = 1 has
+# not been timed.
+function _predictive_measured_inner_curve(base::Union{Nothing, InnerSpeedupCurve},
+                                          signature::AbstractString, n::Int, T::Int)
+    _predictive_env_bool("SPACEAGORA_PREDICTIVE_INNER_MEASURE", true) || return base
+    W = min(n, T)
+    k1, w1 = _predictive_inner_wall(signature, n, T, W, 1)
+    k1 >= 2 || return base
+    measured = Int[]
+    speed = Dict{Int, Float64}()
+    for b in 2:fld(T, W)
+        k, w = _predictive_inner_wall(signature, n, T, W, b)
+        k >= 2 || continue
+        speed[b] = w1 / w
+        push!(measured, b)
+    end
+    isempty(measured) && return base
+    len = max(maximum(measured), base === nothing ? 1 : length(base.speedup))
+    v = base === nothing ? ones(len) : [inner_speedup(base, b) for b in 1:len]
+    for (b, x) in speed
+        v[b] = x
+    end
+    return InnerSpeedupCurve(v; source = (base === nothing ? "" : base.source) * "+campaign",
+                             measured = measured)
+end
+
+# While the static threads plan is the chosen one, time the widths it could be
+# giving its consumers, so the curve above has something to price. Returns the
+# plan to run instead, or `nothing` (run the chosen plan).
+#
+# The reference b = 1 must have been timed twice first (the first run of a
+# shape is cold); then the one wider width the planner enumerates for the same
+# consumers, b = fld(T, W), is timed twice (the first run compiles). Two extra
+# campaigns per shape per process; the protocol's warm-ups must cover the cold
+# route, two b = 1 runs and these two (5 in all) for the timed repeats to run
+# the settled plan. W * b <= T always.
+function _predictive_inner_probe(planning::PredictivePlanning, signature::AbstractString,
+                                 n::Int, T::Int, config::PredictivePlannerConfig,
+                                 constants, terms::PredictiveCostTerms,
+                                 curve::Union{Nothing, InnerSpeedupCurve})
+    _predictive_env_bool("SPACEAGORA_PREDICTIVE_INNER_PROBE", true) || return nothing
+    chosen = planning.chosen
+    (chosen.route === :threads && chosen.static_equivalent) || return nothing
+    W = chosen.workers
+    k1, w1 = _predictive_inner_wall(signature, n, T, W, 1)
+    k1 >= 2 || return nothing
+    # Only the width the plan space enumerates for this W (b = fld(T, W)): a
+    # narrower one could be timed but never chosen.
+    b = fld(T, W)
+    b >= 2 || return nothing
+    k, w = _predictive_inner_wall(signature, n, T, W, b)
+    if k < 2
+        contention = _predictive_contention_constants(config, constants, :threads,
+                                                      terms.local_heap_slope)
+        return _predictive_plan(:threads, W, 0, n, false, contention, config.remote_overhead;
+                                terms = terms, inner_budget = b,
+                                inner_time = curve === nothing ? 1.0 : 1.0 / inner_speedup(curve, b))
     end
     return nothing
 end
@@ -1221,9 +1368,11 @@ function _run_campaign_predictive(
     shape_key = "$(signature)|n=$(n)|threads=$(threads)|pool=$(pool_workers)"
     pool_cold = pool_workers >= 2 && _predictive_pool_cold(pool_workers)
     priced = predictive_cost_terms(corrections, campaign_constants, rules;
-                                   signature=signature, pool_cold=pool_cold)
+                                   signature=signature, pool_cold=pool_cold,
+                                   fallback_sample_time_s=_predictive_last_sample_time(signature))
     terms = priced.terms
-    inner_curve = _predictive_inner_curve(features; outer=true)
+    inner_curve = _predictive_measured_inner_curve(
+        _predictive_inner_curve(features; outer=true), signature, n, threads)
     inner_curve_unsplit = _predictive_inner_curve(features; outer=false)
     planning = predictive_plan(
         n_samples=n, threads=threads, process_workers=pool_workers,
@@ -1237,11 +1386,15 @@ function _run_campaign_predictive(
                                      pool_workers=pool_workers, local_cap=local_cap,
                                      allowed_routes=candidates)
     forced === nothing || (plan = forced)
+    probe = (forced === nothing && (:threads in candidates)) ?
+        _predictive_inner_probe(planning, signature, n, threads, config, constants, terms,
+                                inner_curve) : nothing
+    probe === nothing || (plan = probe)
     # A forced plan is a measurement, not a decision: folding it would record it
     # as this shape's last plan (which the leash then walks from) and fit the
     # corrections to a plan the planner did not choose, so later unforced
     # campaigns of the same shape would be planned from it. Skip fold and save.
-    fold = corrections !== nothing && forced === nothing
+    fold = corrections !== nothing && forced === nothing && probe === nothing
     trace = _dispatch_trace_enabled()
     if trace
         println("[predictive] shape n=$(n) threads=$(threads) pool=$(pool_workers) " *
@@ -1263,7 +1416,9 @@ function _run_campaign_predictive(
         end
         println("[predictive] chosen $(_predictive_plan_line(planning.chosen)) " *
                 "reason=$(planning.reason) gain=$(round(planning.gain; digits=3))")
-        forced === nothing && plan !== planning.chosen &&
+        probe === nothing || println("[predictive] inner_probe $(predictive_plan_key(probe)) " *
+                                     "(timing the width; chosen was $(predictive_plan_key(planning.chosen)))")
+        forced === nothing && probe === nothing && plan !== planning.chosen &&
             println("[predictive] leash $(leash) -> $(_predictive_plan_line(plan))")
         if forced !== nothing
             println("[predictive] forced $(predictive_plan_key(forced)) makespan_exact=$(repr(forced.makespan)) " *
@@ -1283,8 +1438,10 @@ function _run_campaign_predictive(
         result = _predictive_dispatch(f, seeds, plan, tuning; fail_fast=fail_fast)
         trace && println("[predictive] dispatch=$(round(result.elapsed_s; digits=3))s " *
                          "n=$(length(result.samples)) failures=$(length(result.failed)) unguarded")
+        _predictive_record_inner_wall!(signature, n, threads, plan, result.elapsed_s)
         on_pool = plan.route === :process
         on_pool && _predictive_mark_pool_warm!()
+        on_pool && _predictive_record_sample_time!(signature, _predictive_mean_work(result.samples))
         if fold
             worker_s = on_pool ? _predictive_mean_work(result.samples) : NaN
             tail = (on_pool && !pool_cold && isempty(result.failed)) ?
@@ -1365,6 +1522,8 @@ function _run_campaign_predictive(
     final_consumers = max(1, open_workers + open_locals)
     final_slots = open_workers > 0 ? open_locals : 0
     _predictive_mark_pool_warm!()
+    open_workers > 0 && _predictive_record_sample_time!(
+        signature, _predictive_guard_mean(guard.worker_work_s, guard.worker_n))
     if fold
         verdict = guard.verdict
         # The heap scale that would have predicted what the guard saw. Only a

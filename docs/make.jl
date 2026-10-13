@@ -150,7 +150,10 @@ makedocs(
         "User Guide" => Any[
             "Start Here" => "getting_started.md",
             "Quickstart" => "user/quickstart.md",
+            "Motion Planning with HYPR" => "user/hypr_planning.md",
             "RPO Planner Pilot" => "user/rpo_planner_pilot.md",
+            "Orbital Scenes with MuJoCo" => "user/mujoco_scenes.md",
+            "Energy Depletion Guidance" => "user/edg_guidance.md",
             "Installation & Environment" => "user/installation_environment.md",
             "GRAMSuite Setup" => "user/gramsuite_setup.md",
             "Assets & Modes" => "assets.md",
@@ -192,6 +195,7 @@ makedocs(
         "Maintainer Guide" => Any[
             "Maintainer Overview" => "maintainer/index.md",
             "Optional Adapter Standard" => "maintainer/adapter_contract.md",
+            "EDG Adapter Preparation" => "maintainer/edg_adapter_boundary.md",
             "External Propagation Services" => "maintainer/external_propagation_services.md",
             "RPO Planner Contract" => "maintainer/rpo_planner_contract.md",
             "HYPR service contract" => "maintainer/hypr_services.md",

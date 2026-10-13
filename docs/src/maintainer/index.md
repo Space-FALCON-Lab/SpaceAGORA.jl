@@ -15,6 +15,7 @@ julia --project=. docs/make.jl
 What to read next:
 
 - [Optional Adapter Standard](adapter_contract.md)
+- [EDG Adapter Preparation](edg_adapter_boundary.md)
 - [Documentation Policy](../documentation_policy.md)
 - [API Policy](../public_api_policy.md)
 - [Contracts](../contracts.md)

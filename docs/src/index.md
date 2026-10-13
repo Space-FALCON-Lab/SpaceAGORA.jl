@@ -30,6 +30,9 @@ without the prefix; the [Quickstart](user/quickstart.md) shows both forms.
 Use this route if you want the shortest path to a working local simulation.
 
 - [Quickstart](user/quickstart.md)
+- [Motion Planning with HYPR](user/hypr_planning.md)
+- [Orbital Scenes with MuJoCo](user/mujoco_scenes.md)
+- [Energy Depletion Guidance](user/edg_guidance.md)
 - [Assets & Modes](assets.md)
 - [First Simulation](user/first_simulation.md)
 

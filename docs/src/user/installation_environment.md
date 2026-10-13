@@ -86,8 +86,8 @@ For development, `SPACEAGORA_CORE_PATH` selects a local SpaceAGORA checkout
 instead of that source pin. Core CI uses this override with an immutable
 companion revision so changes to core are tested against the actual candidate.
 See the companion's [installation guide](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl#installation)
-for overrides and its [scene example and limits](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl#spaceagoramujocojl)
-before constructing an owner. The supported connection is documented in
+for overrides. Start with [Orbital Scenes with MuJoCo](mujoco_scenes.md) for
+the frame conventions, ownership rules and complete examples. The supported connection is documented in
 [External propagation services](../maintainer/external_propagation_services.md)
 and the shared [optional adapter standard](../maintainer/adapter_contract.md).
 

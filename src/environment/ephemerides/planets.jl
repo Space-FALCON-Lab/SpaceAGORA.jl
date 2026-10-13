@@ -76,6 +76,24 @@ module Planets
         end
         return nothing
     end
+    # The kernels CSPICE currently holds, in load order, and the inverse: furnish
+    # the ones of a coordinator's list that this process lacks. Used to give a
+    # density-service worker the coordinator's ephemeris (an extra SPK moves the
+    # Earth-Sun vector GRAM's solar terms read, ~1e-10 in density).
+    function loaded_kernel_paths()::Vector{String}
+        lock(_SPICE_BODY_LOCK) do
+            return String[kdata(i, "ALL")[1] for i in 1:ktotal("ALL")]
+        end
+    end
+
+    function furnish_missing_kernels!(paths)::Nothing
+        have = Set(loaded_kernel_paths())
+        for path in paths
+            path in have || _furnsh_once(String(path))
+        end
+        return nothing
+    end
+
     δ(i, j) = ==(i, j)
 
     @kwdef mutable struct TopographyHarmonicsWorkspace

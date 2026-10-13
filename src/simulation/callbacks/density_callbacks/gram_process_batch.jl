@@ -19,6 +19,8 @@
 # chain ends at Main, which has no ParallelProcess, and the file fails to load at
 # all. The density service is optional, so an unavailable module must disable the
 # service, not break the module that merely mentions it.
+import ..Planets
+
 const ParallelProcess = let root = parentmodule(parentmodule(@__MODULE__))
     isdefined(root, :ParallelProcess) ? getfield(root, :ParallelProcess) : nothing
 end
@@ -37,6 +39,8 @@ function _install_density_service_hooks!()
     ParallelProcess === nothing && return nothing
     ParallelProcess._DENSITY_SERVICE_BUILD_MODEL_FN[] =
         (recipe) -> EnvironmentModels.GRAMAtmosphereModel(; recipe...)
+    ParallelProcess._DENSITY_SERVICE_KERNELS_FN[] = Planets.loaded_kernel_paths
+    ParallelProcess._DENSITY_SERVICE_FURNISH_FN[] = Planets.furnish_missing_kernels!
     ParallelProcess._DENSITY_SERVICE_EVAL_FN[] =
         (model, h, lat, lon, el, wind, vacT) -> EnvironmentModels._gram_core_density_state(
             model.core, Float64(h), Float64(lat), Float64(lon), Float64(el),

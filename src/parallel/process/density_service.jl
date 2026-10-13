@@ -43,6 +43,10 @@ density_process_pool()::ProcessPool = _DENSITY_PROCESS_POOL
 const _DENSITY_SERVICE_BUILD_MODEL_FN = Ref{Function}(
     (_recipe) -> error("Density service model constructor not installed.")
 )
+# The coordinator's loaded SPICE kernels, and furnishing missing ones on a worker.
+# Same Ref injection: SPICE lives below SimulationModel.
+const _DENSITY_SERVICE_KERNELS_FN = Ref{Function}(() -> String[])
+const _DENSITY_SERVICE_FURNISH_FN = Ref{Function}((_paths) -> nothing)
 const _DENSITY_SERVICE_EVAL_FN = Ref{Function}(
     (_model, _h, _lat, _lon, _el, _wind, _vacT) -> error("Density service evaluator not installed.")
 )
@@ -90,6 +94,13 @@ function install_worker_density_model!(constructor_kwargs::AbstractDict)::Bool
         _WORKER_DENSITY_RECIPE[] = recipe
         return true
     end
+end
+
+# Furnish the coordinator's kernels first, so the worker's SPICE.jl ephemeris
+# (the Sun terms GRAM reads through the host hook) is the coordinator's.
+function install_worker_density_model!(constructor_kwargs::AbstractDict, kernels::AbstractVector{<:AbstractString})::Bool
+    _DENSITY_SERVICE_FURNISH_FN[](kernels)
+    return install_worker_density_model!(constructor_kwargs)
 end
 
 install_worker_density_model!(planet_name::AbstractString)::Bool =
@@ -172,17 +183,19 @@ function ensure_density_workers!(n::Int;
         deepcopy(Dict{Symbol, Any}(constructor_kwargs))
     _ensure_density_atexit!()
     workers_all = ensure_process_workers!(_DENSITY_PROCESS_POOL, n)
-    ready = Int[]
-    for w in workers_all
-        ok = try
-            remotecall_fetch(install_worker_density_model!, w, recipe)
+    kernels = _DENSITY_SERVICE_KERNELS_FN[]()
+    # Each worker builds in its own process (own CSPICE and native state), so the
+    # builds run concurrently; only the coordinator's wait is shared.
+    ok = Vector{Bool}(undef, length(workers_all))
+    @sync for (k, w) in enumerate(workers_all)
+        @async ok[k] = try
+            remotecall_fetch(install_worker_density_model!, w, recipe, kernels)
         catch err
             @warn "Density service worker could not build its GRAM instance; excluding it from the pool." worker=w exception=(err, catch_backtrace())
             false
         end
-        ok && push!(ready, w)
     end
-    return ready
+    return workers_all[ok]
 end
 
 # ---------------------------------------------------------------------------

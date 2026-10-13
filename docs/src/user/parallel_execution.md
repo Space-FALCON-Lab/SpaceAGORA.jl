@@ -381,6 +381,13 @@ separate stochastic histories: with perturbed winds it changes the winds, and so
 the trajectory, relative to local evaluation, and the result can depend on the
 worker count.
 
+With the vacuum-predicted look-ahead cache on (`SPACEAGORA_VACUUM_GRAM_CACHE=1`), the
+caches first built at the start of a solve are evaluated as one batch by these workers
+instead of one satellite at a time on threads behind the native lock. The knots and GRAM
+inputs are the in-process build's, and each worker is given the coordinator's loaded
+SPICE kernels, so the caches are bitwise equal to the in-process ones. Rebuilds later in
+a run stay in-process.
+
 Workers reconstruct the model from its saved constructor settings, including
 the epoch and resolved data paths. They reuse a model only while that recipe
 matches. Each batch carries the recipe so overlapping requests use the right

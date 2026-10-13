@@ -521,6 +521,16 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
     # Housekeeping, not an event: the affect refreshes the density samples in
     # p and never touches u, so the before/after saves of the DiscreteCallback
     # default would only append two more copies of every accepted step.
-    return DiscreteCallback(condition, affect!; initialize=(cb, u, t, integrator) -> affect!(integrator),
+    # The look-ahead caches that are first built at the start of the solve (the
+    # only builds a mission-length horizon ever makes) go to the density service
+    # as one batch here, before the first right-hand-side evaluation would build
+    # them one satellite at a time. Same state and time as that first evaluation,
+    # so the caches are the ones the in-process build would make. Rebuilds later in
+    # a run stay in-process: their anchor is a solver stage, not a step boundary.
+    function initialize_density!(cb, u, t, integrator)
+        _prebuild_vacuum_gram_caches_service!(integrator.p, Float64(t), u.sc, _extract_pos_vel)
+        return affect!(integrator)
+    end
+    return DiscreteCallback(condition, affect!; initialize=initialize_density!,
         save_positions=(false, false))
 end

@@ -1,4 +1,5 @@
 using Test
+using Distributed
 using LinearAlgebra
 using StaticArrays
 
@@ -68,6 +69,13 @@ function EM.getDensity(
     T = 180.0 + 1.0e-5 * h
     return rho, T, SVector{3, Float64}(1.0, -2.0, 0.5)
 end
+
+# Density model for the service-batched lookahead test: one formula shared with
+# the mocked worker evaluator.
+gate_rho(h, lat, lon, t) = 1.0e-9 * exp(-max(h, -30.0) / 1.5e5) * (1.0 + 0.2 * sin(lat + 2lon) + 1.0e-3 * t)
+struct GateProbe <: SimulationModel.AbstractDensityModel end
+EM.getDensity(::GateProbe, h::Float64, lat::Float64, lon::Float64, t::Float64, wind::Bool, p) =
+    (gate_rho(h, lat, lon, t), 200.0 + lat, SVector{3, Float64}(lon, lat, 0.5))
 
 # Model whose scalar query works but whose batch query throws, so the
 # refresh! failure path is reachable while the direct fallback still succeeds.
@@ -669,6 +677,91 @@ end
         end
         withenv("SPACEAGORA_GRAM_CACHE_BATCH_LOCK" => "0") do
             @test CB._vacuum_gram_build_lock(gram) === nothing
+        end
+    end
+
+    @testset "vacuum_predicted_gram: lookahead builds through the density service" begin
+        PP = SpaceAGORA.ParallelProcess
+        # One formula, two routes: the in-process model's getDensity and the
+        # mocked worker evaluator. The service path must reproduce the in-process
+        # caches bit for bit (same knots, same inputs, same gates).
+        recipe = Dict{Symbol, Any}(:planet_name => "earth", :seed => 1)
+        gram = EM.GRAMAtmosphereModel(nothing, ReentrantLock(), recipe)
+        n_pts, horizon = 12, 600.0
+        sats = [circular_state(250e3 + 20e3 * k) for k in 1:5]
+        calls = Ref(0); furnished = Vector{String}[]
+        saved = (PP._DENSITY_SERVICE_BUILD_MODEL_FN[], PP._DENSITY_SERVICE_EVAL_FN[],
+                 PP._WORKER_DENSITY_MODEL[], PP._WORKER_DENSITY_RECIPE[],
+                 PP._DENSITY_SERVICE_KERNELS_FN[], PP._DENSITY_SERVICE_FURNISH_FN[])
+        pool = PP.density_process_pool()
+        old_workers = copy(pool.workers); old_atexit = PP._DENSITY_ATEXIT_REGISTERED[]
+        try
+            lock(PP._WORKER_DENSITY_LOCK) do
+                PP._WORKER_DENSITY_MODEL[] = nothing; PP._WORKER_DENSITY_RECIPE[] = nothing
+                PP._DENSITY_SERVICE_KERNELS_FN[] = () -> ["/coordinator/kernel.bsp"]
+                PP._DENSITY_SERVICE_FURNISH_FN[] = paths -> push!(furnished, collect(String, paths))
+                PP._DENSITY_SERVICE_BUILD_MODEL_FN[] = kw -> (recipe=deepcopy(kw),)
+                PP._DENSITY_SERVICE_EVAL_FN[] = (m, h, lat, lon, el, wind, vacT) ->
+                    h == 1.0e5 ? (0.0, vacT, SVector{3, Float64}(0, 0, 0)) :
+                    (calls[] += 1; (gate_rho(h, lat, lon, el), 200.0 + lat, SVector{3, Float64}(lon, lat, 0.5)))
+            end
+            lock(pool.lock) do
+                empty!(pool.workers); push!(pool.workers, Distributed.myid())
+            end
+            PP._DENSITY_ATEXIT_REGISTERED[] = true
+            reference = withenv("SPACEAGORA_VACUUM_GRAM_CACHE" => "1", "SPACEAGORA_GRAM_PROCESS_POOL" => "off") do
+                p = ODEParams(n_sats=5, args=probe_config(density_model=GateProbe()))
+                [begin
+                    c = CB.VacuumPredictedGRAMCache()
+                    CB._build_vacuum_gram_cache!(c, GateProbe(), p, sats[k][1], sats[k][2], 30.0, n_pts, horizon)
+                    c
+                end for k in 1:5]
+            end
+            withenv("SPACEAGORA_VACUUM_GRAM_CACHE" => "1", "SPACEAGORA_VACUUM_GRAM_CACHE_NPOINTS" => string(n_pts),
+                    "SPACEAGORA_VACUUM_GRAM_CACHE_HORIZON_S" => string(horizon),
+                    "SPACEAGORA_GRAM_PROCESS_POOL" => "on", "SPACEAGORA_GRAM_PROCESS_POOL_WORKERS" => "1",
+                    "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => nothing) do
+                p = ODEParams(n_sats=5, args=probe_config(density_model=gram))
+                fill!(p.shared_buffers.in_atmosphere, true)
+                p.shared_buffers.in_atmosphere[5] = false     # not in the atmosphere: no build
+                @test CB._vacuum_gram_service_candidate(p)
+                @test CB._prebuild_vacuum_gram_caches_service!(p, 30.0, sats, identity)
+                @test calls[] == 4 * n_pts                       # one batch of all due knots
+                @test furnished == [["/coordinator/kernel.bsp"]] # worker got the coordinator's kernels
+                for k in 1:4
+                    c = p.shared_buffers.vacuum_gram_caches[k]
+                    for f in (:log_rhos, :Ts, :winds, :vac_alts, :vac_positions, :Ms_rho, :Ms_T, :t0, :t1, :h, :valid)
+                        @test getfield(c, f) == getfield(reference[k], f)   # bitwise identical
+                    end
+                end
+                @test p.shared_buffers.vacuum_gram_caches[5] === nothing
+                # Fresh caches are not due again.
+                before = calls[]
+                @test !CB._prebuild_vacuum_gram_caches_service!(p, 30.0, sats, identity)
+                @test calls[] == before
+                # The following query serves the start knot, as a rebuilding query does.
+                c1 = p.shared_buffers.vacuum_gram_caches[1]
+                rho, T, w = CB._query_vacuum_gram_cache!(c1, gram, p, sats[1][1], sats[1][2], 0.0, 30.0, n_pts, horizon, 5000.0)
+                @test rho == exp(reference[1].log_rhos[1]) && T == reference[1].Ts[1] && w == reference[1].winds[1]
+            end
+            # Service off: nothing is prebuilt and nothing is touched.
+            withenv("SPACEAGORA_VACUUM_GRAM_CACHE" => "1", "SPACEAGORA_GRAM_PROCESS_POOL" => "off") do
+                p = ODEParams(n_sats=5, args=probe_config(density_model=gram))
+                fill!(p.shared_buffers.in_atmosphere, true)
+                @test !CB._vacuum_gram_service_candidate(p)
+                @test !CB._prebuild_vacuum_gram_caches_service!(p, 30.0, sats, identity)
+                @test all(isnothing, p.shared_buffers.vacuum_gram_caches)
+            end
+        finally
+            lock(PP._WORKER_DENSITY_LOCK) do
+                PP._DENSITY_SERVICE_BUILD_MODEL_FN[], PP._DENSITY_SERVICE_EVAL_FN[],
+                PP._WORKER_DENSITY_MODEL[], PP._WORKER_DENSITY_RECIPE[],
+                PP._DENSITY_SERVICE_KERNELS_FN[], PP._DENSITY_SERVICE_FURNISH_FN[] = saved
+            end
+            lock(pool.lock) do
+                empty!(pool.workers); append!(pool.workers, old_workers)
+            end
+            PP._DENSITY_ATEXIT_REGISTERED[] = old_atexit
         end
     end
 

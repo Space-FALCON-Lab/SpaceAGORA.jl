@@ -1094,10 +1094,11 @@ _predictive_last_sample_time(signature::AbstractString)::Union{Nothing, Float64}
 # wall(b = 1) / wall(b). In-process and independent of
 # SPACEAGORA_CAMPAIGN_CORRECTIONS, like `_LAST_SAMPLE_TIME_S`. The minimum is
 # kept (over the last three), with the observation count: the first campaign of a shape carries JIT
-# time and the minimum drops it, but a width seen once is not trusted (see
-# `_predictive_inner_probe`): both ends of a ratio need two observations, because
-# the first campaign at a width is the one that compiles its threaded paths (a
-# 1.5-2x wall on the local X5-like shapes).
+# time. The first campaign at a width is the one that compiles its threaded
+# paths (a 1.5-2x wall on the local X5-like shapes) and is not recorded at all;
+# both ends of a ratio need two post-compile walls before the curve uses them
+# (see `_predictive_inner_probe`). The minimum of two walls that include the
+# compile of the second run priced b4 at 1.01-1.09 on X5a, against 1.18 forced.
 # ponytail: per process, minimum of the last three walls; persist to disk if long-lived
 # sessions drift.
 const _INNER_WALLS = Dict{String, Vector{Float64}}()
@@ -1110,7 +1111,10 @@ function _predictive_record_inner_wall!(signature::AbstractString, n::Int, T::In
     (plan.route === :threads && isfinite(seconds) && seconds > 0.0) || return nothing
     key = _inner_wall_key(signature, n, T, plan.workers, max(1, plan.inner_thread_budget))
     lock(_INNER_WALLS_LOCK) do
+        # First sight of a key = the compiling run: create the entry, keep no wall.
+        first = !haskey(_INNER_WALLS, key)
         walls = get!(_INNER_WALLS, key, Float64[])
+        first && return nothing
         push!(walls, Float64(seconds))
         length(walls) > 3 && popfirst!(walls)
     end
@@ -1159,12 +1163,12 @@ end
 # giving its consumers, so the curve above has something to price. Returns the
 # plan to run instead, or `nothing` (run the chosen plan).
 #
-# The reference b = 1 must have been timed twice first (the first run of a
-# shape is cold); then the one wider width the planner enumerates for the same
-# consumers, b = fld(T, W), is timed twice (the first run compiles). Two extra
-# campaigns per shape per process; the protocol's warm-ups must cover the cold
-# route, two b = 1 runs and these two (5 in all) for the timed repeats to run
-# the settled plan. W * b <= T always.
+# The reference b = 1 must have two post-compile walls first (its first run
+# compiles and is dropped, so three campaigns); then the one wider width the
+# planner enumerates for the same consumers, b = fld(T, W), is timed the same
+# way (three more). The protocol's warm-ups must cover the cold route, three
+# b = 1 runs and three wide runs (7 in all) for the timed repeats to run the
+# settled plan. W * b <= T always.
 function _predictive_inner_probe(planning::PredictivePlanning, signature::AbstractString,
                                  n::Int, T::Int, config::PredictivePlannerConfig,
                                  constants, terms::PredictiveCostTerms,
@@ -1438,7 +1442,9 @@ function _run_campaign_predictive(
         result = _predictive_dispatch(f, seeds, plan, tuning; fail_fast=fail_fast)
         trace && println("[predictive] dispatch=$(round(result.elapsed_s; digits=3))s " *
                          "n=$(length(result.samples)) failures=$(length(result.failed)) unguarded")
-        _predictive_record_inner_wall!(signature, n, threads, plan, result.elapsed_s)
+        # Only the planner's own campaigns (chosen or probe) feed the curve: a
+        # forced plan is a measurement of something else and would pre-seed it.
+        forced === nothing && _predictive_record_inner_wall!(signature, n, threads, plan, result.elapsed_s)
         on_pool = plan.route === :process
         on_pool && _predictive_mark_pool_warm!()
         on_pool && _predictive_record_sample_time!(signature, _predictive_mean_work(result.samples))

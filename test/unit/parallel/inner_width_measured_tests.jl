@@ -30,7 +30,7 @@ end
 @testset "measured inner width: X5b picks b2, X5a picks b4, flat keeps b1" begin
     # X5b: 0.272 -> 0.246 is a 9.6% edge, under the 15% margin but over 7%.
     _iw_time!("x5b", 16, 32, 16, 1, 0.9, 0.272, 0.275)   # first run cold; min kept
-    _iw_time!("x5b", 16, 32, 16, 2, 0.33, 0.246)
+    _iw_time!("x5b", 16, 32, 16, 2, 0.9, 0.33, 0.246)   # first run dropped
     for pool in (0, 16)
         p, curve = _iw_chosen("x5b", 16, 32; pool = pool)
         @test curve.measured == [2]
@@ -50,15 +50,15 @@ end
     @test q.chosen.static_equivalent && q.reason === :margin_not_met
 
     # X5a: b4 at 8 consumers.
-    _iw_time!("x5a", 8, 32, 8, 1, 0.383, 0.384)
-    _iw_time!("x5a", 8, 32, 8, 4, 0.5, 0.345)
+    _iw_time!("x5a", 8, 32, 8, 1, 0.6, 0.383, 0.384)
+    _iw_time!("x5a", 8, 32, 8, 4, 0.8, 0.5, 0.345)
     p, _ = _iw_chosen("x5a", 8, 32)
     @test IW.predictive_plan_key(p.chosen) == "threads@w8+l0+b4"
     @test p.chosen.workers * p.chosen.inner_thread_budget <= 32
 
     # Flat: wider budget measured no faster than b1 -> b1.
-    _iw_time!("flat", 16, 32, 16, 1, 0.272, 0.271)
-    _iw_time!("flat", 16, 32, 16, 2, 0.4, 0.270)
+    _iw_time!("flat", 16, 32, 16, 1, 0.9, 0.272, 0.271)
+    _iw_time!("flat", 16, 32, 16, 2, 0.9, 0.4, 0.270)
     p, _ = _iw_chosen("flat", 16, 32)
     @test p.chosen.static_equivalent
     @test max(1, p.chosen.inner_thread_budget) == 1
@@ -79,18 +79,62 @@ end
                                 constants = nothing, config = cfg)
     probe() = IW._predictive_inner_probe(plan(), sig, 8, 32, cfg, nothing, IW.PredictiveCostTerms(), nothing)
     @test probe() === nothing                      # nothing timed yet
-    _iw_time!(sig, 8, 32, 8, 1, 0.40)
-    @test probe() === nothing                      # reference seen once: cold
-    _iw_time!(sig, 8, 32, 8, 1, 0.383)
+    _iw_time!(sig, 8, 32, 8, 1, 0.62)              # compile run: dropped
+    @test probe() === nothing
+    _iw_time!(sig, 8, 32, 8, 1, 0.383)             # one post-compile wall: not yet
+    @test probe() === nothing
+    _iw_time!(sig, 8, 32, 8, 1, 0.385)
     p = probe()
     @test IW.predictive_plan_key(p) == "threads@w8+l0+b4"
     @test p.workers * p.inner_thread_budget <= 32
-    _iw_time!(sig, 8, 32, 8, 4, 0.6)               # the cold run of the width
+    _iw_time!(sig, 8, 32, 8, 4, 0.6)               # the compile run of the width: dropped
     @test IW.predictive_plan_key(probe()) == "threads@w8+l0+b4"
-    _iw_time!(sig, 8, 32, 8, 4, 0.39)              # timed twice: never again
+    _iw_time!(sig, 8, 32, 8, 4, 0.39)              # one post-compile wall: probe again
+    @test IW.predictive_plan_key(probe()) == "threads@w8+l0+b4"
+    _iw_time!(sig, 8, 32, 8, 4, 0.34)              # two post-compile walls: never again
     @test probe() === nothing
-    # One observation at either end is not a curve.
-    _iw_time!("once", 16, 32, 16, 1, 0.272, 0.275)
-    _iw_time!("once", 16, 32, 16, 2, 0.2)
+    # One post-compile wall at either end is not a curve.
+    _iw_time!("once", 16, 32, 16, 1, 0.9, 0.272, 0.275)
+    _iw_time!("once", 16, 32, 16, 2, 0.9, 0.2)
     @test IW._predictive_measured_inner_curve(nothing, "once", 16, 32) === nothing
+end
+
+@testset "the compile wall is discarded: X5a's 1.18x is priced, not the 1.01-1.09 of the raw minimum" begin
+    # TRX50 X5a (n = 8, T = 32): b1 0.62 (compile) then 0.40, 0.40; b4 0.58
+    # (compile), 0.34, 0.34. Counting the compile runs gave min(0.58, 0.38) vs a
+    # b1 window of 0.62/0.39; without them the ratio is 0.40 / 0.34 = 1.18.
+    _iw_time!("x5a-raw", 8, 32, 8, 1, 0.62, 0.40, 0.40)
+    _iw_time!("x5a-raw", 8, 32, 8, 4, 0.58, 0.34, 0.34)
+    @test IW._predictive_inner_wall("x5a-raw", 8, 32, 8, 1) == (2, 0.40)
+    p, curve = _iw_chosen("x5a-raw", 8, 32)
+    @test curve.speedup[4] ≈ 0.40 / 0.34
+    @test IW.predictive_plan_key(p.chosen) == "threads@w8+l0+b4"
+end
+
+@testset "a forced plan does not write the inner-width record; a predictive campaign does" begin
+    T = Base.Threads.nthreads()
+    if T > 1
+        n = 2 * T
+        feat = SpaceAGORA.SimulationCampaigns.campaign_route_features(
+            samples = n, n_sats = 77, density_family = "exponential", mission_time_s = 3600.0)
+        sig = SpaceAGORA.ParallelProfiles.outer_route_signature(feat)
+        tuning = SpaceAGORA.ParallelProfiles.OuterRouteTuning(
+            process_max_workers = 1, process_workers_resident = 0,
+            memory_aware = false, mixed_dispatch = false)
+        run(; force = nothing) = withenv("SPACEAGORA_CAMPAIGN_PLANNER" => "predictive",
+                                         "SPACEAGORA_PREDICTIVE_FORCE_PLAN" => force,
+                                         "SPACEAGORA_PREDICTIVE_INNER_PROBE" => "0") do
+            IW.run_monte_carlo(identity, 1:n; threads = :auto, route_features = feat,
+                               route_state = SpaceAGORA.ParallelProfiles.OuterRouteState(),
+                               route_tuning = tuning)
+        end
+        for _ in 1:4
+            run(force = "threads@w$(T)+l0")
+        end
+        @test !any(k -> startswith(k, sig), keys(IW._INNER_WALLS))
+        for _ in 1:3
+            run()
+        end
+        @test IW._predictive_inner_wall(sig, n, T, T, 1)[1] == 2   # first dropped
+    end
 end

@@ -877,3 +877,17 @@ end
     # P3 rung 16: sixteen rounds of 38 ms samples; the cost is amortised: pool stays.
     @test plan(n = 256, T = 16, pool_fixed = 0.025 / 0.038) === :process
 end
+
+@testset "the pool-cost switch does not hinge on sample-time noise (pilot 3 X5a)" begin
+    # n=8 on 8 workers with the TRX50 round tail: makespan 1.388 sample units,
+    # so 5% of it is 0.0694. Mean sample times 0.3625 s (c1-c4, pool_fixed 0.0690)
+    # and 0.3588 s (c5, 0.0697) straddled that; against one sample (0.05) both charge.
+    route(t) = SCamp.predictive_plan(
+        n_samples = 8, threads = 32, process_workers = 8, threads_candidate = true,
+        local_slots_cap = 0, config = _cfg(),
+        terms = SCamp.PredictiveCostTerms(round_tail = 0.2261, pool_fixed = 0.025 / t)).chosen.route
+    for t in (0.326, 0.3588, 0.3625, 0.366, 0.40)
+        @test route(t) === :threads
+    end
+    @test route(0.7) === :process    # long samples: the cost stays noise
+end

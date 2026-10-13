@@ -111,9 +111,13 @@ end
 # pool's spin-up and is charged separately.
 const PREDICTIVE_POOL_FIXED_S = 0.025
 
-# A fixed cost reorders plans only when it is at least this share of the
-# campaign it would be added to. mcgrid_16sat_8mc (~0.3 s) is 8%; P4 rung 32
-# (pool 0.70 s against threads 1.7 s) is 3.6% and must stay on the pool.
+# A fixed cost reorders plans only when it is at least this share of ONE SAMPLE
+# (the campaign is a single round, so a sample is its floor). mcgrid_16sat_8mc
+# (~0.36 s samples) is 7%; P4 rung 32 (0.70 s samples, pool 0.70 s against
+# threads 1.7 s) is 3.6% and must stay on the pool. Measured against the
+# campaign makespan instead, X5a sat at 4.97-5.02% of it (round tail included)
+# and the sample-time noise of the first process campaigns decided the route
+# (pilot 3 X5a r1 held the pool for five campaigns).
 const PREDICTIVE_POOL_FIXED_MIN_SHARE = 0.05
 
 const PREDICTIVE_REMOTE_OVERHEAD = 0.0
@@ -546,7 +550,7 @@ function predictive_plan_makespan(n_samples::Integer, pool_workers::Integer,
     # Multi-round campaigns amortise it (P3 rung 16 is 16 rounds) and a longer
     # single round (P4 rung 32) makes it noise, so neither is charged.
     (W > 0 && Int(n_samples) <= W && terms.pool_fixed > 0.0 &&
-     terms.pool_fixed >= PREDICTIVE_POOL_FIXED_MIN_SHARE * base) && return base + terms.pool_fixed
+     terms.pool_fixed >= PREDICTIVE_POOL_FIXED_MIN_SHARE) && return base + terms.pool_fixed
     return base
 end
 

@@ -3,6 +3,9 @@ module ClothMultibody
 
 using LinearAlgebra
 using StaticArrays
+# Raw derivatives and normalized orientations deliberately use different products.
+using ..OrientationQuaternionMath: _Q_IDENTITY, _unit_quat, _quat_conj, _quat_mul
+using ..OrientationQuaternionMath: _quat_raw_mul, _rot, _axis_angle_error
 
 export CompliantBody, CompliantJoint, CompliantMultibodyModel, CompliantMultibodyTrajectory
 export CompliantTopologyNode, CompliantTopologyEdge, CompliantTopologyBuild
@@ -17,8 +20,6 @@ export compliant_state_to_inertial!, compliant_mount_wrench, compliant_world_to_
 export CompiledCompliantModel, compile_compliant_model
 export step_compliant_multibody_rk4, step_compliant_multibody_implicit_midpoint
 export simulate_compliant_multibody
-
-const _Q_IDENTITY = SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
 
 """Rigid body properties used by the compliant multibody cloth model."""
 struct CompliantBody
@@ -113,69 +114,6 @@ struct CompliantJointLoad
     compliance_torque_child_body::SVector{3, Float64}
     actuator_torque_child_body::SVector{3, Float64}
     total_torque_child_body::SVector{3, Float64}
-end
-
-"""Normalize a quaternion and return it as a static vector."""
-@inline function _unit_quat(q)::SVector{4, Float64}
-    qv = SVector{4, Float64}(q)
-    nq = norm(qv)
-    return isfinite(nq) && nq > eps(Float64) ? qv / nq : _Q_IDENTITY
-end
-
-"""Return the conjugate of a quaternion."""
-@inline function _quat_conj(q)::SVector{4, Float64}
-    qv = _unit_quat(q)
-    return SVector{4, Float64}(-qv[1], -qv[2], -qv[3], qv[4])
-end
-
-"""Multiply two quaternions using the project convention."""
-@inline function _quat_mul(a, b)::SVector{4, Float64}
-    aq = _unit_quat(a)
-    bq = _unit_quat(b)
-    ax, ay, az, aw = aq
-    bx, by, bz, bw = bq
-    return _unit_quat(SVector{4, Float64}(
-        aw * bx + bw * ax + ay * bz - az * by,
-        aw * by + bw * ay + az * bx - ax * bz,
-        aw * bz + bw * az + ax * by - ay * bx,
-        aw * bw - ax * bx - ay * by - az * bz,
-    ))
-end
-
-"""Multiply two quaternions without normalizing the result."""
-@inline function _quat_raw_mul(a::SVector{4, Float64}, b::SVector{4, Float64})::SVector{4, Float64}
-    ax, ay, az, aw = a
-    bx, by, bz, bw = b
-    return SVector{4, Float64}(
-        aw * bx + bw * ax + ay * bz - az * by,
-        aw * by + bw * ay + az * bx - ax * bz,
-        aw * bz + bw * az + ax * by - ay * bx,
-        aw * bw - ax * bx - ay * by - az * bz,
-    )
-end
-
-"""Convert a quaternion to a world-frame rotation matrix."""
-@inline function _rot(q_raw)::SMatrix{3, 3, Float64}
-    q = _unit_quat(q_raw)
-    x, y, z, w = q
-    return SMatrix{3, 3, Float64}(
-        1 - 2y^2 - 2z^2, 2x * y + 2z * w, 2x * z - 2y * w,
-        2x * y - 2z * w, 1 - 2x^2 - 2z^2, 2y * z + 2x * w,
-        2x * z + 2y * w, 2y * z - 2x * w, 1 - 2x^2 - 2y^2,
-    )
-end
-
-"""Convert a quaternion error into an axis-angle error vector."""
-function _axis_angle_error(q_err_raw)::SVector{3, Float64}
-    q_err = _unit_quat(q_err_raw)
-    q_err = q_err[4] < 0.0 ? -q_err : q_err
-    v = SVector{3, Float64}(q_err[1], q_err[2], q_err[3])
-    nv = norm(v)
-    if nv <= 1.0e-12
-        return 2.0 * v
-    end
-    θ = 2.0 * atan(nv, q_err[4])
-    return (θ / nv) * v
 end
 
 """Compute world velocity of a body-fixed offset point."""

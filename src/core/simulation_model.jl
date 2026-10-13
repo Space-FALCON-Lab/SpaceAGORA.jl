@@ -17,6 +17,7 @@ isdefined(parentmodule(@__MODULE__), :SimulationLifecycle) ||
 # --- Utils ---
 include(joinpath(@__DIR__, "..", "core", "numerics", "quaternion_utils.jl"))
 using .QuaternionMath
+include(joinpath(@__DIR__, "numerics", "orientation_quaternion_utils.jl"))
 include(joinpath(@__DIR__, "..", "core", "state", "reference_system_config.jl"))
 include(joinpath(@__DIR__, "..", "environment", "ephemerides", "planet_shapes.jl"))
 

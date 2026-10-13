@@ -3,12 +3,13 @@ module Robotics
 
 using LinearAlgebra
 using StaticArrays
+# Preserve private caller bindings while sharing the specialized orientation policy.
+using ..OrientationQuaternionMath: _Q_IDENTITY, _unit_quat, _rot
+using ..OrientationQuaternionMath: _quat_raw_mul as _quat_mul
 
 export ClothArmBasePose, ClothArmLink, ClothArmJoint, ClothArmModel, ClothArmPose, ClothArmState
 export default_cloth_arm_model, cloth_fk, cloth_fk_state, cloth_end_effector_pose
 export cloth_ik, cloth_total_reach, closest_surface_target
-
-const _Q_IDENTITY = SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
 
 """Base pose for a cloth-arm kinematic chain in world coordinates."""
 struct ClothArmBasePose
@@ -71,25 +72,6 @@ struct ClothArmState
     link_angular_velocities::Vector{SVector{3, Float64}}
 end
 
-"""Normalize a quaternion and return it as a static vector."""
-@inline function _unit_quat(q)::SVector{4, Float64}
-    qv = SVector{4, Float64}(q)
-    nq = norm(qv)
-    return isfinite(nq) && nq > eps(Float64) ? qv / nq : _Q_IDENTITY
-end
-
-"""Multiply two quaternions using the project convention."""
-@inline function _quat_mul(a::SVector{4, Float64}, b::SVector{4, Float64})::SVector{4, Float64}
-    ax, ay, az, aw = a
-    bx, by, bz, bw = b
-    return SVector{4, Float64}(
-        aw * bx + bw * ax + ay * bz - az * by,
-        aw * by + bw * ay + az * bx - ax * bz,
-        aw * bz + bw * az + ax * by - ay * bx,
-        aw * bw - ax * bx - ay * by - az * bz,
-    )
-end
-
 """Create a unit quaternion from an axis-angle rotation."""
 @inline function _quat_from_axis_angle(axis::SVector{3, Float64}, θ::Float64)::SVector{4, Float64}
     na = norm(axis)
@@ -99,17 +81,6 @@ end
     u = axis / na
     s = sin(0.5 * θ)
     return SVector{4, Float64}(s * u[1], s * u[2], s * u[3], cos(0.5 * θ))
-end
-
-"""Convert a quaternion to a world-frame rotation matrix."""
-@inline function _rot(q_raw)::SMatrix{3, 3, Float64}
-    q = _unit_quat(q_raw)
-    x, y, z, w = q
-    return SMatrix{3, 3, Float64}(
-        1 - 2y^2 - 2z^2, 2x * y + 2z * w, 2x * z - 2y * w,
-        2x * y - 2z * w, 1 - 2x^2 - 2z^2, 2y * z + 2x * w,
-        2x * z + 2y * w, 2y * z - 2x * w, 1 - 2x^2 - 2y^2,
-    )
 end
 
 """Construct the default serial cloth-arm model used by examples and tests."""

@@ -3,6 +3,9 @@ module ClothRobotArmDynamics
 
 using LinearAlgebra
 using StaticArrays
+# Raw derivatives and normalized orientations deliberately use different products.
+using ..OrientationQuaternionMath: _Q_IDENTITY, _unit_quat, _quat_conj, _quat_mul
+using ..OrientationQuaternionMath: _quat_raw_mul, _rot, _axis_angle_error
 using ..ClothMultibody
 using ..RobotArmPlanning
 using ..Robotics
@@ -16,7 +19,6 @@ export assign_coupled_cloth_robot_arm_rhs!
 export simulate_cloth_robot_arm_plan
 
 const ClothRobotArmDynamicsMode = Symbol
-const _Q_IDENTITY = SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
 
 """Reference joint, velocity, and acceleration sample for cloth-arm coupling."""
 struct ClothRobotArmReferenceState
@@ -42,44 +44,6 @@ struct ClothRobotArmSimulation
     joint_compliance_torques_body::Array{Float64, 3}
     joint_actuator_torques_body::Array{Float64, 3}
     joint_total_torques_body::Array{Float64, 3}
-end
-
-"""Normalize a quaternion and return it as a static vector."""
-@inline function _unit_quat(q)::SVector{4, Float64}
-    qv = SVector{4, Float64}(q)
-    nq = norm(qv)
-    return isfinite(nq) && nq > eps(Float64) ? qv / nq : SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
-end
-
-"""Return the conjugate of a quaternion."""
-@inline function _quat_conj(q)::SVector{4, Float64}
-    qv = _unit_quat(q)
-    return SVector{4, Float64}(-qv[1], -qv[2], -qv[3], qv[4])
-end
-
-"""Multiply two quaternions using the project convention."""
-@inline function _quat_mul(a, b)::SVector{4, Float64}
-    aq = _unit_quat(a)
-    bq = _unit_quat(b)
-    ax, ay, az, aw = aq
-    bx, by, bz, bw = bq
-    return _unit_quat(SVector{4, Float64}(
-        aw * bx + bw * ax + ay * bz - az * by,
-        aw * by + bw * ay + az * bx - ax * bz,
-        aw * bz + bw * az + ax * by - ay * bx,
-        aw * bw - ax * bx - ay * by - az * bz,
-    ))
-end
-
-"""Convert a quaternion to a world-frame rotation matrix."""
-@inline function _rot(q_raw)::SMatrix{3, 3, Float64}
-    q = _unit_quat(q_raw)
-    x, y, z, w = q
-    return SMatrix{3, 3, Float64}(
-        1 - 2y^2 - 2z^2, 2x * y + 2z * w, 2x * z - 2y * w,
-        2x * y - 2z * w, 1 - 2x^2 - 2z^2, 2y * z + 2x * w,
-        2x * z + 2y * w, 2y * z - 2x * w, 1 - 2x^2 - 2y^2,
-    )
 end
 
 """Return a link inertia matrix from explicit inertia or cylindrical approximation."""
@@ -129,31 +93,6 @@ end
 """Compute world velocity of a body-fixed offset point for coupled arm dynamics."""
 @inline function _body_offset_velocity_world(v_world, q, ω_body, p_body)
     return SVector{3, Float64}(v_world) + _rot(q) * cross(SVector{3, Float64}(ω_body), SVector{3, Float64}(p_body))
-end
-
-"""Convert a quaternion error into an axis-angle error vector."""
-@inline function _axis_angle_error(q_err_raw)::SVector{3, Float64}
-    q_err = _unit_quat(q_err_raw)
-    q_err = q_err[4] < 0.0 ? -q_err : q_err
-    v = SVector{3, Float64}(q_err[1], q_err[2], q_err[3])
-    nv = norm(v)
-    if nv <= 1.0e-12
-        return 2.0 * v
-    end
-    θ = 2.0 * atan(nv, q_err[4])
-    return (θ / nv) * v
-end
-
-"""Multiply two quaternions without normalizing the result."""
-@inline function _quat_raw_mul(a::SVector{4, Float64}, b::SVector{4, Float64})::SVector{4, Float64}
-    ax, ay, az, aw = a
-    bx, by, bz, bw = b
-    return SVector{4, Float64}(
-        aw * bx + bw * ax + ay * bz - az * by,
-        aw * by + bw * ay + az * bx - ax * bz,
-        aw * bz + bw * az + ax * by - ay * bx,
-        aw * bw - ax * bx - ay * by - az * bz,
-    )
 end
 
 """Compute the rest child-to-parent orientation between two body quaternions."""

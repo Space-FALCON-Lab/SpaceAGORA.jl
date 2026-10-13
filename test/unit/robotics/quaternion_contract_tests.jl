@@ -8,6 +8,7 @@ using SpaceAGORA
 
 const SM = SpaceAGORA.SimulationModel
 const QM = SM.QuaternionMath
+const OQM = SM.OrientationQuaternionMath
 const CM = SM.ClothMultibody
 const CA = SM.ClothRobotArmDynamics
 const RB = SM.Robotics
@@ -62,11 +63,81 @@ function arm_qdot(plan, q, omega)
     return SVector{4, Float64}(du.arm_q[:, 1])
 end
 
+# The allocation-free compliant attachment RHS added after the original contract
+# fixture is another consumer of the same projected-state/raw-rate policy.
+function compiled_cloth_qdot(model, q, omega)
+    quat = reshape(collect(q), 4, 1)
+    vel = zeros(3, 1)
+    angvel = reshape(collect(omega), 3, 1)
+    before = (copy(quat), copy(vel), copy(angvel))
+    dquat = zeros(4, 1)
+    CM.compliant_body_derivatives!(
+        zeros(3, 1), dquat, zeros(3, 1), zeros(3, 1),
+        CM.compile_compliant_model(model), 0,
+        zeros(3, 1), zeros(3, 1), quat, vel, angvel,
+    )
+    @test (quat, vel, angvel) == before
+    return SVector{4, Float64}(dquat[:, 1])
+end
+
 @testset "Quaternion contracts across current owners" begin
     s = sqrt(0.5)
     qx = SVector(s, 0.0, 0.0, s)
     qy = SVector(0.0, s, 0.0, s)
     qz = SVector(0.0, 0.0, s, s)
+
+    @testset "Equivalent helpers have one internal owner" begin
+        for owner in (RB, CM, CA), name in (:_Q_IDENTITY, :_unit_quat, :_rot)
+            @test getfield(owner, name) === getfield(OQM, name)
+        end
+        for owner in (CM, CA), name in (:_quat_conj, :_quat_mul, :_quat_raw_mul, :_axis_angle_error)
+            @test getfield(owner, name) === getfield(OQM, name)
+        end
+        @test RB._quat_mul === OQM._quat_raw_mul
+        @test RB._quat_mul !== CM._quat_mul
+        @test parentmodule(CM._unit_quat) === OQM
+        @test parentmodule(CM._axis_angle_error) === OQM
+        @test parentmodule(QM.project_unit_quaternion) === QM
+        @test parentmodule(SM.ArticulatedBody._qnormalize) === SM.ArticulatedBody
+        @test :OrientationQuaternionMath ∉ names(SpaceAGORA)
+        @test :OrientationQuaternionMath ∉ names(SM)
+    end
+
+    @testset "Input conversion and typed raw dispatch remain distinct" begin
+        inputs = ((0, 0, 0, 2), Float32[0, 0, 0, 2],
+            SVector{4, Float32}(0, 0, 0, 2), BigFloat[0, 0, 0, 2])
+        for input in inputs, owner in (RB, CM, CA)
+            before = deepcopy(input)
+            @test owner._unit_quat(input) === QI
+            @test owner._rot(input) isa SMatrix{3, 3, Float64}
+            @test input == before
+        end
+        for input in inputs, owner in (CM, CA)
+            @test owner._quat_mul(input, input) === QI
+            @test owner._quat_conj(input) isa SVector{4, Float64}
+        end
+        for product in (RB._quat_mul, CM._quat_raw_mul, CA._quat_raw_mul)
+            @test_throws MethodError product(collect(QI), QI)
+            @test_throws MethodError product(QI, SVector{4, Float32}(QI))
+        end
+        @test QM.quat_mult(collect(2QI), collect(3QI)) === 6QI
+        @test SM.ArticulatedBody._qmul(SVector{4, Float32}(QI), SVector{4, Float32}(QI)) isa SVector{4, Float32}
+        @test SM.ArticulatedBody._qnormalize(SVector{4, BigFloat}(QI)) isa SVector{4, BigFloat}
+    end
+
+    @testset "Shortest orientation errors preserve their local policy" begin
+        for owner in (CM, CA)
+            @test owner._axis_angle_error(qz) ≈ SVector(0.0, 0.0, pi / 2) atol=1e-15
+            @test owner._axis_angle_error(-3qz) ≈ SVector(0.0, 0.0, pi / 2) atol=1e-15
+            @test owner._axis_angle_error(Z4) == Z3
+            @test owner._axis_angle_error(SVector(1.0, 0.0, 0.0, -0.0)) == SVector(pi, 0.0, 0.0)
+            @test owner._axis_angle_error(SVector(-1.0, 0.0, 0.0, -0.0)) == SVector(-pi, 0.0, 0.0)
+            for x in (prevfloat(1e-12), 1e-12, nextfloat(1e-12))
+                @test owner._axis_angle_error(SVector(x, 0.0, 0.0, 1.0)) ≈ SVector(2x, 0.0, 0.0) atol=eps(x)
+            end
+            @test owner._rest_child_parent_quat(qz, QI) ≈ SVector(0.0, 0.0, -s, s) atol=1e-15
+        end
+    end
 
     @testset "Raw and normalized products retain different scale contracts" begin
         xy = SVector(0.5, 0.5, 0.5, 0.5)
@@ -166,7 +237,8 @@ end
         omega = SVector(2.0, -3.0, 4.0)
         # qz ⊗ [omega, 0] / 2, with a nonparallel body rate to distinguish product order.
         expected = SVector(2.5s, -0.5s, 2.0s, -2.0s)
-        for derivative in (q -> cloth_qdot(model, q, omega), q -> arm_qdot(plan, q, omega))
+        for derivative in (q -> cloth_qdot(model, q, omega), q -> arm_qdot(plan, q, omega),
+                           q -> compiled_cloth_qdot(model, q, omega))
             @test derivative(qz) ≈ expected atol=2e-15
             @test derivative(3qz) ≈ expected atol=2e-15
             @test derivative(-qz) ≈ -expected atol=2e-15
@@ -174,14 +246,15 @@ end
             # Local readers retain the norm cutoff, not the canonical squared-norm cutoff.
             @test derivative(SVector(1e-10, 0.0, 0.0, 0.0)) ≈ SVector(0.0, -2.0, -1.5, -1.0) atol=1e-15
         end
-        for derivative in ((q, w) -> cloth_qdot(model, q, w), (q, w) -> arm_qdot(plan, q, w))
+        for derivative in ((q, w) -> cloth_qdot(model, q, w), (q, w) -> arm_qdot(plan, q, w),
+                           (q, w) -> compiled_cloth_qdot(model, q, w))
             @test derivative(qz, Z3) == Z4
             @test derivative(qz, 2omega) ≈ 2expected atol=4e-15
             @test derivative(qz, -omega) ≈ -expected atol=2e-15
             @test dot(qz, derivative(qz, omega)) ≈ 0.0 atol=1e-15
             @test norm(derivative(qz, omega)) ≈ norm(omega) / 2 atol=1e-15
         end
-        # Canonical rotational kinematics is raw in q as well as omega, unlike the two readers.
+        # Canonical rotational kinematics is raw in q as well as omega, unlike the projected readers.
         @test DR.quaternion_derivative(omega, qz) ≈ expected atol=2e-15
         @test DR.quaternion_derivative(omega, 3qz) ≈ 3expected atol=4e-15
         @test DR.quaternion_derivative(Z3, qz) == Z4

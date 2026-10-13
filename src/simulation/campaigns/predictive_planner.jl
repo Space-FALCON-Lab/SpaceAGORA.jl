@@ -102,6 +102,24 @@ end
 # roughly 1.6x a thread rather than 1.0x. The default stays zero because one
 # point on one machine is not a value to hard-code; it is now a named field, so
 # a machine that has measured its own can declare it.
+# Fixed seconds a WARM process pool costs a campaign beyond its samples:
+# dispatch, the CachingPool round trip and the post-dispatch worker collection.
+# Measured on the TRX50 Part B mcgrid_16sat_8mc point (2026-10-12, 11 repeats):
+# `process dispatch=0.319 s` against 0.282-0.31 s of worker first-sample work,
+# i.e. 0.02-0.03 s; threads beat the pool by 0.031 s (0.293 vs 0.324). The
+# midpoint is used. Distinct from `pool_startup_s` (0.81 s), which is a COLD
+# pool's spin-up and is charged separately.
+const PREDICTIVE_POOL_FIXED_S = 0.025
+
+# A fixed cost reorders plans only when it is at least this share of ONE SAMPLE
+# (the campaign is a single round, so a sample is its floor). mcgrid_16sat_8mc
+# (~0.36 s samples) is 7%; P4 rung 32 (0.70 s samples, pool 0.70 s against
+# threads 1.7 s) is 3.6% and must stay on the pool. Measured against the
+# campaign makespan instead, X5a sat at 4.97-5.02% of it (round tail included)
+# and the sample-time noise of the first process campaigns decided the route
+# (pilot 3 X5a r1 held the pool for five campaigns).
+const PREDICTIVE_POOL_FIXED_MIN_SHARE = 0.05
+
 const PREDICTIVE_REMOTE_OVERHEAD = 0.0
 
 """
@@ -135,6 +153,13 @@ the unit tests drive a plan space the host machine does not have).
   `docs/architecture/predictive_routing_r7.md`. Machine constants are loaded
   and traced under every model; `:none` declines to use them for contention, it
   does not hide them.
+- `measured_margin` (`SPACEAGORA_PREDICTIVE_MEASURED_MARGIN`, default `0.07`):
+  the margin a plan must clear when its inner width was timed on this very
+  campaign (`InnerSpeedupCurve.measured`) rather than predicted from the RHS
+  store. The 15% `margin` exists because a predicted edge can be model error;
+  a measured same-width edge carries only run-to-run noise (X5b: b2 beat b1 by
+  9.6% and X5a: b4 beat b1 by 10% on the TRX50, both under 15%). The smaller of
+  the two applies, so lowering `margin` below this lowers both.
 - `local_thrash` (`SPACEAGORA_PREDICTIVE_LOCAL_THRASH`, default `3.0`,
   ASSUMED): the observed local-slot slowdown, relative to a pool worker, past
   which the guard trims the local slots even though the pool is unharmed. Well
@@ -164,6 +189,7 @@ struct PredictivePlannerConfig
     route_switch::Bool
     heap_model::Symbol
     local_thrash::Float64
+    measured_margin::Float64
 end
 
 function PredictivePlannerConfig(;
@@ -179,7 +205,10 @@ function PredictivePlannerConfig(;
         "SPACEAGORA_PREDICTIVE_HEAP_MODEL", :locals),
     local_thrash::Real = _predictive_env_float(
         "SPACEAGORA_PREDICTIVE_LOCAL_THRASH", 3.0),
+    measured_margin::Real = _predictive_env_float("SPACEAGORA_PREDICTIVE_MEASURED_MARGIN", 0.07),
 )
+    measured_margin >= 0.0 || throw(ArgumentError(
+        "PredictivePlannerConfig measured_margin must be >= 0; got $(measured_margin)."))
     margin >= 0.0 || throw(ArgumentError("PredictivePlannerConfig margin must be >= 0; got $(margin)."))
     guard_factor >= 1.0 ||
         throw(ArgumentError("PredictivePlannerConfig guard_factor must be >= 1; got $(guard_factor)."))
@@ -193,7 +222,7 @@ function PredictivePlannerConfig(;
         "PredictivePlannerConfig local_thrash must be >= 1; got $(local_thrash)."))
     return PredictivePlannerConfig(Float64(margin), Float64(guard_factor), Int(local_slots_max),
                                    Float64(remote_overhead), route_switch, heap_model,
-                                   Float64(local_thrash))
+                                   Float64(local_thrash), Float64(measured_margin))
 end
 
 """
@@ -272,14 +301,19 @@ existed, and it prices every plan exactly as that model did.
 - `startup`: delay, in sample units, before each pool worker takes its first
   sample, for a pool that has not dispatched in this process yet. The local
   slots start at once, so a cold pool shifts the first samples onto them.
+- `pool_fixed`: the fixed per-campaign cost of dispatching to a pool at all
+  (`PREDICTIVE_POOL_FIXED_S` over the sample time), in sample units. Charged to
+  a process plan only on a single-round campaign short enough for it to matter;
+  see [`predictive_plan_makespan`](@ref).
 """
 struct PredictiveCostTerms
     heap_scale::Float64
     round_tail::Float64
     startup::Float64
     local_heap_slope::Float64
+    pool_fixed::Float64
     function PredictiveCostTerms(heap_scale::Real, round_tail::Real, startup::Real,
-                                 local_heap_slope::Real = NaN)
+                                 local_heap_slope::Real = NaN, pool_fixed::Real = 0.0)
         (isfinite(heap_scale) && heap_scale > 0.0) || throw(ArgumentError(
             "PredictiveCostTerms heap_scale must be finite and > 0; got $(heap_scale)."))
         (isfinite(round_tail) && round_tail >= 0.0) || throw(ArgumentError(
@@ -288,14 +322,16 @@ struct PredictiveCostTerms
             "PredictiveCostTerms startup must be finite and >= 0; got $(startup)."))
         (isnan(local_heap_slope) || local_heap_slope >= 0.0) || throw(ArgumentError(
             "PredictiveCostTerms local_heap_slope must be >= 0 or NaN; got $(local_heap_slope)."))
+        (isfinite(pool_fixed) && pool_fixed >= 0.0) || throw(ArgumentError(
+            "PredictiveCostTerms pool_fixed must be finite and >= 0; got $(pool_fixed)."))
         return new(Float64(heap_scale), Float64(round_tail), Float64(startup),
-                   Float64(local_heap_slope))
+                   Float64(local_heap_slope), Float64(pool_fixed))
     end
 end
 
 PredictiveCostTerms(; heap_scale::Real = 1.0, round_tail::Real = 0.0, startup::Real = 0.0,
-                    local_heap_slope::Real = NaN) =
-    PredictiveCostTerms(heap_scale, round_tail, startup, local_heap_slope)
+                    local_heap_slope::Real = NaN, pool_fixed::Real = 0.0) =
+    PredictiveCostTerms(heap_scale, round_tail, startup, local_heap_slope, pool_fixed)
 
 """
     InnerSpeedupCurve(speedup; source = "")
@@ -322,7 +358,14 @@ measured the same way (`rhs_inner_speedup_curve(stem; outer = ...)`); see
 struct InnerSpeedupCurve
     speedup::Vector{Float64}
     source::String
-    function InnerSpeedupCurve(speedup::AbstractVector{<:Real}, source::AbstractString)
+    # Widths whose speedup was timed on the campaign itself (campaign walls at
+    # that width, see `_predictive_measured_inner_curve`) rather than read from
+    # the RHS store. A plan at one of these widths is priced from the workload
+    # it will run, which is what lets it clear `measured_margin` instead of
+    # `margin`.
+    measured::Vector{Int}
+    function InnerSpeedupCurve(speedup::AbstractVector{<:Real}, source::AbstractString,
+                               measured::AbstractVector{<:Integer} = Int[])
         isempty(speedup) && throw(ArgumentError("InnerSpeedupCurve needs at least one width."))
         v = Float64.(collect(speedup))
         all(x -> isfinite(x) && x > 0.0, v) || throw(ArgumentError(
@@ -333,12 +376,13 @@ struct InnerSpeedupCurve
         for b in 2:length(v)
             v[b] = max(v[b], v[b - 1])
         end
-        return new(v, String(source))
+        return new(v, String(source), Int.(collect(measured)))
     end
 end
 
-InnerSpeedupCurve(speedup::AbstractVector{<:Real}; source::AbstractString = "") =
-    InnerSpeedupCurve(speedup, source)
+InnerSpeedupCurve(speedup::AbstractVector{<:Real}; source::AbstractString = "",
+                  measured::AbstractVector{<:Integer} = Int[]) =
+    InnerSpeedupCurve(speedup, source, measured)
 
 @inline inner_speedup(c::InnerSpeedupCurve, b::Integer)::Float64 =
     c.speedup[clamp(Int(b), 1, length(c.speedup))]
@@ -500,6 +544,18 @@ function predictive_plan_makespan(n_samples::Integer, pool_workers::Integer,
                                   slowdowns::Vector{Float64},
                                   terms::PredictiveCostTerms)::Float64
     W = clamp(Int(pool_workers), 0, length(slowdowns))
+    base = _predictive_pool_core(n_samples, W, slowdowns, terms)
+    # Single round on the pool, and the fixed cost is a visible share of it:
+    # price the cost so an exact tie with the threads route resolves to threads.
+    # Multi-round campaigns amortise it (P3 rung 16 is 16 rounds) and a longer
+    # single round (P4 rung 32) makes it noise, so neither is charged.
+    (W > 0 && Int(n_samples) <= W && terms.pool_fixed > 0.0 &&
+     terms.pool_fixed >= PREDICTIVE_POOL_FIXED_MIN_SHARE) && return base + terms.pool_fixed
+    return base
+end
+
+function _predictive_pool_core(n_samples::Integer, W::Int, slowdowns::Vector{Float64},
+                               terms::PredictiveCostTerms)::Float64
     if terms.round_tail == 0.0 && (W == 0 || terms.startup == 0.0)
         return predictive_makespan(n_samples, slowdowns)
     end
@@ -802,7 +858,13 @@ function predictive_plan(;
     end
     gain = best_static.makespan > 0.0 ?
         (best_static.makespan - best.makespan) / best_static.makespan : 0.0
-    if gain >= config.margin
+    # A plan whose inner width was timed on this campaign is a measured edge,
+    # not a modelled one, and clears the smaller margin.
+    mcurve = best.route === :none ? inner_curve_unsplit : inner_curve
+    margin = (mcurve !== nothing && best.inner_thread_budget > 1 &&
+              best.inner_thread_budget in mcurve.measured) ?
+        min(config.margin, config.measured_margin) : config.margin
+    if gain >= margin
         return PredictivePlanning(plans, best, best_static, gain, :predicted_gain,
                                   constants !== nothing)
     end
@@ -1531,7 +1593,8 @@ constants file's priors and this machine's corrections.
 function predictive_cost_terms(corrections::Union{Nothing, CampaignCorrections},
                                campaign_constants::PredictiveCampaignConstants,
                                rules::CampaignCorrectionRules;
-                               signature::AbstractString, pool_cold::Bool)
+                               signature::AbstractString, pool_cold::Bool,
+                               fallback_sample_time_s::Union{Nothing, Real} = nothing)
     k = corrections === nothing ? 0 : corrections.campaigns
     heap = corrections === nothing ? 1.0 : correction_value(corrections.heap_scale, 1.0, k, rules)
     tail_prior = campaign_constants.round_tail
@@ -1547,7 +1610,14 @@ function predictive_cost_terms(corrections::Union{Nothing, CampaignCorrections},
     startup_s = campaign_constants.pool_startup_s
     startup = (pool_cold && t1 !== nothing && startup_s !== nothing) ? startup_s / t1 : 0.0
     slope = campaign_constants.local_heap_slope === nothing ? NaN : campaign_constants.local_heap_slope
-    return (terms = PredictiveCostTerms(heap, max(0.0, tail), startup, slope), sample_time_s = t1)
+    # Needs a sample time to turn seconds into sample units; without one (the
+    # process's first campaign of this signature) no fixed cost is charged.
+    # With corrections off there is no t1; the process's last measured sample
+    # time stands in for this conversion only (no correction is applied).
+    t_pool = t1 === nothing ? fallback_sample_time_s : t1
+    pool_fixed = (t_pool === nothing || !(t_pool > 0)) ? 0.0 : PREDICTIVE_POOL_FIXED_S / t_pool
+    return (terms = PredictiveCostTerms(heap, max(0.0, tail), startup, slope, pool_fixed),
+            sample_time_s = t1)
 end
 
 """

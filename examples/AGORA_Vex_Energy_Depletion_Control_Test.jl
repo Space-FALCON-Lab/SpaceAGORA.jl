@@ -120,6 +120,10 @@ args = SimulationConfiguration(
     solver_config=SolverConfig(maxiters=2_000_000),
 )
 
+# Honor the suite's bounded smoke configuration; ordinary scientific runs
+# receive the original configuration unchanged.
+args = SpaceAGORA.TelemetryVerification._example_smoke_args(args)
+
 target_energy_save_field = SaveField(
     :edg_target_energy_jkg,
     (u, t, integrator) -> [

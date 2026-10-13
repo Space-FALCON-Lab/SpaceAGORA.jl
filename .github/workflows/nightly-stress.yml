@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  nightly-stress:
+  stress-suites:
     runs-on: ubuntu-latest
     timeout-minutes: 240
     env:
@@ -82,18 +82,92 @@ jobs:
       - name: Example regression stress
         run: julia --startup-file=no --depwarn=error --project=. test/integration/examples/runtests.jl
 
-      - name: Telemetry full regression (GRAM deterministic)
-        run: julia --startup-file=no --depwarn=error --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl full --enforce=true
-
       - name: Stress suite
         run: julia --startup-file=no --depwarn=error --project=. test/stress/runtests.jl
+
+  # The full telemetry profiles keep their original model, solver, fitting
+  # settings and thresholds, with one complete scenario per runner. They no
+  # longer share the four-hour budget with all instrumented test suites.
+  telemetry-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [odyssey, vex, earth_gmat]
+    env:
+      JULIA_NUM_THREADS: "4"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          fetch-depth: 0
+
+      - name: Update GRAMSuite test submodule to dev main
+        env:
+          GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+        run: bash .github/scripts/update_gramsuite_submodule.sh dev
+
+      - name: Setup Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+
+      - name: Cache Julia artifacts
+        uses: julia-actions/cache@v2
+
+      - name: Instantiate vendored GRAMSuite
+        run: julia --startup-file=no --project=data/GRAMSuite.jl -e 'using Pkg; Pkg.instantiate()'
+
+      - name: GRAMSuite load smoke
+        run: julia --startup-file=no --project=data/GRAMSuite.jl -e 'using GRAMSuite; println("gramsuite_load_ok")'
+
+      - name: Instantiate
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Ensure native GRAM build
+        run: ./scripts/ensure_gram_native.sh --clean
+
+      - name: Verify exact scenario partition
+        run: julia --startup-file=no .github/scripts/test_ci_telemetry_scenario.jl
+
+      - name: Select unchanged full scenario
+        run: >-
+          julia --startup-file=no .github/scripts/ci_telemetry_scenario.jl
+          test/telemetry_benchmark_manifest.toml ${{ matrix.scenario }}
+          output/telemetry_${{ matrix.scenario }}_manifest.toml
+
+      - name: Telemetry full regression (${{ matrix.scenario }})
+        run: >-
+          julia --startup-file=no --depwarn=error --heap-size-hint=10G --project=.
+          benchmarks/studies/telemetry_orbit_accuracy_study.jl full --enforce=true
+          --manifest=output/telemetry_${{ matrix.scenario }}_manifest.toml
+          --out-summary=output/telemetry_${{ matrix.scenario }}_summary.csv
+          --out-errors=output/telemetry_${{ matrix.scenario }}_errors.csv
 
       - name: Upload telemetry nightly artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: telemetry-full-${{ github.run_id }}
+          name: telemetry-full-${{ matrix.scenario }}-${{ github.run_id }}
           path: |
-            output/telemetry_orbit_accuracy_summary.csv
-            output/telemetry_orbit_accuracy_errors.csv
-          if-no-files-found: warn
+            output/telemetry_${{ matrix.scenario }}_manifest.toml
+            output/telemetry_${{ matrix.scenario }}_summary.csv
+            output/telemetry_${{ matrix.scenario }}_errors.csv
+          if-no-files-found: error
+
+  # Preserve the existing check name and require every original component.
+  nightly-stress:
+    if: always()
+    needs: [stress-suites, telemetry-regression]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Enforce complete stress and telemetry results
+        env:
+          STRESS_RESULT: ${{ needs.stress-suites.result }}
+          TELEMETRY_RESULT: ${{ needs.telemetry-regression.result }}
+        run: |
+          test "$STRESS_RESULT" = "success"
+          test "$TELEMETRY_RESULT" = "success"

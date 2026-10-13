@@ -182,6 +182,10 @@ targeting_switch_save_field = SaveField(
     column_prefix="edg_targeting_switch_s",
 )
 
+# Honor the suite's bounded smoke configuration; ordinary scientific runs
+# receive the original configuration unchanged.
+args = SpaceAGORA.TelemetryVerification._example_smoke_args(args)
+
 target_energy_save_field = SaveField(
     :edg_target_energy_jkg,
     (u, t, integrator) -> [

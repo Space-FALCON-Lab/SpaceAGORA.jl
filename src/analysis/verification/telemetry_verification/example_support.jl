@@ -54,7 +54,8 @@ function _example_smoke_args(args::SM.SimulationConfiguration)
         navigation_model=args.navigation_model,
         control_model=args.control_model,
         initial_time=args.initial_time,
-        integration_tolerances=args.integration_tolerances
+        integration_tolerances=args.integration_tolerances,
+        solver_config=args.solver_config
     )
 end
 

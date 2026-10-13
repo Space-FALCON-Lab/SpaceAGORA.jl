@@ -1293,7 +1293,7 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         # budget); predictive runs once per case at the full budget, with
         # --threads and --process-workers both set to it (`_ppb_full_budget`).
         # policy_v2 is not run here: R6 is scored against its given split in P5.
-        cases        = ["mcgrid_16sat_8mc", "mcgrid_8sat_16mc"],
+        cases        = ["mcgrid_16sat_8mc_long", "mcgrid_8sat_16mc_long"],
         parity_cases = String[],
         modes        = ["serial", "outer_threads", "outer_process", "outer_inner_static", "predictive"],
         full_budget_modes = ["predictive"],
@@ -1467,7 +1467,7 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
     PPBPhase(
         id    = "X5a",
         label = "Route exploration — P5f, 8 samples of 16 spacecraft",
-        cases        = ["mcgrid_16sat_8mc"],
+        cases        = ["mcgrid_16sat_8mc_long"],
         parity_cases = String[],
         modes        = ["outer_threads", "outer_process", "outer_inner_static",
                         "serial", "predictive", "force_threads@w8+l0+b4",
@@ -1483,7 +1483,7 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
     PPBPhase(
         id    = "X5b",
         label = "Route exploration — P5f, 16 samples of 8 spacecraft",
-        cases        = ["mcgrid_8sat_16mc"],
+        cases        = ["mcgrid_8sat_16mc_long"],
         parity_cases = String[],
         modes        = ["outer_threads", "outer_process", "outer_inner_static",
                         "serial", "predictive", "force_threads@w16+l0+b2", "force_threads@w8+l0+b4",

@@ -36,18 +36,16 @@ function EM._gram_core_density_state(
     return core.rho, core.T, SVector{3, Float64}(1.0, 2.0, 3.0)
 end
 
-# Fake core that takes the shared native lock per query, like the native one.
-struct LockingFakeGramCore
-    rho::Float64
-    T::Float64
+# GRAM-like model: takes the shared native lock per query and opts in to the
+# batched build lock through the same helper the GRAM wrapper uses.
+struct LockProbeModel <: SimulationModel.AbstractDensityModel
+    instance_lock::ReentrantLock
 end
-
-function EM._gram_core_density_state(
-    core::LockingFakeGramCore, h::Float64, lat::Float64, lon::Float64,
-    el_time::Float64, wind::Bool, lock_obj, vacuum_temperature::Float64
-)::Tuple{Float64, Float64, SVector{3, Float64}}
+CB._vacuum_gram_build_lock(m::LockProbeModel) = CB._batched_build_lock(m)
+function EM.getDensity(::LockProbeModel, h::Float64, lat::Float64, lon::Float64,
+                       el_time::Float64, wind::Bool, p)::Tuple{Float64, Float64, SVector{3, Float64}}
     return SpaceAGORA.RuntimeServices.with_native_lock(:gram_density) do
-        (core.rho * (1.0 + 1.0e-3 * el_time), core.T, SVector{3, Float64}(1.0, 2.0, 3.0))
+        (1.0e-9 * exp(-h / 2.0e5) * (1.0 + 1.0e-3 * el_time), 200.0, SVector{3, Float64}(1.0, 2.0, 3.0))
     end
 end
 
@@ -644,7 +642,7 @@ end
 
     @testset "vacuum_predicted_gram: batched build lock" begin
         RS = SpaceAGORA.RuntimeServices
-        model = EM.GRAMAtmosphereModel(LockingFakeGramCore(1.0e-9, 200.0))
+        model = LockProbeModel(ReentrantLock())
         pos, vel = circular_state(300e3)
         n_pts = 20
         build(batch) = withenv("SPACEAGORA_GRAM_CACHE_BATCH_LOCK" => batch) do
@@ -664,6 +662,14 @@ end
         end
         # Non-GRAM models never take the lock.
         @test CB._vacuum_gram_build_lock(fallback_probe) === nothing
+        gram = make_fake_gram()
+        @test CB._vacuum_gram_build_lock(gram) isa SpaceAGORA.RuntimeServices.TrackedLock
+        withenv("SPACEAGORA_GRAM_LOCK_SCOPE" => "model") do
+            @test CB._vacuum_gram_build_lock(gram) === gram.instance_lock
+        end
+        withenv("SPACEAGORA_GRAM_CACHE_BATCH_LOCK" => "0") do
+            @test CB._vacuum_gram_build_lock(gram) === nothing
+        end
     end
 
     @testset "targeting: env knobs" begin

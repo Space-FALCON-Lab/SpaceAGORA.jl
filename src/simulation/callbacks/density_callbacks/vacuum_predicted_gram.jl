@@ -188,8 +188,10 @@ end
 # depend on that (history-dependent models are already routed to an ordered
 # query stream by the callers). SPACEAGORA_GRAM_CACHE_BATCH_LOCK=0 restores
 # the per-knot locking.
-@inline function _vacuum_gram_build_lock(density_model)
-    density_model isa EnvironmentModels.GRAMAtmosphereModel || return nothing
+@inline _vacuum_gram_build_lock(::Any) = nothing
+@inline _vacuum_gram_build_lock(m::EnvironmentModels.GRAMAtmosphereModel) = _batched_build_lock(m)
+
+@inline function _batched_build_lock(density_model)
     _parse_bool_env("SPACEAGORA_GRAM_CACHE_BATCH_LOCK", true) || return nothing
     return EnvironmentModels._gram_lock_scope() === :model ?
         density_model.instance_lock : tracked_lock(:gram_density)

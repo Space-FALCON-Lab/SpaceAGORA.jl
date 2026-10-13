@@ -184,17 +184,18 @@ function ensure_density_workers!(n::Int;
     _ensure_density_atexit!()
     workers_all = ensure_process_workers!(_DENSITY_PROCESS_POOL, n)
     kernels = _DENSITY_SERVICE_KERNELS_FN[]()
-    ready = Int[]
-    for w in workers_all
-        ok = try
+    # Each worker builds in its own process (own CSPICE and native state), so the
+    # builds run concurrently; only the coordinator's wait is shared.
+    ok = Vector{Bool}(undef, length(workers_all))
+    @sync for (k, w) in enumerate(workers_all)
+        @async ok[k] = try
             remotecall_fetch(install_worker_density_model!, w, recipe, kernels)
         catch err
             @warn "Density service worker could not build its GRAM instance; excluding it from the pool." worker=w exception=(err, catch_backtrace())
             false
         end
-        ok && push!(ready, w)
     end
-    return ready
+    return workers_all[ok]
 end
 
 # ---------------------------------------------------------------------------

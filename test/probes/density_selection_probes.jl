@@ -36,6 +36,19 @@ function EM._gram_core_density_state(
     return core.rho, core.T, SVector{3, Float64}(1.0, 2.0, 3.0)
 end
 
+# GRAM-like model: takes the shared native lock per query and opts in to the
+# batched build lock through the same helper the GRAM wrapper uses.
+struct LockProbeModel <: SimulationModel.AbstractDensityModel
+    instance_lock::ReentrantLock
+end
+CB._vacuum_gram_build_lock(m::LockProbeModel) = CB._batched_build_lock(m)
+function EM.getDensity(::LockProbeModel, h::Float64, lat::Float64, lon::Float64,
+                       el_time::Float64, wind::Bool, p)::Tuple{Float64, Float64, SVector{3, Float64}}
+    return SpaceAGORA.RuntimeServices.with_native_lock(:gram_density) do
+        (1.0e-9 * exp(-h / 2.0e5) * (1.0 + 1.0e-3 * el_time), 200.0, SVector{3, Float64}(1.0, 2.0, 3.0))
+    end
+end
+
 make_fake_gram(; rho::Float64=1.5e-9, T::Float64=210.0) =
     EM.GRAMAtmosphereModel(FakeGramCore(rho, T))
 
@@ -625,6 +638,38 @@ end
         @test rho_fb ≈ rho_direct rtol=1e-12
         @test T_fb == T_direct
         @test wind_fb == wind_direct
+    end
+
+    @testset "vacuum_predicted_gram: batched build lock" begin
+        RS = SpaceAGORA.RuntimeServices
+        model = LockProbeModel(ReentrantLock())
+        pos, vel = circular_state(300e3)
+        n_pts = 20
+        build(batch) = withenv("SPACEAGORA_GRAM_CACHE_BATCH_LOCK" => batch) do
+            p = ODEParams(n_sats=1, args=probe_config(density_model=model))
+            cache = CB.VacuumPredictedGRAMCache()
+            RS.reset_native_lock_stats!()
+            CB._build_vacuum_gram_cache!(cache, model, p, pos, vel, 0.0, n_pts, 300.0)
+            return cache, RS.native_lock_stats_snapshot().sites.gram_density.acquisitions
+        end
+        c_off, acq_off = build("0")
+        c_on, acq_on = build("1")
+        @test acq_off == n_pts
+        @test acq_on == 1
+        @test c_on.valid && c_off.valid
+        for f in (:log_rhos, :Ts, :winds, :vac_alts, :vac_positions, :Ms_rho, :Ms_T)
+            @test getfield(c_on, f) == getfield(c_off, f)  # bitwise identical
+        end
+        # Non-GRAM models never take the lock.
+        @test CB._vacuum_gram_build_lock(fallback_probe) === nothing
+        gram = make_fake_gram()
+        @test CB._vacuum_gram_build_lock(gram) isa SpaceAGORA.RuntimeServices.TrackedLock
+        withenv("SPACEAGORA_GRAM_LOCK_SCOPE" => "model") do
+            @test CB._vacuum_gram_build_lock(gram) === gram.instance_lock
+        end
+        withenv("SPACEAGORA_GRAM_CACHE_BATCH_LOCK" => "0") do
+            @test CB._vacuum_gram_build_lock(gram) === nothing
+        end
     end
 
     @testset "targeting: env knobs" begin

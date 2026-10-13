@@ -178,7 +178,32 @@ end
     return (1.0 - x) * w0 + x * w1
 end
 
-function _build_vacuum_gram_cache!(
+# Lock held across one whole cache build, or `nothing`. Every knot of a build
+# calls getDensity (and a frame transform), each of which takes the same native
+# lock; taking it once per build instead of once per knot removes n_pts - 1
+# lock handoffs per build. The lock is reentrant, so the inner acquisitions
+# are unchanged and only the outermost one is counted. A build's knots are
+# queried in the same order either way; only the interleaving with other
+# satellites' builds changes, and a nominal-wind model's answer does not
+# depend on that (history-dependent models are already routed to an ordered
+# query stream by the callers). SPACEAGORA_GRAM_CACHE_BATCH_LOCK=0 restores
+# the per-knot locking.
+@inline _vacuum_gram_build_lock(::Any) = nothing
+@inline _vacuum_gram_build_lock(m::EnvironmentModels.GRAMAtmosphereModel) = _batched_build_lock(m)
+
+@inline function _batched_build_lock(density_model)
+    _parse_bool_env("SPACEAGORA_GRAM_CACHE_BATCH_LOCK", true) || return nothing
+    return EnvironmentModels._gram_lock_scope() === :model ?
+        density_model.instance_lock : tracked_lock(:gram_density)
+end
+
+function _build_vacuum_gram_cache!(cache::VacuumPredictedGRAMCache, density_model, args...)
+    l = _vacuum_gram_build_lock(density_model)
+    l === nothing && return _build_vacuum_gram_cache_unlocked!(cache, density_model, args...)
+    return lock(() -> _build_vacuum_gram_cache_unlocked!(cache, density_model, args...), l)
+end
+
+function _build_vacuum_gram_cache_unlocked!(
     cache::VacuumPredictedGRAMCache,
     density_model,
     p,

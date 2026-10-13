@@ -91,25 +91,10 @@ function _edg_recompute_switches!(
 )
     config = model.config
     state = model.state
-    if state.selected_mode[i] == :targeting && state.targeting_active[i]
-        _edg_in_drag_passage(p, env) || return nothing
-        isfinite(state.targeting_switch_s[i]) && return nothing
-        state.targeting_switch_s[i] = _edg_solve_targeting_switch(
-            config,
-            state,
-            p,
-            spacecraft,
-            pos,
-            vel,
-            mass,
-            t,
-            i;
-            heat_load_j_cm2=heat_load_j_cm2,
-            heat_rate_control=(:heat_rate in config.max_energy_submodes),
-            structural_control=(:structural_load in config.max_energy_submodes),
-        )
-        state.last_switch_solve_t[i] = t
-    elseif state.selected_mode[i] == :max_energy_depletion && (:heat_load in config.max_energy_submodes)
+    # Guidance owns the complete targeting plan, its certificate and replan
+    # clock. Control only consumes that plan; the fixed-energy utility solver
+    # must not replace it or consume a due guidance update.
+    if state.selected_mode[i] == :max_energy_depletion && (:heat_load in config.max_energy_submodes)
         if !_edg_in_drag_passage(p, env)
             if state.heat_load_drag_passage_active[i]
                 state.heat_load_switch_solved[i] = false
@@ -187,25 +172,7 @@ function _edg_recompute_switches!(
                     structural_control=structural_control,
                 )
                 state.heat_load_last_reevaluation_s[i] = t
-            elseif config.heat_load_security_mode && config.heat_load_switch_solver == :closed_form &&
-                    !state.heat_load_security_active[i] &&
-                    heat_load_j_cm2 > 0.98 * config.heat_load_limit_j_cm2 &&
-                    heat_load_j_cm2 - state.heat_load_previous_j_cm2[i] < 2.0
-                security_required, security_end = _edg_heat_load_security_required(
-                    config,
-                    p,
-                    spacecraft,
-                    pos,
-                    vel,
-                    mass,
-                    env,
-                    heat_load_j_cm2,
-                    t,
-                )
-                if security_required
-                    state.heat_load_switches_s[i] = (t, security_end)
-                    state.heat_load_security_active[i] = true
-                end
+
             end
         end
         state.heat_load_previous_j_cm2[i] = heat_load_j_cm2
@@ -217,7 +184,8 @@ end
     config = model.config
     state = model.state
     mode = state.selected_mode[i]
-    if mode == :safe_low_drag || state.safe_low_drag[i]
+    if mode == :safe_low_drag || state.safe_low_drag[i] ||
+            (mode == :max_energy_depletion && state.heat_load_security_active[i])
         return config.min_alpha_rad
     elseif mode == :targeting && state.targeting_active[i]
         return _edg_switch_due(t, state.targeting_switch_s[i]) ? config.min_alpha_rad : config.max_alpha_rad
@@ -379,6 +347,7 @@ function calcControlEffect!(
     heat_load = _edg_max_heat_load_for_links(sc, model.aoa_effector.controlled_panel_links)
     pass_heat_load = _edg_pass_heat_load_for_links(sc, model.aoa_effector.controlled_panel_links, state, i)
     _edg_recompute_switches!(model, p, env, spacecraft, pos, vel, mass, pass_heat_load, Float64(t), i)
+    _edg_update_heat_load_security!(model, p, env, spacecraft, pos, vel, mass, pass_heat_load, Float64(t), i)
     heat_load_low_drag_active = _edg_heat_load_low_drag_active(model, Float64(t), i)
     base_alpha = _edg_base_alpha(model, Float64(t), i)
     alpha = _edg_command_alpha!(model, p, u, env, spacecraft, base_alpha, heat_load, heat_load_low_drag_active, i;
@@ -479,12 +448,15 @@ function _edg_vacuum_apoapsis_correction(
         next_pos = pos + dt * (k1r + 2.0k2r + 2.0k3r + k4r) / 6.0
         next_vel = vel + dt * (k1v + 2.0k2v + 2.0k3v + k4v) / 6.0
         next_radial_velocity = dot(next_pos, next_vel) / norm(next_pos)
-        elapsed += dt
-        pos, vel = next_pos, next_vel
         if radial_velocity > 0.0 && next_radial_velocity <= 0.0
+            pos, vel, event_dt = _edg_prediction_event(acceleration,
+                (r, v, tau) -> dot(r, v), pos, vel, elapsed, dt)
+            elapsed += event_dt
             event_reached = true
             break
         end
+        elapsed += dt
+        pos, vel = next_pos, next_vel
         radial_velocity = next_radial_velocity
     end
 
@@ -496,6 +468,8 @@ function _edg_vacuum_apoapsis_correction(
         apoapsis_radius_m=metrics.apoapsis,
         propagation_time_s=elapsed,
         event_reached=event_reached,
+        position=pos,
+        velocity=vel,
     )
 end
 

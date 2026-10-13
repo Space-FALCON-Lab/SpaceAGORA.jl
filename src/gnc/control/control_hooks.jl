@@ -42,6 +42,7 @@ module ControlHooks
     include(joinpath(@__DIR__, "struct_load_control.jl"))
     include(joinpath(@__DIR__, "heat_load_control.jl"))
     include(joinpath(@__DIR__, "targeting_control.jl"))
+    include(joinpath(@__DIR__, "edg_targeting_plan.jl"))
     include(joinpath(@__DIR__, "edg_heat_accounting.jl"))
     include(joinpath(@__DIR__, "rpo_mpc", "lqmpc.jl"))
     include(joinpath(@__DIR__, "rpo_mpc", "rpo_control_types.jl"))

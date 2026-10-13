@@ -49,6 +49,13 @@ function _edg_capture_entry_heat!(args, u, i::Int)
         _edg_control_state_index_ok(state, i) || continue
         state.heat_load_entry_j_cm2[i] = hasproperty(sc, :heat_loads) ? Float64.(sc.heat_loads) : Float64[]
         state.heat_load_exit_j_cm2[i] = Float64[]
+        state.energy_bracketing_evaluated[i] = false
+        state.targeting_active[i] = false
+        state.safe_low_drag[i] = false
+        state.selected_mode[i] = :inactive
+        state.targeting_switch_s[i] = Inf
+        state.last_switch_solve_t[i] = -Inf
+        state.targeting_diagnostics[i] = (status=:unplanned,)
     end
     return nothing
 end

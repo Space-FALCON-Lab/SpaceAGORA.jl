@@ -20,6 +20,7 @@ The authoritative implementation files are:
 - `src/gnc/control/struct_load_control.jl`
 - `src/gnc/control/heat_load_control.jl`
 - `src/gnc/control/targeting_control.jl`
+- `src/gnc/control/edg_targeting_plan.jl`
 - `src/gnc/control/control_hooks.jl`
 
 The Odyssey executable example is
@@ -53,14 +54,14 @@ The Odyssey example configures:
 | Operation | Period | Rate |
 | --- | ---: | ---: |
 | Guidance callback | `1/3 s` | 3 Hz |
-| Control callback | `0.1 s` | 10 Hz |
+| Control callback | `1/3 s` | 3 Hz |
 | CSV save callback | `1.0 s` | 1 Hz |
 
-Guidance owns only mode selection, energy bracketing, and target-energy construction. Heat-load
-and targeting switch times are solved in control. Heat-rate and structural AoA constraints are
-recomputed by the live control callback at 10 Hz. Targeting is planned once. Initial heat-load
-switch planning is performed once at drag-passage entry, followed only by the explicitly
-described second-switch correction and security logic.
+Guidance plans the sampled admissible targeting family and candidate-specific apoapsis
+mapping. Before the targeting switch, it replans every 2 s by default. Guidance and
+control callbacks continue at 3 Hz, and each command is held until the next control tick.
+Heat-load planning retains the existing depletion solver and second-switch correction.
+Its planned-profile heat safeguard is evaluated independently on every control update.
 
 ## Configuration Validation
 
@@ -88,11 +89,10 @@ Construction applies these decisions:
 6. AoA bounds must be finite and satisfy `0 <= min_alpha_rad <= max_alpha_rad`.
 7. `planning_horizon_s` and `switch_recompute_interval_s` must be finite and positive.
 
-The current defaults are a 5000 s planning horizon, 20 s switch-recompute interval, enabled
-second-switch re-evaluation, and enabled heat-load security mode. The
-`switch_recompute_interval_s` field is validated and stored but is not read by the current
-switch scheduler; the scheduler uses the explicit 10 s, 3 s, and 0.8 s thresholds documented
-below.
+The defaults are a 5000 s planning horizon, a 2 s pre-switch targeting replan interval,
+enabled second-switch re-evaluation and enabled heat-load security mode. The interval
+controls targeting replanning, not command updates or depletion second-switch scheduling.
+The historical source's 20 s targeting interval is preserved in the source-history record.
 
 ## Shared State
 
@@ -159,41 +159,32 @@ Therefore a maximum-energy-only run never performs an energy bracket.
 
 ### Targeting bracket scheduling
 
-When targeting is configured, bracketing follows these decisions:
+At atmospheric entry, the minimum-drag candidate and the constrained depletion reference
+are evaluated. Executable one-switch candidates are checked in chronological order. The
+accepted prefix stops at the first unresolved ordering, physical heat-budget violation,
+empty sampled instantaneous admissible set, or depletion-reference boundary. No candidate
+after a rejected one is included in the connected interval. Each candidate uses its own
+propagated state, constraints and accumulated passage heat.
 
-1. If the bracket was already evaluated, return immediately. It is never recomputed.
-2. Build the current environment. If outside the drag passage, return without setting any
-   mode or bracket state. The initial `:inactive` mode remains until entry.
-3. Read the maximum nonnegative finite heat load among the configured controlled links. A
-   missing heat-load state is treated as zero.
-4. Predict a complete low-drag passage and a maximum-energy-depletion passage.
-5. Set the reachable interval to the extrema of those two predicted exit energies.
-6. Construct the desired exit energy from target apoapsis and the vacuum J2/N-body
-   correction.
-7. Mark the bracket evaluated and increment its count exactly once.
-8. If the target lies in the interval within tolerance, select `:targeting`.
-9. If unreachable and `:max_energy_depletion` is available, select it as fallback.
-10. If unreachable and maximum energy depletion is unavailable, select `:safe_low_drag`.
+The candidate-specific coast mapping is solved on this accepted discrete family. A target
+above the minimum-drag energy selects minimum drag. A target below the attainable family
+selects maximum depletion when configured, otherwise minimum drag. If no targeting family
+can be certified, the same direction-aware fallback is retained and the failed certificate
+is recorded; fallback is not a claim of trajectory feasibility.
 
-The reachability tolerance is
-
-```math
-epsilon_{tol}=10^{-6}\max(|epsilon_{min}|,|epsilon_{max}|,1).
-```
-
-The target must be finite and satisfy
-
-```math
-epsilon_{min}-epsilon_{tol}\le epsilon_{target}
-\le epsilon_{max}+epsilon_{tol}.
-```
-
-`_edg_set_targeting_fallback!` implements the same fallback state assignment, but the current
-live bracketing function performs the assignment inline and does not call that helper.
+A successful targeting plan is recalculated every `switch_recompute_interval_s` until the
+applied switch has passed. Guidance is the sole owner of that plan and its recomputation
+clock. For targeting-configured EDG, callback assembly executes guidance before control
+when both are due, so control applies the updated plan on that same tick. Their configured
+periods and phases are unchanged; depletion-only EDG and other guidance retain their
+existing ordering. Each atmospheric entry resets the bracket and switch history.
+`targeting_diagnostics` records the interval, residual, number of checked candidates and
+constraint certificate. These are sampled numerical checks, not a proof of the continuous
+reachability theorem or continuous constraint satisfaction between samples.
 
 ## End-to-End Control Callback
 
-Every 10 Hz control callback performs this sequence:
+Every 3 Hz control callback performs this sequence:
 
 1. Return immediately for an invalid spacecraft index.
 2. If mode is `:inactive` and targeting is not configured, select maximum energy depletion if
@@ -201,7 +192,7 @@ Every 10 Hz control callback performs this sequence:
    guidance can perform entry bracketing.
 3. Read spacecraft state and calculate the current environment.
 4. Read the maximum controlled-panel heat load.
-5. Run targeting or heat-load switch scheduling as applicable.
+5. Consume the guidance-owned targeting plan, or run depletion heat-load switch scheduling as applicable, then evaluate the planned-profile heat safeguard.
 6. Determine whether the heat-load low-drag interval is active.
 7. Select a base AoA from mode and switch state.
 8. Apply enabled instantaneous constraints unless heat-load low drag is active.
@@ -217,15 +208,16 @@ still applied.
 
 The base command is selected in this order:
 
-1. If mode is `:safe_low_drag` or the safe-low-drag flag is true, use `alpha_min`.
+1. If mode is `:safe_low_drag`, its flag is true, or the depletion heat safeguard is currently active, use `alpha_min`.
 2. If mode is active targeting, use `alpha_max` before the targeting switch and `alpha_min`
    at and after the switch. With an infinite switch, targeting stays at `alpha_max`.
 3. If mode is maximum energy depletion and the current time is inclusively inside both finite
    heat-load switches, use `alpha_min`.
 4. Otherwise use `alpha_max`.
 
-Heat-load low drag is active only when mode is `:max_energy_depletion`, `:heat_load` is an
-enabled submode, both switches are finite, and
+Heat-load low drag requires `:max_energy_depletion` and the `:heat_load` submode.
+It is active during the current safeguard override, or when both switches are finite,
+strictly ordered, and
 
 ```math
 t_{s1}\le t\le t_{s2}.
@@ -807,11 +799,11 @@ Equal finite endpoints are a completed no-switch plan and are cached as such. Th
 activate a low-AoA interval, either in the applied control or in the integrated trajectory
 predictor. A low-AoA interval must have strictly positive duration; its existing inclusive
 endpoints are preserved. This avoids a one-update low-drag pulse and repeated initial solves
-for a no-switch decision. Passage reset and the configured security logic remain unchanged.
+for a no-switch decision. Passage reset is preserved. The planned-profile security check is described below.
 
 The numerical shooting plan is calculated once for that drag passage. It is not re-planned and
 has no online correction factor. Closed form may retain the configured legacy second-switch
-re-evaluation and security behavior. Closed-form re-evaluation keeps switch 1 fixed, roots
+re-evaluation. Every-update heat security applies independently. Closed-form re-evaluation keeps switch 1 fixed, roots
 switch 2 over `[t,t+200 s]`, and targets the physical heat-load limit with no time scaling.
 Nonfinite endpoints, an unbracketed residual, or a Brent failure preserve the existing pair.
 
@@ -821,19 +813,16 @@ false, switches become `(Inf,Inf)`, entry time becomes `NaN`, last re-evaluation
 
 ### Closed-form security mode
 
-Security is considered only as an `elseif` after re-evaluation, and only when all are true:
+Journal VI.C evaluates the accumulated physical passage heat plus predicted remaining
+heat under the nominal planned depletion command. The prediction uses the closed-form
+trajectory, the stored two-switch plan and the instantaneous thermal/structural envelope.
+It is evaluated at every update, independently of second-switch reevaluation, without the
+historical 98-percent gate. Equality with the configured heat limit triggers minimum drag.
 
-- security mode is enabled;
-- solver is closed form;
-- security is not already active;
-- current heat load exceeds 98% of the limit;
-- heat-load increase since the previous 10 Hz callback is below 2 J/cm2.
-
-It predicts an all-minimum-AoA closed-form remainder, including every future sample from the
-current state. Remaining load uses the same rectangular expression as the other heat-load
-predictions. Planet temperature is not a time cutoff. If current plus remaining load exceeds the limit,
-the switch pair becomes `(current_time,predicted_outbound_end)` and security remains active for
-the rest of the passage. This is the physical two-transition interval reported by telemetry.
+The override does not rewrite the nominal switch pair and is not latched for the passage.
+The comparison is repeated at the next update; when the predicted total is below the
+limit, the nominal command is applied again. This does not alter the physical heat integral,
+its per-passage baseline, any limit, the command rate or the targeting command structure.
 
 ## Energy Bracketing and Targeting
 
@@ -875,37 +864,26 @@ epsilon_{2body,target}=-\frac{\mu}{r_{a,target}+r_p}.
 
 Invalid target or periapsis radius returns `NaN`.
 
-To reproduce the deprecated target-planning sequence, guidance performs two vacuum
-central/J2/N-body propagations with 1 s RK4:
+For every candidate considered by the outer mapping, guidance propagates that candidate's
+controlled atmospheric passage to the refined outbound EI event, then propagates its own
+exit state to the first subsequent apoapsis with configured central/J2/N-body gravity.
+The apoapsis root is refined within its crossing step. Missing exit or apoapsis events are
+explicit failures. The osculating periapsis is recomputed at that candidate's apoapsis.
 
-1. Propagate from current entry state to outbound EI, with a 2000 s cap. Periapsis is considered
-   passed once radial velocity is nonnegative. Stop when outbound altitude reaches EI.
-2. Propagate that exit state toward apoapsis. The time cap is the larger of 20,000 s and 1.25
-   times the osculating two-body half-period, so high-apoapsis cases such as VEX can reach the
-   event. Stop when radial velocity crosses from positive to nonpositive.
-
-Both results include `event_reached`, which is true only when their stated event is observed.
-Reaching a time cap alone does not certify the result. Guidance raises an explicit error before
-storing a bracket or selecting a targeting mode if either event is missing. These vacuum
-propagations retain their original 1 s event sampling and target-energy approximation.
-They are separate from the refined atmospheric exit in the sampled-command predictor.
-Neither a refined vacuum mapping nor the journal's nested perturbed-target mapping is
-introduced by this predictor repair.
-
-The gravity predictor starts with the configured inverse-square or inverse-square/J2 model and
-adds every configured `NBodyGravityModel`. Third-body positions come from the simulation's
-ephemeris cache when available and otherwise use the same memoized SPICE fallback as the RHS.
-The second propagation returns the resulting change in two-body specific energy. If its
-periapsis is finite, that periapsis is used; otherwise the low-drag predicted periapsis is used.
-The atmospheric-exit target is
+Atmospheric propagation already includes the selected perturbations. Therefore only the
+coast energy change is subtracted from the candidate's apoapsis energy target, as required
+by the no-double-counting qualification following journal Eq. (32):
 
 ```math
-epsilon_{target}=epsilon_{2body,target}-Delta epsilon_{pert}.
+\epsilon_{exit,target}=-\frac{\mu}{r_{a,target}+r_{p,apo}}-\Delta\epsilon_{coast}.
 ```
 
-A positive perturbation energy change therefore makes the required exit target more negative.
-The same configured N-body acceleration is also included in low-drag, maximum-depletion,
-heat-load shooting, and targeting switch predictions.
+The residual is the candidate's actual exit energy minus this target. The energy-ordered
+family supplies the inverse inner map of Algorithm 1 on the finite command grid. Integer
+bisection of the outer residual retains the adjacent executable candidates and selects
+the evaluated candidate with the smaller energy residual. No unexecuted fractional switch
+or exact continuous root is claimed. The atmospheric and coast models count perturbations
+once; no force or potential coefficient is changed by this mapping repair.
 
 ### Targeting trajectory and force model
 
@@ -928,44 +906,32 @@ Aerodynamic directions in planet-fixed coordinates are
 Force is rotated to inertial and divided by mass. A degenerate lift vector becomes zero lift.
 RK4 holds the sample's AoA constant across its four substeps.
 
-### One-switch root
+### One-switch root and certificates
 
-Targeting switch planning runs in control only when selected mode is targeting, targeting is
-active, the vehicle is inside the drag passage, and the stored switch is not already finite.
-Thus it runs once. A nonfinite target returns an infinite switch.
+The live guidance planner uses `_edg_journal_targeting_plan`. Its finite family follows
+journal VI.A: it starts at minimum drag and ends at the heat-feasible, strictly energy-ordered
+prefix no more depleting than the EDG-E reference. Physical heat is integrated with held-angle
+Simpson quadrature through the fractional exit interval. Minimum-angle instantaneous
+feasibility is checked at each interval's start, midpoint and end. A violation at any checked
+state rejects that candidate; positive samples are not a continuous-time proof.
 
-For delay `tau`, define
+`_edg_select_mapped_candidate` records adjacent residuals for the candidate-specific coast
+mapping. `_edg_targeting_switch_solution` remains the lower-level fixed-energy solver used
+when a target energy is supplied directly; it preserves the existing finite-tick interface.
+It is not invoked by the live control callback and cannot advance the guidance planning clock.
+Both use the configured control clock and choose evaluated switches without interpolation.
+The live planner reads the accumulated passage heat and does not substitute the EDG-E
+terminal energy for a certified targeting-family endpoint.
 
-```math
-F(\tau)=epsilon_{exit}(\tau)-epsilon_{target}\quad [\mathrm{J/kg}].
-```
+### Journal provenance boundaries
 
-The search retains the first executable command and configured control ticks within the
-2000 s delay horizon. Endpoint predictions overwrite the stored energy bracket with their
-extrema. Finite opposite-sign residuals are narrowed by integer bisection until the neighboring
-executable ticks are adjacent; choose the evaluated endpoint with smaller absolute energy
-residual, choosing the earlier on a tie. With no sign change, preserve the nearest-energy
-endpoint fallback. Nonfinite predictions fail explicitly.
-
-`_edg_targeting_switch_solution` returns the selected and adjacent switch times and energy
-residuals in J/kg, with status `:exact_sample`, `:quantized_bracket`, `:endpoint_fallback`, or
-`:invalid_target`. The scalar wrapper preserves the existing scheduler interface. A quantized
-bracket is not an exact continuous root. There is no interpolation of an unevaluated switch and
-no claim of the journal's continuous reachability theorem for a finite set of held commands.
-Ticks equal within floating-point roundoff activate consistently in prediction and control.
-
-The targeting-switch function accepts `heat_load_j_cm2` for interface consistency, but the
-current one-switch residual does not read it. Targeting itself has no two-switch heat-load
-phase; heat-load control enters only the maximum-energy endpoint used by guidance bracketing.
-
-After the switch becomes finite, all later control callbacks skip targeting planning. The
-current targeting state and switch are not reset at outbound EI. The journal Sec. VI.D specifies
-2 s recomputation, whereas retained historical source uses 20 s. That policy discrepancy remains
-separate from this predictor repair; neither cadence is silently introduced here.
-
-`_edg_targeting_switch_outcomes` is a support helper that predicts immediate low drag and a
-high-drag switch one second after the low-drag predicted duration. It is not called by the live
-guidance or control path.
+The reduced costates remain valid only under their declared frozen-coefficient, exponential
+density-slope and central-gravity assumptions. Current and historical correction tuples are
+identical and match the journal after converting polynomial bases. The journal's Earth
+density center is 275 km, while the retained source uses 275.5 km. The coefficient-generating
+artifact must resolve that discrepancy before a physical fit is changed. The Mars epoch/orbit
+reference (entry or preceding apoapsis) and original fit provenance remain unverified. No
+fit, initial state or scientific tolerance is adjusted to improve a comparison.
 
 ## Present but Inactive Helpers
 
@@ -1010,7 +976,7 @@ two-body specific orbital energy is `Delta epsilon_pert`, the drag-passage targe
 \epsilon_{target,exit}=-\frac{\mu}{r_{a,target}+r_p}-\Delta\epsilon_{pert}.
 ```
 
-The correction and bracket are calculated once at drag-passage entry. N-body positions use the
+The candidate-specific correction and bracket are recalculated before the switch at the configured interval. N-body positions use the
 same ephemeris cache and SPICE fallback as the simulation force model. The correction is stored
 in `target_perturbation_energy_change_jkg` for validation.
 
@@ -1106,17 +1072,13 @@ panels can carry the largest loads on different passages. Starting a fresh run
 inside the atmosphere uses its initial zero-integral reference. Direct hook users
 must call `_edg_capture_entry_heat!` at subsequent entries, as the simulator does.
 
-`last_pass_heat_load_j_cm2` and `last_heat_budget_status` describe that passage
-quantity. Budget status is diagnostic only. There is no separate cumulative-heat
-command override in targeting or depletion. The original switch policy, optional
-security mode, minimum-angle remaining prediction, threshold, cadence, equations,
-physical limits and simulation termination rules are preserved.
-
-The current manuscript VI.C describes an every-update prediction using the planned
-command, while the original implementation uses minimum-angle prediction and
-additional gates. This is a recorded specification difference, not silently
-resolved by this bookkeeping repair. Targeting cadence and force/costate choices
-are likewise unchanged.
+`last_pass_heat_load_j_cm2` and `last_heat_budget_status` describe the physical passage
+quantity. Budget status itself is diagnostic. The journal-aligned depletion safeguard uses
+the accumulated passage heat plus the predicted planned-profile remainder at every update;
+it applies minimum angle while that total reaches or exceeds the limit, then reevaluates.
+The targeting cadence is 2 s by default, within the fixed 3 Hz command loop. These changes
+are separate from the previously accepted passage-bookkeeping repair. The force equations,
+reduced costates, physical limits and simulation termination rules are preserved.
 
 The branch's checkpoint format stores only the physical state, not EDG passage
 baselines or guidance history. An EDG resume from a nonzero checkpoint time is

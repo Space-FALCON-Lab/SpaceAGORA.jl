@@ -34,6 +34,7 @@ function _edg_test_context(;
     heat_load_limit_j_cm2=1e-4,
     structural_load_limit_pa=_ODYSSEY_LIMIT_DYN_PRESS_PA,
     density_reference_kg_m3=1e-4,
+    gravity_models=(_EDG_SM.InverseSquaredGravityModel(),),
 )
     planet = _EDG_SM.Mars()
     planet.L_PI .= @SMatrix [1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0]
@@ -110,7 +111,7 @@ function _edg_test_context(;
             wind=false,
             thermal_model=_EDG_SM.MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
         ),
-        dynamics_model=_EDG_SM.DynamicsModel([spacecraft], (_EDG_SM.InverseSquaredGravityModel(),)),
+        dynamics_model=_EDG_SM.DynamicsModel([spacecraft], gravity_models),
         guidance_model=_EDG_SM.GuidanceModel((guidance,), [1.0]),
         navigation_model=_EDG_SM.NavigationModel((), Float64[]),
         control_model=_EDG_SM.ControlModel((control,), [1.0]),
@@ -270,14 +271,16 @@ end
         structural_control=true,
     )
     bracket_min, bracket_max = extrema((low_drag.energy_jkg, max_energy.energy_jkg))
-    @test ctx_targeting.state.bracket_min_energy_jkg[1] ≈ bracket_min
-    @test ctx_targeting.state.bracket_max_energy_jkg[1] ≈ bracket_max
+    # The tiny fixture heat budget cannot certify a targeting family.
+    @test isnan(ctx_targeting.state.bracket_min_energy_jkg[1])
+    @test ctx_targeting.state.bracket_max_energy_jkg[1] ≈ low_drag.energy_jkg
+    @test ctx_targeting.state.targeting_diagnostics[1].status == :no_admissible_family
     @test all(isfinite, max_energy.heat_load_switches_s)
     @test max_energy.heat_load_switches_s[1] < max_energy.heat_load_switches_s[2]
 
     ctx_fallback = _edg_test_context(density_reference_kg_m3=1e-7, guidance_modes=(:targeting, :max_energy_depletion), target_apoapsis_radius_m=1.0e12)
     _EDG_SM.calcGuidanceEffect!(ctx_fallback.guidance, ctx_fallback.u, ctx_fallback.p, 0.0, 1)
-    @test ctx_fallback.state.selected_mode[1] == :max_energy_depletion
+    @test ctx_fallback.state.selected_mode[1] == :safe_low_drag
     @test !ctx_fallback.state.targeting_active[1]
 end
 
@@ -316,6 +319,7 @@ end
     ctx_targeting.state.bracket_min_energy_jkg[1] = -1.0e7
     ctx_targeting.state.bracket_max_energy_jkg[1] = -9.0e6
     ctx_targeting.state.target_energy_jkg[1] = -9.5e6
+    ctx_targeting.state.targeting_switch_s[1] = 10.0 # Plan supplied by guidance.
     _EDG_SM.calcControlEffect!(ctx_targeting.control, ctx_targeting.u, ctx_targeting.p, 0.0, 1)
     @test isfinite(ctx_targeting.state.targeting_switch_s[1])
     @test ctx_targeting.state.targeting_active[1]
@@ -589,14 +593,16 @@ end
     state.selected_mode[1] = :targeting
     state.targeting_active[1] = true
     state.target_energy_jkg[1] = -9.5e6
-    _EDG_SM.calcControlEffect!(ctx_targeting_once.control, ctx_targeting_once.u, ctx_targeting_once.p, 0.0, 1)
-    first_switch = state.targeting_switch_s[1]
-    first_solve_time = state.last_switch_solve_t[1]
-    @test isfinite(first_switch)
-    state.target_energy_jkg[1] = -9.0e6
-    _EDG_SM.calcControlEffect!(ctx_targeting_once.control, ctx_targeting_once.u, ctx_targeting_once.p, 20.0, 1)
-    @test state.targeting_switch_s[1] == first_switch
-    @test state.last_switch_solve_t[1] == first_solve_time
+    state.targeting_switch_s[1] = 21.0
+    state.last_switch_solve_t[1] = 0.0
+    for t in (0.0,20.0,22.0)
+        # Even a supplied energy change cannot make control replace the
+        # guidance-owned plan. The public control hook only applies it.
+        state.target_energy_jkg[1] = -9.0e6
+        _EDG_SM.calcControlEffect!(ctx_targeting_once.control,ctx_targeting_once.u,ctx_targeting_once.p,t,1)
+        @test state.targeting_switch_s[1] == 21.0
+        @test state.last_switch_solve_t[1] == 0.0
+    end
 end
 
 @testset "EDG no-switch plans are cached without a low-drag pulse" begin

@@ -114,7 +114,7 @@ args = SimulationConfiguration(
     dynamics_model=base_args.dynamics_model,
     guidance_model=GuidanceModel(guidance_effectors=(guidance,), guidance_rates=[1 / 3]),
     navigation_model=base_args.navigation_model,
-    control_model=ControlModel(control_effectors=(control,), control_rates=[0.1]),
+    control_model=ControlModel(control_effectors=(control,), control_rates=[1 / 3]),
     initial_time=base_args.initial_time,
     integration_tolerances=base_args.integration_tolerances,
     solver_config=SolverConfig(maxiters=2_000_000),

@@ -229,6 +229,57 @@ function _edg_closed_form_density(planet, altitude_m::Float64)
     return exp(exponent)
 end
 
+# Eq. (13) is an entry-based parabola, not a new symmetric passage at every
+# guidance update. Recover its incoming osculating reference, then condition
+# its constant curvature on the current altitude and V*gamma. This is the
+# translated quadratic h(t+tau)-h(t), with the current state as its anchor.
+function _edg_remaining_closed_form_reference(config, p, pos, vel, mass, env)
+    planet = p.args.environment_model.planet
+    a, e = rvtoorbitalelement(pos, vel, mass, planet)[1:2]
+    isfinite(a) && a > 0.0 && isfinite(e) && 0.0 < e < 1.0 ||
+        throw(ArgumentError("The closed-form passage requires a bound eccentric orbit."))
+    entry_altitude = 1e3 * Float64(p.args.environment_model.EI)
+    entry_radius = Float64(planet.Rp_e) + entry_altitude
+    angular_momentum = norm(cross(pos, vel))
+    semi_latus_rectum = angular_momentum^2 / planet.μ
+    cos_nu_entry = (semi_latus_rectum / entry_radius - 1.0) / e
+    -1.0 < cos_nu_entry < 1.0 ||
+        throw(ArgumentError("The osculating orbit must cross the atmospheric interface."))
+    nu_entry = acos(cos_nu_entry)
+    t_peri = _edg_mean_anomaly_from_true(nu_entry, e) / sqrt(planet.μ / a^3)
+    entry_speed = sqrt(planet.μ * (2.0 / entry_radius - 1.0 / a))
+    entry_gamma = -acos(clamp(angular_momentum / (entry_radius * entry_speed), -1.0, 1.0))
+    curvature = -entry_speed * entry_gamma / t_peri
+    speed = norm(vel)
+    gamma = asin(clamp(dot(pos, vel) / (norm(pos) * speed), -1.0, 1.0))
+    vertical_rate = speed * gamma
+    # The equivalent passage phase follows directly from Eq. (13b). Unlike
+    # half the remaining flight time, t_peri stays finite at periapsis.
+    phase = t_peri + vertical_rate / curvature
+    height_to_exit = entry_altitude - env.altitude_m
+    height_to_exit >= -1e-6 ||
+        throw(ArgumentError("Remaining-passage prediction starts above atmospheric entry."))
+    height_to_exit = max(0.0, height_to_exit)
+    root = sqrt(vertical_rate^2 + 2.0 * curvature * height_to_exit)
+    duration = vertical_rate < 0.0 ? (root - vertical_rate) / curvature :
+        (height_to_exit == 0.0 ? 0.0 : 2.0 * height_to_exit / (root + vertical_rate))
+    isfinite(duration) && isfinite(curvature) && curvature > 0.0 ||
+        throw(ArgumentError("The remaining closed-form passage is not finite."))
+    duration <= config.planning_horizon_s ||
+        throw(ArgumentError("The planning horizon truncates the remaining atmospheric passage."))
+    return (;duration, t_peri, entry_speed, entry_gamma, curvature, vertical_rate, phase)
+end
+
+function _edg_remaining_closed_form_heat_load_trajectory(
+    config, p, spacecraft, pos, vel, mass, t, env, alpha_profile=Float64[];
+    prediction_step_s::Float64=0.1,
+)
+    reference = _edg_remaining_closed_form_reference(config, p, pos, vel, mass, env)
+    return _edg_closed_form_heat_load_trajectory(config, p, spacecraft, pos, vel,
+        mass, t, env, alpha_profile; prediction_step_s=prediction_step_s,
+        remaining_reference=reference)
+end
+
 function _edg_closed_form_heat_load_trajectory(
     config,
     p::ODEParams,
@@ -240,9 +291,11 @@ function _edg_closed_form_heat_load_trajectory(
     env,
     alpha_profile::Vector{Float64}=Float64[];
     prediction_step_s::Float64=0.1,
+    remaining_reference=nothing,
 )
     planet = p.args.environment_model.planet
-    duration = _edg_drag_passage_duration(config, p, pos, vel, mass)
+    duration = remaining_reference === nothing ?
+        _edg_drag_passage_duration(config, p, pos, vel, mass) : remaining_reference.duration
     times = _edg_prediction_time_grid(duration, prediction_step_s)
     n = length(times)
     h = Vector{Float64}(undef, n)
@@ -256,12 +309,16 @@ function _edg_closed_form_heat_load_trajectory(
     v0 = max(norm(vel), eps(Float64))
     gamma0 = asin(clamp(dot(pos, vel) / max(r0 * v0, eps(Float64)), -1.0, 1.0))
     altitude0 = env.altitude_m
-    t_peri = max(0.5 * duration, eps(Float64))
+    t_peri = remaining_reference === nothing ? max(0.5 * duration, eps(Float64)) : remaining_reference.t_peri
     cost_3 = v0 * gamma0
+    curvature = remaining_reference === nothing ? -cost_3 / t_peri : remaining_reference.curvature
+    vertical_rates = cost_3 .+ curvature .* times
 
     for j in eachindex(times)
         tau = times[j]
-        altitude = altitude0 + cost_3 * (tau - tau^2 / (2.0 * t_peri))
+        altitude = remaining_reference === nothing ?
+            altitude0 + cost_3 * (tau - tau^2 / (2.0 * t_peri)) :
+            altitude0 + cost_3 * tau + 0.5 * curvature * tau^2
         h[j] = altitude
         rho[j] = _edg_closed_form_density(planet, altitude)
         temperature[j] = planet.T
@@ -286,18 +343,23 @@ function _edg_closed_form_heat_load_trajectory(
     cl_t = cl_low .+ alpha_profile .* (cl_high - cl_low) ./ (pi / 2)
     cost_1 = rho .* cd_t .* area_total ./ (2.0 * mass) .* alpha_profile
     cost_2 = rho .* cl_t .* area_total ./ (2.0 * mass)
-    f1, f2 = _edg_closed_form_f1_f2(planet, v0, gamma0, times, t_peri)
+    f1, f2 = remaining_reference === nothing ?
+        _edg_closed_form_f1_f2(planet, v0, gamma0, times, t_peri) :
+        _edg_closed_form_f1_f2(planet, remaining_reference.entry_speed,
+            remaining_reference.entry_gamma, times .+ remaining_reference.phase, t_peri)
     epsilon = f1 .+
         f2 .* config.max_alpha_rad .* area_panels ./ area_total .+
         f2 .* (pi / 2) .* area_spacecraft ./ area_total
     k1 = cost_2 .+ (1.0 ./ (planet.Rp_e .+ h))
-    k2 = (cost_1 .* cost_3) .* (1.0 .- times ./ t_peri)
+    k2 = remaining_reference === nothing ?
+        (cost_1 .* cost_3) .* (1.0 .- times ./ t_peri) : cost_1 .* vertical_rates
     k3 = -planet.g_ref .- epsilon
     discriminant = (k2 ./ k1).^2 .- 4.0 .* (k3 ./ k1)
     speed_root = (k2 ./ k1 .- sqrt.(discriminant)) ./ 2.0
     speed_offset = v0 - speed_root[1]
     speed .= max.(speed_root .+ speed_offset, eps(Float64))
-    gamma .= cost_3 .* (1.0 .- times ./ t_peri) ./ speed
+    gamma .= remaining_reference === nothing ?
+        cost_3 .* (1.0 .- times ./ t_peri) ./ speed : vertical_rates ./ speed
     for j in eachindex(times)
         sound_speed = sqrt(max(0.0, planet.γ * planet.R * temperature[j]))
         speed_ratio[j] = sound_speed > 0.0 ? sqrt(0.5 * planet.γ) * speed[j] / sound_speed : 0.0
@@ -1061,7 +1123,7 @@ function _edg_recompute_second_heat_load_switch(
 
     function residual(second_switch::Float64)
         if config.heat_load_switch_solver == :closed_form
-            base_track = _edg_closed_form_heat_load_trajectory(config, p, spacecraft, pos, vel, mass, t, env)
+            base_track = _edg_remaining_closed_form_heat_load_trajectory(config, p, spacecraft, pos, vel, mass, t, env)
             high_profile = _edg_constrained_heat_load_alpha_profile(
                 config,
                 p,
@@ -1074,7 +1136,7 @@ function _edg_recompute_second_heat_load_switch(
             )
             profile = [t + base_track.time[j] <= second_switch ? config.min_alpha_rad : high_profile[j]
                        for j in eachindex(base_track.time)]
-            track = _edg_closed_form_heat_load_trajectory(config, p, spacecraft, pos, vel, mass, t, env, profile)
+            track = _edg_remaining_closed_form_heat_load_trajectory(config, p, spacecraft, pos, vel, mass, t, env, profile)
             future_load = _edg_profile_heat_load(config, p, track, profile; heat_rate_control=false)
         else
             base_track = _edg_integrated_heat_load_trajectory(
@@ -1148,23 +1210,43 @@ function _edg_recompute_second_heat_load_switch(
 end
 
 function _edg_heat_load_security_required(
-    config,
-    p::ODEParams,
-    spacecraft,
-    pos::SVector{3, Float64},
-    vel::SVector{3, Float64},
-    mass_state::Float64,
-    env,
-    heat_load_j_cm2::Float64,
-    t::Float64,
+    config, p::ODEParams, spacecraft, pos::SVector{3, Float64},
+    vel::SVector{3, Float64}, mass_state::Float64, env,
+    heat_load_j_cm2::Float64, t::Float64;
+    planned_switches::NTuple{2, Float64}=(Inf, Inf),
 )
     mass = _edg_predict_mass(spacecraft, mass_state)
-    track = _edg_closed_form_heat_load_trajectory(config, p, spacecraft, pos, vel, mass, t, env)
-    low_profile = fill(config.min_alpha_rad, length(track.time))
-    # The track starts at the current state: every sample belongs to the remainder.
-    remaining_load = _edg_profile_heat_load(config, p, track, low_profile; heat_rate_control=false)
-    return heat_load_j_cm2 + remaining_load > config.heat_load_limit_j_cm2,
-        t + last(track.time)
+    track = _edg_remaining_closed_form_heat_load_trajectory(config, p, spacecraft, pos, vel, mass, t, env)
+    function planned_profile(track)
+        nominal = [isfinite(planned_switches[1]) && isfinite(planned_switches[2]) &&
+            planned_switches[1] < planned_switches[2] &&
+            planned_switches[1] <= t + tau <= planned_switches[2] ?
+            config.min_alpha_rad : config.max_alpha_rad for tau in track.time]
+        return _edg_constrained_heat_load_alpha_profile(config, p, spacecraft,
+            config.controlled_panel_links, track, nominal;
+            heat_rate_control=(:heat_rate in config.max_energy_submodes),
+            structural_control=(:structural_load in config.max_energy_submodes))
+    end
+    profile = planned_profile(track)
+    track = _edg_remaining_closed_form_heat_load_trajectory(config, p, spacecraft, pos, vel, mass, t, env, profile)
+    profile = planned_profile(track)
+    remaining_load = _edg_profile_heat_load(config, p, track, profile; heat_rate_control=false)
+    predicted_load = heat_load_j_cm2 + remaining_load
+    isfinite(predicted_load) || error("EDG planned-profile heat prediction is nonfinite.")
+    return predicted_load >= config.heat_load_limit_j_cm2, t + last(track.time)
+end
+
+function _edg_update_heat_load_security!(model, p, env, spacecraft, pos, vel, mass, load, t, i)
+    config, state = model.config, model.state
+    enabled = state.selected_mode[i] == :max_energy_depletion &&
+        config.heat_load_security_mode && :heat_load in config.max_energy_submodes &&
+        isfinite(config.heat_load_limit_j_cm2) && _edg_in_drag_passage(p, env)
+    # Journal VI.C rechecks the nominal planned command every update. The
+    # temporary override never rewrites that plan and is not a passage latch.
+    state.heat_load_security_active[i] = enabled && first(_edg_heat_load_security_required(
+        config, p, spacecraft, pos, vel, mass, env, load, t;
+        planned_switches=state.heat_load_switches_s[i]))
+    return nothing
 end
 
 @inline function _edg_heat_load_low_drag_active(model, t::Float64, i::Int)::Bool
@@ -1173,9 +1255,9 @@ end
     switches = state.heat_load_switches_s[i]
     return state.selected_mode[i] == :max_energy_depletion &&
         (:heat_load in config.max_energy_submodes) &&
-        isfinite(switches[1]) &&
+        (state.heat_load_security_active[i] || (isfinite(switches[1]) &&
         isfinite(switches[2]) &&
         switches[1] < switches[2] &&
         t >= switches[1] &&
-        t <= switches[2]
+        t <= switches[2]))
 end

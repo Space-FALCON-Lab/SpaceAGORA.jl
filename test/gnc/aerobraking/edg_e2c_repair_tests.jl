@@ -34,9 +34,10 @@ struct ODEParams
     args
 end
 const TRACK = Ref((time=[0.0, 30.0, 60.0], rates=[1.0, 1.0, 1.0]))
-const EXPECTED_PROFILE = Ref(0.0)
+const EXPECTED_PROFILE = Ref(pi/2)
+_edg_constrained_heat_load_alpha_profile(config,p,spacecraft,links,track,profile;kwargs...) = profile
 _edg_predict_mass(spacecraft, mass) = mass
-_edg_closed_form_heat_load_trajectory(args...) = TRACK[]
+_edg_remaining_closed_form_heat_load_trajectory(args...) = TRACK[]
 function _edg_profile_heat_rates(config, p, track, profile; heat_rate_control)
     @test !heat_rate_control
     @test profile == fill(EXPECTED_PROFILE[], length(track.time))
@@ -111,7 +112,7 @@ _edg_ephemeris_time(p, t) = t
 r_intor_p!(r, v, planet, t, ephemerides) = (r, v)
 rtolatlong(r, planet) = (norm(r) - planet.Rp, 0.0, 0.0)
 end
-load_definitions!(VacuumFixture, CONTROL, [:_edg_vacuum_drag_passage_exit, :_edg_vacuum_apoapsis_correction])
+load_definitions!(VacuumFixture, CONTROL, [:_edg_prediction_step, :_edg_prediction_advance, :_edg_prediction_event, :_edg_vacuum_drag_passage_exit, :_edg_vacuum_apoapsis_correction])
 
 module GuidanceFixture
 using StaticArrays
@@ -142,6 +143,15 @@ function _edg_vacuum_apoapsis_correction(args...)
         propagation_time_s=20000.0, event_reached=APO_OK[])
 end
 _edg_corrected_target_energy_from_apoapsis(args...) = -15.0
+_edg_switch_due(t, sw) = t >= sw
+_edg_replan_due(t, last, interval) = t >= last + interval
+function _edg_journal_targeting_plan(config,p,sc,pos,vel,mass,t;kwargs...)
+    EXIT_OK[] || error("did not reach outbound EI")
+    APO_CALLS[] += 1
+    APO_OK[] || error("did not reach apoapsis")
+    return (mode=:targeting,switch_s=t+30.0,target_energy_jkg=-15.0,
+        coast_energy_change_jkg=0.0,lower_energy_jkg=-20.0,upper_energy_jkg=-10.0)
+end
 end
 load_definitions!(GuidanceFixture, GUIDANCE, [:_edg_run_target_energy_bracketing!])
 
@@ -151,12 +161,12 @@ const VEL = SVector(1.0, 1.0, 0.0)
 @testset verbose=true "Gen-EDG E2c regressions" begin
 @testset "E2c repairs: security remainder" begin
     F = HeatFixture
-    config = (min_alpha_rad=0.0, heat_load_limit_j_cm2=100.0)
+    config = (min_alpha_rad=0.0, max_alpha_rad=pi/2, controlled_panel_links=(), max_energy_submodes=(:heat_load,), heat_load_limit_j_cm2=100.0)
     for temperature in (1.0, 150.0, 300.0), t in (0.0, 5000.0)
         p = F.ODEParams((environment_model=(planet=(T=temperature,),),))
         F.TRACK[] = (time=[0.0, 30.0, 60.0], rates=[1.0, 1.0, 1.0])
         @test F._edg_heat_load_security_required(config,p,nothing,POS,VEL,1.0,nothing,50.0,t) == (true,t+60.0)
-        @test F._edg_heat_load_security_required(config,p,nothing,POS,VEL,1.0,nothing,40.0,t) == (false,t+60.0)
+        @test F._edg_heat_load_security_required(config,p,nothing,POS,VEL,1.0,nothing,40.0,t) == (true,t+60.0) # Equality triggers the journal safeguard.
         # Heat concentrated near the current state must not be discarded.
         F.TRACK[] = (time=[0.0, 30.0, 60.0], rates=[3.0, 0.0, 0.0])
         @test F._edg_heat_load_security_required(config,p,nothing,POS,VEL,1.0,nothing,50.0,t)[1]
@@ -232,7 +242,7 @@ end
     F.FORCE[]=:turn_at_cap
     turn=F._edg_vacuum_apoapsis_correction(p,SVector(1e9,0.0,0.0),SVector(20000.0,0.0,0.0),1.0,0.0)
     @test turn.event_reached
-    @test turn.propagation_time_s == 20000.0
+    @test turn.propagation_time_s ≈ 20000.0 atol=1e-8 rtol=0.0
     F.FORCE[]=:central
     mu=3.986004418e14; rp=7e6; ra=9e6; a=(rp+ra)/2
     speed=sqrt(mu*(2/rp-1/a)); half_period=pi*sqrt(a^3/mu)
@@ -250,9 +260,10 @@ end
         state=(energy_bracketing_evaluated=[false],energy_bracketing_count=[0],
             target_energy_jkg=[0.0],target_perturbation_energy_change_jkg=[0.0],
             bracket_min_energy_jkg=[0.0],bracket_max_energy_jkg=[0.0],
-            targeting_active=[false],safe_low_drag=[false],selected_mode=[:unset])
+            targeting_active=[false],safe_low_drag=[false],selected_mode=[:unset],
+            targeting_switch_s=[Inf],last_switch_solve_t=[-Inf],targeting_diagnostics=NamedTuple[(status=:unplanned,)])
         prior=deepcopy(state)
-        config=(controlled_panel_links=(),max_energy_submodes=(),target_apoapsis_radius_m=10.0,guidance_modes=(:targeting,))
+        config=(controlled_panel_links=(),max_energy_submodes=(),target_apoapsis_radius_m=10.0,guidance_modes=(:targeting,),switch_recompute_interval_s=2.0)
         model=F.AerobrakingEnergyDepletionGuidanceModel(config,state)
         p=F.ODEParams((dynamics_model=(spacecraft=[nothing],),environment_model=(planet=nothing,)))
         u=(pos=POS,vel=VEL,mass=1.0)
@@ -263,7 +274,10 @@ end
             @test state.target_energy_jkg == [-15.0]
             @test state.selected_mode == [:targeting]
             F._edg_run_target_energy_bracketing!(model,u,p,11.0,1)
-            @test F.APO_CALLS[] == 1 # Still cached after success.
+            @test F.APO_CALLS[] == 1 # Cached inside the two-second interval.
+            F._edg_run_target_energy_bracketing!(model,u,p,12.0,1)
+            @test F.APO_CALLS[] == 2
+            @test state.last_switch_solve_t == [12.0]
         else
             err = try
                 F._edg_run_target_energy_bracketing!(model,u,p,10.0,1)

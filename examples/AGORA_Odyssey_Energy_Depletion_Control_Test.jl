@@ -543,45 +543,51 @@ csv_path = joinpath(args.simulation_settings.results_directory, "simulation_resu
 if args.simulation_settings.results && isfile(csv_path)
     df = CSV.read(csv_path, DataFrame)
     println("Saved $(nrow(df)) samples to $(abspath(csv_path))")
-    final_orbit = _orbit_metrics_from_row(df[end, :], planet)
-    drag_indices = _drag_passage_indices(df)
-    drag_magnitude = _series_magnitude(df.sc1_drag_1, df.sc1_drag_2, df.sc1_drag_3)
-    println("Validation phase = $(phase), heat-load solver = $(heat_load_solver)")
-    println("Maximum controlled-panel heat rate = $(maximum(df.sc1_edg_controlled_heat_rate_w_cm2[drag_indices])) W/cm^2 (limit $(limit_qdot))")
-    println("Maximum controlled-panel heat load = $(maximum(df.sc1_edg_controlled_heat_load_j_cm2[drag_indices])) J/cm^2 (limit $(limit_q))")
-    println("Maximum all-link heat rate = $(maximum(df.sc1_heat_rate[drag_indices])) W/cm^2")
-    println("Maximum all-link heat load = $(maximum(df.sc1_heat_load[drag_indices])) J/cm^2")
-    println("Maximum drag = $(maximum(drag_magnitude[drag_indices])) N")
-    finite_structural_loads = filter(isfinite, df.sc1_edg_structural_load_pa[drag_indices])
-    if !isempty(finite_structural_loads)
-        println("Maximum equivalent structural load = $(maximum(finite_structural_loads)) Pa (limit $(limit_dyn_pressure))")
-    end
-    finite_switch_rows = findall(
-        isfinite.(df.sc1_edg_heat_load_switch_s_1) .&
-        isfinite.(df.sc1_edg_heat_load_switch_s_2) .&
-        (df.sc1_edg_heat_load_switch_s_2 .> df.sc1_edg_heat_load_switch_s_1),
-    )
-    if !isempty(finite_switch_rows)
-        switch_row = last(finite_switch_rows)
-        println("Heat-load switches = ($(df.sc1_edg_heat_load_switch_s_1[switch_row]), $(df.sc1_edg_heat_load_switch_s_2[switch_row])) s")
-    end
-    println("Heat-load security activated = $(maximum(df.sc1_edg_heat_load_security_active) > 0.5)")
-    println("Selected guidance mode = $(_edg_mode_name(df.sc1_edg_mode_code[end]))")
-    println("Targeting active = $(df.sc1_edg_targeting_active[end] > 0.5)")
-    println("Targeting switch time = $(df.sc1_edg_targeting_switch_s[end]) s")
-    println("Target energy = $(df.sc1_edg_target_energy_jkg[end]) J/kg")
-    println("Targeting energy bracket = ($(df.sc1_edg_bracket_min_energy_jkg[end]), $(df.sc1_edg_bracket_max_energy_jkg[end])) J/kg")
-    println("Final specific orbital energy = $(final_orbit.energy_jkg) J/kg")
-    println("Final apoapsis radius = $(final_orbit.apoapsis_radius_m) m")
-    println("Target apoapsis radius = $(energy_config.target_apoapsis_radius_m) m")
-    plot_paths = _save_energy_depletion_plots(
-        csv_path,
-        joinpath(args.simulation_settings.results_directory, "energy_depletion_plots"),
-        planet,
-    )
-    println("Saved plots:")
-    for path in values(plot_paths)
-        println("  $(abspath(path))")
+    if SpaceAGORA.TelemetryVerification._example_smoke_enabled()
+        # This deliberately short startup run can finish before atmospheric entry.
+        # Complete-passage diagnostics belong to the unchanged scientific run below.
+        println("EDG smoke completed at $(df.time[end]) s; full-passage diagnostics were not requested.")
+    else
+        final_orbit = _orbit_metrics_from_row(df[end, :], planet)
+        drag_indices = _drag_passage_indices(df)
+        drag_magnitude = _series_magnitude(df.sc1_drag_1, df.sc1_drag_2, df.sc1_drag_3)
+        println("Validation phase = $(phase), heat-load solver = $(heat_load_solver)")
+        println("Maximum controlled-panel heat rate = $(maximum(df.sc1_edg_controlled_heat_rate_w_cm2[drag_indices])) W/cm^2 (limit $(limit_qdot))")
+        println("Maximum controlled-panel heat load = $(maximum(df.sc1_edg_controlled_heat_load_j_cm2[drag_indices])) J/cm^2 (limit $(limit_q))")
+        println("Maximum all-link heat rate = $(maximum(df.sc1_heat_rate[drag_indices])) W/cm^2")
+        println("Maximum all-link heat load = $(maximum(df.sc1_heat_load[drag_indices])) J/cm^2")
+        println("Maximum drag = $(maximum(drag_magnitude[drag_indices])) N")
+        finite_structural_loads = filter(isfinite, df.sc1_edg_structural_load_pa[drag_indices])
+        if !isempty(finite_structural_loads)
+            println("Maximum equivalent structural load = $(maximum(finite_structural_loads)) Pa (limit $(limit_dyn_pressure))")
+        end
+        finite_switch_rows = findall(
+            isfinite.(df.sc1_edg_heat_load_switch_s_1) .&
+            isfinite.(df.sc1_edg_heat_load_switch_s_2) .&
+            (df.sc1_edg_heat_load_switch_s_2 .> df.sc1_edg_heat_load_switch_s_1),
+        )
+        if !isempty(finite_switch_rows)
+            switch_row = last(finite_switch_rows)
+            println("Heat-load switches = ($(df.sc1_edg_heat_load_switch_s_1[switch_row]), $(df.sc1_edg_heat_load_switch_s_2[switch_row])) s")
+        end
+        println("Heat-load security activated = $(maximum(df.sc1_edg_heat_load_security_active) > 0.5)")
+        println("Selected guidance mode = $(_edg_mode_name(df.sc1_edg_mode_code[end]))")
+        println("Targeting active = $(df.sc1_edg_targeting_active[end] > 0.5)")
+        println("Targeting switch time = $(df.sc1_edg_targeting_switch_s[end]) s")
+        println("Target energy = $(df.sc1_edg_target_energy_jkg[end]) J/kg")
+        println("Targeting energy bracket = ($(df.sc1_edg_bracket_min_energy_jkg[end]), $(df.sc1_edg_bracket_max_energy_jkg[end])) J/kg")
+        println("Final specific orbital energy = $(final_orbit.energy_jkg) J/kg")
+        println("Final apoapsis radius = $(final_orbit.apoapsis_radius_m) m")
+        println("Target apoapsis radius = $(energy_config.target_apoapsis_radius_m) m")
+        plot_paths = _save_energy_depletion_plots(
+            csv_path,
+            joinpath(args.simulation_settings.results_directory, "energy_depletion_plots"),
+            planet,
+        )
+        println("Saved plots:")
+        for path in values(plot_paths)
+            println("  $(abspath(path))")
+        end
     end
 end
 println("COMPUTATIONAL TIME = $(t) s")

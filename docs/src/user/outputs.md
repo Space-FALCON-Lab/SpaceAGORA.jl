@@ -363,6 +363,60 @@ window. Supply a supported filename extension (for example `.png` or `.pdf`)
 and an existing destination directory; the input CSV cannot be the destination.
 This opt-in helper does not run a simulation or change any existing example plots.
 
+### Body angular-rate history (explicit save fields)
+
+Body rates are not included by `default_save_fields`, even for orientation runs.
+For an existing orientation-enabled configuration `args`, explicitly record the
+body angular velocity state in radians per second with this save-field recipe:
+
+```julia
+using SpaceAGORA
+using StaticArrays
+SC = SpaceAGORA.SimulationModel.SimulationCallbacks
+body_rate_field = SC.SaveField(
+    :body_rate_rad_s,
+    (u, t, integrator) -> [SVector{3, Float64}(sc.ω) for sc in u.sc];
+    per_satellite=true,
+    column_prefix="body_rate",
+)
+fields = [SC.default_save_fields(args)..., body_rate_field]
+# Supply fields to your already configured run:
+# run_simulation(args; save_fields=fields)
+```
+
+This records `scN_body_rate_1..3` in body-axis component order. `N` is the
+spacecraft's one-based list position, not its model ID. The CYGNSS slew demo
+already records the same schema for its single spacecraft. Existing custom
+`:omega` save fields have a different schema and are not inferred as aliases.
+
+To plot an existing CSV, use the example helpers explicitly:
+
+```julia
+include("examples/common.jl")
+include("examples/aerobraking_mission_plot_utils.jl")
+body_rate_history = _save_body_rate_history_plot(
+    "results/my_run/simulation_results.csv";
+    spacecraft_index=1,
+    output_path="results/my_run/body_rate.png",
+)
+```
+
+The helper requires `time` in seconds and all three selected body-rate columns
+in rad/s. It plots time in minutes and angular velocity in deg/min, using the
+legacy conversion `rad2deg.(rates) .* 60` and labels `ω1`, `ω2`, `ω3` in red,
+green and blue. It preserves signs and row order, including repeated or
+nonmonotone times; it neither derives rates from quaternions nor rotates frames.
+
+The returned `rates_rad_s` contains copies of the saved values; `components`
+contains the displayed deg/min values. The other fields are `time_min`,
+`labels`, `colors`, `spacecraft_index`, `plot` and `output_path`.
+`_body_rate_history_samples(df; spacecraft_index=1)` prepares the arrays without
+rendering. Empty input, missing columns, invalid selected values or nonfinite
+converted values produce an error. Other spacecraft's columns are not inspected.
+Supply a filename extension and an existing destination directory. The input
+CSV, including filesystem aliases, cannot be the destination. No plot window
+or simulation is started by the plotting helper.
+
 ### Visualization fields
 
 These columns are added automatically when `simulation_settings.save_visualization_scene = true`

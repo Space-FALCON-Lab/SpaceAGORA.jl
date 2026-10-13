@@ -39,6 +39,32 @@ function _save_quaternion_history_plot(csv_path::String; spacecraft_index, outpu
     return (; samples..., plot=p, output_path=output_path)
 end
 
+
+"""
+    _save_body_rate_history_plot(csv_path::String; spacecraft_index, output_path::String)
+
+Save three explicitly recorded body-rate traces from a simulation-results CSV.
+Require `time` in seconds and `scN_body_rate_1..3` in rad/s; display minutes and
+legacy deg/min. Both the positional spacecraft index and destination are explicit.
+Return raw and displayed samples, plot and path without displaying a window.
+"""
+function _save_body_rate_history_plot(csv_path::String; spacecraft_index, output_path::String)
+    isempty(strip(output_path)) && throw(ArgumentError("output_path must name a body-rate plot file."))
+    isempty(splitext(output_path)[2]) && throw(ArgumentError("output_path must include a plot file extension, such as .png or .pdf."))
+    resolved_output_path = abspath(expanduser(output_path))
+    (abspath(csv_path) == resolved_output_path ||
+     (ispath(resolved_output_path) && Base.samefile(csv_path, resolved_output_path))) &&
+        throw(ArgumentError("output_path must differ from the input CSV path, including filesystem aliases."))
+    samples = _body_rate_history_samples(_read_simulation_results(csv_path); spacecraft_index)
+    p = plot(; xlabel="Time [min]", ylabel="Angular Velocity (deg/min)", legend=:best, grid=true)
+    for i in 1:3
+        plot!(p, samples.time_min, samples.components[i];
+              label=samples.labels[i], color=samples.colors[i], linewidth=2.0)
+    end
+    savefig(p, resolved_output_path)
+    return (; samples..., plot=p, output_path=output_path)
+end
+
 Base.@kwdef struct AerobrakingMissionSpiceConfig
     mission_name::String
     target::String

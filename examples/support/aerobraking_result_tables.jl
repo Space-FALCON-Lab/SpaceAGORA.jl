@@ -66,3 +66,50 @@ function _quaternion_history_samples(df::DataFrame; spacecraft_index)
             colors=(:red, :green, :blue, :orange),
             spacecraft_index=spacecraft_index)
 end
+
+
+"""
+    _body_rate_history_samples(df::DataFrame; spacecraft_index)
+
+Prepare explicitly saved `scN_body_rate_1..3` body angular rates in rad/s.
+Copy the raw rates and preserve row order; convert time to minutes and displayed
+rates to deg/min with the legacy `rad2deg.(rates) .* 60` operation. These columns
+are custom save fields, not part of the default orientation output.
+"""
+function _body_rate_history_samples(df::DataFrame; spacecraft_index)
+    spacecraft_index isa Integer && !(spacecraft_index isa Bool) && spacecraft_index > 0 ||
+        throw(ArgumentError("spacecraft_index must be a positive one-based integer (the spacecraft position, not model.id)."))
+    columns = ntuple(i -> Symbol("sc$(spacecraft_index)_body_rate_$(i)"), 3)
+    for column in (:time, columns...)
+        column in propertynames(df) || throw(ArgumentError(
+            "Body-rate history requires column $(column). Explicitly save all three body angular rates in rad/s with column_prefix=\"body_rate\"; default save fields do not include them."))
+    end
+    nrow(df) > 0 || throw(ArgumentError("Body-rate history requires at least one saved row."))
+    for column in (:time, columns...)
+        for (row, value) in enumerate(df[!, column])
+            value isa Real && !(value isa Bool) && isfinite(value) || throw(ArgumentError(
+                "Body-rate history column $(column), row $(row) must contain a finite real number; got $(repr(value))."))
+        end
+    end
+    time_min = copy(df[!, :time]) ./ 60
+    for (row, value) in enumerate(time_min)
+        isfinite(value) || throw(ArgumentError(
+            "Body-rate history column time, row $(row) is nonfinite after conversion to minutes."))
+    end
+    rates_rad_s = ntuple(i -> copy(df[!, columns[i]]), 3)
+    # Keep the legacy operation order, including its ordinary numeric rounding.
+    # These are stored body rates, never derivatives inferred from quaternion data.
+    components = ntuple(i -> rad2deg.(rates_rad_s[i]) .* 60, 3)
+    for i in 1:3
+        for (row, value) in enumerate(components[i])
+            isfinite(value) || throw(ArgumentError(
+                "Body-rate history column $(columns[i]), row $(row) is nonfinite after conversion to deg/min."))
+        end
+    end
+    return (time_min=time_min,
+            rates_rad_s=rates_rad_s,
+            components=components,
+            labels=("ω1", "ω2", "ω3"),
+            colors=(:red, :green, :blue),
+            spacecraft_index=spacecraft_index)
+end

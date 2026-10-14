@@ -1,0 +1,197 @@
+const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
+
+function _read(rel)
+    path = joinpath(REPO_ROOT, rel)
+    isfile(path) || error("Missing required file: $rel")
+    return read(path, String)
+end
+
+setup_src    = _read(joinpath("src", "orchestration", "simulation", "engine", "setup.jl"))
+dynamics_src = _read(joinpath("src", "orchestration", "simulation", "engine", "dynamics_rhs.jl"))
+assembly_src = _read(joinpath("src", "orchestration", "simulation", "callbacks", "density_callbacks", "assembly.jl"))
+types_src    = _read(joinpath("src", "orchestration", "parallel", "policy", "types.jl"))
+obs_src      = _read(joinpath("src", "orchestration", "parallel", "policy", "observation_tracking.jl"))
+telemetry_src = _read(joinpath("src", "orchestration", "parallel", "policy", "policy_telemetry.jl"))
+pp_src       = _read(joinpath("src", "orchestration", "parallel", "policy", "parallel_policy.jl"))
+
+routing_src = _read(joinpath("src", "orchestration", "parallel", "routing", "effector_routing.jl"))
+cost_counts_src = _read(joinpath("src", "orchestration", "parallel", "cost", "work_counts.jl"))
+for name in ("batchable_effector", "harmonics_prepass_effector", "aero_prepass_effector")
+    occursin("const _$name = SimulationModel.EffectorRouting.$name", dynamics_src) ||
+        error("Engine routing predicate $name does not alias the shared owner")
+    occursin("const _cost_$name = EffectorRouting.$name", cost_counts_src) ||
+        error("Cost routing predicate $name does not alias the shared owner")
+end
+
+# ── §1/§2: Satellite-batch route contract ───────────────────────────────────
+# _satellite_batch_saturates_pool must exist and be used in auto routing.
+occursin("function _satellite_batch_saturates_pool(active_sats::Int, budget::Int)::Bool", setup_src) ||
+    error("_satellite_batch_saturates_pool helper is missing from setup.jl")
+occursin("_satellite_batch_saturates_pool(active_sats, budget)", setup_src) ||
+    error("_satellite_batch_saturates_pool is not called in the auto routing section of setup.jl")
+
+# _with_serial_effector_decision must exist and be used.
+occursin("function _with_serial_effector_decision(effector_decision)", setup_src) ||
+    error("_with_serial_effector_decision helper is missing from setup.jl")
+occursin("_with_serial_effector_decision(effector_decision)", setup_src) ||
+    error("_with_serial_effector_decision is not called in setup.jl")
+
+# No old-style inline serial effector decision tuples (they were replaced by the helper).
+!occursin("effector_decision=(use_threads=false, allotment=1, mode=", setup_src) ||
+    error("Old-style inline serial effector_decision tuple found in setup.jl — use _with_serial_effector_decision instead")
+
+# Every satellite_batch return must use the serial coercion helper (count parity).
+n_satellite_batch = length(collect(eachmatch(r"mode=:satellite_batch", setup_src)))
+n_serial_coercion = length(collect(eachmatch(r"_with_serial_effector_decision\(effector_decision\)", setup_src)))
+n_serial_coercion >= n_satellite_batch ||
+    error("Fewer _with_serial_effector_decision calls ($n_serial_coercion) than mode=:satellite_batch returns ($n_satellite_batch) in setup.jl — a satellite_batch route may be missing the serial coercion")
+
+# ── §2: dominant_axis field ──────────────────────────────────────────────────
+occursin("dominant_axis=:serial", setup_src) ||
+    error("dominant_axis=:serial is missing from _rhs_execution_plan in setup.jl")
+occursin("dominant_axis=:satellite", setup_src) ||
+    error("dominant_axis=:satellite is missing from _rhs_execution_plan in setup.jl")
+occursin("dominant_axis=:flat_effector", setup_src) ||
+    error("dominant_axis=:flat_effector is missing from _rhs_execution_plan in setup.jl")
+occursin("dominant_axis=:per_satellite_inner_effector", setup_src) ||
+    error("dominant_axis=:per_satellite_inner_effector is missing from _rhs_execution_plan in setup.jl")
+
+# ── §5: Per-worker work threshold gate ──────────────────────────────────────
+occursin("function _rhs_flat_work_per_worker_ns_threshold()", setup_src) ||
+    error("_rhs_flat_work_per_worker_ns_threshold is missing from setup.jl")
+occursin("SPACEAGORA_RHS_FLAT_WORK_PER_WORKER_NS_THRESHOLD", setup_src) ||
+    error("SPACEAGORA_RHS_FLAT_WORK_PER_WORKER_NS_THRESHOLD env var is not wired up in setup.jl")
+# The thresholds are read from the run-scoped env snapshot (RhsPlanEnvConfig)
+# rather than re-parsed from ENV per RHS call.
+occursin("estimated_work_per_worker >= env.flat_work_per_worker_ns_threshold", setup_src) ||
+    error("Per-worker work threshold gate is not used in flat route selection in setup.jl")
+# The per-worker gate must be part of the compound condition that selects the flat route,
+# not a standalone guard — verify both total and per-worker gates appear together.
+occursin("estimated_total_work_ns   >= env.flat_work_ns_threshold &&\n        estimated_work_per_worker >= env.flat_work_per_worker_ns_threshold", setup_src) ||
+    error("Total and per-worker work threshold gates are not paired correctly in setup.jl")
+
+# ── §3: Staged density callback split ───────────────────────────────────────
+occursin("function _requires_density_for_rhs(", assembly_src) ||
+    error("_requires_density_for_rhs is missing from assembly.jl")
+occursin("function _requires_staged_density_callback(", assembly_src) ||
+    error("_requires_staged_density_callback is missing from assembly.jl")
+# _requires_density_callback must still exist (backward-compat alias for tests).
+occursin("function _requires_density_callback(", assembly_src) ||
+    error("_requires_density_callback backward-compat alias is missing from assembly.jl")
+# get_callbacks must use the staged variant, not the raw density check.
+occursin("_requires_staged_density_callback(effectors, args)", assembly_src) ||
+    error("get_callbacks in assembly.jl is not gating density callback installation with _requires_staged_density_callback")
+# Staged variant must check at least one non-RHS consumer.
+occursin("ParallelPolicy.parse_bool_env(\"SPACEAGORA_FORCE_DENSITY_CALLBACK\"", assembly_src) ||
+    error("_requires_staged_density_callback does not check SPACEAGORA_FORCE_DENSITY_CALLBACK env var in assembly.jl")
+occursin("_requires_thermal_callback(effectors, args)", assembly_src) ||
+    error("_requires_staged_density_callback does not check _requires_thermal_callback in assembly.jl")
+occursin("_requires_drag_state_callback(effectors, args)", assembly_src) ||
+    error("_requires_staged_density_callback does not check _requires_drag_state_callback in assembly.jl")
+
+# ── §6: Batchable effector trait ────────────────────────────────────────────
+occursin("@inline batchable_effector(::Any)::Bool = false", routing_src) ||
+    error("Fallback _batchable_effector(::Any) = false trait is missing from effector_routing.jl")
+occursin("@inline batchable_effector(::NBodyGravityModel)::Bool = true", routing_src) ||
+    error("NBodyGravityModel is not marked as batchable in effector_routing.jl")
+occursin("@inline batchable_effector(::SolarRadiationPressureModel)::Bool = true", routing_src) ||
+    error("SolarRadiationPressureModel is not marked as batchable in effector_routing.jl")
+
+# GRAM/aero must NOT be marked batchable.
+!occursin("batchable_effector(::AerodynamicCoefficientfM)::Bool = true", routing_src) ||
+    error("AerodynamicCoefficientfM is incorrectly marked as batchable — GRAM density is per-satellite")
+
+# Batchable pre-pass: only runs on the unpartitioned path.
+occursin("partition === nothing && _has_any_batchable_effector(dynamic_effectors)", dynamics_src) ||
+    error("Batchable pre-pass is not gated by 'partition === nothing' in dynamics_rhs.jl")
+
+# Early exit when all effectors are batchable.
+occursin("_count_non_batchable_effectors(dynamic_effectors) == 0 && return nothing", dynamics_src) ||
+    error("Early exit for all-batchable effector set is missing from dynamics_rhs.jl")
+
+# Flat queue workers must skip every effector a pre-pass already wrote into
+# totals -- batchable kernels, the harmonics SIMD pre-pass and the aerodynamic
+# pre-pass -- or the constellation double-counts it. Matched with whitespace
+# collapsed, since the guard spans lines.
+const _RHS_GATE_COLLAPSED = replace(dynamics_src, r"\s+" => " ")
+const _RHS_GATE_PREPASS_SKIP = "partition === nothing && (_batchable_effector(effector) || _harmonics_prepass_effector(effector) || _aero_prepass_effector(effector))"
+occursin(_RHS_GATE_PREPASS_SKIP * " && return nothing", _RHS_GATE_COLLAPSED) ||
+    error("Non-packet flat queue worker is missing the combined pre-pass skip guard (batchable, harmonics, aero) in dynamics_rhs.jl")
+occursin(_RHS_GATE_PREPASS_SKIP * " && continue", _RHS_GATE_COLLAPSED) ||
+    error("Packet flat queue worker is missing the combined pre-pass skip guard (batchable, harmonics, aero) in dynamics_rhs.jl")
+# The queue's per-effector selection mask must apply the same skip.
+occursin("!(" * _RHS_GATE_PREPASS_SKIP * ")", _RHS_GATE_COLLAPSED) ||
+    error("Flat queue selection mask does not skip pre-pass effectors (batchable, harmonics, aero) in dynamics_rhs.jl")
+
+# needs_state_sample must be true whenever batchable effectors are present so that
+# pos_buffers/mass_buffers are prefilled before the batchable pre-pass runs.
+occursin("_has_any_batchable_effector(dynamic_effectors)", dynamics_src) ||
+    error("needs_state_sample guard does not include _has_any_batchable_effector check in dynamics_rhs.jl")
+
+# Batch kernels for NBody and SRP must exist.
+occursin("function _accumulate_nbody_flat_batch!", dynamics_src) ||
+    error("_accumulate_nbody_flat_batch! kernel is missing from dynamics_rhs.jl")
+occursin("function _accumulate_srp_flat_batch!", dynamics_src) ||
+    error("_accumulate_srp_flat_batch! kernel is missing from dynamics_rhs.jl")
+occursin("function _accumulate_batchable_effector_flat!", dynamics_src) ||
+    error("_accumulate_batchable_effector_flat! dispatch function is missing from dynamics_rhs.jl")
+
+# ── §6b: Harmonics SIMD pre-pass ────────────────────────────────────────────
+# The harmonics pre-pass runs the SIMD batch kernel in the multi-effector flat
+# queue path, writing directly into totals without re-zeroing the matrix.
+occursin("@inline harmonics_prepass_effector(::Any)::Bool = false", routing_src) ||
+    error("Fallback _harmonics_prepass_effector(::Any) = false trait is missing from effector_routing.jl")
+occursin("@inline harmonics_prepass_effector(::GravitationalHarmonicsModel)::Bool = true", routing_src) ||
+    error("GravitationalHarmonicsModel is not marked as harmonics-prepass in effector_routing.jl")
+occursin("function _has_any_harmonics_effector(", dynamics_src) ||
+    error("_has_any_harmonics_effector helper is missing from dynamics_rhs.jl")
+occursin("function _count_flat_queue_only_effectors(", dynamics_src) ||
+    error("_count_flat_queue_only_effectors helper is missing from dynamics_rhs.jl")
+
+# Harmonics pre-pass must be gated by partition === nothing.
+occursin("partition === nothing && _has_any_harmonics_effector(dynamic_effectors)", dynamics_src) ||
+    error("Harmonics pre-pass is not gated by 'partition === nothing' in dynamics_rhs.jl")
+
+# Early exit when no flat queue work remains after both pre-passes.
+occursin("_count_flat_queue_only_effectors(dynamic_effectors) == 0 && return nothing", dynamics_src) ||
+    error("Early exit for all-pre-passed effector set is missing from dynamics_rhs.jl")
+
+# _accumulate_harmonics_flat_batch! writes the harmonics contribution into the
+# per-effector slot of every satellite (eff_idx keyword); the flat driver sums
+# the slots in effector order afterwards, so the pre-pass never accumulates
+# into totals itself.
+occursin("eff_idx::Int=1,", dynamics_src) ||
+    error("_accumulate_harmonics_flat_batch! is missing the eff_idx::Int keyword in dynamics_rhs.jl")
+occursin("_accumulate_harmonics_flat_batch!(sc_state, p, t, effector, plan; eff_idx=eff_idx)", dynamics_src) ||
+    error("Harmonics pre-pass does not call _accumulate_harmonics_flat_batch! with eff_idx in dynamics_rhs.jl")
+occursin("_reduce_flat_effector_slots!(", dynamics_src) ||
+    error("Flat driver does not reduce the per-effector slots in effector order in dynamics_rhs.jl")
+
+# _prepare_rhs_flat_work_items! must exclude pre-pass effectors from the work
+# list: it builds the list from the selection mask checked in the pre-pass skip
+# section above.
+occursin("selected = _flat_selection_mask(dynamic_effectors, partition)", dynamics_src) ||
+    error("_prepare_rhs_flat_work_items! does not build its work list from _flat_selection_mask in dynamics_rhs.jl")
+
+# ── §8: PolicyTelemetry proposed / dispatched / discarded counters ──────────
+occursin("policy_threading_proposed_total::Int64", types_src) ||
+    error("policy_threading_proposed_total is missing from PolicyTelemetry in types.jl")
+occursin("policy_threading_dispatched_total::Int64", types_src) ||
+    error("policy_threading_dispatched_total is missing from PolicyTelemetry in types.jl")
+occursin("policy_discarded_by_route_total::Int64", types_src) ||
+    error("policy_discarded_by_route_total is missing from PolicyTelemetry in types.jl")
+
+occursin("policy_threading_proposed_total += use_threads ? 1 : 0", telemetry_src) ||
+    error("policy_threading_proposed_total is not incremented in policy_telemetry.jl")
+occursin("policy_threading_dispatched_total += 1", obs_src) ||
+    error("policy_threading_dispatched_total is not incremented in record_policy_observation! in observation_tracking.jl")
+occursin("function record_route_discard!()", obs_src) ||
+    error("record_route_discard! is missing from observation_tracking.jl")
+occursin("policy_discarded_by_route_total += 1", obs_src) ||
+    error("policy_discarded_by_route_total is not incremented in record_route_discard! in observation_tracking.jl")
+
+# record_route_discard! must be exported from the ParallelPolicy module.
+occursin("record_route_discard!", pp_src) ||
+    error("record_route_discard! is not referenced in parallel_policy.jl (check export list)")
+
+println("ci_rhs_parallel_route_gate_ok")

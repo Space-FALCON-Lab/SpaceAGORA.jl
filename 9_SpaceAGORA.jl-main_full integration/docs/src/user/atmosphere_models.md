@@ -1,0 +1,561 @@
+# Atmosphere Models
+
+Use this page when you need to choose and configure an atmosphere model for a
+no-GRAM or open-data simulation.
+
+This page is for users who have already completed the quickstart and want to
+move beyond the vacuum baseline to a higher-fidelity open-data atmosphere.
+
+Shortest successful command:
+
+```text
+julia --project=. examples/AGORA_Basic_Quickstart.jl
+```
+
+What to read next:
+
+- [Assets & Modes](../assets.md)
+- [Simulation Configuration](simulation_configuration.md)
+- [GRAMSuite Setup](gramsuite_setup.md)
+
+## Choosing a model
+
+| Model | Fidelity | Assets required | Notes |
+|---|---|---|---|
+| `NoAtmosphereModel()` | Vacuum | None | Default quickstart baseline |
+| `ExponentialAtmosphereModel(planet)` | Low | None | Single scale height; valid near one altitude band |
+| `PiecewiseExponentialAtmosphereModel(...)` | Low–medium | None | Multi-layer; better altitude-shape fit |
+| `NRLMSISE00AtmosphereModel(...)` | Medium | None (fixed indices) or internet (live indices) | Standard empirical model; ~0–1000 km |
+| `GRAMGridAtmosphereModel(...)` | Fixed snapshot | GRAMSuite with its grid API and a trusted grid payload | Native-free evaluation within documented grid coverage |
+| `GRAMNearSurfaceAtmosphereModel(...)` | Fixed snapshot | GRAMSuite with its near-surface API and a trusted near-surface payload | Native-free Mars atmosphere from 5 m above the surface to the payload's top; format 1 returns zero wind, explicit format 2 returns stored winds |
+| `GRAMAtmosphereModel(...)` | High | Licensed NASA GRAM | Requires GRAM asset setup |
+
+For GRAM setup, see [GRAMSuite Setup](gramsuite_setup.md).
+
+---
+
+## NoAtmosphereModel
+
+Vacuum baseline. Returns zero density and zero wind at every altitude. This is
+the recommended starting model for orbit propagation and for validating
+installation before introducing atmosphere effects.
+
+```julia
+density_model = NoAtmosphereModel()
+```
+
+---
+
+## ExponentialAtmosphereModel
+
+Single-scale-height analytic model with constant temperature and zero wind.
+
+**Planet-default constructor** — uses reference values from the built-in planet
+object:
+
+```julia
+planet = make_no_gram_planet(:earth)
+density_model = ExponentialAtmosphereModel(planet)
+```
+
+Supported planets: `:earth`, `:mars`, `:venus`.
+
+**Manual constructor** — specify the parameters directly:
+
+```julia
+density_model = ExponentialAtmosphereModel(
+    ρ_ref,   # reference density at h_ref, kg/m³
+    h_ref,   # reference altitude, m
+    H;       # scale height, m
+    temperature_k = 200.0,          # constant temperature, K
+    valid_min_altitude_m = h_ref,   # advisory lower bound, m
+    valid_max_altitude_m = h_ref + 5*H  # advisory upper bound, m
+)
+```
+
+**Important:** the model evaluates the same exponential function outside the
+advisory valid band — it does not clamp or error. The default advisory range is
+`[h_ref, h_ref + 5H]`. Use `PiecewiseExponentialAtmosphereModel` if your
+trajectory spans a wide altitude range.
+
+---
+
+## PiecewiseExponentialAtmosphereModel
+
+Multi-layer exponential atmosphere. Each layer has its own reference density,
+reference altitude, and scale height. This gives a better fit over a wide
+altitude range while still requiring no external data.
+
+```julia
+# Example: two-layer Earth model
+h_breaks_m = [80e3, 200e3, 600e3]    # N+1 breakpoints for N layers (strictly increasing), m
+ρ_refs     = [6e-5,  2e-10]          # reference density per layer, kg/m³
+Hs         = [7e3,   50e3]           # scale height per layer, m
+
+density_model = PiecewiseExponentialAtmosphereModel(
+    h_breaks_m,
+    ρ_refs,
+    Hs;
+    h_refs = nothing,                  # optional; defaults to lower breakpoint of each layer
+    temperature_k = 200.0,
+    valid_min_altitude_m = 80e3,       # optional; defaults to h_breaks_m[1]
+    valid_max_altitude_m = 600e3       # optional; defaults to h_breaks_m[end]
+)
+```
+
+Array lengths must satisfy: `length(h_breaks_m) == N+1`, `length(ρ_refs) == N`,
+`length(Hs) == N` where `N` is the number of layers. Breakpoints must be
+strictly increasing.
+
+For altitudes below the first breakpoint or above the last, the nearest layer
+is used for extrapolation.
+
+---
+
+## NRLMSISE00AtmosphereModel
+
+Standard empirical atmosphere model backed by `SatelliteToolboxAtmosphericModels.jl`. Covers
+approximately 0–1000 km altitude. Accepts three input modes:
+
+### Fixed geophysical indices
+
+Simplest and most reproducible — use for studies where solar activity should
+be held constant:
+
+```julia
+density_model = NRLMSISE00AtmosphereModel(
+    f107a = 150.0,   # 81-day average solar flux (SFU)
+    f107  = 150.0,   # previous-day solar flux (SFU)
+    ap    = 4.0      # geomagnetic index (scalar or 7-element vector)
+)
+```
+
+Solar-minimum conditions are approximately `f107a=70`, `f107=70`, `ap=2`.
+Solar-maximum conditions are approximately `f107a=220`, `f107=220`, `ap=15`.
+
+### Live CelesTrak space indices
+
+Fetches real F10.7 and Ap data from CelesTrak. Requires internet access on
+first use. The `InitialTime` epoch in `SimulationConfiguration` is used to
+look up the correct date:
+
+```julia
+# Optional: prewarm the dataset before the solver starts
+init_nrlmsise_space_indices!()
+
+density_model = NRLMSISE00AtmosphereModel(use_space_indices=true)
+```
+
+If you skip `init_nrlmsise_space_indices!()`, the dataset initializes lazily on
+the first atmosphere evaluation. Call it explicitly before long runs or Monte
+Carlo campaigns so any download happens before the solver starts.
+
+Below 80 km, the built-in provider returns the standard fallback values
+`f107a=150 / f107=150 / ap=4` without touching the dataset.
+
+### Custom index provider
+
+Provide a callable that returns `(f107a, f107, ap)` or a named tuple with
+those keys. The callable must accept either `(instant)` or
+`(instant, h, lat, lon)`:
+
+```julia
+# Minimal provider: returns fixed indices regardless of time and position.
+# Replace with a real lookup if solar activity varies in your study.
+my_provider(::Any, ::Any, ::Any, ::Any) = (f107a=150.0, f107=150.0, ap=4.0)
+
+density_model = NRLMSISE00AtmosphereModel(index_provider=my_provider)
+```
+
+`use_space_indices=true` and a custom `index_provider` cannot be combined.
+
+---
+
+## Fixed GRAM grid snapshot
+
+For a named, automatically retrieved atmosphere, start with the [Odyssey surrogate workflow](../tutorials/odyssey_surrogate.md). Use `surrogate_preset_model("odyssey_p20_frozen_v1"; version="1.0.0")` after loading `GRAMSuite`; retrieval and verification occur once before the solver.
+
+Four named presets are published. All are frozen at the Odyssey P20 instant, 2001-11-07T11:51:04.794789Z:
+
+| Preset | Domain | Validated use |
+| --- | --- | --- |
+| `odyssey_p20_frozen_v1` 1.0.0 | 100 to 260 km, 40 to 90 degrees north | Odyssey P20 passages within the tutorial's envelope |
+| `mars_global_upper_p20_frozen_v1` 1.0.0 | 80 to 365 km, all latitudes and longitudes | Pointwise within 225 s of the frozen instant, down to 80 km; propagated passes designed for periapsis from 85 to 130 km (see below) |
+| `mars_global_near_surface_p20_frozen_v1` 1.0.0 | 5 m above the local surface to 75 km areoid height, planetocentric latitudes within 85 degrees, surface below 9 km; density, temperature and pressure, no winds | Pointwise at the frozen instant |
+| `mars_global_near_surface_p20_frozen_v1` 1.1.0 | As 1.0.0, up to 81 km areoid height, above the global upper preset's floor everywhere | Pointwise at the frozen instant |
+| `mars_global_near_surface_p20_frozen_v1` 1.2.0 | As 1.1.0, with stored east, north and vertical winds; refused where a stored wind it needs is unavailable | Pointwise, on fixed descent paths and in propagated descents at the frozen instant; ballistic entries in the engine, with the global upper preset above 80 km |
+| `mars_global_descent_p20_frozen_v1` 1.0.0 | A composite with no data of its own: near-surface 1.2.0 below 80 km above the ellipsoid, the global upper preset 1.0.0 at and above it, up to 365 km | Ballistic descents from 125 km to 100 m above the terrain, within the tested envelope (see [Mars descent preset](#Mars-descent-preset)) |
+
+The global preset was validated against native Mars-GRAM under the lab's release
+limits for pointwise density and wind error and per-pass drag and heating; its
+archive README lists them. The three kinds of check reach different heights:
+
+- pointwise checks cover the whole domain, down to its 80 km boundary;
+- propagated passes were designed for periapsis from 85 to 130 km, and the
+  lowest altitude they reached was 84.56 km;
+- fixed-path arcs, which follow prescribed paths without trajectory feedback,
+  reach 80.25 km and check drag and heating proxies along the path.
+
+No complete propagated pass was validated below 84.56 km. Below that altitude,
+the retained evidence consists of pointwise density and wind checks down to
+80 km and fixed-path drag and heating proxies down to 80.25 km. These checks do
+not establish propagated-pass accuracy across the 80 to 84.56 km interval. The
+archive README gives the pass range as periapsis from 80 to 130 km; this
+section states the coverage precisely.
+
+The grid's height and latitude spacing is not uniform: nodes
+are added where Mars-GRAM has structure, the catalog lists every node, and
+`surrogate_preset_model` checks them against the grid. Heights below 80 km are
+not covered by this grid, because terrain over the Tharsis summits shapes the native
+atmosphere there; such queries fail. The near-surface preset below covers heights up to 75 km (1.0.0) or 81 km (1.1.0 and 1.2.0).
+
+```julia
+using SpaceAGORA
+import GRAMSuite
+density_model = surrogate_preset_model("mars_global_upper_p20_frozen_v1"; version="1.0.0")
+```
+
+### Near-surface Mars preset
+
+`mars_global_near_surface_p20_frozen_v1` covers the lower atmosphere down to the ground. It is not a grid: it follows
+native Mars-GRAM's own near-surface rule, driven by the local terrain.
+- **Regime.** The first exposed table level comes from the query's own MOLA surface height. It selects the regime: level interpolation above it, and a surface-layer law from 30 m up to it and from 5 m to 30 m.
+- **Components.** They are stored on a 1.5-degree lattice and interpolated bilinearly.
+- **Model.** `surrogate_preset_model` returns a `GRAMNearSurfaceAtmosphereModel`.
+- **Outputs.** `getDensity` returns density, temperature and the wind vector.
+  - Versions 1.0.0 and 1.1.0 have format 1 payloads, which store no winds: the wind vector is zero, so a simulation
+    using them has no atmospheric wind.
+  - Version 1.2.0 has a format 2 payload. It returns its stored east, north and vertical winds, with the horizontal
+    components clipped at 0.7 times the speed of sound as native clips them. A simulation with its wind setting off
+    uses zero wind, as with the grid presets' stored winds.
+  - The catalog declares which kind a version is, and the loaded payload must agree.
+- **Pressure and status.** `GRAMSuite.near_surface_state(model.core, lat_deg, lon_deg, h_m)` returns pressure, the regime and the status of the surface-layer model used.
+- **Winds and speed of sound.** For a format 2 payload, `GRAMSuite.near_surface_wind_state(model.core, lat_deg, lon_deg, h_m)` adds the winds, the unclipped horizontal winds, the speed of sound and which components were clipped.
+
+```julia
+using SpaceAGORA
+import GRAMSuite
+density_model = surrogate_preset_model("mars_global_near_surface_p20_frozen_v1"; version="1.2.0")
+rho, T, wind = getDensity(density_model, 250.0, deg2rad(-4.5), deg2rad(137.4), 0.0, true)
+```
+
+**Versions.** All three published versions stay available, and each call names its version.
+- **1.0.0** is unchanged.
+- **1.1.0** adds two table levels, at 80.0323 and 85.0323 km areoid height. They sit where Mars-GRAM places the first
+  two levels of its upper table at this instant.
+- **Top.** 1.1.0 raises the top from 75 to 81 km. Between 75 km and the first added level, native joins its lower
+  and upper tables, and the preset follows the same rule.
+- **Below 75 km,** 1.1.0 gives the same results as 1.0.0.
+- **1.2.0** adds the stored winds and the speed of sound that limits them. Its density, temperature and pressure equal
+  1.1.0's wherever served.
+
+**Refusals.** Queries fail with a `DomainError` naming the reason when any of these holds:
+- planetocentric latitude beyond 85 degrees;
+- surface height of 9 km or more (volcano flanks);
+- less than 5 m above the surface;
+- above the version's top: 75 km areoid height in 1.0.0, 81 km in 1.1.0 and 1.2.0;
+- a needed component is unavailable at that position;
+- in 1.2.0, a stored wind value the query needs is unavailable, or the speed of sound is not determined.
+
+**Coverage.** Within 85 degrees:
+- about 98% of the area is served down to 5 m with a qualified surface-layer model;
+- about 1.7% is served with a provisional model, flagged in each result's status;
+- the rest is refused at the lowest heights or on volcano flanks.
+
+From 75 to 81 km (1.1.0 and 1.2.0), every location with a surface below 9 km is served.
+
+In 1.2.0, the winds are served wherever the scalars are over about 99.65% of the area. Over about 0.07%, in deep,
+narrow terrain, a stored wind is unavailable at one or more heights between −5 and 7 km areoid height, and those
+queries are refused; `GRAMSuite.near_surface_state` still serves their scalars, as 1.1.0 does.
+
+The archive's support map lists the cells.
+
+**Validation.** The preset was validated pointwise against native Mars-GRAM at the frozen instant, under the lab's release limits.
+- **1.0.0:** separately for qualified-model areas, provisional-model areas and all served queries.
+- **1.1.0:** the heights it adds were validated with every point's expected outcome specified in advance. The 1.0.0 validation carries over below 75 km, where results are unchanged.
+- **1.2.0:** the stored winds and the speed of sound were validated against native Mars-GRAM pointwise, on fixed descent paths and in propagated descents, and in SpaceAGORA's engine: ballistic entries flown with 1.2.0 below 80 km and the global upper preset above, against native Mars-GRAM in the same engine loop. The archive README lists the limits and what was not established. It also lists the exemptions: at the exact wind jumps at 78.75 and 82.5 degrees north and at exact first-level contours, native can resolve a query to the other side, and the values 1.2.0 returns there were validated only where its own side matched native; native's extrapolation band at the contours; and the 80 km composition switch. The scalar validations carry over.
+
+**Other limits.**
+- **1.0.0 gap.** In 1.0.0, the 75 to 80 km interval lies between this preset and the upper one, and neither covers it.
+- **1.1.0 and 1.2.0 overlap.** These versions reach 81 km areoid height, above the upper preset's 80 km ellipsoidal floor everywhere, so both presets are defined between that floor and 81 km. `CombinedAtmosphereModel` hands over between them; see [Height-based composition of two frozen atmospheres](#Height-based-composition-of-two-frozen-atmospheres) and the [Mars descent preset](#Mars-descent-preset).
+- **1.2.0 scope.** Its validation does not establish real-world landing accuracy, the engine's use of the preset's speed of sound (the engine's Mach number uses its own gas constants), or other vehicles, epochs and entries.
+- The payload's terrain component holds Mars-GRAM's MOLA terrain values at its lattice nodes. Credit NASA MOLA as the archive README states.
+
+`GRAMGridAtmosphereModel` connects GRAMSuite's existing offline interpolation
+kernel to SpaceAGORA. It needs the Julia wrapper with its native-free grid API
+and a trusted serialized grid payload. Construction and density evaluation use
+no native GRAM installation or native fallback.
+
+```julia
+using SpaceAGORA
+import GRAMSuite
+
+density_model = GRAMGridAtmosphereModel(
+    planet="earth",
+    surrogate_file="/path/to/authorized/earth_surrogate.jls",
+    above_grid=:error,
+)
+```
+
+The constructor forwards grid-loader options, including `search_roots` and
+`expected_sha256`. Missing files, undownloaded Git LFS pointers, and invalid
+payloads produce errors. A checksum pins file contents; it does not establish
+scientific provenance or permission to distribute the file. Grid distribution
+and an independently reproducible public installation remain separate work.
+
+Queries use altitude in metres and latitude/longitude in radians, on the grid's
+documented reference surfaces. Results contain density in kg/m³, temperature in
+kelvin, and local east/north/up winds in m/s. The stored atmosphere is frozen:
+elapsed time and the wind selector do not alter its density or stored winds.
+Select and validate the atmospheric epoch, coordinates, forcing, and coverage
+for the mission before use. Legacy metadata may leave these facts unknown;
+loading a file cannot recover them or establish physical accuracy.
+
+The default policy rejects altitude and latitude outside the grid. Longitude is
+periodic. Explicit `above_grid=:vacuum` returns zero density and wind above the
+ceiling, with temperature `vacuum_temperature` (default 200 K); lower-bound extrapolation remains
+an error. `above_grid` is an option of the generic `GRAMGridAtmosphereModel`
+only. A named preset fixes the default policy, and `surrogate_preset_model`
+rejects grid options with an `ArgumentError`. To apply another policy to a
+preset's grid, construct the generic model from the resolved file; it then
+carries no named-preset contract:
+
+```julia
+preset = resolve_surrogate_preset("odyssey_p20_frozen_v1"; version="1.0.0")
+density_model = GRAMGridAtmosphereModel(
+    planet="Mars",
+    surrogate_file=preset.file,
+    expected_sha256=preset.expected_sha256,
+    above_grid=:vacuum,
+)
+```
+
+Queries below the grid floor fail under every policy. The adapter does not apply the native model's entry-interface
+polynomial, fixed 2000 km cutoff, or lower-altitude clamp.
+
+The grid model bypasses `SPACEAGORA_VACUUM_GRAM_CACHE` and
+`SPACEAGORA_DENSITY_FREEZE_PER_STEP`, and it reevaluates coordinates even when a
+buffered sample has the same timestamp. Native GRAM track caches, isolated pools,
+and per-satellite native copies do not apply. Shared read-only queries support
+threaded evaluation; keep the arrays and metadata unchanged during a run.
+Ordinary `deepcopy` produces independent arrays, including when configuration
+isolation copies an entire run. Managed process-worker startup has separate
+native warm-up behavior and is outside this native-free adapter's scope.
+
+### Height-based composition of two frozen atmospheres
+
+`CombinedAtmosphereModel` composes two frozen, native-free atmosphere snapshots by height above the reference
+ellipsoid: below the handover the lower model answers, and at or above it the upper model does. With the published Mars
+presets it serves a descent from the upper atmosphere into the lower atmosphere:
+
+```julia
+using SpaceAGORA
+import GRAMSuite
+lower = surrogate_preset_model("mars_global_near_surface_p20_frozen_v1"; version="1.2.0")
+upper = surrogate_preset_model("mars_global_upper_p20_frozen_v1"; version="1.0.0")
+density_model = CombinedAtmosphereModel(lower, upper; handover_height_m=80e3)
+```
+
+This pairing is also available as a named preset, which carries its validated use; see the
+[Mars descent preset](#Mars-descent-preset).
+
+- **Handover.** Hand over at 80 km above the ellipsoid, the upper preset's floor. Near-surface versions 1.1.0 and
+  1.2.0 reach 81 km areoid height, above that floor everywhere. Version 1.0.0 stops at 75 km and leaves a gap below
+  the floor.
+- **Coverage is the components' coverage.** There is no blending, extrapolation or fallback between the two. A query
+  the selected component refuses fails with that component's `DomainError`. Below the handover, coverage stops 5 m
+  above supported terrain and excludes latitudes beyond 85 degrees, volcano flanks and positions where a component is
+  unavailable, even though the upper preset covers those columns above 80 km.
+- **Steps at the handover.** Each component returns its own wind.
+  - Near-surface versions 1.0.0 and 1.1.0 store none, so with them the wind is zero below the handover and the upper
+    preset's stored wind at and above it: the wind changes abruptly there.
+  - Version 1.2.0, a format 2 payload, returns its stored winds below the handover; the two components' winds still
+    differ at the handover.
+  Density and temperature can also step by the difference between the presets.
+- **Frozen state.** Both presets are frozen at the same instant. A composition built with `CombinedAtmosphereModel`
+  adds no time evolution and has no validated accuracy claim of its own; each preset's documented validation applies on
+  its side of the handover.
+- **Compatibility checks.** The constructor rejects components whose recorded planet, frozen instant or reference
+  ellipsoid differ, and a grid component whose height range does not contain the handover. It cannot check that a
+  near-surface lower component reaches the handover, because that component's top is an areoid height. That, and
+  choosing components whose validation suits the use, are the caller's responsibility.
+- **Propagation.** The engine treats the composition like its components. To propagate below 50 km, give the
+  spacecraft a touchdown specification (see
+  [Terrain contact for a landing controller](stop_conditions.md#Terrain-contact-for-a-landing-controller)); otherwise
+  the engine's default 50 km impact stop ends the descent there. Leave margin between the touchdown height and the lower
+  component's minimum clearance (5 m for the near-surface preset): the solver can evaluate a state beyond the touchdown
+  surface before it locates the crossing, and a state below that clearance fails with the component's `DomainError`.
+- **Provenance.** `atmosphere_provenance(density_model)` records the handover rule and both presets' provenance.
+- **Components.** Only `GRAMNearSurfaceAtmosphereModel` and `GRAMGridAtmosphereModel` can be composed.
+
+### Mars descent preset
+
+`mars_global_descent_p20_frozen_v1` 1.0.0 names the composition validated for descents: near-surface 1.2.0 below 80 km
+above the ellipsoid and the global upper preset 1.0.0 at and above it, frozen at the Odyssey P20 instant. It has no data
+of its own. `surrogate_preset_model` installs and verifies each component through its own catalog entry, exactly as
+when that preset is selected alone, and composes them as above:
+
+```julia
+using SpaceAGORA
+import GRAMSuite
+density_model = surrogate_preset_model("mars_global_descent_p20_frozen_v1"; version="1.0.0")
+```
+
+- **Domain.** From 365 km down to 80 km above the ellipsoid, the upper preset's: all latitudes and longitudes. Below
+  80 km, the near-surface preset's: planetocentric latitudes within 85 degrees, surface below 9 km, at least 5 m above
+  the surface, and where its stored winds are available. A descent that drops below 80 km over a polar cap or a volcano
+  flank fails there with the near-surface preset's `DomainError`.
+- **Handover.** At 80 km above the ellipsoid, density, temperature and winds change abruptly from one preset's values
+  to the other's; nothing is blended.
+- **Validated use.** The composition was validated against native Mars-GRAM at the frozen instant, under the lab's
+  release limits: on 48 fixed descent paths and in 24 propagated descents in a reference integrator, and in 23 ballistic
+  entries in SpaceAGORA's engine with native Mars-GRAM in the same engine loop. The descents started 125 km above the
+  ellipsoid at 5.5 km/s relative to the planet, with a ballistic coefficient of 100 kg/m² and flight-path angles from
+  −10 to −20 degrees, and ended 100 m above the terrain. Elsewhere, each preset's own validation applies on its side of
+  the handover.
+- **Not established.** Passes that skim or recross the handover, as in aerobraking; other entry speeds, ballistic
+  coefficients and vehicles; lifting or guided entries; real-world landing accuracy; the engine's use of the
+  near-surface speed of sound; other epochs.
+- **Provenance.** `atmosphere_provenance(density_model)` names the composite, its version, its components and the
+  catalog, with both presets' own provenance; the results-bundle manifest records it.
+- **No payload of its own.** The composite takes no `file`, and `resolve_surrogate_preset` refuses it. To compose local
+  payload files, build each preset from its file and use `CombinedAtmosphereModel`; that composition carries no named
+  contract.
+
+---
+
+## GRAM-backed atmosphere
+
+When GRAMSuite assets are available, the GRAM-backed constructor is provided by
+the `SpaceAGORAGRAMSuiteExt` extension and activated by importing `GRAMSuite`.
+See [GRAMSuite Setup](gramsuite_setup.md) for the full setup walkthrough.
+
+The basic usage once assets are in place:
+
+```julia
+setup_gram_example!()   # from examples/common.jl — loads GRAMSuite extension
+density_model = GRAMAtmosphereModel(planet_name="earth")
+```
+
+`GRAMAtmosphereModel` is not exported from the root `SpaceAGORA` module. It is
+available after `GRAMSuite` is loaded and is accessed through
+`SpaceAGORA.SimulationModel.GRAMAtmosphereModel` (or via `setup_gram_example!`
+in the examples).
+
+### Opt-in density perturbations
+
+Native GRAM uses mean density by default. Set
+`SPACEAGORA_GRAM_DENSITY_PERTURBATION=step` to advance a separate density walk
+at accepted solver steps and hold its factor between steps, or `pass` to
+sample a drag-free predicted atmospheric pass and interpolate its factor.
+Both modes apply the factor to spacecraft density on the scalar and distributed
+service paths. Temperature and wind retain their existing behavior.
+`naive_rhs` is a diagnostic negative control and is unsuitable for trajectory
+results; the distributed RHS density service declines this mode.
+
+Consecutive checkpoint segments within one run retain the same perturbation
+walk, pass counters and diagnostic history. Resuming a saved checkpoint is
+unsupported because it does not contain the native random state. Multirate
+splitting is also unsupported and is rejected before its first subsolve,
+because its overlapping intervals would revisit earlier walk times. Use a
+supported solver mode or set the perturbation mode to `off`.
+
+`SPACEAGORA_GRAM_DENSITY_PERTURBATION_PASS_RESEED=1` derives each pass's initial
+random stream from the seed and pass index. The realized density history still
+depends on the sampled states: accepted steps in `step` mode and the predicted
+trajectory in `pass` mode. In pass mode the last factor is held if the real pass
+outlasts its prediction. These modeling choices and their numerical accuracy
+need evidence for the intended scenario; lifecycle and interface tests do not
+validate a dispersed campaign.
+
+### GRAM epoch alignment
+
+A GRAM model carries its own epoch: the `initial_time` keyword of
+`GRAMAtmosphereModel` (the GRAMSuite default when omitted). The simulation
+carries another in `SimulationConfiguration.initial_time`. Before every run,
+`run_simulation` passes the density model through
+[`with_density_model_epoch`](@ref) so the two agree. This happens before the
+configuration is copied for state isolation, and the caller's configuration is
+left unchanged.
+
+For a keyword-built `GRAMAtmosphereModel` the rule is:
+
+- An unchanged epoch returns the same model object. Epochs are compared on
+  their integer year, month, day, hour and minute and on the seconds as
+  `Float32`, with no time tolerance.
+- A changed epoch rebuilds a fresh native model from the recorded constructor
+  keywords with only `initial_time` replaced; planet, paths, perturbation
+  options and every other recorded keyword are preserved. The rebuild runs
+  under the GRAM setup lock.
+- A `GRAMAtmosphereModel` wrapped around a raw GRAMSuite core, whose
+  constructor keywords are unknown, cannot be realigned and raises an
+  `ArgumentError` when the epochs differ. Construct it with the keyword
+  constructor at the run's `initial_time` instead.
+
+A `GRAMAtmosphereModelSurrogate` built over a GRAM base keeps its object, file
+and fallback setting for an unchanged epoch and rejects a changed one with an
+`ArgumentError`: its table was generated for one epoch, and rebuilding the
+native fallback would not re-epoch the table. Build and validate a surrogate
+for the epoch you intend to run. Surrogates over other base models, the grid
+model, `NRLMSISE00AtmosphereModel` and the analytic models are not touched by
+the hook.
+
+To avoid a rebuild, construct the model at the run's epoch:
+
+```julia
+density_model = GRAMAtmosphereModel(planet_name="earth", initial_time=args.initial_time)
+```
+
+The hook changes the construction epoch only. It does not convert between time
+systems, validate atmospheric coordinate or datum conventions, certify cached
+or surrogate data, or carry over a native random stream that was advanced or a
+handle that was edited by hand before the run. The existing native cache and
+environment policies apply to the rebuilt model as to any other.
+
+### Compare a surrogate with native GRAM
+
+To see how a surrogate differs from native GRAM in your own scenario, run the
+same case twice and change only the density model: once with the named preset,
+and once with a `GRAMAtmosphereModel` (native GRAM must be installed; see
+[GRAMSuite Setup](gramsuite_setup.md)). Two native references answer different
+questions:
+
+- native GRAM evaluated at the preset's frozen instant isolates the grid's
+  interpolation error;
+- native GRAM run with actual time along the trajectory adds the error of
+  freezing the atmosphere. The Odyssey preset has accepted diagnostic and
+  propagation comparisons along bounded P20 passages against this second
+  reference. These comparisons are evidence, not numerical release limits:
+  the catalog leaves application accuracy requirements unset. At arbitrary
+  points away from those passages, pointwise differences can be larger,
+  particularly near the 260 km ceiling at
+  high northern latitudes.
+
+`atmosphere_provenance(model)` lists how the preset was generated: planet,
+frozen UTC instant, Mars-GRAM configuration and input identities. Check each
+setting against the native model you build. A plain `GRAMAtmosphereModel` is not
+automatically configured the same way, and the Odyssey preset's diagnostic
+comparisons used a dedicated matched native adapter. Compare pointwise density, temperature
+and wind along the native trajectory, and the per-pass quantities your
+algorithm depends on, such as drag delta-v, heat load and peak heat rate.
+
+### Prepare another frozen snapshot
+
+A named preset covers one planet, one frozen instant and one bounded domain. For
+another scenario, generate a new frozen grid with GRAMSuite's recorded-recipe
+generator, following its
+[grid generation guide](https://github.com/Space-FALCON-Lab/GRAMSuite.jl/blob/main/docs/grid_generation.md).
+The guide starts with a native-free dry run of the recipe and needs native GRAM
+only for the final generation. Validate the new grid against native GRAM for the
+intended scenario before relying on it, then load it with the generic model:
+
+```julia
+density_model = GRAMGridAtmosphereModel(
+    planet="Mars",
+    surrogate_file="/path/to/new_grid.jls",
+    expected_sha256="<sha256 of the file>",
+)
+```
+
+A grid loaded this way carries no named-preset contract: its domain, epoch and
+accuracy are whatever your own generation and validation established.

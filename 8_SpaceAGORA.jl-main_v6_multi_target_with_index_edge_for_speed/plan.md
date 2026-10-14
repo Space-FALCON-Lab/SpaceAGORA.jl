@@ -2,6 +2,14 @@
 
 Date: 2026-10-05. Scope: this v6 directory only; legacy, v5 and v5 copy remain unchanged.
 
+The completed performance plan below is historical. The 2026-10-13 graph
+refactor supersedes its dictionary-API and state-mirror requirements:
+`model.graph` owns vertices, edges, parameters and state arrays;
+`edge_index_lookup` provides keyed access without connection wrappers.
+Sorted edge order is now temporary scheduler data, and availability transitions
+are computed only in diagnostics from before/after snapshots. See the
+[current API](scalability-validation.md#current-graph-api-2026-10-13).
+
 ## Request and acceptance criteria
 
 - **REQ-001:** Reduce lookup, allocation and force-evaluation overhead while retaining the dictionary lookup API and all three v6 policies.
@@ -36,7 +44,16 @@ The baseline 4,000-terminal chain took 6.835 seconds per matching call, justifyi
 
 ## Constraints and validation
 
-Topology changes must use `register_candidate!`; direct insertion/deletion/replacement in `linkgraph` is unsupported because indexed references and caches must stay synchronized. Existing connection state edits remain supported. Score mirrors refresh during scoring/selection, and availability mirrors refresh during availability updates. Availability transitions are new minus old, not accumulated and not a substitute for geometry or rescoring.
+Topology changes must use `register_allowed_link!`; direct edits to graph topology arrays
+or the key-to-index dictionary are unsupported. Registration updates topology eagerly;
+the scheduler refreshes its workspace after growth, preserving existing scores and
+initializing appended scores to zero. Raw scores belong to `policy.matching.score`,
+not the graph. Scoring and selection must use the same policy; switching graphs or
+discarding the workspace resets scores. Graph availability and active flags remain
+separate from scheduler-owned scores.
+The bulk availability API returns a fresh Boolean snapshot. Diagnostics compare it
+with pre-update availability to count transitions; no transition vector is stored
+on the graph. These counts are not a substitute for geometry or rescoring.
 
 No dense satellite-by-satellite matrix, snapshot callback, new package, orbital-model change or legacy/v5 source edit is required. The Walker benchmark uses 3,999 target-to-helper candidates under fixed-target `:gve_sma`; it is not an all-pairs scalability test or force-coupled propagation. First-index policy and multi-terminal graphs are tested separately.
 

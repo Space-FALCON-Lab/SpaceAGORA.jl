@@ -1,0 +1,13 @@
+name = "SpaceAGORAHYPR"
+uuid = "4096c904-79d0-4d9a-9f5d-f1d6c7a2f1b4"
+version = "0.2.0"
+authors = ["SpaceAGORA Contributors"]
+
+[deps]
+HYPR = "342c8629-b435-4bda-9d24-004c735fb297"
+SpaceAGORA = "afbfb69f-5c0b-4832-b760-43725dff8540"
+
+[compat]
+HYPR = "0.1"
+SpaceAGORA = "0.2"
+julia = "1.12"

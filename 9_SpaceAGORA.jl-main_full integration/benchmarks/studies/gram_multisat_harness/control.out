@@ -1,0 +1,7 @@
+Control: identical config, density model swapped. dt_max=5 s, deg/ord-20 harmonics.
+
+  exp   N=1   reltol=1e-09  mission=60   s    43.83s  Success  accept=missing reject=missing rhs=missing  RSS   +431MB
+  exp   N=4   reltol=1e-09  mission=60   s    25.99s  Success  accept=missing reject=missing rhs=missing  RSS   +114MB
+  exp   N=16  reltol=1e-09  mission=60   s    24.99s  Success  accept=missing reject=missing rhs=missing  RSS    +60MB
+
+  gram  N=1   reltol=1e-09  mission=60   s    39.81s  Success  accept=missing reject=missing rhs=missing  RSS   -127MB

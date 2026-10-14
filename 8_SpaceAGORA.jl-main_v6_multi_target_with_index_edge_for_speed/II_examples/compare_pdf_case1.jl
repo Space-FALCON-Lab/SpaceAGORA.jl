@@ -20,7 +20,7 @@ function case1_configuration(mode::Symbol; orbits::Float64=10.0, dtmax::Float64=
     # Step 1: Validate the implementation mode and define the Earth/orbit geometry.
     is_modern = mode in (:v5, :v6)
     mode in (:v5, :v6, :legacy) || throw(ArgumentError("Mode must be :v5, :v6, or :legacy."))
-    @assert is_modern == isdefined(CASE1_MODEL, :InterLinkModel)
+    @assert is_modern == isdefined(CASE1_MODEL, :ConstellationInterLinkModel)
     planet = make_no_gram_planet(:earth)
     target_radius = planet.Rp_e + 1050e3
     helper_radius = planet.Rp_e + 1000e3
@@ -40,9 +40,9 @@ function case1_configuration(mode::Symbol; orbits::Float64=10.0, dtmax::Float64=
     dynamic_effectors = (InverseSquaredJ2GravityModel(),)
     laser = nothing
     if is_modern && laser_enabled
-        laser = InterLinkModel()
+        laser = ConstellationInterLinkModel()
         for helper in 2:21
-            register_candidate!(laser, spacecraft, (1, 1), (helper, 1);
+            register_allowed_link!(laser, spacecraft, (1, 1), (helper, 1);
                 parameters=InterLinkParameters(P=10_000.0, B=100.0, range=200e3))
         end
         extra_config = (interlink_model=laser, scheduling_policy_model=SchedulingPolicyModel(:gve_sma; target_idx=1))

@@ -5,22 +5,98 @@ Comparisons ran sequentially with one Julia thread. See [plan.md](plan.md) for
 requirements and implementation tasks. Legacy, v5 and v5 copy source files were
 not modified; no dependencies were added.
 
-## What changed
+## Current graph API (2026-10-14)
 
-1. [Interlink storage](I_src/1.4_satellite_interlink/inter_link_models.jl) retains
-   dictionary lookup and the same mutable connection states, while adding indexed
-   keys/connections, score and availability vectors, signed availability transitions,
-   and per-spacecraft incident-edge lists. A bulk availability overload updates in
-   place; the single-key overload remains. Position differences use `SVector`.
-2. [Scoring policies](I_src/1.4_satellite_interlink/scheduling_policies.jl) iterate
+`ConstellationInterLinkModel` now owns a combined `InterLinkGraph`:
+
+- `vertices` contains `(satellite, terminal)` pairs in first-registration order.
+  `edges[e]` contains two indexes into `vertices`. A vector of tuples supports
+  appends without copying a growing matrix. Endpoint keys are reconstructed,
+  not stored in a second vector.
+- `edge_properties` stores one validated `InterLinkParameters` per edge, with
+  scalar `P`, `B`, and `range`. Only `available` and `active` are graph state vectors;
+  raw per-edge scores live in `SchedulingPolicyModel.matching.score`.
+- `register_allowed_link!` updates `vertex_neighbors`, `edge_index_lookup`, and
+  `satellite_edges` immediately. There is no lazy
+  topology rebuild. Canonical traversal still makes matching ties independent
+  of registration order.
+- Scores and matching scratch belong to `SchedulingPolicyModel.matching`, and its type is
+  defined in `2_dynamic_programming_models.jl`. The constellation model contains no matching
+  workspace or dependency on the selection algorithm. The scheduler checks vertex
+  and edge counts and graph identity before reusing the workspace. It holds a graph
+  reference, not a topology copy, so even equal-size graph switches reset scores.
+  Appending edges preserves old scores and initializes new ones to zero on refresh.
+- `schedule_interlinks!` reuses its policy's workspace automatically. For repeated
+  matching of already-scored links, call `select_interlinks!(model, policy)`.
+  The one-argument selection form is removed: pass the same policy used for scoring.
+  Discarding the workspace also discards scores; rescore before selection.
+  Use separate policies for independent scheduling runs; simulation isolation
+  deep-copies model and policy together, then resets workspace state at run startup.
+- `get_connection` and the single-key availability overload have been removed.
+  Bulk availability returns an independent Boolean snapshot. As an intentional
+  behavior change, battery and temperature no longer gate links; their threshold
+  arguments have also been removed. Range, forbidden pairs, and activity flags remain.
+- The model keyword is `constellation_link_type`; history uses `InterLinkHistory`.
+  The scheduler, force model, simulation configuration, examples, and tests use
+  the new layout directly.
+- `edge_key` and `edge_parameters` are not defined by the production modules.
+  Production callers reconstruct endpoint pairs from `vertices` and `edges` and
+  read `edge_properties[edge]` directly. Convenience helpers live only in the
+  examples/tests that use them; the regression suite reuses the Walker example's
+  endpoint helper.
+
+```julia
+using SpaceAGORA.SimulationModel.SchedulingPolicies: matching_workspace!
+
+graph = model.graph
+edge = graph.edge_index_lookup[key]
+graph.available[edge] = true
+work = matching_workspace!(model, policy)
+work.score[edge] = 1.0
+selected = select_interlinks!(model, policy)
+for (edge, (first, second)) in enumerate(graph.edges)
+    key = (graph.vertices[first], graph.vertices[second])
+end
+```
+
+The performance measurements and migration notes below describe earlier versions,
+not a benchmark of this registration/storage refactor.
+
+Validation after moving raw scores into the workspace: all 559 interlink regression
+assertions and 4 example-helper assertions passed, including workspace reuse, graph-size changes, independent
+policies and copied simulations, eager registration, exact matching, force/score
+consistency, engine integration, and the one-hour timestep comparison. Small benchmark-entry-point
+smoke checks passed for both matching implementations and all four fixture shapes.
+These smoke checks do not establish large-constellation performance.
+Workspace lifecycle checks cover score preservation and zero initialization after
+edge growth, score loss on workspace reset or graph switches, and isolated score
+vectors for independent policies and jointly copied model/policy pairs.
+
+## Historical optimization changes
+
+1. [Interlink storage](I_src/1.4_satellite_interlink/1_constellation_graph_models.jl) retains
+   mutable connection states in `InterLinkGraph`, separate from model configuration,
+   history and solver scratch. The graph owns indexed keys/connections, a key-to-index
+   dictionary and per-spacecraft incident-edge lists.
+   Availability and scores live only in connection states, not mirrored vectors.
+   The bulk availability overload updates states in place and returns a fresh Boolean
+   snapshot; the single-key overload remains. Position differences use `SVector`.
+2. [Scoring policies](I_src/1.4_satellite_interlink/3_scheduling_policies.jl) iterate
    indexed connections. The three existing objectives, including first-index SMA,
    are unchanged. All candidates are rescored; unchanged availability is not used
    to skip scoring or selection.
 3. [Force evaluation](I_src/1.3_dynamics/coupled/force_torque_models/laser_force_effectors.jl)
    visits only incident links. Across all N spacecraft this changes edge inspections
    from O(N*E) to O(N+E), retaining continuous stage-dependent forces and the same law.
-4. [Matching](I_src/1.4_satellite_interlink/scheduling_models.jl) caches sorted
-   terminal numbering, a 2-by-E integer endpoint matrix, adjacency and work buffers.
+4. [Matching](I_src/1.4_satellite_interlink/2_dynamic_programming_models.jl) reads topology owned
+   by `InterLinkModel.graph`: sorted terminal numbering, a 2-by-E integer endpoint
+   matrix and terminal adjacency. `InterLinkMatchingWorkspace`
+   contains only reusable solver scratch arrays, not another graph representation.
+   Topology and scratch storage are initialized lazily on the first selection and
+   rebuilt after candidate registration; unchanged topology is reused.
+   Graph cache validity is derived from endpoint-column and registered-edge counts,
+   independent of scratch storage; no separate validity flag is stored.
+   Deterministic edge order is a local `sortperm` on each selection, not a model field.
    Iterative DFS identifies components of the available, positive-score graph.
    Trees use bottom-up dynamic programming and iterative reconstruction; cyclic
    components are passed to NetworkX Blossom. No exponential subset fallback exists.
@@ -39,14 +115,30 @@ matching remains polynomial Blossom work, not a new dense-graph algorithm.
 
 ### API and numerical constraints
 
-- Change topology through `register_candidate!`, which invalidates the matching
-  cache. Do not directly insert, delete or replace dictionary entries or edit
-  indexed/cache arrays. Dictionary lookups and edits to existing connection state
-  still work; direct score/availability state changes are reread by selection.
-- `available[e]` is the last availability refresh; `availability_transition[e]`
-  is new minus old: +1 entered, -1 left, 0 unchanged. Values are overwritten, not
-  accumulated. Single-key refresh affects only that edge. Score mirrors refresh
-  during scoring/selection. These are not propagation matrices.
+- Change topology through `register_allowed_link!`, which sets `matching = nothing`
+  and appends an edge, making the cached endpoint-column count out of date.
+  Topology is current when `size(graph.endpoints, 2) == length(graph.edge_keys)`.
+  This relies on append-only registration, including additions between existing
+  terminals; an empty graph already has valid empty topology.
+  Do not edit graph topology arrays or the
+  key-to-index dictionary directly. Discarding solver scratch alone does not
+  invalidate graph topology.
+- `get_connection(model, key)` replaces `model.linkgraph[key]`. It returns
+  `model.graph.connections[model.graph.edge_index[key]]` and throws `KeyError`
+  for an unregistered key. Edits to existing connection states remain supported
+  and direct score/availability changes are reread by selection.
+- Availability and score are read from `model.graph.connections[e].state`;
+  no state mirrors or transition vectors are retained. Single-key availability
+  refresh affects only that connection.
+- Walker diagnostics snapshot availability immediately before each bulk update
+  and compare with the returned Boolean vector to count entered (`false -> true`)
+  and left (`true -> false`) links. Counts are per update, not cumulative; the
+  initial sample follows warm-up and therefore reports zero transitions.
+  Diagnostic snapshot/comparison work is outside the measured availability,
+  scoring and matching stages; the metrics/CSV column layout is unchanged.
+- The bulk availability result is a fresh `Vector{Bool}` in edge-index order,
+  including for an empty graph. Mutating or retaining it does not affect future
+  connection states. It no longer aliases a model-owned vector.
 - Cached endpoints identify spacecraft-terminal pairs, so different terminals on
   one spacecraft remain distinct matching vertices.
 - Equal-optimum tree selections may differ from Blossom-only tie choices. Sorted
@@ -56,6 +148,46 @@ matching remains polynomial Blossom work, not a new dense-graph algorithm.
   was introduced. Existing v6 range, battery, temperature and activity checks remain.
 - The copy's optional eligibility hooks and active-link penalties were not ported:
   they are not part of the current v6 API and are not needed for these optimizations.
+
+### Graph API migration (2026-10-12)
+
+The graph separation intentionally removes the old top-level graph fields and
+`linkgraph` dictionary rather than maintaining duplicate storage or compatibility
+properties. Configuration, history and matching workspace remain on `InterLinkModel`.
+
+```julia
+graph = model.graph
+connection = get_connection(model, key)
+connection.state.available = true
+connection.state.score = 1.0
+for (key, connection) in zip(graph.edge_keys, graph.connections)
+    # Inspect candidate links in registration order.
+end
+```
+
+Former top-level topology and edge-index fields now live under `graph`.
+The availability-transition field has been removed; consumers needing transitions
+must compare availability snapshots before and after updates, as Walker diagnostics do.
+To count available links, use
+`count(connection -> connection.state.available, graph.connections)`.
+Sorted traversal remains deterministic without renumbering registered edges.
+The local ordering adds a sort and temporary index vector per selection; the bulk
+availability result also allocates. The historical timing/allocation measurements
+below predate this storage refactor and are not performance claims for the new API.
+
+Validation after the refactor: all 375 tests in `test/runtests.jl` passed on Julia
+1.12.1, versus 345 before the refactor. Added checks cover removed duplicate fields,
+keyed lookup errors, independent availability snapshots, graph/scratch lifecycle
+separation, and reversed-registration ties for both tree and cyclic graphs.
+The one-hour step-cap cases retained the baseline accepted-step counts, switch
+times and printed integrated laser SMA changes. A separate small-fixture smoke run
+passed 16 phase-benchmark checks and both original/Blossom benchmark workers.
+
+After removing graph-owned availability transitions, all 454 regression tests
+passed. Walker diagnostics were checked against independently computed feasible
+edge sets over 21 snapshots, including both entering and leaving links, zero
+transitions after warm-up, and unchanged availability. The one-hour simulation
+diagnostics retained the same printed results.
 
 ## Phase benchmark: before and after
 

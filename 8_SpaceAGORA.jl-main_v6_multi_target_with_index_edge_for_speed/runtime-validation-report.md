@@ -3,6 +3,10 @@
 Initial validation: 2026-09-28. Latest regression run: 2026-10-05.
 Runtime: Julia 1.12.1 on Linux.
 
+This report describes the historical v5 implementation. For the current v6
+per-edge array storage and intentional removal of battery/temperature gating,
+see the [current graph API](scalability-validation.md#current-graph-api-2026-10-13).
+
 ## Run
 
 From the workspace root:
@@ -26,11 +30,14 @@ GRAM assets, browser, or external services are required.
 - `InterLinkModel.linkgraph` has typed keys `((satellite, terminal), (satellite,
   terminal))`. Satellite numbers are **1-based spacecraft vector indices**, not
   persistent `SpacecraftModel.id` values. IDs are not reassigned.
-- Register each candidate with `register_candidate!(model, spacecraft,
+- Register each candidate with `register_allowed_link!(model, spacecraft,
   first_endpoint, second_endpoint; parameters=InterLinkParameters(...))`.
   Endpoints are canonicalized as one undirected physical connection. Reverse
-  registration is rejected, and registration leaves all flags false and score
-  zero. Distinct terminals can connect a spacecraft to multiple partners.
+  registration is rejected, and registration leaves all flags false.
+  In current v6, scores are initialized to zero in the scheduler workspace, not
+  the graph. Use the same policy for `score_candidates!` and `select_interlinks!`;
+  see [the current graph API](scalability-validation.md#current-graph-api-2026-10-14).
+  Distinct terminals can connect a spacecraft to multiple partners.
 - `InterLinkParameters` contains only `P` (watts), `B`, and `range` (meters).
   Defaults are 10,000 W, 100, and 200,000 m. Mutable scheduling state is separate.
 - Availability checks range, terminal bounds, active spacecraft, battery energy,

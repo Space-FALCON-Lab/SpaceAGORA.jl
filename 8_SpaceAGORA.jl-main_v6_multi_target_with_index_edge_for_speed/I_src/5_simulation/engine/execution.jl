@@ -191,15 +191,14 @@ function run_simulation(
     solver_cfg = isnothing(args.solver_config) ? _solver_config_from_env() : args.solver_config
     solver_mode = solver_cfg.solver_mode
     if args.interlink_model !== nothing
-        args.interlink_model.link_type === :laser || throw(ArgumentError("Radio force physics is not implemented."))
+        args.interlink_model.constellation_link_type === :laser || throw(ArgumentError("Radio force physics is not implemented."))
         solver_mode in (:gravity_backbone_split, :split_imex, :multirate) &&
             throw(ArgumentError("Interlinks require a full-state solver such as :tsit5; $solver_mode is not supported."))
         empty!(args.interlink_model.history)
-        for connection in values(args.interlink_model.linkgraph)
-            connection.state.available = false
-            connection.state.active = false
-            connection.state.score = 0.0
-        end
+        graph = args.interlink_model.graph
+        fill!(graph.available, false)
+        fill!(graph.active, false)
+        args.scheduling_policy_model.matching = nothing
     end
 
     # 4.2. Validate the physical setup

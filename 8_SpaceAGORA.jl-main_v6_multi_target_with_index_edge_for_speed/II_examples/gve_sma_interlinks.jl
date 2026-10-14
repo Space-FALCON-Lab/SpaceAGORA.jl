@@ -18,10 +18,10 @@ function gve_sma_configuration(; dt_max_orbit::Float64=10.0, duration::Float64=3
         SpacecraftModel(root=bus, links=[bus], inertia_tensor=bus.inertia,
             initial_condition=initial_condition, id=index, n_terminal=1)
     end
-    model = InterLinkModel()
+    model = ConstellationInterLinkModel()
     # Step 2: Register the two candidate laser links from spacecraft 1.
     for partner in 2:length(spacecraft)
-        register_candidate!(model, spacecraft, (1, 1), (partner, 1);
+        register_allowed_link!(model, spacecraft, (1, 1), (partner, 1);
             parameters=InterLinkParameters(P=power, B=100.0, range=200e3))
     end
     output = joinpath(REPO_ROOT, "III_output", "gve_sma_interlinks", "dt_$(dt_max_orbit)s")

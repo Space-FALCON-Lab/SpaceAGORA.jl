@@ -1,0 +1,264 @@
+# Assets and Modes
+
+Use this page when you need to decide whether your machine is ready to run
+SpaceAGORA and which operating mode to choose.
+
+This page is for users setting up local runs, deciding between no-GRAM and
+higher-fidelity workflows, or checking whether required data is present.
+
+Shortest successful command:
+
+```text
+julia --project=. src/interfaces/cli/main.jl assets check
+```
+
+What to read next:
+
+- [Quickstart](user/quickstart.md)
+- [Installation & Environment](user/installation_environment.md)
+- [First Simulation](user/first_simulation.md)
+
+## Choose a mode
+
+### No-GRAM baseline mode
+
+Use this mode when you want onboarding, smoke coverage, or a lightweight local
+run.
+
+The default minimal quickstart path uses:
+
+- `NoAtmosphereModel()`
+- `SimpleEphemeridesModel()`
+
+Optional open fallback atmosphere for no-GRAM runs:
+
+- `ExponentialAtmosphereModel(planet)`
+- `PiecewiseExponentialAtmosphereModel(h_breaks_m, rho_refs, Hs; ...)`
+- `NRLMSISE00AtmosphereModel(; f107a, f107, ap, index_provider=..., use_space_indices=false)`
+
+Notes:
+
+- `ExponentialAtmosphereModel(planet)` is a single-scale-height, zero-wind approximation intended for a limited altitude band near its reference altitude. Its advisory validity range defaults to `[h_ref, h_ref + 5H]`.
+- `PiecewiseExponentialAtmosphereModel(...)` is the multi-layer option for bounded studies that need a better altitude-shape fit while still avoiding GRAM assets.
+- `NRLMSISE00AtmosphereModel(...)` accepts fixed geophysical indices, a callable provider, or `use_space_indices=true` to fetch CelesTrak F10.7 and Ap indices through `SpaceIndices`. Call `init_nrlmsise_space_indices!()` before long runs if you want the dataset prewarmed outside the solver. The documented standard NRLMSISE-00 validity band remains roughly `0 km` to `1000 km`.
+
+It does not require:
+
+- a GRAM installation
+- local SPICE kernels
+- GRAM surrogate grids
+
+### High-fidelity mode
+
+Use this mode when you need mission-quality atmosphere, SPICE-backed geometry,
+or other higher-fidelity environment inputs.
+
+It depends on machine-local or user-provided assets.
+
+#### GRAM
+
+Expected root:
+
+```text
+data/GRAMSuite.jl/GRAM Suite 2.0
+```
+
+This is a licensed external dependency. SpaceAGORA does not treat GRAM as part
+of the baseline open onboarding path.
+
+#### SPICE kernels
+
+Expected under:
+
+```text
+data/GRAMSuite.jl/GRAM Suite 2.0/SPICE
+```
+
+These are used for high-fidelity frame orientation, SRP geometry, and N-body
+ephemerides.
+
+#### Gravity and topography harmonics
+
+Expected under:
+
+- `data/Gravity_harmonics_data`
+- `data/Topography_harmonics_data`
+
+These are optional and only required for studies or missions that enable those
+models.
+
+#### GRAM surrogate/static-grid bundle
+
+Expected under:
+
+```text
+data/GRAM_surrogate
+```
+
+This bundle is optional. It accelerates selected GRAM-backed workflows but is
+not required for the no-GRAM baseline mode.
+
+### What a fresh clone contains, and what it does not
+
+Measured on a fresh `GIT_LFS_SKIP_SMUDGE=1 git clone --filter=blob:none`
+(September 2026):
+
+| Asset | In the clone? | Access | Needed by |
+|---|---|---|---|
+| Built-in planets, fallback atmospheres, `SimpleEphemeridesModel` | yes | open | the quickstart, `AGORA_Earth_NoGRAM.jl`, `AGORA_Earth_MonteCarlo.jl` |
+| Gravity harmonics CSVs (`data/Gravity_harmonics_data`) | yes | open | missions and the verification study |
+| Topography harmonics (`data/Topography_harmonics_data`) | yes | open | nothing on the default path |
+| Odyssey, VEx and GMAT Earth truth files (`data/telemetry/...`, under 3 MB) | yes | open | the verification study |
+| RPO Gateway Core STL (`data/rpo/...`) | yes | open | the RPO examples |
+| GRAM surrogate grids (`data/GRAM_surrogate/*.jls`, seven LFS objects, about 2.5 GB) | pointers only with `GIT_LFS_SKIP_SMUDGE=1`, downloaded otherwise | Git LFS | one benchmark study; the runtime resolves surrogates through the submodule |
+| `data/GRAMSuite.jl` submodule: the vendored `GRAMSuite` package, the SPICE kernels and the GRAM Suite 2.0 tree | empty directory until you initialise it | public Git repository with Git LFS payloads of several GB; what is fetched and what you must provide yourself is on [GRAMSuite Setup](user/gramsuite_setup.md) | GRAM-backed examples, `Earth("", SPICE_PATH)`-style planets, the verification study and benchmark launchers |
+| Simulator reference sets (Basilisk, GMAT parity matrix) and public OPS-SAT-1 telemetry | no (gitignored) | lab organisation, `scripts/dev/fetch_private_telemetry.sh references` | the parity matrix `test/gmat_scenario_matrix.jl` |
+| CYGNSS and GRIFEX flight telemetry | no (gitignored) | per-person, granted by the PI; never commit or re-share | the mission studies that name them |
+
+`julia --project=. src/interfaces/cli/main.jl assets check` prints the same picture for
+the machine you are on. Each entry reports one state and the licensing class:
+
+| State | Meaning |
+|---|---|
+| `usable` | a file holds non-pointer bytes, or a directory has at least one nonempty payload and no visible pointers (built-in entries are always usable) |
+| `missing-required`, `missing-optional` | the expected file or directory does not exist |
+| `empty-required`, `empty-optional` | the directory has no visible files to inspect |
+| `pointer-only-required`, `pointer-only-optional` | some or all files are undownloaded Git LFS pointers |
+| `invalid-required`, `invalid-optional` | the file is empty (0 bytes), or every visible file in the directory is empty |
+
+A `reason` line follows every entry that is not usable, and the report ends
+with a summary. The command exits with status 1 when a required entry is not
+usable and 0 otherwise; optional states only affect the report. Filesystem
+inspection errors, such as insufficient read permission, stop the check; this
+required/optional exit rule applies to completed reports. After a clone
+with `GIT_LFS_SKIP_SMUDGE=1`, for example, `gram_surrogate_directory` reports
+`pointer-only-optional` while the seven `.jls` files are still Git LFS
+pointers; `git lfs ls-files` shows them with `-` instead of `*`, and
+`git lfs pull --include "data/GRAM_surrogate/*"` fetches them before a
+surrogate-backed benchmark. Recovery guidance identifies the Git checkout
+that owns each pointer, including GRAMSuite submodules and linked assets.
+On Unix, the report includes a quoted shell command. On Windows, it lists the
+owning checkout and Git LFS include pattern as path values for the documented
+retrieval route, because command quoting depends on the selected shell.
+
+The check ignores hidden files and directories. It follows file symlinks and
+an asset root that is itself a directory symlink, but does not descend into
+nested directory symlinks. It reads directory listings, sizes and small file
+headers only; it never downloads. `usable` confirms this limited byte-presence
+check, not completeness, scientific validity or native readiness. A directory
+with both empty and nonempty payload files can therefore be `usable`. Use the
+named-preset `assets check --preset` route to validate grid contents.
+
+### Verification reference data
+
+The simulator-to-simulator reference sets that the parity matrix
+(`test/gmat_scenario_matrix.jl`) grades against, and the flight telemetry used
+by the mission studies, are not tracked in this repository. They are synced
+into gitignored `data/telemetry/` paths by
+`scripts/dev/fetch_private_telemetry.sh`; see
+`data/telemetry/PRIVATE_TELEMETRY.md` for the sources, access rules and what
+happens when they are absent (the affected testsets skip).
+
+## Check the current machine
+
+The package-owned asset check distinguishes:
+
+- baseline onboarding availability
+- optional high-fidelity assets
+- required entries that prevent a successful asset check when missing, empty,
+  invalid or still Git LFS pointers
+- optional entries whose readiness is reported without failing the asset check
+
+The manifest also requires telemetry reference data for verification. Missing
+those references fails the asset check; it does not prevent a baseline no-GRAM
+simulation from running.
+
+Useful commands:
+
+```text
+julia --project=. src/interfaces/cli/main.jl assets check
+julia --project=. src/interfaces/cli/main.jl assets manifest
+julia --project=. src/interfaces/cli/main.jl assets setup-open
+```
+
+## Machine-readable manifest
+
+Canonical manifest:
+
+```text
+data/assets_manifest.toml
+```
+
+This file is the machine-readable asset source of truth for:
+
+- baseline built-in mode
+- repository-owned open assets
+- RPO station reference geometry, including the Gateway Core STL
+- user-provided or licensed high-fidelity assets
+
+You can inspect it with either:
+
+```text
+julia --project=. src/interfaces/cli/main.jl assets manifest
+julia --project=. scripts/assets/show_asset_manifest.jl
+```
+
+## Setup and check scripts
+
+Baseline/open-mode bootstrap:
+
+```text
+julia --project=. scripts/assets/setup_open_assets.jl
+```
+
+This does not download GRAM or SPICE. It reports the baseline/open asset
+contract and explicitly leaves licensed assets as user-provided.
+
+Direct asset check script:
+
+```text
+julia --project=. scripts/assets/check_assets.jl
+```
+
+
+## Named frozen surrogate presets
+
+For the supported Odyssey guidance/control exercise, use the
+[public surrogate workflow](tutorials/odyssey_surrogate.md). Its dedicated
+`examples/odyssey_surrogate_env` environment retrieves a pinned public GRAMSuite
+wrapper; native GRAM and private repositories are unnecessary. The published
+preset grids and payloads are CC BY 4.0: cite the preset by name and version and credit NASA's
+GRAM Suite (Mars-GRAM). The near-surface payload also holds Mars-GRAM's MOLA terrain values
+at its lattice nodes; credit NASA MOLA as its archive README states. Scenario assets keep
+their original NAIF and gravity-data terms.
+
+```sh
+julia --project=examples/odyssey_surrogate_env src/interfaces/cli/main.jl assets list
+julia --project=examples/odyssey_surrogate_env src/interfaces/cli/main.jl assets fetch --preset=odyssey_p20_frozen_v1 --version=1.0.0
+julia --project=examples/odyssey_surrogate_env src/interfaces/cli/main.jl assets check --preset=odyssey_p20_frozen_v1 --version=1.0.0
+```
+
+`fetch` installs and verifies the exact payload bytes. `check` stays offline and
+also validates its schema, coordinates and generation metadata. Normal example
+startup performs the same retrieval automatically. A supplied `--file` must
+match the named preset and never falls back to a download. Missing files, LFS
+pointers, corrupt downloads and incompatible data fail before propagation.
+Julia artifacts handle concurrent installation; a corrupt managed artifact or
+override must be repaired explicitly. User-supplied files are never replaced.
+
+A named version fixes the atmosphere's epoch and domain. Changing the simulation
+date does not evolve it. Four presets are listed, all frozen at the P20 instant
+(see [atmosphere models](user/atmosphere_models.md)):
+- the bounded Odyssey preset;
+- `mars_global_upper_p20_frozen_v1`, a global Mars grid from 80 to 365 km;
+- `mars_global_near_surface_p20_frozen_v1`, a near-surface Mars atmosphere from 5 m above the surface. Versions 1.0.0 and 1.1.0 store no winds; version 1.2.0 adds stored winds. Version 1.0.0 reaches 75 km; versions 1.1.0 and 1.2.0 reach 81 km areoid height, above the global preset's 80 km floor everywhere;
+- `mars_global_descent_p20_frozen_v1`, a composite with no data of its own: the near-surface preset 1.2.0 below 80 km above the ellipsoid and the global preset 1.0.0 at and above it, for descents from orbit to the ground.
+
+The same `fetch` and `check` commands take `--preset=mars_global_upper_p20_frozen_v1 --version=1.0.0`,
+whose archive is about 230 MB, or `--preset=mars_global_near_surface_p20_frozen_v1 --version=1.2.0` (or
+`--version=1.1.0` or `--version=1.0.0`), whose archives are about 34 MB, 17 MB and 15 MB. For
+`--preset=mars_global_descent_p20_frozen_v1 --version=1.0.0`, `fetch` installs and verifies both of its components
+(the upper 1.0.0 and near-surface 1.2.0 archives) and `check` builds the composite from them; it takes no `--file`.
+Other planets and epochs require separately generated and validated presets.
+The ordinary results-bundle manifest includes an `atmosphere` section identifying
+the backend, preset/version, payload/catalog hashes and frozen-domain contract.

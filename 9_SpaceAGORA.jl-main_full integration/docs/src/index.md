@@ -1,0 +1,80 @@
+# SpaceAGORA Documentation
+
+SpaceAGORA is a Julia toolkit for spacecraft orbit and atmospheric-flight
+simulation. This site is organized for three audiences:
+
+- users who want a first successful run
+- users who need command, API, or extension reference material
+- maintainers working on package surface, documentation, and repository rules
+
+## Start in under a minute
+
+Use this path if you want the fastest successful run on a machine that does not
+have GRAM or SPICE configured yet.
+
+```text
+GIT_LFS_SKIP_SMUDGE=1 git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
+cd SpaceAGORA.jl
+julia --project=. -e "using Pkg; Pkg.instantiate()"
+julia --project=. examples/AGORA_Basic_Quickstart.jl
+```
+
+On Windows set the variable first (PowerShell `$env:GIT_LFS_SKIP_SMUDGE = "1"`,
+Command Prompt `set GIT_LFS_SKIP_SMUDGE=1`) and run the same `git clone` line
+without the prefix; the [Quickstart](user/quickstart.md) shows both forms.
+
+## Choose your path
+
+### No-GRAM first run
+
+Use this route if you want the shortest path to a working local simulation.
+
+- [Quickstart](user/quickstart.md)
+- [Motion Planning with HYPR](user/hypr_planning.md)
+- [Orbital Scenes with MuJoCo](user/mujoco_scenes.md)
+- [Energy Depletion Guidance](user/edg_guidance.md)
+- [Assets & Modes](assets.md)
+- [First Simulation](user/first_simulation.md)
+
+### High-fidelity GRAM/SPICE
+
+Use this route if you need higher-fidelity atmosphere, ephemerides, or frame
+data.
+
+- [Installation & Environment](user/installation_environment.md)
+- [GRAMSuite Setup](user/gramsuite_setup.md)
+- [Assets & Modes](assets.md)
+- [Verification Study](user/verification_study.md)
+
+## Documentation tracks
+
+### User Guide
+
+Start here if your goal is to run something, understand the main workflows, or
+find a concrete next step.
+
+- [Start Here](getting_started.md)
+- [Quickstart](user/quickstart.md)
+- [Examples Catalog](user/examples_catalog.md)
+- [Studies and Benchmarks](user/studies_benchmarks.md)
+- [Recipes](user/recipes.md)
+- [Troubleshooting](user/troubleshooting.md)
+
+### Reference
+
+Use the reference pages when you already know what you want to do and need the
+exact command surface, extension hooks, or generated API details.
+
+- [CLI](cli.md)
+- [Public API](generated/public_api.md)
+- [Publications](publications.md)
+- [Extensibility](extensibility.md)
+
+### Maintainer Guide
+
+Use the maintainer section when you are changing docs, public API shape, repo
+structure, or CI-backed documentation rules.
+
+- [Maintainer Overview](maintainer/index.md)
+- [Documentation Policy](documentation_policy.md)
+- [Contracts](contracts.md)

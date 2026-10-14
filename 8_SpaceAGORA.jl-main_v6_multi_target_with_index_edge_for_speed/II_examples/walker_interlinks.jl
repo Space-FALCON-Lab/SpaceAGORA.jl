@@ -9,6 +9,9 @@ using CSV
 using DataFrames
 using DiffEqBase
 
+edge_key(graph::InterLinkGraph, edge::Int) =
+    (graph.vertices[graph.edges[edge][1]], graph.vertices[graph.edges[edge][2]])
+
 function walker_constellation(; satellites::Int=4000, planes::Int=80,
     seed::Int=20261003, altitude::Float64=550e3, inclination::Float64=53.0,
     target_idx::Int=1, range_m::Float64=2e6, all_pairs::Bool=false,
@@ -36,15 +39,15 @@ function walker_constellation(; satellites::Int=4000, planes::Int=80,
         SpacecraftModel(root=bus, links=[bus], inertia_tensor=bus.inertia,
             initial_condition=initial_condition, id=index, n_terminal=1)
     end
-    model = InterLinkModel()
+    model = ConstellationInterLinkModel()
     if all_pairs
         for first_satellite in 1:(satellites - 1), second_satellite in (first_satellite + 1):satellites
-            register_candidate!(model, spacecraft, (first_satellite, 1), (second_satellite, 1); parameters)
+            register_allowed_link!(model, spacecraft, (first_satellite, 1), (second_satellite, 1); parameters)
         end
     else
         for partner in eachindex(spacecraft)
             partner == target_idx && continue
-            register_candidate!(model, spacecraft, (target_idx, 1), (partner, 1); parameters)
+            register_allowed_link!(model, spacecraft, (target_idx, 1), (partner, 1); parameters)
         end
     end
     metadata = (; satellites, planes, per_plane, phasing, seed, altitude, inclination,
@@ -70,18 +73,18 @@ function advance_walker_snapshot!(state, initial, mean_motion, time)
     return state
 end
 
-function validate_walker_selection(model, selected)
-    occupied = Set{TerminalEndpoint}()
+function validate_walker_selection(model, policy, selected)
+    occupied = Set{vertex}()
     selected_set = Set(selected)
     for key in selected
-        connection = model.linkgraph[key]
-        @assert connection.state.available && connection.state.active && connection.state.score > 0.0
+        connection = model.graph.edge_index_lookup[key]
+        @assert model.graph.available[connection] && model.graph.active[connection] && policy.matching.score[connection] > 0.0
         for endpoint in key
             @assert !(endpoint in occupied)
             push!(occupied, endpoint)
         end
     end
-    @assert all(connection.state.active == (key in selected_set) for (key, connection) in model.linkgraph)
+    @assert all(model.graph.active[connection] == (key in selected_set) for (connection, key) in enumerate([edge_key(model.graph, e) for e in eachindex(model.graph.edges)]))
     return nothing
 end
 
@@ -106,22 +109,24 @@ function benchmark_walker(constellation; duration::Float64=3600.0, interval::Flo
     metrics = DataFrame(time_s=Float64[], available=Int[], selected=Int[], entered=Int[], left=Int[],
         availability_s=Float64[], scoring_s=Float64[], matching_s=Float64[], total_s=Float64[],
         availability_bytes=Int[], scoring_bytes=Int[], matching_bytes=Int[], allocated_bytes=Int[])
-    history = InterLinkScheduleSample[]
+    history = InterLinkHistory[]
     for time in 0.0:interval:duration
         advance_walker_snapshot!(state, initial, mean_motion, time)
+        previous_available = [model.graph.available[connection] for connection in eachindex(model.graph.edges)]
         availability = @timed update_availability!(model, spacecraft, state)
+        entered = count(index -> !previous_available[index] && availability.value[index], eachindex(previous_available))
+        left = count(index -> previous_available[index] && !availability.value[index], eachindex(previous_available))
         scoring = @timed score_candidates!(model, policy, state, planet.μ; candidate_force=force_on_endpoint)
-        matching = @timed select_interlinks!(model)
-        validate_walker_selection(model, matching.value)
+        matching = @timed select_interlinks!(model, policy)
+        validate_walker_selection(model, policy, matching.value)
         @assert all(all(isfinite, current.pos) && all(isfinite, current.vel) for current in state.sc)
         @assert length(matching.value) <= (constellation.metadata.all_pairs ? length(spacecraft) ÷ 2 : 1)
         if !constellation.metadata.all_pairs
-            @assert sum((model.linkgraph[key].state.score for key in matching.value); init=0.0) ==
-                maximum((connection.state.available ? max(0.0, connection.state.score) : 0.0 for connection in model.connections); init=0.0)
+            @assert sum((policy.matching.score[model.graph.edge_index_lookup[key]] for key in matching.value); init=0.0) ==
+                maximum((model.graph.available[connection] ? max(0.0, policy.matching.score[connection]) : 0.0 for connection in eachindex(model.graph.edges)); init=0.0)
         end
-        push!(history, InterLinkScheduleSample(time, matching.value))
-        push!(metrics, (time, count(model.available), length(matching.value),
-            count(==(1), model.availability_transition), count(==(-1), model.availability_transition),
+        push!(history, InterLinkHistory(time, matching.value))
+        push!(metrics, (time, count(availability.value), length(matching.value), entered, left,
             availability.time, scoring.time, matching.time, availability.time + scoring.time + matching.time,
             availability.bytes, scoring.bytes, matching.bytes, availability.bytes + scoring.bytes + matching.bytes))
     end
@@ -181,7 +186,7 @@ function run_walker_engine(constellation; duration::Float64=20.0, dt_max::Float6
         endpoints = [endpoint for key in sample.active for endpoint in key]
         @assert length(unique(endpoints)) == length(endpoints)
     end
-    validate_walker_selection(constellation.model, history[end].active)
+    validate_walker_selection(constellation.model, constellation.policy, history[end].active)
     final_sma = [inv(2 / norm(current.pos) - dot(current.vel, current.vel) / mu) for current in solution.u[end].sc]
     target_index = constellation.policy.target_idx
     target = solution.u[end].sc[target_index]
@@ -191,7 +196,7 @@ function run_walker_engine(constellation; duration::Float64=20.0, dt_max::Float6
     @assert target.laser_delta_sma > 0 && target_delta_sma > 0
     @assert sma_residual < 1e-3
     initial_period = 2pi * sqrt(constellation.spacecraft[1].initial_condition.a^3 / mu)
-    summary = (satellites=length(solution.u[end].sc), candidates=length(constellation.model.linkgraph),
+    summary = (satellites=length(solution.u[end].sc), candidates=length(constellation.model.graph.edges),
         duration_s=duration, dtmax_s=dt_max, gravity="two_body", solver="Tsit5",
         altitude_m=constellation.metadata.altitude, all_pairs=constellation.metadata.all_pairs,
         scoring_policy=String(constellation.policy.policy), initial_period_s=initial_period,
@@ -212,7 +217,7 @@ function run_walker_engine_case(; seed::Int=20261003, duration::Float64=20.0,
     wall_limit_s::Float64=Inf)
     constellation = walker_constellation(; seed, altitude, all_pairs, policy_name)
     @assert length(constellation.spacecraft) == 4000
-    @assert length(constellation.model.linkgraph) == (all_pairs ? 4000 * 3999 ÷ 2 : 3999)
+    @assert length(constellation.model.graph.edges) == (all_pairs ? 4000 * 3999 ÷ 2 : 3999)
     println("Running 4,000-satellite force-coupled integration for ", duration,
         " s; policy=", policy_name, "; all_pairs=", all_pairs,
         "; scheduling at every accepted step; package=", pathof(SpaceAGORA))
@@ -255,7 +260,7 @@ end
 function run_walker_case(; seed::Int=20261003)
     constellation = walker_constellation(; seed)
     @assert length(constellation.spacecraft) == 4000
-    @assert length(constellation.model.linkgraph) == 3999
+    @assert length(constellation.model.graph.edges) == 3999
     output = joinpath(REPO_ROOT, "III_output", "walker_interlinks", "seed_$seed")
     mkpath(output)
     CSV.write(joinpath(output, "constellation.csv"), DataFrame([constellation.metadata]))

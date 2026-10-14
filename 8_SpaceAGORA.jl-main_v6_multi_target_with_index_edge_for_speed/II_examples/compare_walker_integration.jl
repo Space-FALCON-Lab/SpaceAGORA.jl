@@ -18,7 +18,7 @@ walker_comparison_sma(state, mu) = inv(2 / norm(state.pos) - dot(state.vel, stat
 function walker_comparison_configuration(mode::Symbol)
     mode in (:legacy, :v5, :v6) || throw(ArgumentError("Mode must be legacy, v5, or v6."))
     modern = mode !== :legacy
-    @assert modern == isdefined(WALKER_MODEL, :InterLinkModel)
+    @assert modern == isdefined(WALKER_MODEL, :ConstellationInterLinkModel)
     project = mode === :legacy ? "2_SpaceAGORA.jl" : "8_SpaceAGORA.jl-main_$(mode)"
     @assert dirname(dirname(pathof(SpaceAGORA))) == normpath(joinpath(@__DIR__, "..", "..", project))
     metadata = only(eachrow(CSV.read(joinpath(WALKER_FIXTURE, "constellation.csv"), DataFrame)))
@@ -38,9 +38,9 @@ function walker_comparison_configuration(mode::Symbol)
     effectors = (InverseSquaredGravityModel(),)
     extra_config = NamedTuple()
     if modern
-        laser = InterLinkModel()
+        laser = ConstellationInterLinkModel()
         for helper in 2:metadata.satellites
-            register_candidate!(laser, spacecraft, (1, 1), (helper, 1);
+            register_allowed_link!(laser, spacecraft, (1, 1), (helper, 1);
                 parameters=InterLinkParameters(P=10_000.0, B=100.0, range=metadata.range_m))
         end
         extra_config = (interlink_model=laser, scheduling_policy_model=SchedulingPolicyModel(:gve_sma; target_idx=1))

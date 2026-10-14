@@ -1,0 +1,98 @@
+# Equirectangular surface textures for the post-hoc 3D viewer
+# (docs/architecture/interactive_visualization_plan.md). Keyed by
+# lowercase(planet.name) and a `resolution` tier ("4k", "8k", "16k" = image
+# width); the exporter picks the largest tier by default. `lon_left_deg` is the
+# east longitude of the image's left edge; `width`/`height` in pixels. Every
+# entry is a US government work in the public domain unless `license` says
+# otherwise. To add a body or tier, build the JPEG with
+# scripts/dev/build_viewer_textures.py (or drop in any 2:1 JPEG) and add one
+# [[texture]] entry.
+version = 2
+
+[[texture]]
+body = "earth"
+file = "earth_bluemarble_ng_4k.jpg"
+resolution = "4k"
+source = "NASA Earth Observatory, Blue Marble Next Generation (December 2004, topography + bathymetry), resampled from 5400x2700"
+source_url = "https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x5400x2700.jpg"
+license = "public-domain (NASA)"
+width = 4096
+height = 2048
+lon_left_deg = -180.0
+
+[[texture]]
+body = "mars"
+file = "mars_viking_mdim21_4k.jpg"
+resolution = "4k"
+source = "NASA Trek / USGS, Viking MDIM 2.1 colorized global mosaic, stitched from WMTS zoom 3 tiles"
+source_url = "https://trek.nasa.gov/tiles/Mars/EQ/Mars_Viking_MDIM21_ClrMosaic_global_232m/"
+license = "public-domain (NASA/USGS)"
+width = 4096
+height = 2048
+lon_left_deg = -180.0
+
+[[texture]]
+body = "venus"
+file = "venus_magellan_clrtopo_4k.jpg"
+resolution = "4k"
+source = "USGS Astrogeology, Magellan C3-MDIR colorized topography global mosaic (6600 m/px), resampled"
+source_url = "https://planetarymaps.usgs.gov/mosaic/Venus_Magellan_C3-MDIR_ClrTopo_Global_Mosaic_6600m.tif"
+license = "public-domain (USGS/NASA)"
+width = 4096
+height = 2048
+lon_left_deg = -180.0
+
+[[texture]]
+body = "titan"
+file = "titan_cassini_iss_4k.jpg"
+resolution = "4k"
+source = "USGS Astrogeology, Cassini ISS global mosaic P19658 (4 km/px), resampled; 0-360 E with 180 E at center"
+source_url = "https://planetarymaps.usgs.gov/mosaic/Titan_ISS_P19658_Mosaic_Global_4km.tif"
+license = "public-domain (USGS/NASA)"
+width = 4096
+height = 2048
+lon_left_deg = 0.0
+
+[[texture]]
+body = "moon"
+file = "moon_lroc_wac_4k.jpg"
+resolution = "4k"
+source = "NASA SVS 4720 CGI Moon Kit, LRO WAC color mosaic with LOLA poles, 4k"
+source_url = "https://svs.gsfc.nasa.gov/4720"
+license = "public-domain (NASA)"
+width = 4096
+height = 2048
+lon_left_deg = -180.0
+
+[[texture]]
+body = "earth"
+file = "earth_bluemarble_ng_8k.jpg"
+resolution = "8k"
+source = "NASA Earth Observatory, Blue Marble Next Generation (December 2004, topography + bathymetry), resampled from 21600x10800"
+source_url = "https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x21600x10800.jpg"
+license = "public-domain (NASA)"
+width = 8192
+height = 4096
+lon_left_deg = -180.0
+
+[[texture]]
+body = "mars"
+file = "mars_viking_mdim21_8k.jpg"
+resolution = "8k"
+source = "NASA Trek / USGS, Viking MDIM 2.1 colorized global mosaic, stitched from WMTS zoom 4 tiles"
+source_url = "https://trek.nasa.gov/tiles/Mars/EQ/Mars_Viking_MDIM21_ClrMosaic_global_232m/"
+license = "public-domain (NASA/USGS)"
+width = 8192
+height = 4096
+lon_left_deg = -180.0
+
+[[texture]]
+body = "moon"
+file = "moon_lroc_wac_8k.jpg"
+resolution = "8k"
+source = "NASA SVS 4720 CGI Moon Kit, LRO WAC color mosaic with LOLA poles, 8k"
+source_url = "https://svs.gsfc.nasa.gov/4720"
+license = "public-domain (NASA)"
+width = 8192
+height = 4096
+lon_left_deg = -180.0

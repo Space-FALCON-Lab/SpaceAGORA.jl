@@ -1,8 +1,8 @@
 using Printf
 
-function original_select_interlinks!(model)
-    candidates = sort!([key for (key, connection) in model.linkgraph
-        if connection.state.available && connection.state.score > 0.0])
+function original_select_interlinks!(model, policy)
+    candidates = sort!([key for (connection, key) in enumerate([edge_key(model.graph, e) for e in eachindex(model.graph.edges)])
+        if model.graph.available[connection] && policy.matching.score[connection] > 0.0])
     endpoints = sort!(unique([endpoint for key in candidates for endpoint in key]))
     bits = Dict(endpoint => big(1) << (index - 1) for (index, endpoint) in enumerate(endpoints))
     neighbors = Dict(endpoint => InterLinkKey[] for endpoint in endpoints)
@@ -21,7 +21,7 @@ function original_select_interlinks!(model)
             partner = key[1] == endpoint ? key[2] : key[1]
             iszero(remaining & bits[partner]) && continue
             score, selected = best_matching(remaining & ~bits[partner])
-            score += model.linkgraph[key].state.score
+            score += policy.matching.score[model.graph.edge_index_lookup[key]]
             if score > best_score
                 best_score, best_keys = score, vcat(InterLinkKey[key], selected)
             end
@@ -33,43 +33,46 @@ function original_select_interlinks!(model)
     _, selected = best_matching((big(1) << length(endpoints)) - 1)
     selected = sort!(copy(selected))
     selected_set = Set(selected)
-    for (key, connection) in model.linkgraph
-        connection.state.active = key in selected_set
+    for (connection, key) in enumerate([edge_key(model.graph, e) for e in eachindex(model.graph.edges)])
+        model.graph.active[connection] = key in selected_set
     end
     return selected
 end
 
-function dense_fixture(count)
+function dense_fixture(count, policy)
     spacecraft = [SpacecraftModel() for _ in 1:count]
-    model = InterLinkModel()
+    model = ConstellationInterLinkModel()
+    scores = Float64[]
     for first_satellite in 1:(count - 1), second_satellite in (first_satellite + 1):count
-        key = register_candidate!(model, spacecraft, (first_satellite, 1), (second_satellite, 1))
-        model.linkgraph[key].state.available = true
-        model.linkgraph[key].state.score = isodd(first_satellite) && second_satellite == first_satellite + 1 ? 2.0 : 1.0
+        key = register_allowed_link!(model, spacecraft, (first_satellite, 1), (second_satellite, 1))
+        model.graph.available[model.graph.edge_index_lookup[key]] = true
+        push!(scores, isodd(first_satellite) && second_satellite == first_satellite + 1 ? 2.0 : 1.0)
     end
+    matching_workspace!(model, policy).score .= scores
     expected = [((satellite, 1), (satellite + 1, 1)) for satellite in 1:2:(count - 1)]
     return model, expected
 end
 
 function benchmark_worker(method, count, limit)
+    policy = SchedulingPolicyModel(:gve_sma)
     selector = method == "original" ? original_select_interlinks! : select_interlinks!
-    warm_model, warm_expected = dense_fixture(8)
-    @assert selector(warm_model) == warm_expected
-    model, expected = dense_fixture(count)
+    warm_model, warm_expected = dense_fixture(8, policy)
+    @assert selector(warm_model, policy) == warm_expected
+    model, expected = dense_fixture(count, policy)
     timings = Float64[]
     for trial in 1:5
         GC.gc()
         ccall(:alarm, Cuint, (Cuint,), limit)
-        elapsed = @elapsed selected = selector(model)
+        elapsed = @elapsed selected = selector(model, policy)
         ccall(:alarm, Cuint, (Cuint,), 0)
         @assert selected == expected
-        @assert all(connection.state.active == (key in selected) for (key, connection) in model.linkgraph)
+        @assert all(model.graph.active[connection] == (key in selected) for (connection, key) in enumerate([edge_key(model.graph, e) for e in eachindex(model.graph.edges)]))
         push!(timings, elapsed)
         @printf("%s terminals=%d trial=%d ms=%.3f\n", method, count, trial, elapsed * 1000)
         flush(stdout)
     end
     @printf("RESULT %s terminals=%d candidates=%d median_ms=%.3f\n",
-        method, count, length(model.linkgraph), sort!(timings)[3] * 1000)
+        method, count, length(model.graph.edges), sort!(timings)[3] * 1000)
 end
 
 """
@@ -100,6 +103,9 @@ end
 
 if !isempty(ARGS) && first(ARGS) == "--worker"
     include(joinpath(@__DIR__, "..", "II_examples", "gve_sma_interlinks.jl"))
+    edge_key(graph::InterLinkGraph, edge::Int) =
+        (graph.vertices[graph.edges[edge][1]], graph.vertices[graph.edges[edge][2]])
+    using SpaceAGORA.SimulationModel.SchedulingPolicies: matching_workspace!
     benchmark_worker(ARGS[2], parse(Int, ARGS[3]), parse(Int, ARGS[4]))
 else
     benchmark_main()

@@ -9,23 +9,17 @@ function interlink_benchmark_fixture(shape, count)
     spacecraft = [SpacecraftModel(id=index, n_terminal=2) for index in 1:count]
     state = (sc=[(pos=[7e6, 10.0 * index, 0.0], vel=[0.0, -7500.0, 0.0],
         mass=200.0 + index) for index in 1:count],)
-    model = InterLinkModel()
+    model = ConstellationInterLinkModel()
     pairs = shape == "dense" ? [(first, second) for first in 1:(count - 1) for second in (first + 1):count] :
         shape == "star" ? [(1, partner) for partner in 2:count] : [(first, first + 1) for first in 1:(count - 1)]
     for (first, second) in pairs
-        register_candidate!(model, spacecraft, (first, 1), (second, shape == "multi_terminal" ? 2 : 1))
+        register_allowed_link!(model, spacecraft, (first, 1), (second, shape == "multi_terminal" ? 2 : 1))
     end
     return spacecraft, state, model
 end
 
 function benchmark_availability!(model, spacecraft, state)
-    if applicable(update_availability!, model, spacecraft, state)
-        update_availability!(model, spacecraft, state)
-    else
-        for key in keys(model.linkgraph)
-            update_availability!(model, key, spacecraft, state)
-        end
-    end
+    update_availability!(model, spacecraft, state)
     return nothing
 end
 
@@ -55,19 +49,19 @@ function benchmark_interlinks(label)
         spacecraft, state, model = interlink_benchmark_fixture(shape, count)
         benchmark_availability!(model, spacecraft, state)
         score_candidates!(model, policy, state, mu; candidate_force=force_on_endpoint)
-        selected = select_interlinks!(model)
+        selected = select_interlinks!(model, policy)
         endpoints = [endpoint for key in selected for endpoint in key]
         @assert !isempty(selected) && length(unique(endpoints)) == length(endpoints)
-        @assert all(model.linkgraph[key].state.available && model.linkgraph[key].state.score > 0 for key in selected)
+        @assert all(model.graph.available[model.graph.edge_index_lookup[key]] && policy.matching.score[model.graph.edge_index_lookup[key]] > 0 for key in selected)
         for (stage, operation) in (
                 ("availability", () -> benchmark_availability!(model, spacecraft, state)),
                 ("scoring", () -> score_candidates!(model, policy, state, mu; candidate_force=force_on_endpoint)),
-                ("matching", () -> select_interlinks!(model)),
+                ("matching", () -> select_interlinks!(model, policy)),
                 ("forces", () -> benchmark_forces(model, state)))
             elapsed, bytes = measure_interlink_stage(operation)
-            push!(table, (label, shape, count, length(model.linkgraph), length(selected), stage, elapsed, bytes))
+            push!(table, (label, shape, count, length(model.graph.edges), length(selected), stage, elapsed, bytes))
             @printf("%s %s N=%d E=%d %s: %.3f ms, %.0f bytes\n",
-                label, shape, count, length(model.linkgraph), stage, elapsed * 1000, bytes)
+                label, shape, count, length(model.graph.edges), stage, elapsed * 1000, bytes)
             flush(stdout)
         end
     end

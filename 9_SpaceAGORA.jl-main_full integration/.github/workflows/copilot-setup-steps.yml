@@ -1,0 +1,85 @@
+name: "Copilot Setup Steps"
+
+# Run this workflow automatically whenever it is changed so that setup
+# problems are caught early.  Manual re-runs are also available from the
+# repository's "Actions" tab.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+
+jobs:
+  # The job MUST be called `copilot-setup-steps` or it will not be picked
+  # up by Copilot cloud agent.
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 59
+
+    permissions:
+      contents: read
+
+    env:
+      JULIA_NUM_THREADS: "2"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
+
+      # Keep the GRAMSuite data submodule in sync with its remote main branch
+      # so that the cached environment always reflects the latest data. The
+      # dev tree (private) carries the GRAM sources needed for a native
+      # build; when the read token cannot reach it, fall back to the public
+      # tree, which ships data only.
+      - name: Load pinned GRAMSuite revision
+        env:
+          GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+        run: |
+          bash .github/scripts/update_gramsuite_submodule.sh dev \
+            || bash .github/scripts/update_gramsuite_submodule.sh regular
+
+      - name: Setup Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+
+      # Cache ~/.julia/packages, ~/.julia/compiled, and ~/.julia/artifacts.
+      # The cache key includes the Julia version and is invalidated whenever
+      # Project.toml or Manifest.toml change, matching the strategy used in
+      # the other CI workflows.
+      - name: Cache Julia packages and compiled artifacts
+        uses: julia-actions/cache@v2
+        with:
+          # The private GRAMSuite's compiled images carry its source text, and a
+          # cache saved from main can be restored by fork pull requests.
+          cache-compiled: "false"
+
+      # Resolve and download all declared Julia dependencies.
+      - name: Instantiate Julia environment
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
+
+      # Best-effort: the public GRAMSuite tree has no Build/ sources, so a
+      # native build is only possible on the dev tree. Without it, SpaceAGORA
+      # falls back to the library-less offline GRAM surrogate at runtime
+      # (SPACEAGORA_GRAM_OFFLINE_SURROGATE=auto), so agent setup should not
+      # fail here.
+      - name: Ensure native GRAM build (best-effort)
+        run: |
+          ./scripts/ensure_gram_native.sh --clean \
+            || echo "::warning::native GRAM unavailable (no Build/ sources in this GRAMSuite tree); offline surrogate fallback applies"
+
+      # Explicitly trigger precompilation so that every package's compiled
+      # .ji cache file is written to ~/.julia/compiled before the cache is
+      # saved.  Without this step the files would be created on the first
+      # `using` call inside the agent session, defeating the purpose of the
+      # cache.
+      - name: Precompile Julia packages
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.precompile()'

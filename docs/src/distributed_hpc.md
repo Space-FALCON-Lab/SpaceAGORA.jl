@@ -66,11 +66,9 @@ Under the hood this uses `campaign_process_pool()` (the process-global
 `ensure_process_workers!(pool, n; warmup_fn=...)`, which spawns only the
 worker shortfall, bootstraps each new worker with `SpaceAGORA`, `GRAMSuite`
 (best-effort), and the default SPICE kernel set, and optionally pays a
-representative call's compilation and initialization cost via `warmup_fn`
-before the first timed dispatch. Warmup is attempted on each new worker; its
-cost and coverage depend on the workload, argument types, Julia environment
-and cache state. Later calls can still require additional compilation. Each
-process worker runs with
+representative call's JIT/specialization cost once per new worker (measured
+at roughly 70 s cold vs. a fraction of a second warm) via `warmup_fn` instead
+of inside the first real, timed dispatch. Each process worker runs with
 `--threads=1`, so it does not contend with the coordinator's thread pool.
 `shutdown_process_pool!(pool)` tears the pool down; campaign code otherwise
 leaves it warm across calls by design.

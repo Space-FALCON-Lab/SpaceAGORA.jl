@@ -53,21 +53,17 @@ change does not make plotting an optional package dependency.
 
 ## EDG and legacy bridges
 
-The independent experimental `SpaceAGORAEDG.jl` companion owns the EDG numerical
-kernels. Core retains public model types, run-owned state and passage resets,
-physical integration, queries, outputs and panel actuation.
-`guidance/aerobraking/typed_edg/` contains these core models and services; its
-`algorithms.jl` forwards to the optional provider through `SpaceAGORA.EDGServices`.
-The short files in `control/` that import EDG calculations are compatibility
-bindings, not additional algorithms.
+EDG remains part of core GNC. Typed EDG prediction and decision calculations are
+in `guidance/aerobraking/typed_edg/`. Its guidance model selects modes and targets;
+its control model applies panel commands. Their shared state, atmosphere-passage
+resets and refusal rules remain unchanged. The short files in `control/` that
+import EDG calculations are compatibility bindings, not additional algorithms.
 
 The older `e_edg/` and `t_edg/` strategies and `control/aerobraking/` execution
 paths remain separate. `internal/bridge_helpers.jl` supplies their legacy runtime
 context conversions. This organization does not retire either path or certify
-their scientific equivalence. The [EDG adapter contract](edg_adapter_boundary.md)
-defines the supported service boundary; the [EDG guide](../user/edg_guidance.md)
-describes installation and the bounded experimental scope. Extraction and
-interface conformance do not establish broader scientific qualification.
+their scientific equivalence. The [EDG boundary plan](edg_adapter_boundary.md)
+describes the further validation needed before a separate adapter can be adopted.
 
 Robot hardware remains under vehicle models, and compliant multibody equations
 remain under dynamics. MuJoCo uses the engine's

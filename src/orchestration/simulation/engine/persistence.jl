@@ -27,7 +27,6 @@
 @inline function _write_visualization_scene_if_enabled!(args; density_params=nothing)::Union{Nothing, String}
     args.simulation_settings.results || return nothing
     args.simulation_settings.save_visualization_scene || return nothing
-    SimulationModel.IOOutputs._invalidate_mission_history!(args)
     return SimulationModel.SceneVisualization.write_visualization_scene!(args; density_params=density_params)
 end
 

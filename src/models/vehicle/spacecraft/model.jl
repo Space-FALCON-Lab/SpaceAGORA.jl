@@ -564,11 +564,23 @@ mutable struct SpacecraftModel
     # Compliant multibody models mounted on links (compliant panels, flexible appendages). Empty by default;
     # their bodies are not links and not part of `dry_mass`/`mass`.
     attachments::Vector{CompliantAttachment}
+    n_terminal::Int64 # Number of interlink terminals
+    battery_energy_index::Float64
+    tempurature_index::Float64
 end
 
 _empty_guidance() = GuidanceModel((), Float64[])
 _empty_navigation() = NavigationModel((), Float64[])
 _empty_control() = ControlModel((), Float64[])
+
+# Positional form before interlink metadata was added.
+SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor,
+                n_reaction_wheels, n_thrusters, initial_condition, id,
+                guidance::GuidanceModel, navigation::NavigationModel, control::ControlModel,
+                attachments::Vector{CompliantAttachment}) =
+    SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor,
+                    n_reaction_wheels, n_thrusters, initial_condition, id,
+                    guidance, navigation, control, attachments, 1, 100.0, 100.0)
 
 # Positional form with GNC but no attachments (kept for existing callers).
 SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor,
@@ -596,7 +608,13 @@ function SpacecraftModel(; joints::AbstractVector{<:Joint}=Joint[], links::Abstr
                             guidance::GuidanceModel=_empty_guidance(),
                             navigation::NavigationModel=_empty_navigation(),
                             control::ControlModel=_empty_control(),
-                            attachments::AbstractVector{CompliantAttachment}=CompliantAttachment[])
+                            attachments::AbstractVector{CompliantAttachment}=CompliantAttachment[],
+                            n_terminal::Int64=1,
+                            battery_energy_index::Real=100.0,
+                            tempurature_index::Real=100.0)
+    n_terminal >= 0 || throw(ArgumentError("n_terminal must be nonnegative."))
+    0 <= battery_energy_index <= 100 || throw(ArgumentError("battery_energy_index must be in [0, 100]."))
+    0 <= tempurature_index <= 100 || throw(ArgumentError("tempurature_index must be in [0, 100]."))
     joints_vec = Vector{Joint}(joints)
     links_vec = Vector{Link}(links)
 
@@ -614,7 +632,8 @@ function SpacecraftModel(; joints::AbstractVector{<:Joint}=Joint[], links::Abstr
     end
 
     return SpacecraftModel(joints_vec, links_vec, root, instant_actuation, dry_mass, prop_mass, inertia_tensor, n_reaction_wheels, n_thrusters, initial_condition, id,
-                           guidance, navigation, control, Vector{CompliantAttachment}(attachments))
+                           guidance, navigation, control, Vector{CompliantAttachment}(attachments),
+                           n_terminal, Float64(battery_energy_index), Float64(tempurature_index))
 end
 
 # Preserve the collection type in this module while giving configuration its own file.

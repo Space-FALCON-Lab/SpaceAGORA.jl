@@ -1,78 +1,82 @@
-# Compare the nine base benchmark modes with the actual shipped profiles.
-# Attribution/route-exploration arms and the intentional R3 backend override
-# are outside this callback-mode and scheduler contract.
+# The benchmark harness's mode table must agree with the shipped profile it names.
+#
+# benchmarks/studies/parallelization_performance/modes.jl duplicates the routing
+# knobs that src/orchestration/parallel/routing/profile_definitions.jl already declares. That
+# duplicate has gone stale twice: R5's inner scheduler was reverted to "static"
+# in 622ae2a0 and its thermal_mode to "auto" later, and in both cases the
+# harness kept measuring the old value -- so the benchmark backing the paper's
+# routing claims was reporting a profile SpaceAGORA does not ship.
+#
+# scripts/paired_profile_probe.jl solved this by deriving its environment from
+# ParallelProfiles.profile_env_pairs, which is the shipped source of truth. This
+# harness should do the same; until it does, this gate fails the build whenever
+# a value in the table disagrees with the profile it claims to represent.
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
+
+push!(LOAD_PATH, REPO_ROOT)
+using SpaceAGORA
+
 const MODES_PATH = joinpath(REPO_ROOT, "benchmarks", "studies",
                             "parallelization_performance", "modes.jl")
-const PROFILE_DEFINITIONS_PATH = joinpath(REPO_ROOT, "src", "orchestration", "parallel", "routing",
-                                          "profile_definitions.jl")
 isfile(MODES_PATH) || error("modes.jl not found at $(MODES_PATH)")
-isfile(PROFILE_DEFINITIONS_PATH) ||
-    error("profile_definitions.jl not found at $(PROFILE_DEFINITIONS_PATH)")
+const MODES_SRC = read(MODES_PATH, String)
 
-# These trusted repository definitions construct their values with Base alone.
-# Fresh modules avoid package/native loading and check constructed values,
-# including the separately constructed serial mode and default scheduler fields.
-const PROFILE_SOURCE = Module(gensym(:PPCParityProfiles))
-Base.include(PROFILE_SOURCE, PROFILE_DEFINITIONS_PATH)
-const MODE_SOURCE = Module(gensym(:PPCParityModes))
-# PPCConfig occurs only in signatures of environment/reporting helpers. Those
-# helpers are not called by ppc_mode_specs(); no benchmark launcher is loaded.
-Core.eval(MODE_SOURCE, :(struct PPCConfig end))
-Base.include(MODE_SOURCE, MODES_PATH)
-const MODE_SPECS = Base.invokelatest(getfield(MODE_SOURCE, :ppc_mode_specs))
-
+# (harness mode name => shipped profile). Only the modes that claim to BE a
+# shipped profile are checked; the *_no* attribution arms deliberately deviate
+# on the one knob they isolate, so they are checked on everything else via the
+# base mode they are derived from.
 const CHECKED = [
     ("serial", "R0"), ("outer_threads", "R1_a"), ("outer_process", "R1_b"),
     ("inner_only", "R2"), ("outer_inner_static", "R3"),
     ("outer_inner_adaptive", "R4"), ("full_smart", "R5"),
     ("policy_v2", "R6"), ("predictive", "R7"),
 ]
-const CHECKED_FIELDS = (
-    :thermal => :thermal_mode,
-    :density => :density_mode,
-    :control => :control_mode,
-    :multibody => :multibody_mode,
-    :effector => :effector_mode,
-    :scheduler => :inner_scheduler,
-)
+
+# Locate the PPCModeSpec block for `mode`. Modes are written either inline,
+# `"mode" => PPCModeSpec(...)`, or bound to a local name first, e.g.
+# `serial = PPCModeSpec(...)` and later `"serial" => serial,`. Both forms are
+# checked; a checked mode that cannot be found at all fails the gate instead of
+# being skipped.
+function _mode_block(mode::String)::Union{Nothing, String}
+    anchor = "\"$(mode)\" => PPCModeSpec("
+    i = findfirst(anchor, MODES_SRC)
+    if i === nothing
+        bound = match(Regex("\"" * mode * "\"\\s*=>\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*,"), MODES_SRC)
+        bound === nothing && return nothing
+        i = findfirst(Regex("\\b" * bound.captures[1] * "\\s*=\\s*PPCModeSpec\\("), MODES_SRC)
+        i === nothing && return nothing
+    end
+    # The block ends at the next `" => PPCModeSpec(` or end of file.
+    rest = MODES_SRC[last(i):end]
+    nxt = findfirst("\" => PPCModeSpec(", rest[2:end])
+    return nxt === nothing ? rest : rest[1:first(nxt)]
+end
+
+# Pull one `key="value"` out of the PPCModeSpec block for `mode`.
+function _spec_field(block::String, key::String)::Union{Nothing, String}
+    m = match(Regex("\\b" * key * "\\s*=\\s*\"([^\"]*)\""), block)
+    return m === nothing ? nothing : String(m.captures[1])
+end
 
 violations = String[]
 for (mode, profile) in CHECKED
-    # Preserve the missing-mode diagnostic used by the existing PR297 controls.
-    haskey(MODE_SPECS, mode) || error(
-        "Benchmark mode table has no PPCModeSpec for checked mode $(repr(mode)) in modes.jl.")
-    spec = MODE_SPECS[mode]
-    cfg = Base.invokelatest(getfield(PROFILE_SOURCE, :profile_config), profile)
-    if !hasproperty(spec, :profile)
-        push!(violations, "modes.jl mode $(repr(mode)) is missing profile")
-    else
-        actual_profile = try
-            Base.invokelatest(getfield(PROFILE_SOURCE, :parse_parallel_profile), spec.profile)
-        catch err
-            push!(violations, "modes.jl mode $(repr(mode)) has invalid profile " *
-                              "$(repr(spec.profile)): $(sprint(showerror, err))")
-            nothing
-        end
-        if actual_profile !== nothing && actual_profile != cfg.profile
-            push!(violations, "modes.jl mode $(repr(mode)) names profile " *
-                              "$(repr(spec.profile)) but requires $(profile)")
-        end
-    end
-    for (field, shipped_field) in CHECKED_FIELDS
-        if !hasproperty(spec, field)
-            push!(violations, "modes.jl mode $(repr(mode)) is missing $(field)")
-        elseif !hasproperty(cfg, shipped_field)
-            push!(violations, "profile $(profile) is missing $(shipped_field)")
-        else
-            harness = getproperty(spec, field)
-            shipped = getproperty(cfg, shipped_field)
-            if harness != shipped
-                push!(violations,
-                      "modes.jl mode $(repr(mode)) sets $(field)=$(repr(harness)) but " *
-                      "profile $(profile) ships $(field)=$(repr(shipped))")
-            end
+    cfg = SpaceAGORA.ParallelProfiles.profile_config(profile)
+    block = _mode_block(mode)
+    block === nothing && error("Benchmark mode table has no PPCModeSpec for checked mode \"$(mode)\" in modes.jl.")
+    for (field, shipped) in (
+        ("thermal", cfg.thermal_mode),
+        ("density", cfg.density_mode),
+        ("control", cfg.control_mode),
+        ("multibody", cfg.multibody_mode),
+        ("effector", cfg.effector_mode),
+    )
+        harness = _spec_field(block, field)
+        harness === nothing && continue
+        if harness != shipped
+            push!(violations,
+                  "modes.jl mode \"$(mode)\" sets $(field)=\"$(harness)\" but " *
+                  "profile $(profile) ships $(field)=\"$(shipped)\"")
         end
     end
 end

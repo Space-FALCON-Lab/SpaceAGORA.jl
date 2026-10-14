@@ -941,9 +941,8 @@ end
 """
     write_viewer_dev_payload(prefix, out_js; kwargs...) -> String
 
-Write `window.SPACEAGORA_VIEWER = {...};` for `viewer/dev.html` in the
-SpaceAGORAVisualizer.jl companion repository, so its viewer modules can be
-edited and reloaded without rebundling.
+Write `window.SPACEAGORA_VIEWER = {...};` for `viewer/dev.html`, so the
+viewer modules can be edited and reloaded without rebundling.
 """
 function write_viewer_dev_payload(prefix::AbstractString, out_js::AbstractString; textures::Bool=true, textures_dir::AbstractString=TEXTURES_DIR, mission=nothing, kwargs...)::String
     scene_path = String(prefix) * "_scene.json"

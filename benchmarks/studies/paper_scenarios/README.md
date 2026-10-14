@@ -99,17 +99,15 @@ smoke: set `PS_SIZES=1,4 PS_MC_SAMPLES=4 PS_WORKERS=1,2 PS_MISSION_S=60 PS_REPEA
 - `PS_GRAVITY`/`PS_DENSITY` overrides in S1 write a suffixed CSV
   (`s1_constellation_scaling_<gravity>_<density>.csv`) instead of overwriting the
   (`l20`, vacuum) baseline; `plot_results.jl` picks up every such file automatically
-  and tags rows with a `variant` column. The historical L50/4096 result of
-  21.6x on twelve threads is the serial-row time divided by the parallel-row
-  time. S1 selects `rhs_mode=serial` for the baseline and `flat` for the
-  parallel run, so this ratio includes an execution-path change as well as a
-  thread-count change. The recorded baseline comparison found the single-thread
-  `auto` path substantially faster than that serial baseline. Report the
-  baseline convention with the ratio; the ratio alone does not establish
-  superlinear hardware scaling or a cache explanation. See
-  [the S1 baseline reconciliation](../../../docs/architecture/paper_routing_figures_20260915.md#the-s1-speedups-rest-on-a-different-serial-baseline)
-  for the retained measurements and their interpretation. These are historical
-  results, not a new measurement of the current revision.
+  and tags rows with a `variant` column. A logged finding from an `l50` comparison
+  run: at low N the baseline's cheap per-satellite cost makes fixed dispatch
+  overhead dominate (including a specific dip at N=16, where
+  `SPACEAGORA_RHS_BATCH_THREAD_THRESHOLD` first turns batched RHS threading on);
+  a heavier force model shrinks that overhead fraction and produces *superlinear*
+  speedup at N >= 1024 (up to 21.6x on a 12-thread budget) — reproducible but not
+  confirmed against hardware cache-miss counters. See "S1 Force-Model Sensitivity
+  Finding" in `docs/architecture/parallelization_paper_notes.md` for the full data
+  and the caveat to state alongside it in the paper.
 
 ## S1 finding: TRX50 thread-count sensitivity at N=2048/4096
 
@@ -163,13 +161,9 @@ diagnostic only, not a paper figure.
 - `gram_standard` (direct native GRAM): density frozen per accepted step
   (`SPACEAGORA_DENSITY_FREEZE_PER_STEP=1`; per-RK-stage perturbation noise
   otherwise collapses adaptive dt) and density callback kept serial.
-- `gram_lookahead`: the study sets the vacuum-predicted cache horizon and
-  deviation limits beyond the mission reach to avoid rebuilds during the planned
-  run. The existing study comments attribute these settings to reported native
-  rebuild hangs with multiple satellites and cite
-  `project_gram_multisat_rebuild_bug`; that cited source is not included in this
-  checkout. See [the study configuration](common.jl) for the retained settings;
-  this note does not report a new native validation.
+- `gram_lookahead`: vacuum-predicted cache with horizon/deviation loosened past
+  mission reach so only the proven-safe initial build runs (native rebuild with
+  2+ satellites hangs — see `[[project_gram_multisat_rebuild_bug]]`).
 - Process modes: each pool worker is `--threads=1` with its own native GRAM; the
   coordinator only dispatches.
 

@@ -59,9 +59,8 @@ dependency on an optional adapter. Keep one authoritative implementation; a
 compatibility shim only forwards to it and checks availability.
 
 The domain layout uses exact Git submodule revisions under `packages/robotics/`
-for HYPR and SpaceAGORAMuJoCo, and under `packages/gnc/` for SpaceAGORAEDG.
-These are source checkouts, not copies of their implementations or new required
-dependencies. The shared
+for HYPR and SpaceAGORAMuJoCo. These are source checkouts, not copies of their
+implementations or new required dependencies. The shared
 [optional-package helper](../user/installation_environment.md#Optional-package-commands)
 verifies the selected gitlink revision, package UUID/version and clean checkout
 before passing its path to the existing installer. It initializes only the

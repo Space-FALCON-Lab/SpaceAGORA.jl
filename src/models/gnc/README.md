@@ -23,11 +23,7 @@ their methods. No second report implementation or forwarding method is installed
 
 The planner-neutral `RPOPlannerLifecycle` validates results before updating the
 shared controller reference. The existing `RPOGuidanceModel` remains a separate
-HYPR-specific entry path used by existing studies. For typed EDG,
-`guidance/aerobraking/typed_edg/` owns core model types, services and compatibility
-dispatch; the optional SpaceAGORAEDG package owns the numerical kernels. Core
-retains lifecycle and panel actuation. The older E-EDG/T-EDG paths and their control
-bridges remain available, with shared typed calculations forwarded to the
-companion. See the [EDG package boundary](../../../docs/src/maintainer/edg_adapter_boundary.md)
-for ownership and supported calls. This split does not establish numerical
-equivalence between the scientific formulations.
+HYPR-specific entry path used by existing studies. Typed EDG remains in core:
+`guidance/aerobraking/typed_edg/` owns its calculations, while the older E-EDG/T-EDG
+paths and their control bridges remain available. Folder changes do not establish
+numerical equivalence between those scientific formulations.

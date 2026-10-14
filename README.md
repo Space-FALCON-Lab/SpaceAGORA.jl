@@ -257,34 +257,21 @@ the simulation process. See the [visualization guide](docs/src/user/visualizatio
 
 ## For contributors
 
-Choose a location by what the code is responsible for. The repository has these
-main entry points:
+Source files are organized into four responsibility groups:
 
-| Location | What belongs here |
+| Group | Contents |
 | --- | --- |
-| [src/](src/README.md) | Installed implementation, grouped into interfaces, orchestration, models and foundation. |
-| [examples/](docs/src/user/examples_catalog.md) | Runnable scenarios that demonstrate supported usage, with their shared support code and any separate environments. |
-| [templates/](docs/src/extensibility.md) | Starting points to copy and complete when implementing an extension. |
-| [benchmarks/](docs/src/user/studies_benchmarks.md) | Evaluation procedures, comparison studies and their analysis tools. |
-| [scripts/](scripts/) | Installation, maintenance, diagnostics and operational tools. |
-| [test/](test/README.md) | Automated verification, test helpers and required fixtures. |
-| [docs/](docs/) | User guides, reference documentation and maintained design contracts. |
-| [data/](docs/src/assets.md) | Declared input assets and external-data setup, including the GRAMSuite checkout. |
-| [packages/](packages/README.md) | Optional companion checkouts, installation metadata and the HYPR compatibility loader. |
-| [ext/](ext/) | Julia package extensions owned by SpaceAGORA. |
-| [bin/](bin/) | Thin command launchers for users. |
-| [build/](build/) | The separate environment and driver for building a system image. |
-| [.github/](.github/) | Repository automation and contribution templates. |
+| `src/interfaces/` | CLI entry points, configuration and output I/O, analysis and visualization support. |
+| `src/orchestration/` | Simulation configuration and execution, mission operations and parallel routing. |
+| `src/models/` | Vehicle construction, environment models, dynamics, guidance, navigation and control. |
+| `src/foundation/` | Shared types, state, numerical and frame utilities, model composition and asset lookup. |
 
-`experimental/` remains a separate research area. Browser rendering is maintained in
-[SpaceAGORAVisualizer.jl](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl),
-with installation and usage linked above.
-
-Keep related files together and reuse an existing home before creating another
-folder. The [topology contract](docs/architecture/canonical_topology_contract.md)
-describes the placement and retirement rules. The
-[source directory guide](src/README.md) explains the four source groups and the
-composition loader; the groups do not introduce new Julia namespaces.
+These folders organize existing code. They do not introduce new Julia modules
+or change the public API. `src/SpaceAGORA.jl` remains the package entry point,
+with its package-level `src/precompile_workload.jl` helper alongside it.
+Julia package extensions remain in root `ext/`. See the
+[source directory guide](src/README.md) for the folder tree and composition
+loader, or the architecture page below to follow a simulation through the code.
 
 - User docs live in `docs/src/` and are built with `julia --project=. docs/make.jl`
 - Generated API pages come from `docs/public_api_symbols.jl`

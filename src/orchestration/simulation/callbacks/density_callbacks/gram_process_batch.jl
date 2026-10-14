@@ -13,9 +13,12 @@
 # the parallel routing/process layer before SimulationModel.
 # Resolved tolerantly rather than asserted at load time.
 #
-# Tests and standalone includes can load this callback without the full package
-# hierarchy. The parent chain may then end at Main, which has no ParallelProcess.
-# Resolve the optional service without preventing the surrounding module from loading.
+# The obvious `parentmodule(parentmodule(@__MODULE__)).ParallelProcess` breaks
+# every test that includes src/foundation/core/simulation_model.jl straight into Main
+# (test/probes/*, test/gates/ci_architecture_contract_gate.jl): there the parent
+# chain ends at Main, which has no ParallelProcess, and the file fails to load at
+# all. The density service is optional, so an unavailable module must disable the
+# service, not break the module that merely mentions it.
 const ParallelProcess = let root = parentmodule(parentmodule(@__MODULE__))
     isdefined(root, :ParallelProcess) ? getfield(root, :ParallelProcess) : nothing
 end

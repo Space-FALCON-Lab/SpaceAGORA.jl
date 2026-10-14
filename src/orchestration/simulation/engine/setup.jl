@@ -2434,6 +2434,29 @@ function _all_gnc_effectors(args)
     ))
 end
 
+function _validate_interlinks!(args, solver_mode::Symbol)
+    model = args.interlink_model
+    model === nothing && return nothing
+    model.constellation_link_type === :laser || throw(ArgumentError("Radio force physics is not implemented."))
+    solver_mode in (:gravity_backbone_split, :split_imex, :multirate) &&
+        throw(ArgumentError("Interlinks require a full-state solver such as :tsit5; $solver_mode is not supported."))
+    spacecraft = args.dynamics_model.spacecraft
+    external_owned = _external_owned_indices(args)
+    for (satellite, terminal) in model.graph.vertices
+        1 <= satellite <= length(spacecraft) ||
+            throw(ArgumentError("Interlink graph references spacecraft index $satellite, but the configuration has $(length(spacecraft)) spacecraft."))
+        sc = spacecraft[satellite]
+        1 <= terminal <= sc.n_terminal ||
+            throw(ArgumentError("Invalid interlink terminal $terminal on spacecraft $satellite."))
+        satellite in external_owned && throw(ArgumentError(
+            "Laser interlinks cannot act on externally propagated spacecraft $satellite; force exchange with the external propagator is not implemented."))
+        (_spacecraft_articulated(sc) || _spacecraft_has_attachments(sc) ||
+            _robot_arm_coupling(args, satellite, 0.0) !== nothing) && throw(ArgumentError(
+            "Laser interlinks currently apply a net translational force to rigid spacecraft; articulated or compliant spacecraft $satellite is not supported."))
+    end
+    return nothing
+end
+
 """
     _validate_articulated_spacecraft!(args, solver_mode)
 

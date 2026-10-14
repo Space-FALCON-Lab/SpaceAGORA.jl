@@ -1,5 +1,7 @@
 
 module ConfigTypes
+# import .SpacecraftModel
+# include("core/simulation_model.jl")
 using ..SpacecraftModels: SpacecraftModel
 using ..ArticulatedBody: ArticulatedRuntime
 using ..CompliantAttachmentDynamics: AttachmentRuntime

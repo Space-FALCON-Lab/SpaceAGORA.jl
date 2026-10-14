@@ -133,8 +133,8 @@ Base.@kwdef struct OrbitEventsScenarioConfig <: AbstractScenarioConfig
     # Comparison axis of the apsis series: :legacy (stretch the simulated events over the
     # digitized grid at its median step and interpolate at the digitized labels) or
     # :pass_aligned (flight point i is compared with simulated apsis event i, no
-    # interpolation; the digitized series are one point per orbit). Historical note:
-    # vex_pass_aligned_axis_amendment_2026-10-09.md (not included in this repository).
+    # interpolation; the digitized series are one point per orbit). See
+    # docs/vex_pass_aligned_axis_amendment_2026-10-09.md.
     comparison_axis::Symbol = :legacy
     # With :pass_aligned: index of one simulated apsis event (>= 1) with no flight counterpart because the
     # digitized series skips that orbit; later events pair with the next flight point (0 = none).

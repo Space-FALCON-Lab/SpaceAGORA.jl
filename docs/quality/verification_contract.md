@@ -36,9 +36,9 @@ This contract defines merge and release quality gates for SpaceAGORA architectur
    - `test/gates/ci_project_compat_gate.jl` (every non-standard-library `[deps]` entry has a `[compat]` bound)
    - `test/gates/ci_runtime_legacy_surface_gate.jl` (the active runtime does not regain prohibited legacy entry surfaces)
    - `test/gates/ci_translational_ownership_gate.jl` (translational equations stay with their owner directory)
-   - `test/gates/ci_runtime_any_hotpath_gate.jl` (no new explicit `Vector{Any}` or `Dict{Symbol, Any}` in runtime hot paths, including whitespace and qualified spellings; each inventoried heterogeneous boundary must occur exactly once in its declared owner)
-   - `test/gates/ci_ppc_mode_profile_parity_gate.jl` (the parallelization benchmark's evaluated mode values, scheduler and declared profile identity agree with the shipped routing profiles it names)
-   - `test/gates/ci_runtime_analysis_copy_overhead_gate.jl` (synthetic rows check actual summary/report copy-overhead values, successful-run denominators, failed/empty/zero cases, ordering and input preservation; no simulation or performance measurement)
+   - `test/gates/ci_runtime_any_hotpath_gate.jl` (no new `Vector{Any}` or `Dict{Symbol, Any}` in runtime hot paths; the inventoried heterogeneous boundaries must each occur exactly once)
+   - `test/gates/ci_ppc_mode_profile_parity_gate.jl` (the parallelization benchmark's mode table agrees with the shipped routing profiles it names)
+   - `test/gates/ci_runtime_analysis_copy_overhead_gate.jl` (the runtime-analysis report keeps its state-isolation copy-overhead columns and section)
 
 Additional required smoke checks for this migration track:
 1. `test/smoke/ci_clean_depot_smoke.jl`

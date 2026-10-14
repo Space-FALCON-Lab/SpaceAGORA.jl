@@ -183,8 +183,7 @@ seam well above the scored band.
 Neither `dispersion` nor `time_decorrelation` exists here because neither is
 needed.
 
-Granules are not vendored. Fetch them with
-`benchmarks/studies/edl_aerocapture_gp_uncertainty/fetch_merra2_native.sh`
+Granules are not vendored. Fetch them with `scripts/fetch_merra2_native.sh`
 (a NASA Earthdata login is required) or point `SPACEAGORA_MERRA2_NATIVE_PATH` at
 an existing collection.
 """

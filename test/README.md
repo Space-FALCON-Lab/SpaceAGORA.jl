@@ -1,7 +1,7 @@
 # Test Layout
 
-Test folders follow their execution and dependency boundaries. Shared drivers
-select the suites; helpers supply reusable setup and scenarios.
+Current layout (flat, CI-oriented — a prior purpose-oriented restructure was
+reverted to keep this repo mergeable with its upstream):
 
 - `test/runtests.jl`
   Default package test entrypoint. Delegates to `test/integration/runtests.jl`,
@@ -27,9 +27,9 @@ select the suites; helpers supply reusable setup and scenarios.
   dispatched from `test/suites/09_probe_drivers.jl` with the coverage flag
   forwarded, so their line data reaches the coverage gate.
 - `test/integration/`
-  The shared integration harness (mock models, builder helpers and `test/suites/`
-  includes), plus the `examples/` regression entrypoint. Domain folders are added
-  when they contain tests, rather than reserved in advance.
+  Current home of the legacy end-to-end harness (mock models, builder helpers,
+  `test/suites/` includes) plus example, persistence, CLI, and telemetry-facing
+  tests.
 - `test/smoke/`
   Environment and startup smokes such as clean-depot, threaded, and no-GRAM checks.
 - `test/grid_atmosphere/`

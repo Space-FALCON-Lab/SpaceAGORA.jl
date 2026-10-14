@@ -25,39 +25,63 @@
 
 ## Typed EDG prediction and panel commands
 
-The optional `SpaceAGORAEDG.jl` package owns the typed numerical kernels.
-Core's `SimulationModel.EDGAlgorithms`, under
-`src/models/gnc/guidance/aerobraking/typed_edg/`, retains compatibility dispatch
-rather than a second implementation. `SpaceAGORA.EDGServices` is the versioned
-boundary. The [EDG package boundary](@ref)
-defines the supported calls, units, state ownership, installation and errors.
+The typed energy-depletion route uses one calculation owner,
+SimulationModel.EDGAlgorithms, under
+src/models/gnc/guidance/aerobraking/typed_edg/. It owns reachable-energy brackets,
+mode decisions, heat-load windows, targeting switches, heat/structural limits,
+and the constrained angle decision. The private EDGServices module supplies
+SpaceAGORA state, atmosphere and frame projections. ODEParams remains an
+internal dependency; this change does not establish a standalone EDG package.
 
-Guidance and control model types remain in `GuidanceHooks` and `ControlHooks`.
-Core owns lifecycle, scheduling, physical integration and panel actuation. The
-provider receives configuration, run-owned EDG state, copied observations and
-call-scoped prediction queries. `ODEParams`, live physical state and mutable
-vehicle geometry remain inside core. Legacy E-EDG/T-EDG wrappers retain their
-routes; shared typed numerical calls forward to the companion.
+Guidance and control model types remain in GuidanceHooks and ControlHooks.
+Their public constructors, fields and hook generics retain their owners.
+The guidance hook forwards at its existing scheduled times. The control hook
+requests control_decision! at its existing control times, then applies the
+returned AerobrakingControlCommand to its panel effector exactly once.
+Control-first scheduling and the accepted pass lifecycle are unchanged.
 
-The control hook requests `control_decision!` at its existing control times and
-applies the returned `EDGControlDecision.command` only when `apply` is true.
-Prediction uses `config.controlled_panel_links`, which may differ from the
-control effector's links. An invalid index produces no command application or
-environment query. A `:solved` status records execution, not scientific acceptance.
+The decision takes config, shared state, explicit actuator/measurement links,
+the current state, ODEParams, callback seconds and the one-based spacecraft
+index. Prediction still uses config.controlled_panel_links, which may differ
+from the control effector's links. The result contains an angle in radians,
+a separate apply flag, a switch_action (:cached, :outside_pass, :solved,
+:not_required or :invalid_index), and already-computed telemetry.
+The :solved status records execution, not scientific acceptance.
+An invalid index produces no command application or environment query.
 
-Numerical decisions may update the run's EDG plan, cache and diagnostic state;
-they do not move panels or physical heat integrals. Exceptions still propagate
-without rollback: a decision can update mode before an atmosphere error, and
-completed telemetry can precede an actuator error. Control-first scheduling,
-passage bookkeeping and panel application order remain core responsibilities.
+Numerical kernels do not move panels or propagated heat loads. The targeting
+solve _edg_solve_targeting_switch and its fallback
+_edg_disable_uncertified_targeting! are state-mutating decision helpers,
+not read-only kernels: their bracket, target-energy, mode and flag writes
+remain inside _edg_recompute_switches! before actuation. The decision
+updates the existing EDG cache and telemetry before panel application, in the
+same order as the former control hook. Existing exceptions still propagate;
+a decision can update mode before an atmosphere error, and completed telemetry
+can precede an actuator error. There is no rollback or new error suppression.
 
-Targeting retains its trajectory-based, wind-relative atmosphere query. Heat-load
-prediction retains its altitude-only, zero-latitude/longitude query. These are
-different scientific assumptions, not interchangeable implementations. Packaging
-does not change query order, callback timing, constraints or acceptance criteria.
+Targeting samples current latitude/longitude and uses spacecraft velocity
+minus local ENU wind transformed to planet-fixed coordinates. The heat-load
+sampler retains its altitude-only, zero-latitude/longitude query and ignores
+wind. Frame queries use et_start + callback_seconds. These routes, lazy early
+returns, query order/count, absolute switch times, inclusive heat-load
+endpoints, certification reasons and Inf sentinels are preserved.
+The recomputation interval remains inactive.
 
-The GNC boundary and source-completeness gates reject numerical implementations
-added back to core. Focused ownership tests cover command/application parity,
-invalid-index laziness, switch endpoints, panel-selection mismatch and query
-conventions. Package installation and ownership checks do not replace integrated
-mission or scientific validation.
+Old qualified control numerical names are imported aliases to the single
+owner; their signatures and keyword defaults travel with their definitions.
+The model-taking private control methods are explicit forwarding methods.
+Guidance's private numerical compatibility methods forward to the later-loaded
+owner. Their former private generic identities are not promised across the
+refactor. Duplicate state projections are aliases to EDGServices. Legacy
+E-EDG/T-EDG wrappers and their bridges retain their existing routes.
+
+The required GNC boundary gate also checks this typed owner for duplicate
+definitions, reverse dependencies on control and panel mutation. The focused
+ownership tests cover command/application parity, invalid-index laziness,
+switch endpoints, input forms, panel-selection mismatch, query coordinates,
+epoch and wind conventions, plus parsed include/definition counterexamples,
+loaded method ownership and hook-level heat-load/fallback cases. The retained
+follow-up mutation run exercises those assertions against altered production
+methods; comparing a mutated copy with production is not an adequacy proof. Numerical equivalence is assessed on a matched parent
+and candidate with the retained bounded predictor fingerprint; this does not
+replace full mission or scientific acceptance.

@@ -14,54 +14,14 @@ composition loader for definitions owned across the groups.
 root. Julia discovers package extensions in repository-root `ext/`. Optional
 companions retain their own repositories and source trees outside core `src/`.
 
-## Repository organization
-
-The root README maps the repository's entry points. Organize files by their
-responsibility and intended use, rather than their author, date or language.
-
-- Keep a capability's runner, configuration, analysis and instructions together.
-  Study-specific tools belong with their study under `benchmarks/`; reusable
-  maintenance and operational tools belong in `scripts/`. Share helpers when
-  independent consumers need them, rather than creating a general utility area
-  in anticipation of future use.
-- Reuse an existing home first. Add a directory only when it gives a distinct
-  responsibility, dependency environment or lifecycle a clear boundary. A file
-  count alone is not a reason to split or combine directories.
-- Runnable demonstrations belong in `examples/`. Copy-and-complete extension
-  skeletons belong in `templates/`. Automated pass/fail verification and its
-  required fixtures belong in `test/`; long research campaigns belong with
-  their benchmarks, even when they call tested verification code.
-- Use descriptive names. Preserve Julia package conventions and supported
-  command names; avoid names based only on a person, date or temporary revision.
-- Remove redundant pointers, empty placeholders and superseded implementations
-  when their useful content has a maintained home. Before retiring an executable,
-  inspect its behavior, callers and published usage: lack of callers alone does
-  not establish that it is obsolete. Update references and checks in the same
-  change. Keep compatibility launchers only for a supported usage requirement.
-- Keep generated run products in ignored output locations. Retain necessary
-  fixtures, reproducibility inputs, licensed assets and documentation figures
-  deliberately, with their purpose and provenance. Historical research records
-  need an explicit retention or archive decision before removal.
-- Use the root map and existing catalogs for discovery. Add a local README when
-  it explains a real workflow or boundary; do not create one just to fill an
-  otherwise empty folder. Extend existing ownership checks rather than creating
-  a separate gate for each placement rule.
-
-Optional companions share supported interface and compatibility requirements,
-but their loading mechanisms can differ. `ext/` contains Julia-discovered glue;
-`packages/` locates external source and installation metadata. Changes to source
-pins must preserve both Git-checkout and documented standalone installation
-routes. Source grouping does not move companion implementations into core.
-
 ## Locked Ownership Decisions
 1. Benchmarks and studies are owned only by top-level `benchmarks/` (never under `src/`).
 2. Runnable examples are owned only by top-level `examples/` (never under `src/`).
-3. Reusable operational plotting scripts are owned by top-level `scripts/plotting/`; study-specific plotting belongs beside its study under `benchmarks/`. Installed analysis APIs remain under `src/interfaces/analysis/`.
+3. Operational plotting scripts are owned only by top-level `scripts/plotting/` (never under `src/interfaces/analysis/plotting/`).
 4. Domain dynamics ownership is:
    - `src/models/dynamics/translational/*`
    - `src/models/dynamics/rotational/*`
    - `src/models/dynamics/coupled/*`
-   - `src/models/dynamics/compliant_multibody/*`
    and `src/models/dynamics/models/` is retired.
 5. Mission configuration ownership: initial-state definitions live with the
    spacecraft model (`src/models/vehicle/spacecraft/model.jl`); plans, schedules, and

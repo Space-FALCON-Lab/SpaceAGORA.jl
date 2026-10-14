@@ -251,7 +251,6 @@ function _write_results_bundle!(
     results_bundle_schema_version;
     csv_path::Union{Nothing, String}=nothing
 )
-    _invalidate_mission_history!(args)
     prefix = IOConfig._results_bundle_prefix(args)
     feather_path = prefix * ".feather"
     manifest_path = prefix * ".manifest.toml"

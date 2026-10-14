@@ -27,17 +27,6 @@ alongside them. Both machines ran the same code at the same commit.
   `python3 scripts/make_paper_routing_plots.py <run dir> [<run dir> ...] --out <dir>`;
   PNG for reading, PDF for the manuscript. See "Figures" below.
 
-**Historical scope and preservation review, 14 October 2026.** The measurements
-below belong to the revisions and machines recorded here; they do not qualify
-current SpaceAGORA performance. The preservation review checked the committed
-harness and the later results notes at
-[`572e3db437`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/commit/572e3db4372c56763878a42c4d007667bb74d940)
-and [`0d2b03eefe`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/commit/0d2b03eefe80dfb20a65b01a455b7e4f9e22e9b8).
-It did not recover the original raw campaign files in the inspected local
-locations or repeat the experiments. Numerical entries remain attributed
-historical results. Finding 9 below corrects their interpretation and separates
-source-confirmed reporting behavior from claims that still need the raw records.
-
 ## What the four comparisons are
 
 | Phase | Question | Axis |
@@ -225,9 +214,7 @@ many points clear that floor in each direction: **20 of 66 faster than
 measurement noise explains, 8 slower**. The three finding-2 calibration
 artifacts are excluded and counted in the annotation rather than banked, since
 they are the batched-RHS heuristic failing on every pinned route and not the
-router out-routing them. These plots use successful-run medians and therefore
-do not establish that every attempted campaign succeeded; see Finding 9. Its
-right panel is a per-phase ECDF rather than more
+router out-routing them. Its right panel is a per-phase ECDF rather than more
 histograms, because 9-24 points per phase is too few to bin honestly; it is
 what shows that the wins are concentrated in the Monte Carlo phases while P1
 and P2 sit on parity.
@@ -571,11 +558,12 @@ cached verdict should carry an expiry or a re-test probability, so a converged
 store cannot permanently foreclose an arm the policy has never compared against
 on this machine.
 
-**9. Reported failed campaigns and incomplete timing summaries.**
-The historical record describes a severe failure in P5's `mcgrid_8sat_16mc`
-case at a 1x32 worker/thread split. It gives the following elapsed times in
-seconds for four runs. They are retained here for traceability, rather than
-presented as newly verified measurements:
+**9. From a cold calibration store R6 can enter a state 3500x slower than every
+route it is choosing among, and the signature is an allocation explosion.**
+This is a defect, not a measurement, and it is the most serious thing the
+11-repeat work found.
+
+P5's `mcgrid_8sat_16mc` at the 1x32 split, same point, across four runs:
 
 ```
 orig (5 rep, warm store):   3.0   1.0   1.0   1.0   1.0
@@ -585,52 +573,66 @@ cold (11 rep, empty):       3.0  767.9 3333.6 390.3 840.7 1223.9
                                 3496.9 1710.2 1796.0 2063.5  36.7
 ```
 
-The later results note at `572e3db437` reports that ten of the eleven cold-store
-campaigns failed. According to that note, the aggregate retained only the first,
-successful campaign and reported `n_repeats=1`. The original raw rows have not
-been recovered in this preservation review, so the failure count and individual
-timings remain claims of that record. The median of the eleven rounded elapsed
-times printed above is 1223.9 s. That is a calculation from the recorded values,
-including failed attempts; it is not a replacement for the time to complete a
-successful campaign or a newly measured routing speedup.
+Every pinned route measures ~1.0 s at that point and serial measures 10.3 s, so
+the worst campaign is 3500x the best static route and 340x serial. Ten of the
+eleven repeats are affected, so it is a state the policy settles into rather
+than a transient.
 
-The mechanism by which failed attempts disappear from the summary is directly
-visible in the source. `_ppb_aggregate` filters out `success=false` rows before
-grouping and calculating medians. Its `n_repeats` is therefore the number of
-successful rows retained, not the number of campaigns attempted; a point with
-no successful rows disappears entirely. This behavior is present in the
-historical results branch and remains in the harness at `ab545b85`. Any table
-or plot derived from that aggregate needs attempted, successful and failed
-counts alongside its timings. Costs incurred by failed attempts should be
-reported separately from successful-run throughput and speedup.
+The per-campaign telemetry identifies it. Repeat 1 is healthy and reports
+`policy_last_outer_active = true`; every subsequent repeat reports `false`, and
+with it:
 
-**The policy flags do not establish the cause.** The earlier version of this
-finding interpreted `policy_last_outer_active=false` as evidence that the
-router had switched off outer parallelism. The harness returns `policy=nothing`
-for a failed sample, and `ppc_policy_columns(nothing)` supplies `false`, zero
-and `"none"` defaults, including that flag. Without a recorded policy snapshot,
-those values cannot distinguish a real routing decision from missing telemetry.
-The claim that the flag identified the failure mechanism is withdrawn.
+| | repeat 1 (healthy) | repeat 3 (pathological) |
+|---|---:|---:|
+| `policy_last_outer_active` | true | false |
+| allocation over the campaign | 48 GB | 5.48 TB |
+| GC time | 5.5 s | 657 s |
+| mean sample wall time | 1.15 s | 2053 s |
+| throughput | 5.35 samples/s | 0.0048 samples/s |
 
-The subsequent diagnostic record at `0d2b03eefe` also retracts the proposed
-nested-parallelism explanation. The source supports its stated limitation:
-under the recorded default gates, the automatic satellite batch requires at
-least 16 spacecraft, while this case has eight. The nested-effector guard test
-in [`a16e3daa`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/commit/a16e3daa77e815d59254c3279247f30c7458d249)
-deliberately forces the batch and lifts the light-work gate to exercise that
-separate defect. It is not a reproduction of the reported campaign failure.
-Other changes addressed unnecessary density-callback threading (`7848a3c5`) and
-an inherited inner-thread budget wider than an outer split's share
-(`6a20a2c9`). These changes, and the later retention of exception messages on
-campaign rows (`177bce2f`), are now in main's ancestry. Their presence does not
-establish that the historical failure was diagnosed or repaired.
+Allocation rises by two orders of magnitude and GC follows it, so the run is
+not computing more, it is allocating and collecting.
 
-A stronger conclusion requires the original raw rows, effective environment
-and calibration-store records, together with a matched rerun on a named
-revision. Until then, this finding documents a reported failure and a verified
-limitation of its summary statistics. It does not support a current-main
-slowdown factor, a particular runtime cause, or a general recommendation for
-warm or cold calibration stores.
+**The flag is necessary but not sufficient, and an earlier draft of this
+finding got that wrong.** `policy_last_outer_active = false` reads on 164 of
+the run's 396 `policy_v2` campaigns and nearly all of them are healthy: every
+P1 campaign, every P2 campaign, and P3's and P4's single-worker rungs all
+report `false` and behave normally, because at those points there is genuinely
+no outer split to be active. Only 9 campaigns are pathological, all at the one
+point. A guard keyed on the flag alone would fire on 40% of all campaigns. What
+distinguishes the failure is the combination: outer parallelism switched *off*
+by the policy on a workload that has outer work to do -- 16 samples of an
+8-satellite constellation -- with 32 threads still configured underneath it.
+Note that repeat 1 of that point runs `outer_active = true` and takes 2.99 s;
+the collapse begins when the policy turns outer off.
+
+*Inference, not measurement:* this has the shape of the nested-parallelism
+guard failing open. The inner split sizes its per-thread workspaces on the
+assumption that an enclosing outer split has declared itself active
+(`SPACEAGORA_OUTER_PARALLEL_ACTIVE`, see `src/parallel/`); with outer switched
+off but 16 samples and 8 satellites still to run across 32 threads, nothing
+bounds that allocation. Confirming it means reproducing the point under
+allocation profiling, which has not been done. The reliable detector is the
+allocation itself, not the flag: 48 GB against 5.48 TB needs no interpretation.
+
+Three consequences.
+
+*Neither store state is safe.* Finding 8 says a converged store can foreclose a
+2.4x win; this says an empty one can produce a 3500x loss. The warm-store runs
+that hid finding 8 were also hiding this, and the two fail in opposite
+directions, so "use a warm store" is not a fix for either.
+
+*It is invisible at five repeats from a warm store.* Three separate runs of
+this exact point reported 0.9-1.0 s and nothing anomalous. The measurement
+protocol that produced every number in this document would not have found it.
+
+*R6 should not be recommended without a guard.* A routing policy that can be
+3500x worse than every alternative it is selecting among has a failure mode
+that reporting medians cannot cover. Worth an issue against `policy_v2`
+independently of the paper: at minimum a sanity bound that abandons a campaign
+whose projected cost exceeds the serial baseline by some factor, which would
+have caught this on repeat 2 and, unlike the `outer_active` flag, fires on
+nothing else in the 396 campaigns measured here.
 
 ## Methodology notes
 
@@ -728,10 +730,3 @@ state it, and do not print numbers from both conventions in the same table.
   is the right default for a first look but will keep flagging `policy_v2` as a
   change when it is variance. Teaching it the per-mode bands measured here
   would remove most of that.
-
-- **Include failure accounting in the paper summaries.** At the reviewed
-  `ab545b85` revision, `_ppb_aggregate` still reports successful rows only.
-  Preserve the attempted/successful/failed counts and the costs of failed
-  attempts before regenerating the affected tables. Recover the original raw
-  campaign records and calibration stores to resolve the historical failure
-  report in Finding 9; do not infer reliability from successful-run medians.

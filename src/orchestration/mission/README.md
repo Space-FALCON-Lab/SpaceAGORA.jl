@@ -1,15 +1,7 @@
 # Mission responsibilities
 
-This directory owns mission definitions, operational sequencing, schedules and
-policy selection. Simulation configuration, solver execution and campaigns remain
-in `../simulation/`.
-
-`mission_workflow.jl` owns `MissionPlan`, named observation phases, event factories
-and `run_mission`. `mission_segments.jl` owns operational segments and their
-deadline, duration or condition transitions within one continuous solve.
-Observation phases label results; segments execute declared entry and exit
-actions. See the [mission workflow guide](../../../docs/src/user/mission_workflows.md)
-for the supported workflow and limits.
+This directory owns mission-specific schedules and policy selection. Simulation
+configuration, solver execution and campaigns remain in `../simulation/`.
 
 `operations/maneuver_plans.jl` contains reusable Odyssey firing schedules and the
 adapter to typed maneuver commands. `examples/AGORA_Odyssey.jl` includes it
@@ -18,9 +10,8 @@ point does not load it. The schedules retain their recorded values and direction
 conventions.
 
 `operations/aerobraking_policy/` owns the default strategy selector and per-pass
-schedule. It selects the strategy requested by the mission. GNC owns guidance and
-control integration and applies actuator commands; the optional SpaceAGORAEDG
-package owns typed EDG numerical prediction and decisions.
+schedule. It selects the strategy requested by the mission; EDG numerical
+prediction and the actuator commands remain in GNC guidance and control.
 `DRLPolicyAdapterStub` is an explicit unimplemented extension point. It throws
 when selected and must not be described as a trained or validated policy.
 

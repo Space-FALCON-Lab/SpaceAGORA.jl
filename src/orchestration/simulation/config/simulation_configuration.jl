@@ -15,7 +15,18 @@
     integration_tolerances::IntegrationTolerances = IntegrationTolerances() # Tolerances for the numerical integrator
     solver_config::Union{Nothing, SolverConfig} = nothing # nothing = read from env at run time
     external_propagators::Tuple = () # SimulationModel.ExternalPropagation owners of externally propagated spacecraft (shadow entries); () = none
+    interlink_model::Union{Nothing, ConstellationInterLinkModel} = nothing
+    scheduling_policy_model::SchedulingPolicyModel = SchedulingPolicyModel(:gve_sma)
 end # struct SimulationConfiguration
+
+# Preserve the positional constructor used before interlinks were added.
+SimulationConfiguration(file_paths, simulation_settings, mission_configuration,
+    environment_model, dynamics_model, guidance_model, navigation_model, control_model,
+    initial_time, integration_tolerances, solver_config, external_propagators) =
+    SimulationConfiguration(file_paths, simulation_settings, mission_configuration,
+        environment_model, dynamics_model, guidance_model, navigation_model, control_model,
+        initial_time, integration_tolerances, solver_config, external_propagators,
+        nothing, SchedulingPolicyModel(:gve_sma))
 
 """
     _with_configuration(args::SimulationConfiguration; overrides...)

@@ -12,13 +12,9 @@ Loading SpaceAGORA alone does not activate these packages.
 | [VisualizerSource.toml](VisualizerSource.toml) | Source pin for the separate SpaceAGORAVisualizer installer; the renderer is not stored in this tree. |
 | [SpaceAGORAHYPR/](SpaceAGORAHYPR/README.md) | Existing compatibility package that loads SpaceAGORA and HYPR together. Its location and role are unchanged. |
 
-GRAMSuite keeps its submodule at `data/GRAMSuite.jl`. Browser rendering lives in
-[SpaceAGORAVisualizer.jl](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl),
-which retains the renderer's attribution and third-party notices. SpaceAGORA
-owns saved simulation data, scene metadata and portable viewer JSON; the
-companion turns that data into HTML. See the
-[mission workflow](../docs/src/user/mission_workflows.md) for a new run and the
-[visualization guide](../docs/src/user/visualization.md) for saved results.
+GRAMSuite keeps its submodule at `data/GRAMSuite.jl`. The viewer implementation
+lives in SpaceAGORAVisualizer; core retains the scene contract and compatibility
+entrypoints.
 
 ## Choose an integration
 
@@ -47,15 +43,6 @@ environment that refers to their paths. See the [installation guide](../docs/src
 for loading each integration and for standalone installation routes.
 
 ## Pins and source archives
-
-The source records serve different installation routes. `OptionalPackages.toml`
-describes the HYPR, MuJoCo and EDG checkouts; their Git revisions are recorded by
-gitlinks. `SpaceAGORAHYPR/HYPRSource.toml` also supplies HYPR's revision to its
-standalone compatibility installer, while `VisualizerSource.toml` pins the separate
-visualizer installer. Keep these routes compatible when updating a companion.
-Combining the records requires migrating their readers and validating both clone
-and standalone installation; removing a record alone would break a supported
-route.
 
 The parent Git commit records each external source revision as a submodule
 gitlink. Review updates to these pins together with the compatibility evidence;

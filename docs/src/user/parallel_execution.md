@@ -54,12 +54,14 @@ Requirements and behavior:
   single thread the flag can only use process workers for campaigns, and
   says so once.
 - The first parallel run on a machine measures the machine's cost
-  constants and stores them in
+  constants once (measured at 4.6 s, 1.9 s once compiled, on a
+  24-thread workstation) and
+  stores them in
   `output/parallel_policy_state/cost_constants_<fingerprint>.toml` under
-  the working directory. Calibration duration depends on the machine, thread
-  count and compilation state. Later runs reuse valid constants; a wider Julia
-  thread count or an unusable cache can trigger calibration, since measured
-  speedups apply only up to the recorded thread count. Processes that start together in one working directory measure
+  the working directory. Later runs reuse the file. It is re-measured only
+  when a session with more Julia threads than the one that measured it
+  runs with the flag, since the measured speedups stop at that thread
+  count. Processes that start together in one working directory measure
   once: the others wait for the file (a `.lock` file beside it marks the
   measurement in progress). To redo the measurement, delete the file or run
   `julia --project=. --threads=<T> scripts/calibrate_machine.jl`.
@@ -161,11 +163,10 @@ worker_ids = ensure_process_workers!(pool, 8)
   least `n` workers (spawning only the shortfall via `addprocs`), bootstraps
   each new worker with `SpaceAGORA`, `GRAMSuite` (best-effort), and the
   default SPICE kernel set, and returns the current worker ids. Pass
-  `warmup_fn`, a zero-argument closure that mirrors the real per-sample call,
-  to attempt representative compilation and initialization on each new worker
-  before the first timed dispatch. Its cost and coverage depend on the workload,
-  argument types, Julia environment and cache state; later calls can still
-  require additional compilation.
+  `warmup_fn` — a zero-argument closure that mirrors the real per-sample call
+  — to also pay a new worker's full JIT/specialization cost once up front
+  (measured at roughly 70 s cold vs. a fraction of a second warm) instead of
+  inside the first real, timed dispatch.
 - `shutdown_process_pool!(pool)` removes every worker via `rmprocs` and
   clears the pool; mainly useful for tests, since campaign code otherwise
   leaves the process-global pool warm across calls by design.
@@ -512,17 +513,13 @@ Under the switch:
   threaded campaign's heap does not stall the next campaign's process
   dispatch.
 
-The [September 2026 session record](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/blob/ab545b85c99cd795c61a29dc0ae928d8b6195770/docs/policy_v2_session_record_20260903.md)
-reports historical paired measurements on a Ryzen 9 9900X workstation with
-Julia 1.12.1. It records improvements for selected workloads and launch
-configurations, as well as slower cases. Those results describe the recorded
-source and measurement conditions; they do not establish that `R6` is fastest
-for every workload or on the current revision. Compare routes for the target
-workload and machine with `scripts/paired_profile_probe.jl` and
-`scripts/paired_campaign_probe.jl --src-runner --profile=full`. Retain the source
-revision, configuration, calibration state, cold/warm distinction and run records
-with any reported timing; use paired measurements and their observed variability
-rather than assuming a fixed benchmark resolution.
+Measured on the reference 12-core machine, `R6` matches the fastest fixed
+route on every constellation and Monte Carlo case in the paper harness and
+beats `R5` by 20 to 70 percent where `R5`'s Monte Carlo route or its
+eight-thread re-sweep was wrong. Measure it with
+`scripts/paired_profile_probe.jl` and `scripts/paired_campaign_probe.jl
+--src-runner --profile=full`, not with the block-ordered benchmark harness,
+whose resolution is about eight points.
 
 `R7` is `R6` with the campaign route chosen by a predictive planner instead of
 the bandit. The planner scores the candidate routes for the campaign in front
@@ -548,10 +545,8 @@ and writes `output/parallel_policy_state/cost_constants_<fingerprint>.toml`.
 Every later run on that machine reads the file instead of measuring anything
 itself. `R7` applied without the flag (through a profile) does not calibrate;
 it then prices the routes with no model of contention, so run the script
-before comparing `R7` against `R6` on a new machine. Historical R6/R7 comparisons
-are recorded in the [predictive-routing study](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/blob/ab545b85c99cd795c61a29dc0ae928d8b6195770/docs/architecture/predictive_routing_r7.md).
-Their source revisions, machines, workloads and calibration state define their
-scope; they do not establish a relative performance guarantee for this revision.
+before comparing `R7` against `R6` on a new machine. The comparison itself is still pending on the benchmark machine, so
+no relative figure is quoted here.
 
 ### Environment variables
 
@@ -622,10 +617,11 @@ export SPACEAGORA_PARALLEL_POLICY_ADAPTIVE=0
 julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
 
-Automatic mode evaluates the effector loop serially when at most one satellite
-is active, avoiding per-step task overhead. `SPACEAGORA_EFFECTOR_PARALLEL=on`
-can force threading when the remaining eligibility checks allow it. Threaded
-and serial evaluation give bit-identical results either way.
+The automatic mode only threads the effector loop from two satellites up: a
+single satellite's handful of force evaluations per step cannot pay for the
+task overhead (measured 1.5 to 2x slower), so it is evaluated serially unless
+`SPACEAGORA_EFFECTOR_PARALLEL=on` forces threading. Threaded and serial
+evaluation give bit-identical results either way.
 
 That guarantee holds within an RHS execution route. The flat constellation
 route (`SPACEAGORA_RHS_EXECUTION_MODE=flat`, also one of the candidates the

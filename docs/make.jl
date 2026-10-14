@@ -200,7 +200,7 @@ makedocs(
         "Maintainer Guide" => Any[
             "Maintainer Overview" => "maintainer/index.md",
             "Optional Adapter Standard" => "maintainer/adapter_contract.md",
-            "EDG Package Boundary" => "maintainer/edg_adapter_boundary.md",
+            "EDG Adapter Preparation" => "maintainer/edg_adapter_boundary.md",
             "External Propagation Services" => "maintainer/external_propagation_services.md",
             "RPO Planner Contract" => "maintainer/rpo_planner_contract.md",
             "HYPR service contract" => "maintainer/hypr_services.md",

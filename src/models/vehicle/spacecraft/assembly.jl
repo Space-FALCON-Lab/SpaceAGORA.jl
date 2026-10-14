@@ -12,7 +12,7 @@ export add_body!, add_joint!, add_facet!, add_magnet!, add_thruster!
 # This function is not type-stable. You cannot append to a tuple
 # without changing the type of the parent struct.
 # The effectors must be passed in as a tuple to the
-# SpacecraftModels.SpacecraftModel constructor.
+# SpacecraftModel constructor (see src/model.jl).
 
 # Function to add a body to the spacecraft model
 function add_body!(model::SpacecraftModel,

@@ -284,6 +284,112 @@ implementations. Common built-in effectors:
 - `SM.InverseSquaredGravityModel()` — inverse-square point-mass gravity
 - `SM.InverseSquaredJ2GravityModel()` — point-mass gravity with J2 oblateness
 
+## Constellation graphs and laser interlinks
+
+Interlinks are opt-in: `SimulationConfiguration(interlink_model=nothing, ...)`
+keeps the existing state layout and output fields. The graph, matching policies,
+and laser force law are ported from the v6 multi-target implementation. The
+active source modules live in `src/models/satellite_interlink/`; the older
+`_v1` and `_v2` graph snapshots are not loaded.
+
+Each spacecraft has `n_terminal=1` by default. Register candidate pairs using
+**spacecraft array indices**, not spacecraft `id` values:
+
+```julia
+links = SM.ConstellationInterLinkModel()
+SM.register_allowed_link!(links, spacecraft, (1, 1), (2, 1);
+    parameters=SM.InterLinkParameters(P=10_000.0, B=100.0, range=200e3))
+policy = SM.SchedulingPolicyModel(:gve_sma; target_idxs=[1, 2])
+
+config = SM.SimulationConfiguration(
+    environment_model=environment,
+    dynamics_model=SM.DynamicsModel(spacecraft, (SM.InverseSquaredGravityModel(),)),
+    initial_time=SM.InitialTime(),
+    interlink_model=links,
+    scheduling_policy_model=policy,
+    solver_config=SM.SolverConfig(solver_mode=:tsit5),
+)
+result = run_simulation(config; return_results=true, return_solution=true)
+history = result.configuration.interlink_model.history
+```
+
+Availability checks positive separation, each edge's maximum range, forbidden
+spacecraft pairs, and spacecraft activity flags. The retained
+`battery_energy_index` and `tempurature_index` spacecraft metadata do **not**
+gate availability. There is no occultation, terminal pointing, battery, or
+thermal model in these checks.
+
+The scheduler selects a maximum-total-score terminal matching at initialization
+and after every accepted integrator step. A terminal can participate in at most
+one selected link; a spacecraft with multiple terminals can have multiple links.
+Rejected trial steps neither reschedule links nor append history. Forces use
+the current stage positions with the last accepted selection.
+
+Supported policies:
+
+- `:gve_sma`: maximize the summed semimajor-axis rate of `target_idxs`, one
+  `target_idx` (default 1), or both endpoints when `target_idx=nothing`.
+- `:gve_eccentricity`: maximize the eccentricity rate of `target_idx`, or both
+  endpoints when `target_idx=nothing`.
+- `:gve_sma_first_index`: score each pair using its lower spacecraft array index.
+
+The copied force law is repulsive, equal and opposite, with magnitude `B * P / c`
+in newtons. It acts on spacecraft translation, without terminal offsets or
+attitude torques. Default saved results add `laser_dv` (inertial vector, m/s)
+and `laser_delta_sma` (integrated laser-only semimajor-axis rate, m). These
+diagnostics also remain in each spacecraft's ODE state.
+CSV columns follow the existing naming convention: `sc1_laser_dv_1`,
+`sc1_laser_dv_2`, `sc1_laser_dv_3`, and `sc1_laser_delta_sma` for spacecraft 1.
+
+Use a full-state solver, such as `:tsit5`, `:dp8`, `:auto_stiff`, or `:rodas5p`.
+Split IMEX, multirate, and gravity-backbone propagation are rejected, as in the
+source implementation. Links involving articulated spacecraft, compliant
+attachments/robot arms, or externally propagated spacecraft are rejected rather
+than applying an incomplete coupling model. Interlinked constellations must use
+`run_simulation`, not `run_constellation_ensemble`, which separates spacecraft.
+The block-diagonal Jacobian optimization is disabled for linked configurations.
+
+Tree matching uses Julia dynamic programming. Cyclic positive-score components
+use the original NetworkX Blossom backend through PythonCall. The root
+`CondaPkg.toml` declares Python and NetworkX; their first environment setup
+requires network access. Errors in backend setup or matching are not replaced
+by a greedy or empty matching.
+
+Cyclic matching must run while holding Python's GIL. Ordinary single-run
+propagation (including parallel Julia RHS evaluation) and separate process
+workers support this. A threaded outer campaign must explicitly release the
+GIL on its owner and acquire `PythonCall.GIL.@lock` on the calling worker;
+an unprotected cyclic match raises an error rather than making an unsafe Python
+call. Tree-only matching does not call Python.
+
+The default `isolate_state=true` preserves the caller's graph and scheduler.
+Read scheduling history from the returned solution's
+`solution.prob.p.args.interlink_model`, or from `result.configuration` when
+using `return_results=true`. `isolate_state=false` instead updates the supplied
+model. Checkpoint segments continue the accumulated laser diagnostics and
+recompute the selected links at each segment boundary.
+Resumed history starts at the checkpoint time. Enabling or disabling interlinks
+when resuming an existing checkpoint is rejected because it changes the ODE state.
+
+A complete no-GRAM/no-SPICE example uses 30 helpers and 10 targets:
+
+```text
+julia --project=. examples/gve_sma_interlinks.jl
+```
+
+This entry point runs `examples/targeted_40sat_sma_interlinks.jl`: helpers 1-30
+are evenly spaced by 12 degrees in the circular equatorial 1000 km orbit;
+targets 31-40 are evenly spaced by 36 degrees in the 1100 km orbit, retaining
+the original 1-degree target offset. All 300 helper-to-target pairs are
+candidates, with one terminal per spacecraft and only target SMA growth scored.
+The default duration remains 20 target orbital periods.
+
+It writes results and `interlinks.gif` under `output/targeted_40sat_sma_interlinks/`.
+To skip animation or shorten the run, include the targeted example and call
+`run_targeted_40sat_example(animate=false, orbits=1.0)`.
+The three-spacecraft `gve_sma_configuration` and `run_gve_sma_case` helpers remain
+available when including `gve_sma_interlinks.jl`, for step-cap regression comparisons.
+
 ## SimulationSettings
 
 Controls output behavior and diagnostics:

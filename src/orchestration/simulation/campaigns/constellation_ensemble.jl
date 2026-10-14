@@ -44,6 +44,8 @@ function _ensemble_member_configuration(
 end
 
 function _validate_ensemble_uncoupled(args::SimulationConfiguration, allow_gnc_effectors::Bool)
+    args.interlink_model === nothing || throw(ArgumentError(
+        "run_constellation_ensemble cannot split an interlinked constellation into independent spacecraft. Use run_simulation instead."))
     allow_gnc_effectors && return nothing
     coupled_surfaces = String[]
     isempty(args.guidance_model.guidance_effectors) || push!(coupled_surfaces, "guidance_effectors")
@@ -112,7 +114,7 @@ keyword is forwarded to [`run_simulation`](@ref) unchanged.
 the benchmark harness measures (see `SpaceAGORA.ParallelProfiles`); they are not the
 supported way to parallelize an ensemble.
 
-The configuration must be uncoupled: configuration-level guidance, navigation, and control
+The configuration must be uncoupled: `interlink_model` must be `nothing`, and configuration-level guidance, navigation, and control
 effector tuples must be empty, because effectors that coordinate several satellites cannot
 act across ensemble members. If every configured effector acts on one satellite only, pass
 `allow_gnc_effectors=true` to opt in; the effectors are passed to every member unchanged,

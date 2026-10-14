@@ -10,20 +10,16 @@ audit used commit
 [`5e9a9df9`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/commit/5e9a9df97efbbb69fb2a730b085b75cc5fd83a64)
 (browse that historical tree at
 [github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/5e9a9df9](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/5e9a9df97efbbb69fb2a730b085b75cc5fd83a64));
-the ownership and cleanup status below were reconciled against
-[`ab545b85`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/commit/ab545b85c99cd795c61a29dc0ae928d8b6195770).
-Paths are relative to the repository named for each owner. Completed work,
-remaining decisions and proposals are labelled separately. One-run configuration lives under `src/orchestration/simulation/config/`,
+this page also records later configuration, optional-adapter packaging and
+source-organization changes. Paths are relative to the repository named for each owner. Suggested
+cleanup is labelled separately. One-run configuration lives under `src/orchestration/simulation/config/`,
 and HYPR is maintained in its own repository with an optional SpaceAGORA adapter.
 The compatibility package in this tree loads that adapter; it contains no search
 implementation. MuJoCo scene code and its adapter live in the independent
 [SpaceAGORAMuJoCo.jl repository](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl).
 Pinned checkouts of both external repositories are available under
 `packages/robotics/`; this source layout does not make them mandatory core
-dependencies. HYPR serves both RPO and robot-arm planning. Experimental EDG
-kernels live in the independent SpaceAGORAEDG companion, pinned under
-`packages/gnc/SpaceAGORAEDG.jl`; core owns its shared types, physical dynamics
-and run lifecycle. See [Energy Depletion Guidance](edg_guidance.md).
+dependencies. HYPR serves both RPO and robot-arm planning.
 
 Shortest successful command:
 
@@ -90,7 +86,7 @@ contracts that it assembles.
 Julia discovers optional package extensions in root `ext/`, so that directory
 remains beside `src/`. The GRAMSuite extension belongs there even though it
 provides environment-model integration. External companions such as HYPR and
-SpaceAGORAMuJoCo and SpaceAGORAEDG own their implementations in separate repositories;
+SpaceAGORAMuJoCo continue to own their implementations in separate repositories;
 this source organization does not bring them into `src/` or make them required
 dependencies. The existing HYPR compatibility package remains under
 `packages/SpaceAGORAHYPR/`.
@@ -240,11 +236,9 @@ the file that performs each step.
    extension hook remains in `navigation/`; reference and collision geometry
    lives in `planning/rpo/geometry/`, retaining its historical `NavigationHooks`
    bindings. That geometry is not itself a sensor or estimator. Guidance and
-   control models remain in their respective folders. Core typed EDG models,
-   services and compatibility bindings live in `guidance/aerobraking/typed_edg/`;
-   the optional SpaceAGORAEDG companion owns the numerical kernels. Older
-   aerobraking paths and their bridges remain available without a claim of
-   numerical equivalence. Configured HYPR
+   control models remain in their respective folders. Typed EDG lives in
+   `guidance/aerobraking/typed_edg/`; older aerobraking paths and their bridges
+   remain available without a claim of numerical equivalence. Configured HYPR
    execution is provided by the external
    HYPR package through `SpaceAGORA.HYPRServices`; the local
    `packages/SpaceAGORAHYPR/` compatibility package loads its adapter. The
@@ -331,7 +325,7 @@ are relative to the directory in the first column.
 | `src/models/environment/` | Planets and ephemerides, atmosphere models and presets, gravity fields and terrain grids | density sampling: `atmosphere/density_models.jl`; terrain queries: `terrain/terrain_models.jl` |
 | `src/models/dynamics/` | Translational and rotational equations, coupled force/torque models, compliant multibody dynamics under `compliant_multibody/`, and articulated-body dynamics | effector evaluation: `coupled/force_torque_models.jl`; gravity adapters: `coupled/gravity/`; other perturbations: `coupled/perturbations/`; articulated solver: `coupled/articulated_body.jl` |
 | `src/models/gnc/` | Guidance, navigation and control hooks, planner contracts and lifecycle, shared calculations, baseline algorithms and HYPR compatibility types | the three hook files named above; planner contracts: `interfaces/`; planning and lifecycle: `planning/rpo/`; arm references: `planning/robot_arm/`; shared kernels: `planning/common/`; optional-adapter services: `planning/adapters/`; aerobraking bridges: `internal/` |
-| `src/foundation/core/` | Abstract types and shared model contracts, reference frames, geodesy, orbital geometry and quaternions | frames: `interfaces/reference_system.jl`; shared geometry: `numerics/geodesy.jl` and `numerics/orbital_geometry.jl`; canonical quaternions: `numerics/quaternion_utils.jl`; robotics/compliant orientation policy: `numerics/orientation_quaternion_utils.jl`; run buffers and composition belong to simulation orchestration |
+| `src/foundation/core/` | Abstract types and shared model contracts, reference frames, geodesy and quaternions | frames: `interfaces/reference_system.jl`; quaternions: `numerics/quaternion_utils.jl`; run buffers and composition belong to simulation orchestration |
 | `src/foundation/assets/` | Manifest lookup and availability checks, RPO station assets and the Odyssey surrogate | reusable manifest records and local checks: `asset_catalog.jl`; CLI report types and presentation remain in the CLI; see [Assets & Modes](../assets.md) |
 | `ext/` | Optional package connections for GRAMSuite, the visualizer and EDG | Each extension activates when its package pair is loaded; see [GRAMSuite Setup](gramsuite_setup.md) and the [optional adapter standard](../maintainer/adapter_contract.md). |
 | `packages/robotics/` | Pinned submodules for HYPR and SpaceAGORAMuJoCo; each remains an independently maintained repository | `scripts/optional_packages.jl` selects and verifies source, then delegates to its installer; see [Optional package commands](installation_environment.md#Optional-package-commands). |
@@ -369,8 +363,7 @@ guidance, navigation or control hooks, callbacks), it has unit tests under
 `docs/public_api_symbols.jl`. Start from `templates/` and follow
 [Extensibility](../extensibility.md). Do not copy an existing model into a
 new file to change two lines; add a method or a configuration field to the
-owner instead. Use the [contributor checklist](../maintainer/index.md#Contributor-checklist)
-to record source revisions, affected contracts and validation before review.
+owner instead.
 
 **Put it in `examples/` when** it is a runnable scenario that shows a
 capability. Examples load `examples/common.jl`, build a configuration through
@@ -399,14 +392,8 @@ HYPR 0.1.1, service contract 1.0.0 and compatibility package 0.2.0. Install the
 pinned pair and explicitly load `SpaceAGORAHYPR` using the
 [RPO planner guide](rpo_planner_pilot.md#Installing-optional-HYPR).
 The optimizer can run independently; configured RPO and robot-arm execution
-still requires SpaceAGORA services. The independent experimental
-`SpaceAGORAEDG.jl` companion owns the EDG numerical kernels. The companion
-consumes the versioned [`EDGServices`](../maintainer/edg_adapter_boundary.md)
-facade; the optional core extension dispatches calls to its kernels. Core retains
-public model identities, physical dynamics and lifecycle.
-Package separation and interface conformance do not establish scientific
-qualification. See [Energy Depletion Guidance](edg_guidance.md) for the
-supported experimental scope.
+still requires SpaceAGORA services. EDG remains in core, so this is not a claim
+that every specialized algorithm has been extracted.
 
 **Put a study in `benchmarks/studies/` or a research repository when** it is a
 study driver, a parameter sweep or a comparison against another tool. Keep its failure and retry
@@ -437,11 +424,11 @@ internals from examples. These checks do not prove every ownership or data
 decision is correct. Keep restricted inputs and private research outputs out
 of the public repository; review their provenance separately.
 
-## Cleanup status and remaining decisions
+## Remaining cleanup
 
-The completed work below is present in the reconciled source revision named
-above. Preserve its contracts when extending the code. The remaining decisions
-and proposals describe separate work; they do not reopen delivered repairs.
+Status at commit `5e9a9df9`. Each item states what is confirmed, what is
+deliberate, and who is expected to act; the last sub-list is a proposal, not a
+description of the current code.
 
 **Completed cleanup:**
 
@@ -461,26 +448,6 @@ and proposals describe separate work; they do not reopen delivered repairs.
   `scripts/dev/viewer_demos/cygnss_constellation.jl` to use `_with_configuration`.
   It preserves the explicit DP8 solver, fresh tolerance settings, and mission
   and dynamics overrides.
-- [#272](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/pull/272) gave the
-  equivalent robotics and compliant-multibody quaternion operations one owner,
-  `src/foundation/core/numerics/orientation_quaternion_utils.jl`. Raw products
-  retain scale; orientation products normalize. The canonical `QuaternionMath`
-  and articulated-dynamics policies remain distinct.
-- [#281](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/pull/281) consolidated
-  equivalent Bowring expressions and the inertial-to-perifocal matrix in the
-  shared geodesy and orbital geometry owners. Caller-specific surface/topography and frame policies remain
-  explicit; the legacy velocity conversion retains its inertial-speed contract.
-- [#245](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/pull/245) removed the
-  redundant `output/calibration/` ignore entry; `output/*` still covers generated
-  files. [#246](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/pull/246)
-  removed the direct `Tables` dependency while preserving transitive resolution.
-- [#266](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/pull/266) shared GRAM
-  discovery and conditional fallback-path insertion through
-  `RuntimeServices._prepare_gramsuite_load_path!`. Imports, prepend/append order,
-  installation/retry behavior, aliases and native ownership remain with their
-  callers. The runtime benchmark still uses independent model types and adapter
-  methods. See the [GRAM loading contract](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/blob/main/docs/quality/gram_loading_contract.md)
-  before changing a loader policy.
 
 **Benchmark entry point:**
 
@@ -510,6 +477,11 @@ and proposals describe separate work; they do not reopen delivered repairs.
 
 **Further review and ownership decisions:**
 
+- Robotics and compliant multibody code contain repeated quaternion helpers. Distinguish raw from
+  normalized multiplication and check rotation conventions before deciding
+  which definitions can share an owner. Their current duplication is not yet
+  established as intentional or necessary.
+
 - `scripts/plotting/plot_data.jl` is retained legacy plotting code using older
   dictionary and nested-solution interfaces; current workflow support has not
   been established. Check replacement coverage for its costate/switching,
@@ -520,11 +492,16 @@ and proposals describe separate work; they do not reopen delivered repairs.
   distinguish the legacy Euler conversion, integrated and aggregate wheel
   quantities, and costate histories from typed switching predictions. Consult
   these contracts before adding a maintained consumer.
-- `examples/aerobraking_mission_plot_utils.jl` retains mission setup, event
-  extraction, reference comparison and plotting with live consumers. Result-table
-  loading and plot-error helpers already have owners under `examples/support/`.
-  Further responsibility separation is organization work, not removal of those
-  shared implementations.
+- The direct `Tables` dependency and the redundant `output/calibration/` ignore
+  entry are cleanup candidates. A direct-dependency change needs manifest
+  validation; transitive users of `Tables` must continue to resolve it.
+- GRAM loading and benchmark adapters repeat across `examples/common.jl`,
+  telemetry tools and study scripts, and `performance_runtime_analysis/main.jl`
+  defines extension methods itself. A shared bootstrap needs agreement with the
+  parallelization and surrogate owners first.
+- `examples/aerobraking_mission_plot_utils.jl` mixes mission setup, event
+  extraction, reference comparison and plotting with live consumers; splitting by responsibility is organization work, not a duplicate
+  removal.
 
 **Proposals (not implemented):**
 

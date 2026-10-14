@@ -268,10 +268,10 @@ L 72 77
    </g>
    <g id="text_16">
     <text style="fill: #1f3f59; font: 12px 'Arial'" transform="translate(630.627813 386.589375)">Hooks, planners and controllers</text>
-    <text style="fill: #1f3f59; font: 12px 'Arial'" transform="translate(628.630937 399.903281)">Optional HYPR through services</text>
+    <text style="fill: #1f3f59; font: 12px 'Arial'; text-anchor: middle" x="715" y="399.903281">Optional HYPR and EDG through services</text>
    </g>
    <g id="text_17">
-    <text style="fill: #1f3f59; font: 10.5px 'Arial'; text-anchor: middle" x="715" y="450.643672" transform="rotate(-0 715 450.643672)">src/models/gnc/ + external HYPR.jl</text>
+    <text style="fill: #1f3f59; font: 10.5px 'Arial'; text-anchor: middle" x="715" y="450.643672" transform="rotate(-0 715 450.643672)">src/models/gnc/ + optional companions</text>
    </g>
    <g id="text_18">
     <text style="fill: #1f3f59; font: 700 15px 'Arial'; text-anchor: middle" x="432" y="533.736719" transform="rotate(-0 432 533.736719)">Right-hand side: system state derivatives</text>
@@ -304,7 +304,7 @@ L 72 77
     <text style="fill: #1f3f59; font: 12px 'Arial'; text-anchor: middle" x="432" y="792.589375" transform="rotate(-0 432 792.589375)">Write results, analyze them and render the exported scene</text>
    </g>
    <g id="text_27">
-    <text style="fill: #1f3f59; font: 10.5px 'Arial'; text-anchor: middle" x="432" y="821.643672" transform="rotate(-0 432 821.643672)">src/interfaces/io/ + src/interfaces/analysis/ + viewer/</text>
+    <text style="fill: #1f3f59; font: 10.5px 'Arial'; text-anchor: middle" x="432" y="821.643672" transform="rotate(-0 432 821.643672)">src/interfaces/io/ + src/interfaces/analysis/ + SpaceAGORAVisualizer.jl</text>
    </g>
    <g id="text_28">
     <text style="fill: #1f3f59; font: 700 12px 'Arial'; text-anchor: start" x="25" y="866.735625" transform="rotate(-0 25 866.735625)">Supporting owners</text>
@@ -322,7 +322,7 @@ L 72 77
     <text style="fill: #1f3f59; font: 10.5px 'Arial'; text-anchor: start" x="25" y="932.643672" transform="rotate(-0 25 932.643672)">Magnetic and radiation interactions share src/models/dynamics/coupled/perturbations.jl.</text>
    </g>
    <g id="text_32">
-    <text style="fill: #1f3f59; font: 10.5px 'Arial'; text-anchor: start" x="25" y="948.650234" transform="rotate(-0 25 948.650234)">HYPR.jl owns search and its adapter; packages/SpaceAGORAHYPR/ only loads that adapter.</text>
+    <text style="fill: #1f3f59; font: 10.5px 'Arial'; text-anchor: start" x="25" y="948.650234" transform="rotate(-0 25 948.650234)">HYPR.jl owns search; SpaceAGORAEDG.jl owns typed EDG kernels; core owns lifecycle and actuation.</text>
    </g>
   </g>
  </g>

@@ -319,7 +319,7 @@ L 72 77
     <text style="fill: #1f3f59; font: 10.5px 'Arial'; text-anchor: start" x="25" y="917.643672" transform="rotate(-0 25 917.643672)">src/orchestration/simulation/campaigns/  independent runs   |   ext/  optional integration</text>
    </g>
    <g id="text_31">
-    <text style="fill: #1f3f59; font: 10.5px 'Arial'; text-anchor: start" x="25" y="932.643672" transform="rotate(-0 25 932.643672)">Magnetic and radiation interactions share src/models/dynamics/coupled/perturbations.jl.</text>
+    <text style="fill: #1f3f59; font: 10.5px 'Arial'; text-anchor: start" x="25" y="932.643672" transform="rotate(-0 25 932.643672)">Magnetic and radiation interactions share src/models/dynamics/effectors/perturbations.jl.</text>
    </g>
    <g id="text_32">
     <text style="fill: #1f3f59; font: 10.5px 'Arial'; text-anchor: start" x="25" y="948.650234" transform="rotate(-0 25 948.650234)">HYPR.jl owns search; SpaceAGORAEDG.jl owns typed EDG kernels; core owns lifecycle and actuation.</text>

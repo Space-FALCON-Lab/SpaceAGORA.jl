@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc" width="960" height="502" viewBox="0 0 960 502" font-family="DejaVu Sans, Helvetica, Arial, sans-serif">
+<title id="title">Which Julia environment to start</title><desc id="desc">Five tasks and the Julia environment each one uses: the root project for examples, tests and the command-line tool; the Odyssey example environment for the frozen-atmosphere tutorial; the viewer environment for the 3D viewer; one environment per optional companion for HYPR, MuJoCo and EDG; and your own project for scenarios kept outside the checkout. Every environment loads SpaceAGORA from the same checkout.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2f5f7f"/></marker></defs>
+<rect width="960" height="502" fill="#ffffff"/>
+<text x="20" y="30" font-size="15" fill="#1f2937" font-weight="bold">Which Julia environment to start</text>
+<text x="20" y="64" font-size="11" fill="#6b7280" font-weight="bold">I want to</text>
+<text x="262" y="64" font-size="11" fill="#6b7280" font-weight="bold">Start Julia with</text>
+<text x="568" y="64" font-size="11" fill="#6b7280" font-weight="bold">Set it up once with</text>
+<rect x="20" y="76" width="228" height="62" rx="0" fill="#fafafa" stroke="#9aa5b1" stroke-width="1"/>
+<text x="32" y="103" font-size="11.5" fill="#1f2937">Run the examples, tests or the</text>
+<text x="32" y="119" font-size="11.5" fill="#1f2937">command-line tool</text>
+<line x1="248" y1="107" x2="258" y2="107" stroke="#2f5f7f" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="262" y="76" width="292" height="62" rx="0" fill="#f2f7fc" stroke="#8cbde7" stroke-width="1"/>
+<text x="274" y="101" font-size="11.5" fill="#1f2937" font-weight="bold">Root project</text>
+<text x="274" y="120" font-size="10.5" fill="#2f5f7f" font-family="DejaVu Sans Mono, Menlo, monospace">julia --project=.</text>
+<rect x="568" y="76" width="308" height="62" rx="0" fill="#ffffff" stroke="#8cbde7" stroke-width="1"/>
+<text x="580" y="101" font-size="10.5" fill="#4b5563" font-family="DejaVu Sans Mono, Menlo, monospace">Pkg.instantiate(julia_version_strict=true)</text>
+<text x="580" y="119" font-size="10.5" fill="#4b5563">from the repository root</text>
+<line x1="876" y1="107" x2="900" y2="107" stroke="#6b7280" stroke-width="1"/>
+<rect x="20" y="150" width="228" height="62" rx="0" fill="#fafafa" stroke="#9aa5b1" stroke-width="1"/>
+<text x="32" y="177" font-size="11.5" fill="#1f2937">Run the Odyssey tutorial with a</text>
+<text x="32" y="193" font-size="11.5" fill="#1f2937">frozen Mars atmosphere</text>
+<line x1="248" y1="181" x2="258" y2="181" stroke="#2f5f7f" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="262" y="150" width="292" height="62" rx="0" fill="#f2f7fc" stroke="#8cbde7" stroke-width="1"/>
+<text x="274" y="175" font-size="11.5" fill="#1f2937" font-weight="bold">Odyssey example environment</text>
+<text x="274" y="194" font-size="10.5" fill="#2f5f7f" font-family="DejaVu Sans Mono, Menlo, monospace">--project=examples/odyssey_surrogate_env</text>
+<rect x="568" y="150" width="308" height="62" rx="0" fill="#ffffff" stroke="#8cbde7" stroke-width="1"/>
+<text x="580" y="175" font-size="10.5" fill="#4b5563" font-family="DejaVu Sans Mono, Menlo, monospace">examples/odyssey_surrogate_env/setup.jl</text>
+<text x="580" y="193" font-size="10.5" fill="#4b5563">adds the GRAMSuite wrapper and EDG</text>
+<line x1="876" y1="181" x2="900" y2="181" stroke="#6b7280" stroke-width="1"/>
+<rect x="20" y="224" width="228" height="62" rx="0" fill="#fafafa" stroke="#9aa5b1" stroke-width="1"/>
+<text x="32" y="259" font-size="11.5" fill="#1f2937">Open results in the 3D viewer</text>
+<line x1="248" y1="255" x2="258" y2="255" stroke="#2f5f7f" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="262" y="224" width="292" height="62" rx="0" fill="#f2f7fc" stroke="#8cbde7" stroke-width="1"/>
+<text x="274" y="249" font-size="11.5" fill="#1f2937" font-weight="bold">Viewer environment</text>
+<text x="274" y="268" font-size="10.5" fill="#2f5f7f" font-family="DejaVu Sans Mono, Menlo, monospace">--project=.visualizer-env</text>
+<rect x="568" y="224" width="308" height="62" rx="0" fill="#ffffff" stroke="#8cbde7" stroke-width="1"/>
+<text x="580" y="249" font-size="10.5" fill="#4b5563" font-family="DejaVu Sans Mono, Menlo, monospace">scripts/setup_visualizer.jl .visualizer-env</text>
+<text x="580" y="267" font-size="10.5" fill="#4b5563">adds the SpaceAGORAVisualizer package</text>
+<line x1="876" y1="255" x2="900" y2="255" stroke="#6b7280" stroke-width="1"/>
+<rect x="20" y="298" width="228" height="62" rx="0" fill="#fafafa" stroke="#9aa5b1" stroke-width="1"/>
+<text x="32" y="325" font-size="11.5" fill="#1f2937">Plan with HYPR, run MuJoCo</text>
+<text x="32" y="341" font-size="11.5" fill="#1f2937">scenes or use EDG guidance</text>
+<line x1="248" y1="329" x2="258" y2="329" stroke="#2f5f7f" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="262" y="298" width="292" height="62" rx="0" fill="#f2f7fc" stroke="#8cbde7" stroke-width="1"/>
+<text x="274" y="323" font-size="11.5" fill="#1f2937" font-weight="bold">One environment per companion</text>
+<text x="274" y="342" font-size="10.5" fill="#2f5f7f" font-family="DejaVu Sans Mono, Menlo, monospace">--project=/path/to/hypr-env</text>
+<rect x="568" y="298" width="308" height="62" rx="0" fill="#ffffff" stroke="#8cbde7" stroke-width="1"/>
+<text x="580" y="323" font-size="10.5" fill="#4b5563" font-family="DejaVu Sans Mono, Menlo, monospace">scripts/optional_packages.jl</text>
+<text x="580" y="341" font-size="10.5" fill="#4b5563" font-family="DejaVu Sans Mono, Menlo, monospace">setup hypr|mujoco|edg /path/to/env</text>
+<line x1="876" y1="329" x2="900" y2="329" stroke="#6b7280" stroke-width="1"/>
+<rect x="20" y="372" width="228" height="62" rx="0" fill="#fafafa" stroke="#9aa5b1" stroke-width="1"/>
+<text x="32" y="399" font-size="11.5" fill="#1f2937">Write my own scenario outside</text>
+<text x="32" y="415" font-size="11.5" fill="#1f2937">the checkout</text>
+<line x1="248" y1="403" x2="258" y2="403" stroke="#2f5f7f" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="262" y="372" width="292" height="62" rx="0" fill="#f2f7fc" stroke="#8cbde7" stroke-width="1"/>
+<text x="274" y="397" font-size="11.5" fill="#1f2937" font-weight="bold">Your own project</text>
+<text x="274" y="416" font-size="10.5" fill="#2f5f7f" font-family="DejaVu Sans Mono, Menlo, monospace">--project=/absolute/my-project</text>
+<rect x="568" y="372" width="308" height="62" rx="0" fill="#ffffff" stroke="#8cbde7" stroke-width="1"/>
+<text x="580" y="397" font-size="10.5" fill="#4b5563">setup_user_project.jl, listed on</text>
+<text x="580" y="415" font-size="10.5" fill="#4b5563">Installation &amp; Environment</text>
+<line x1="876" y1="403" x2="900" y2="403" stroke="#6b7280" stroke-width="1"/>
+<rect x="900" y="76" width="40" height="358" rx="3" fill="#2f5f7f" stroke="#2f5f7f" stroke-width="1"/>
+<text x="920" y="255.0" font-size="11.5" fill="#ffffff" text-anchor="middle" transform="rotate(-90 920 255.0)">your SpaceAGORA checkout</text>
+<text x="20" y="460" font-size="10.5" fill="#4b5563">Every environment uses Julia 1.12 and loads SpaceAGORA from the same checkout. Only the root project ships a committed manifest;</text>
+<text x="20" y="476" font-size="10.5" fill="#4b5563">the others resolve their own during setup. Companion environments go outside the source checkouts; the viewer's default folder is ignored by Git.</text>
+</svg>

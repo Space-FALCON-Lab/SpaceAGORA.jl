@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc" width="960" height="660" viewBox="0 0 960 660" font-family="DejaVu Sans, Helvetica, Arial, sans-serif">
+<title id="title">What a simulation is made of</title><desc id="desc">A SimulationConfiguration, built by make_example_config or by a MissionPlan builder, holds the epoch, mission settings, result settings, asset paths, the environment, the guidance, navigation and control models, the dynamics with its force and torque models and spacecraft, and the solver settings. Each spacecraft holds its initial condition, links joined by joints, hardware mounted on the links and optionally its own GNC. run_simulation or run_mission turns the configuration into results.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2f5f7f"/></marker></defs>
+<rect width="960" height="660" fill="#ffffff"/>
+<text x="20" y="30" font-size="15" fill="#1f2937" font-weight="bold">What a simulation is made of</text>
+<rect x="20" y="62" width="200" height="66" rx="0" fill="#f2f7fc" stroke="#8cbde7" stroke-width="1"/>
+<text x="120" y="84" font-size="11.5" fill="#1f2937" font-weight="bold" font-family="DejaVu Sans Mono, Menlo, monospace" text-anchor="middle">make_example_config</text>
+<text x="120" y="101" font-size="10.5" fill="#4b5563" text-anchor="middle">a complete configuration from a</text>
+<text x="120" y="115" font-size="10.5" fill="#4b5563" text-anchor="middle">planet, spacecraft, duration, epoch</text>
+<rect x="20" y="146" width="200" height="80" rx="0" fill="#f2f7fc" stroke="#8cbde7" stroke-width="1"/>
+<text x="120" y="168" font-size="11.5" fill="#1f2937" font-weight="bold" font-family="DejaVu Sans Mono, Menlo, monospace" text-anchor="middle">MissionPlan</text>
+<text x="120" y="185" font-size="10.5" fill="#4b5563" text-anchor="middle">a named builder function that</text>
+<text x="120" y="199" font-size="10.5" fill="#4b5563" text-anchor="middle">returns a fresh configuration,</text>
+<text x="120" y="213" font-size="10.5" fill="#4b5563" text-anchor="middle">plus segments, phases, events</text>
+<text x="120" y="250" font-size="10.5" fill="#6b7280" font-style="italic" text-anchor="middle">or build the parts yourself</text>
+<line x1="220" y1="95" x2="246" y2="95" stroke="#2f5f7f" stroke-width="1.5" marker-end="url(#arrow)"/>
+<line x1="220" y1="186" x2="246" y2="186" stroke="#2f5f7f" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="250" y="46" width="690" height="524" rx="4" fill="#ffffff" stroke="#2f5f7f" stroke-width="1.5"/>
+<text x="266" y="68" font-size="13" fill="#2f5f7f" font-weight="bold" font-family="DejaVu Sans Mono, Menlo, monospace">SimulationConfiguration</text>
+<rect x="266" y="80" width="124" height="46" rx="0" fill="#f2f7fc" stroke="#8cbde7" stroke-width="1"/>
+<text x="328" y="99" font-size="11" fill="#1f2937" font-weight="bold" font-family="DejaVu Sans Mono, Menlo, monospace" text-anchor="middle">InitialTime</text>
+<text x="328" y="116" font-size="10" fill="#4b5563" text-anchor="middle">the epoch</text>
+<rect x="400" y="80" width="206" height="46" rx="0" fill="#f2f7fc" stroke="#8cbde7" stroke-width="1"/>
+<text x="503" y="99" font-size="11" fill="#1f2937" font-weight="bold" font-family="DejaVu Sans Mono, Menlo, monospace" text-anchor="middle">MissionConfiguration</text>
+<text x="503" y="116" font-size="10" fill="#4b5563" text-anchor="middle">when the run ends, output cadence</text>
+<rect x="616" y="80" width="164" height="46" rx="0" fill="#f2f7fc" stroke="#8cbde7" stroke-width="1"/>
+<text x="698" y="99" font-size="11" fill="#1f2937" font-weight="bold" font-family="DejaVu Sans Mono, Menlo, monospace" text-anchor="middle">SimulationSettings</text>
+<text x="698" y="116" font-size="10" fill="#4b5563" text-anchor="middle">result files, folder, verbosity</text>
+<rect x="790" y="80" width="134" height="46" rx="0" fill="#f2f7fc" stroke="#8cbde7" stroke-width="1"/>
+<text x="857" y="99" font-size="11" fill="#1f2937" font-weight="bold" font-family="DejaVu Sans Mono, Menlo, monospace" text-anchor="middle">FilePaths</text>
+<text x="857" y="116" font-size="10" fill="#4b5563" text-anchor="middle">licensed asset locations</text>
+<rect x="266" y="140" width="380" height="92" rx="0" fill="#f2f7fc" stroke="#8cbde7" stroke-width="1"/>
+<text x="278" y="160" font-size="11.5" fill="#1f2937" font-weight="bold" font-family="DejaVu Sans Mono, Menlo, monospace">EnvironmentModel</text>
+<text x="278" y="178" font-size="10.5" fill="#4b5563">planet: gravity parameter, radii, rotation</text>
+<text x="278" y="192" font-size="10.5" fill="#4b5563">atmosphere: density model, winds, entry interface</text>
+<text x="278" y="206" font-size="10.5" fill="#4b5563">ephemerides: analytic, or SPICE kernels</text>
+<text x="278" y="220" font-size="10.5" fill="#4b5563">thermal model for heat rate and heat load</text>
+<rect x="660" y="140" width="264" height="92" rx="0" fill="#f2f7fc" stroke="#8cbde7" stroke-width="1"/>
+<text x="672" y="160" font-size="11.5" fill="#1f2937" font-weight="bold">Guidance, navigation, control</text>
+<text x="672" y="178" font-size="10.5" fill="#4b5563"><tspan font-family="DejaVu Sans Mono, Menlo, monospace">GuidanceModel</tspan><tspan>, </tspan><tspan font-family="DejaVu Sans Mono, Menlo, monospace">NavigationModel</tspan><tspan>,</tspan></text>
+<text x="672" y="192" font-size="10.5" fill="#4b5563"><tspan font-family="DejaVu Sans Mono, Menlo, monospace">ControlModel</tspan><tspan>: effectors, each with</tspan></text>
+<text x="672" y="206" font-size="10.5" fill="#4b5563">its call rate in seconds; control</text>
+<text x="672" y="220" font-size="10.5" fill="#4b5563">effectors command the actuators</text>
+<rect x="266" y="246" width="658" height="254" rx="0" fill="#f2f7fc" stroke="#8cbde7" stroke-width="1"/>
+<text x="278" y="266" font-size="11.5" fill="#1f2937" font-weight="bold" font-family="DejaVu Sans Mono, Menlo, monospace">DynamicsModel</text>
+<rect x="278" y="278" width="196" height="210" rx="0" fill="#ffffff" stroke="#8cbde7" stroke-width="1"/>
+<text x="290" y="298" font-size="11" fill="#1f2937" font-weight="bold">force and torque models</text>
+<text x="290" y="316" font-size="10.5" fill="#4b5563">gravity: point mass, J2,</text>
+<text x="290" y="330" font-size="10.5" fill="#4b5563">  spherical harmonics, n-body,</text>
+<text x="290" y="344" font-size="10.5" fill="#4b5563">  gravity-gradient torque</text>
+<text x="290" y="358" font-size="10.5" fill="#4b5563">aerodynamics: drag and lift</text>
+<text x="290" y="372" font-size="10.5" fill="#4b5563">  coefficients, mesh panels</text>
+<text x="290" y="386" font-size="10.5" fill="#4b5563">solar radiation pressure</text>
+<text x="290" y="400" font-size="10.5" fill="#4b5563">your own effector</text>
+<rect x="500" y="284" width="410" height="204" rx="0" fill="#ffffff" stroke="#8cbde7" stroke-width="1"/>
+<rect x="494" y="278" width="410" height="204" rx="0" fill="#ffffff" stroke="#8cbde7" stroke-width="1"/>
+<text x="506" y="298" font-size="11.5" fill="#1f2937" font-weight="bold" font-family="DejaVu Sans Mono, Menlo, monospace">SpacecraftModel</text>
+<text x="626" y="298" font-size="10.5" fill="#6b7280">one per vehicle</text>
+<text x="506" y="316" font-size="10.5" fill="#4b5563">InitialCondition: the starting orbit and attitude</text>
+<rect x="506" y="326" width="120" height="34" rx="0" fill="#f2f7fc" stroke="#8cbde7" stroke-width="1"/>
+<text x="566" y="341" font-size="10.5" fill="#1f2937" font-weight="bold" text-anchor="middle">root link</text>
+<text x="566" y="354" font-size="10" fill="#4b5563" text-anchor="middle">the bus</text>
+<rect x="536" y="372" width="90" height="30" rx="0" fill="#f2f7fc" stroke="#8cbde7" stroke-width="1"/>
+<text x="581" y="390" font-size="10.5" fill="#1f2937" text-anchor="middle">panel link</text>
+<path d="M 518 360 L 518 387 L 536 387" stroke="#6b7280" stroke-width="1" fill="none"/>
+<circle cx="518" cy="387" r="3" fill="#ffffff" stroke="#6b7280" stroke-width="1"/>
+<rect x="536" y="414" width="90" height="30" rx="0" fill="#f2f7fc" stroke="#8cbde7" stroke-width="1"/>
+<text x="581" y="432" font-size="10.5" fill="#1f2937" text-anchor="middle">panel link</text>
+<path d="M 518 360 L 518 429 L 536 429" stroke="#6b7280" stroke-width="1" fill="none"/>
+<circle cx="518" cy="429" r="3" fill="#ffffff" stroke="#6b7280" stroke-width="1"/>
+<text x="506" y="470" font-size="10" fill="#6b7280" font-style="italic">links joined by joints</text>
+<text x="646" y="341" font-size="10.5" fill="#1f2937" font-weight="bold">mounted on each link:</text>
+<text x="646" y="357" font-size="10.5" fill="#4b5563">thrusters, reaction wheels,</text>
+<text x="646" y="371" font-size="10.5" fill="#4b5563">torque rods, laser terminals,</text>
+<text x="646" y="385" font-size="10.5" fill="#4b5563">a hinge, SRP facets,</text>
+<text x="646" y="399" font-size="10.5" fill="#4b5563">your own actuator kinds</text>
+<text x="646" y="425" font-size="10.5" fill="#4b5563">optional own GNC, bound to</text>
+<text x="646" y="439" font-size="10.5" fill="#4b5563">this vehicle when the run starts</text>
+<text x="646" y="455" font-size="10.5" fill="#4b5563">optional compliant attachments</text>
+<rect x="266" y="512" width="380" height="44" rx="0" fill="#f2f7fc" stroke="#8cbde7" stroke-width="1"/>
+<text x="278" y="530" font-size="10.5" fill="#1f2937"><tspan font-family="DejaVu Sans Mono, Menlo, monospace" font-weight="bold">SolverConfig</tspan><tspan> and </tspan><tspan font-family="DejaVu Sans Mono, Menlo, monospace" font-weight="bold">IntegrationTolerances</tspan></text>
+<text x="278" y="546" font-size="10.5" fill="#4b5563">the integrator, step limits, tolerances, parallelism</text>
+<rect x="660" y="512" width="264" height="44" rx="0" fill="#fafafa" stroke="#9aa5b1" stroke-width="1" stroke-dasharray="5 4"/>
+<text x="672" y="530" font-size="10.5" fill="#1f2937" font-weight="bold">optional</text>
+<text x="672" y="546" font-size="10.5" fill="#4b5563">laser interlinks, external propagators</text>
+<line x1="595" y1="570" x2="595" y2="596" stroke="#2f5f7f" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="380" y="598" width="430" height="46" rx="3" fill="#2f5f7f" stroke="#2f5f7f" stroke-width="1"/>
+<text x="595" y="617" font-size="11.5" fill="#ffffff" text-anchor="middle"><tspan font-family="DejaVu Sans Mono, Menlo, monospace">run_simulation</tspan><tspan>(config)  or  </tspan><tspan font-family="DejaVu Sans Mono, Menlo, monospace">run_mission</tspan><tspan>(plan)</tspan></text>
+<text x="595" y="634" font-size="10.5" fill="#e5eef6" text-anchor="middle">results table, the configuration that ran, written files</text>
+</svg>

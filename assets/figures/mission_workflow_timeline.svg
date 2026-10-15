@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc" width="960" height="500" viewBox="0 0 960 500" font-family="DejaVu Sans, Helvetica, Arial, sans-serif">
+<title id="title">One mission run: segments, phases and events on one timeline</title><desc id="desc">A single run_mission call integrates one continuous state. Operational segments initial_coast, observation and final_coast change commands at transitions at 120 and 180 seconds, where the exit action runs before the entry action. Descriptive phases initial_coast and later_coast only name time windows. An event callback is built fresh for the run and, in this sketch, stops the run before the 300 second horizon. Afterwards run.history, the saved mission JSON file and the viewer show the segments that actually ran.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2f5f7f"/></marker></defs>
+<rect width="960" height="500" fill="#ffffff"/>
+<rect x="824" y="44" width="96" height="290" rx="0" fill="#f1f3f5" stroke="none" stroke-width="0"/>
+<text x="872" y="62" font-size="11" fill="#6b7280" text-anchor="middle">not run</text>
+<text x="20" y="28" font-size="15" fill="#1f2937"><tspan font-weight="bold">One mission run: </tspan><tspan font-family="DejaVu Sans Mono, Menlo, monospace" font-weight="bold">MissionPlan</tspan><tspan font-weight="bold"> and </tspan><tspan font-family="DejaVu Sans Mono, Menlo, monospace" font-weight="bold">run_mission</tspan></text>
+<rect x="200" y="48" width="624" height="22" rx="3" fill="#2f5f7f" stroke="#2f5f7f" stroke-width="1"/>
+<text x="512" y="63" font-size="12" fill="#ffffff" text-anchor="middle">one integration, one continuous state: position, velocity, attitude, mass</text>
+<text x="20" y="104" font-size="13" fill="#1f2937" font-weight="bold">Operational segments</text>
+<text x="20" y="121" font-size="11" fill="#2f5f7f" font-family="DejaVu Sans Mono, Menlo, monospace">MissionSegment</text>
+<text x="20" y="137" font-size="11" fill="#4b5563">commands change at</text>
+<text x="20" y="151" font-size="11" fill="#4b5563">each transition</text>
+<rect x="200" y="86" width="288" height="70" rx="0" fill="#f2f7fc" stroke="#8cbde7" stroke-width="1"/>
+<text x="344" y="111" font-size="13" fill="#1f2937" font-weight="bold" text-anchor="middle">initial_coast</text>
+<text x="344" y="129" font-size="10.5" fill="#2f5f7f" font-family="DejaVu Sans Mono, Menlo, monospace" text-anchor="middle">MissionDeadline(120.0)</text>
+<text x="344" y="146" font-size="10.5" fill="#4b5563" text-anchor="middle">120 s after the start of the run</text>
+<rect x="488" y="86" width="144" height="70" rx="0" fill="#f2f7fc" stroke="#8cbde7" stroke-width="1"/>
+<text x="560" y="111" font-size="13" fill="#1f2937" font-weight="bold" text-anchor="middle">observation</text>
+<text x="560" y="129" font-size="10.5" fill="#2f5f7f" font-family="DejaVu Sans Mono, Menlo, monospace" text-anchor="middle">MissionDuration(60.0)</text>
+<text x="560" y="146" font-size="10.5" fill="#4b5563" text-anchor="middle">60 s after entry</text>
+<rect x="632" y="86" width="192" height="70" rx="0" fill="#f2f7fc" stroke="#8cbde7" stroke-width="1"/>
+<text x="728" y="111" font-size="13" fill="#1f2937" font-weight="bold" text-anchor="middle">final_coast</text>
+<text x="728" y="129" font-size="10.5" fill="#4b5563" text-anchor="middle">no exit condition</text>
+<text x="728" y="146" font-size="10.5" fill="#4b5563" text-anchor="middle">closed by the stop</text>
+<line x1="488" y1="80" x2="488" y2="162" stroke="#2f5f7f" stroke-width="2"/>
+<text x="488" y="175" font-size="10.5" fill="#2f5f7f" font-family="DejaVu Sans Mono, Menlo, monospace" text-anchor="middle">on_exit,</text>
+<text x="488" y="189" font-size="10.5" fill="#2f5f7f" font-family="DejaVu Sans Mono, Menlo, monospace" text-anchor="middle">then on_enter</text>
+<line x1="632" y1="80" x2="632" y2="162" stroke="#2f5f7f" stroke-width="2"/>
+<text x="632" y="175" font-size="10.5" fill="#2f5f7f" font-family="DejaVu Sans Mono, Menlo, monospace" text-anchor="middle">on_exit,</text>
+<text x="632" y="189" font-size="10.5" fill="#2f5f7f" font-family="DejaVu Sans Mono, Menlo, monospace" text-anchor="middle">then on_enter</text>
+<text x="20" y="212" font-size="13" fill="#1f2937" font-weight="bold">Descriptive phases</text>
+<text x="20" y="229" font-size="11" fill="#2f5f7f" font-family="DejaVu Sans Mono, Menlo, monospace">MissionPhase</text>
+<text x="20" y="245" font-size="11" fill="#4b5563">names only; the run</text>
+<text x="20" y="259" font-size="11" fill="#4b5563">is unchanged</text>
+<rect x="200" y="198" width="288" height="50" rx="0" fill="#fafafa" stroke="#9aa5b1" stroke-width="1" stroke-dasharray="5 4"/>
+<text x="344" y="218" font-size="12" fill="#374151" font-weight="bold" text-anchor="middle">initial_coast</text>
+<text x="344" y="236" font-size="10.5" fill="#4b5563" font-family="DejaVu Sans Mono, Menlo, monospace" text-anchor="middle">window_s=(0.0, 120.0)</text>
+<rect x="488" y="198" width="432" height="50" rx="0" fill="#fafafa" stroke="#9aa5b1" stroke-width="1" stroke-dasharray="5 4"/>
+<text x="704" y="218" font-size="12" fill="#374151" font-weight="bold" text-anchor="middle">later_coast</text>
+<text x="704" y="236" font-size="10.5" fill="#4b5563" font-family="DejaVu Sans Mono, Menlo, monospace" text-anchor="middle">window_s=(120.0, 300.0)</text>
+<text x="20" y="292" font-size="13" fill="#1f2937" font-weight="bold">Events</text>
+<text x="20" y="309" font-size="11" fill="#2f5f7f" font-family="DejaVu Sans Mono, Menlo, monospace">MissionEvent</text>
+<text x="20" y="325" font-size="11" fill="#4b5563">callback built fresh</text>
+<text x="20" y="339" font-size="11" fill="#4b5563">for each run</text>
+<circle cx="200" cy="302" r="5" fill="#ffffff" stroke="#b45309" stroke-width="2"/>
+<text x="212" y="298" font-size="10.5" fill="#4b5563">the factory builds the callback</text>
+<text x="212" y="313" font-size="10.5" fill="#4b5563">before the integration starts</text>
+<line x1="824" y1="44" x2="824" y2="334" stroke="#b45309" stroke-width="1.5" stroke-dasharray="4 3"/>
+<path d="M 824.0 293 L 833.0 302 L 824.0 311 L 815.0 302 z" stroke="#b45309" stroke-width="1" fill="#b45309"/>
+<text x="808" y="298" font-size="10.5" fill="#7c2d12" text-anchor="end">a stop event ends the run at the first</text>
+<text x="808" y="313" font-size="10.5" fill="#7c2d12" text-anchor="end">accepted step after its limit</text>
+<line x1="200" y1="348" x2="920" y2="348" stroke="#6b7280" stroke-width="1"/>
+<line x1="200" y1="348" x2="200" y2="353" stroke="#6b7280" stroke-width="1"/>
+<text x="200" y="366" font-size="11" fill="#4b5563" text-anchor="middle">0</text>
+<line x1="344" y1="348" x2="344" y2="353" stroke="#6b7280" stroke-width="1"/>
+<text x="344" y="366" font-size="11" fill="#4b5563" text-anchor="middle">60</text>
+<line x1="488" y1="348" x2="488" y2="353" stroke="#6b7280" stroke-width="1"/>
+<text x="488" y="366" font-size="11" fill="#4b5563" text-anchor="middle">120</text>
+<line x1="632" y1="348" x2="632" y2="353" stroke="#6b7280" stroke-width="1"/>
+<text x="632" y="366" font-size="11" fill="#4b5563" text-anchor="middle">180</text>
+<line x1="776" y1="348" x2="776" y2="353" stroke="#6b7280" stroke-width="1"/>
+<text x="776" y="366" font-size="11" fill="#4b5563" text-anchor="middle">240</text>
+<line x1="920" y1="348" x2="920" y2="353" stroke="#6b7280" stroke-width="1"/>
+<text x="920" y="366" font-size="11" fill="#4b5563" text-anchor="middle">300</text>
+<text x="20" y="366" font-size="11" fill="#4b5563">elapsed time, s</text>
+<text x="920" y="381" font-size="10.5" fill="#6b7280" text-anchor="end">mission horizon</text>
+<text x="20" y="418" font-size="13" fill="#1f2937" font-weight="bold">What you inspect</text>
+<text x="20" y="434" font-size="11" fill="#4b5563">after the run</text>
+<rect x="200" y="398" width="232" height="66" rx="0" fill="#f2f7fc" stroke="#8cbde7" stroke-width="1"/>
+<text x="316" y="419" font-size="12" fill="#1f2937" font-weight="bold" font-family="DejaVu Sans Mono, Menlo, monospace" text-anchor="middle">run.history</text>
+<text x="316" y="437" font-size="10.5" fill="#4b5563" text-anchor="middle">actual segment intervals and</text>
+<text x="316" y="452" font-size="10.5" fill="#4b5563" text-anchor="middle">transition times, each with a reason</text>
+<line x1="432" y1="431" x2="462" y2="431" stroke="#2f5f7f" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="464" y="398" width="232" height="66" rx="0" fill="#f2f7fc" stroke="#8cbde7" stroke-width="1"/>
+<text x="580" y="419" font-size="10.5" fill="#1f2937" font-weight="bold" font-family="DejaVu Sans Mono, Menlo, monospace" text-anchor="middle">simulation_results_mission.json</text>
+<text x="580" y="437" font-size="10.5" fill="#4b5563" text-anchor="middle">saved with the run and linked</text>
+<text x="580" y="452" font-size="10.5" fill="#4b5563" text-anchor="middle">to it in the result manifest</text>
+<line x1="696" y1="431" x2="726" y2="431" stroke="#2f5f7f" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="728" y="398" width="192" height="66" rx="0" fill="#f2f7fc" stroke="#8cbde7" stroke-width="1"/>
+<text x="824" y="419" font-size="12" fill="#1f2937" font-weight="bold" text-anchor="middle">Viewer</text>
+<text x="824" y="437" font-size="10.5" fill="#4b5563" text-anchor="middle">jump to a segment or</text>
+<text x="824" y="452" font-size="10.5" fill="#4b5563" text-anchor="middle">transition during playback</text>
+<text x="200" y="488" font-size="11" fill="#4b5563"><tspan font-family="DejaVu Sans Mono, Menlo, monospace">run.phases</tspan><tspan> lists the phase names; phases and events are kept separate from the segment history.</tspan></text>
+</svg>

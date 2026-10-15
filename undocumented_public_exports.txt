@@ -1,4 +1,6 @@
 SpaceAGORA undocumented public exports report
-generated_utc=2026-10-15T13:48:02.384
+generated_utc=2026-10-15T16:09:24.809
+
+Known placeholder docs (listed in docs/public_api_symbols.jl): SpaceAGORA.ApoapsisTargetPeriapsisRaiseGuidanceModel, SpaceAGORA.load_rpo_station_cad_pointcloud, SpaceAGORA.load_rpo_station_cad_triangles, SpaceAGORA.load_rpo_station_pointcloud, SpaceAGORA.station_cad_path, SpaceAGORA.station_geometry_path, SpaceAGORA.thin_panel_inertia
 
 All documented.

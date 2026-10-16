@@ -399,8 +399,16 @@ function _ppb_aggregate(raw::DataFrame)::DataFrame
     df = raw[ok, :]
     nrow(df) == 0 && return DataFrame()
 
+    # Rows from before process replicates existed are replicate 1. The pooled
+    # median below runs over every replicate's timed repeats; the min/max of the
+    # per-replicate medians show how far the processes disagree with each other.
+    df[!, :process_replicate] = "process_replicate" in cols ? coalesce.(df.process_replicate, 1) : ones(Int, nrow(df))
+    rep_medians(w, r) = [median(collect(skipmissing(w[r .== k]))) for k in unique(r)]
     agg = combine(
         groupby(df, group_keys),
+        [:wall_time_s, :process_replicate] => ((w, r) -> minimum(rep_medians(w, r))) => :replicate_median_min_s,
+        [:wall_time_s, :process_replicate] => ((w, r) -> maximum(rep_medians(w, r))) => :replicate_median_max_s,
+        :process_replicate => (r -> length(unique(r))) => :n_replicates,
         :wall_time_s => (x -> median(collect(skipmissing(x)))) => :wall_time_median_s,
         :wall_time_s => (x -> mean(collect(skipmissing(x))))   => :wall_time_mean_s,
         :wall_time_s => (x -> std(collect(skipmissing(x))))    => :wall_time_std_s,

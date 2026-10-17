@@ -44,6 +44,11 @@ gyro(; kw...) = ControlMomentGyro(; rotor_momentum_nms=2.0, gimbal_axis=SVector(
         @test_throws ArgumentError gyro(rotor_momentum_nms=0.0)
         @test_throws ArgumentError ControlMomentGyro(rotor_momentum_nms=1.0, gimbal_axis=SVector(0.0, 0.0, 1.0), spin_axis=SVector(1.0, 0.0, 1.0))
         @test_throws ArgumentError gyro(max_gimbal_rate_rad_s=0.0)
+        @test_throws ArgumentError gyro(min_gimbal_angle_rad=0.5, max_gimbal_angle_rad=0.4)
+        @test_throws ArgumentError gyro(max_gimbal_angle_rad=NaN)
+        @test_throws ArgumentError gyro(gimbal_angle_rad=0.2, max_gimbal_angle_rad=0.1)   # starts beyond its stop
+        positional = ControlMomentGyro(2.0, SVector(0.0, 0.0, 1.0), SVector(1.0, 0.0, 0.0), Inf, 0.0)
+        @test positional.min_gimbal_angle_rad == -Inf && positional.max_gimbal_angle_rad == Inf
         sc, root = far_spacecraft()
         panel = SM.Link(m=1.0, r=MVector(0.0, 1.0, 0.0))
         push!(sc.links, panel)
@@ -60,6 +65,10 @@ gyro(; kw...) = ControlMomentGyro(; rotor_momentum_nms=2.0, gimbal_axis=SVector(
         @test cmg_momentum(c, 0.0) ≈ SVector(2.0, 0.0, 0.0)
         @test cmg_momentum(c, π / 2) ≈ SVector(0.0, 2.0, 0.0) atol=1e-15
         @test cmg_torque_axis(c, 0.0) ≈ SVector(0.0, 2.0, 0.0)                           # g × h
+        stop = gyro(min_gimbal_angle_rad=-0.2, max_gimbal_angle_rad=0.3)
+        @test cmg_angle_saturate(stop, 0.1, 0.3) == 0.0 && cmg_angle_saturate(stop, -0.1, 0.3) == -0.1
+        @test cmg_angle_saturate(stop, -0.1, -0.25) == 0.0 && cmg_angle_saturate(stop, 0.1, 0.0) == 0.1
+        @test cmg_angle_saturate(c, 5.0, 1.0e6) == 5.0                                    # no stops by default
     end
 
     @testset "steering: exact away from singularities, bounded at one, within rate limits" begin
@@ -85,6 +94,15 @@ gyro(; kw...) = ControlMomentGyro(; rotor_momentum_nms=2.0, gimbal_axis=SVector(
         add_actuator!(limited, lroot, ControlMomentGyro(rotor_momentum_nms=2.0, gimbal_axis=SVector(1.0, 0.0, 0.0), spin_axis=SVector(0.0, 1.0, 0.0), max_gimbal_rate_rad_s=0.1))
         free = cmg_steering(limited, zeros(2), SVector(0.0, -1.0, -0.5); λ0=0.0)
         @test maximum(abs, free) ≈ 0.1 && free[1] / free[2] ≈ 2.0                        # scaled together
+        # A CMG at its stop is left out when the torque would drive it further.
+        stops, sroot = far_spacecraft()
+        add_actuator!(stops, sroot, gyro(gimbal_angle_rad=0.3, max_gimbal_angle_rad=0.3))
+        add_actuator!(stops, sroot, ControlMomentGyro(rotor_momentum_nms=2.0, gimbal_axis=SVector(1.0, 0.0, 0.0), spin_axis=SVector(0.0, 1.0, 0.0)))
+        a1 = cmg_torque_axis(stops.root.rw_assembly.cmgs[1], 0.3)
+        outward = cmg_steering(stops, [0.3, 0.0], -0.1 * a1 / norm(a1) + SVector(0.0, 0.0, 0.05); λ0=0.0)
+        @test outward[1] == 0.0 && outward[2] ≈ -0.025                                   # the second carries what it can
+        inward = cmg_steering(stops, [0.3, 0.0], 0.1 * a1 / norm(a1); λ0=0.0)
+        @test inward[1] < 0.0                                                            # away from the stop
     end
 
     @testset "a run integrates the gimbal angle and conserves the angular momentum" begin
@@ -98,6 +116,16 @@ gyro(; kw...) = ControlMomentGyro(; rotor_momentum_nms=2.0, gimbal_axis=SVector(
         # The body took up the rotor's momentum change: ω changed by about -(Δh)/I.
         Δh = cmg_momentum(c, x.cmg_angles[1]) - cmg_momentum(c, 0.1)
         @test norm(SVector{3}(x.ω) - SVector(0.001, 0.0, 0.0)) > 0.5 * norm(Δh) / sc.inertia_tensor[1, 1]
+    end
+
+    @testset "a gimbal stop holds the angle, with the torque consistent" begin
+        sc, root = far_spacecraft(ω0=SVector(0.001, 0.0, 0.0))
+        add_actuator!(sc, root, gyro(gimbal_angle_rad=0.1, max_gimbal_angle_rad=0.3))
+        res = cmg_run(sc, [0.02]; mission_time=20.0)                                     # reaches the stop at 10 s
+        x0, x = res.solution.u[1].sc[1], res.solution.u[end].sc[1]
+        @test abs(x.cmg_angles[1] - 0.3) < 1e-3 && x.cmg_angles[1] >= 0.3 - 1e-9
+        @test inertial_momentum(sc, x) ≈ inertial_momentum(sc, x0) rtol=1e-8
+        @test res.table.sc1_actuator_level_1[1] == 0.02 && res.table.sc1_actuator_level_1[end] == 0.0
     end
 
     @testset "a held gimbal still couples through the gyroscopic term" begin

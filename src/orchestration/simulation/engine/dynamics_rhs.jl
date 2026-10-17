@@ -448,17 +448,21 @@ end
 end
 
 # The mounted CMGs' momentum in the body frame at gimbal angles `angles`, and
-# its rate relative to the body at the commanded gimbal rates: `Σ δ̇ (g × h)`.
+# its rate relative to the body at the gimbal rates they apply (the commanded
+# rates, zero at a stop they would pass): `Σ δ̇ (g × h)`.
 @inline function _cmg_momentum_and_rate(assembly, angles)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     h = SVector{3, Float64}(0.0, 0.0, 0.0)
     hdot = SVector{3, Float64}(0.0, 0.0, 0.0)
     @inbounds for (j, cmg) in enumerate(assembly.cmgs)
         hj = SimulationModel.cmg_momentum(cmg, angles[j])
         h += hj
-        hdot += assembly.cmg_rates[j] * cross(cmg.gimbal_axis, hj)
+        hdot += _cmg_applied_rate(assembly, j, angles[j]) * cross(cmg.gimbal_axis, hj)
     end
     return h, hdot
 end
+
+@inline _cmg_applied_rate(assembly, j::Int, angle)::Float64 =
+    SimulationModel.cmg_angle_saturate(assembly.cmgs[j], assembly.cmg_rates[j], angle)
 
 @inline function _ensure_rhs_flat_effector_scratch!(
     shared_buffers,
@@ -2803,7 +2807,9 @@ end
         h_wheel_body = h_wheel_body + h_cmg
         if actuator_rates
             tau_body = tau_body - hdot_cmg
-            du_view.cmg_angles .= rw_assembly.cmg_rates
+            @inbounds for j in eachindex(rw_assembly.cmgs)
+                du_view.cmg_angles[j] = _cmg_applied_rate(rw_assembly, j, sc_view.cmg_angles[j])
+            end
         else
             du_view.cmg_angles .= 0.0
         end

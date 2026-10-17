@@ -30,7 +30,7 @@ using ..QuaternionMath: rot
 using ..Actuators
 using ..Components: Thruster, ReactionWheel, wheel_momentum_saturate, wheel_power, Magnetorquer, LaserTerminal, PanelHinge, hinge_step
 using ..Components: ThrusterGimbal, gimbal_step, _gimbal_rotation
-using ..Components: ControlMomentGyro, cmg_torque_axis
+using ..Components: ControlMomentGyro, cmg_torque_axis, cmg_angle_saturate
 using ..SpacecraftModels: Link, SpacecraftModel
 using ..Assembly: add_thruster!
 
@@ -321,8 +321,10 @@ vehicle: the singularity-robust inverse of the CMGs' torque Jacobian
 (Bedrossian): with `A = [g_j × h_j]` normalized by the largest rotor
 momentum, `δ̇ = -Aᵀ (A Aᵀ + λ I)⁻¹ τ` and `λ = λ0 exp(-μ det(A Aᵀ))`, which
 stays bounded near a singular gimbal configuration at the cost of a torque
-error (`λ0 = 0` gives the pseudo-inverse). Rates beyond a CMG's limit are
-scaled down together, keeping the torque's direction.
+error (`λ0 = 0` gives the pseudo-inverse). A CMG at a gimbal stop whose rate
+would drive it further is left out and the others are solved again, so it is
+commanded zero; rates beyond a CMG's limit are then scaled down together,
+keeping the torque's direction.
 """
 function cmg_steering(model::SpacecraftModel, angles::AbstractVector, torque_body::AbstractVector; λ0::Real=0.01, μ::Real=10.0)::Vector{Float64}
     cmgs = model.root.rw_assembly.cmgs
@@ -330,14 +332,22 @@ function cmg_steering(model::SpacecraftModel, angles::AbstractVector, torque_bod
     length(angles) == n || throw(ArgumentError("cmg_steering: $(length(angles)) gimbal angles for $(n) mounted CMGs."))
     n == 0 && return Float64[]
     href = maximum(c -> c.rotor_momentum_nms, cmgs)
-    A = zeros(Float64, 3, n)
-    for j in 1:n
-        A[:, j] .= cmg_torque_axis(cmgs[j], angles[j]) ./ href
+    stopped = falses(n)
+    rates = zeros(Float64, n)
+    for _ in 0:n
+        A = zeros(Float64, 3, n)
+        for j in 1:n
+            stopped[j] || (A[:, j] .= cmg_torque_axis(cmgs[j], angles[j]) ./ href)
+        end
+        M = A * transpose(A)
+        λ = Float64(λ0) * exp(-Float64(μ) * det(M))
+        # pinv: the inverse for λ > 0, the least-squares minimum-norm solution for λ = 0 at a singular A.
+        rates = -(transpose(A) * (pinv(M + λ * Matrix{Float64}(I, 3, 3)) * Vector{Float64}(torque_body))) ./ href
+        # A CMG at a stop that the solution would drive further is left out.
+        blocked = [j for j in 1:n if !stopped[j] && rates[j] != 0.0 && cmg_angle_saturate(cmgs[j], rates[j], angles[j]) == 0.0]
+        isempty(blocked) && break
+        stopped[blocked] .= true
     end
-    M = A * transpose(A)
-    λ = Float64(λ0) * exp(-Float64(μ) * det(M))
-    # pinv: the inverse for λ > 0, the least-squares minimum-norm solution for λ = 0 at a singular A.
-    rates = -(transpose(A) * (pinv(M + λ * Matrix{Float64}(I, 3, 3)) * Vector{Float64}(torque_body))) ./ href
     scale = 1.0
     for j in 1:n
         limit = cmgs[j].max_gimbal_rate_rad_s
@@ -598,15 +608,17 @@ function mounted_thruster_fractions(model::SpacecraftModel, levels::AbstractVect
 end
 
 """
-    applied_actuator_levels(model::SpacecraftModel, levels; wheel_momentum=nothing) -> Vector{Float64}
+    applied_actuator_levels(model::SpacecraftModel, levels; wheel_momentum=nothing, cmg_angles=nothing) -> Vector{Float64}
 
 The level each mounted actuator actually applies, in mounting order: its
 command saturated to its limits; a thruster with firing dynamics at the thrust
 its last tick scheduled; a wheel at its momentum limit at zero when the
 command would store more (given `wheel_momentum`); a hinge at its current
-angle. These fill the `actuator_level` result columns.
+angle; a control moment gyro at zero at a gimbal stop when the command would
+drive it further (given `cmg_angles`). These fill the `actuator_level` result
+columns.
 """
-function applied_actuator_levels(model::SpacecraftModel, levels::AbstractVector; wheel_momentum=nothing)::Vector{Float64}
+function applied_actuator_levels(model::SpacecraftModel, levels::AbstractVector; wheel_momentum=nothing, cmg_angles=nothing)::Vector{Float64}
     out = zeros(Float64, mounted_actuator_count(model))
     length(levels) == length(out) || return out
     k = 0
@@ -638,9 +650,11 @@ function applied_actuator_levels(model::SpacecraftModel, levels::AbstractVector;
         k += 1
         out[k] = gimbal.angle_rad
     end
-    for cmg in model.root.rw_assembly.cmgs
+    for (j, cmg) in enumerate(model.root.rw_assembly.cmgs)
         k += 1
-        out[k] = actuator_saturate(cmg, levels[k])
+        x = actuator_saturate(cmg, levels[k])
+        cmg_angles === nothing || (x = cmg_angle_saturate(cmg, x, Float64(cmg_angles[j])))
+        out[k] = x
     end
     for link in model.links, actuator in link.custom_actuators
         k += 1

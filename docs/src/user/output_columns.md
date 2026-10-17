@@ -238,7 +238,7 @@ that carries mounted actuators. An explicit list must include the
 
 | Column | Unit | Description |
 |---|---|---|
-| `sc1_actuator_level_1` .. `sc1_actuator_level_k` | the kind's | The level each mounted actuator applies, in mounting order: its command within its limits. A thruster with firing dynamics reports the average thrust its last control tick scheduled, a wheel at its momentum limit reports zero when the command would store more, a hinge or thruster gimbal reports its current angle, and a control moment gyro its gimbal rate |
+| `sc1_actuator_level_1` .. `sc1_actuator_level_k` | the kind's | The level each mounted actuator applies, in mounting order: its command within its limits. A thruster with firing dynamics reports the average thrust its last control tick scheduled, a wheel at its momentum limit reports zero when the command would store more, a hinge or thruster gimbal reports its current angle, and a control moment gyro its gimbal rate (zero at a gimbal stop the command would pass) |
 | `sc1_actuator_power` | W | Electrical power the mounted actuators draw at those levels, the sum of what each kind reports through `actuator_consumption` |
 
 The levels come from the first control effector in `:mounted` actuation that

@@ -16,7 +16,7 @@ kind.
 | `fault.jl` | the `ActuatorFault` record (failed, stuck, degraded or biased between two times) and the spacecraft's `FaultSet`, owned by `Components` |
 | `faults.jl` | `ActuatorFaults`: `add_fault!`, the faulted levels the mounted path uses, and the fault switching the engine runs at the faults' window ends |
 | `hinge.jl` | the hinge kind: the `PanelHinge` record (level: the commanded angle of the link it turns; angle and rate limits), applied at control ticks |
-| `cmg.jl` | the control-moment-gyro kind: the `ControlMomentGyro` record (level: the gimbal rate; rotor momentum, gimbal and spin axes, rate limit), `cmg_momentum`, `cmg_torque_axis`; mounted CMGs live in the root link's wheel assembly and their gimbal angles in the `cmg_angles` state |
+| `cmg.jl` | the control-moment-gyro kind: the `ControlMomentGyro` record (level: the gimbal rate; rotor momentum, gimbal and spin axes, rate limit, gimbal stops), `cmg_momentum`, `cmg_torque_axis`, `cmg_angle_saturate`; mounted CMGs live in the root link's wheel assembly and their gimbal angles in the `cmg_angles` state |
 | `gimbal.jl` | the thruster-gimbal kind: the `ThrusterGimbal` record (level: the gimbal angle of the thruster it turns, about an axis in the link frame; angle and rate limits), applied at control ticks; the thruster's `gimbal_rotation` carries the turn |
 | `thruster_models.jl` | `BaseThrusterModel` (a burn schedule per spacecraft; with `actuation=:mounted` it fires a mounted engine and points it with the mounted wheels, the control code being in `gnc/control/propulsive_maneuvers.jl`) and `SixAxisThrusterModel` (six fixed jets) |
 | `thruster_models_module.jl` | the `ThrusterModels` owner module |

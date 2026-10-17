@@ -372,6 +372,8 @@ end
 
 @inline _saved_wheel_momentum(u, i::Int) =
     (hasproperty(u, :sc) && hasproperty(u.sc[i], :h_wheels)) ? u.sc[i].h_wheels : nothing
+@inline _saved_cmg_angles(u, i::Int) =
+    (hasproperty(u, :sc) && hasproperty(u.sc[i], :cmg_angles)) ? u.sc[i].cmg_angles : nothing
 
 function _save_actuator_levels(num_sats::Int, counts::Vector{Int}, u, t, integrator)
     effectors = integrator.p.args.control_model.control_effectors
@@ -380,7 +382,8 @@ function _save_actuator_levels(num_sats::Int, counts::Vector{Int}, u, t, integra
     @inbounds for i in 1:num_sats
         levels = counts[i] == 0 ? nothing : _mounted_effector_levels(effectors, i, counts[i])
         out[i] = levels === nothing ? zeros(Float64, counts[i]) :
-            applied_actuator_levels(spacecraft[i], shed_levels(spacecraft[i], faulted_levels(spacecraft[i], levels)); wheel_momentum=_saved_wheel_momentum(u, i))
+            applied_actuator_levels(spacecraft[i], shed_levels(spacecraft[i], faulted_levels(spacecraft[i], levels));
+                wheel_momentum=_saved_wheel_momentum(u, i), cmg_angles=_saved_cmg_angles(u, i))
     end
     return out
 end

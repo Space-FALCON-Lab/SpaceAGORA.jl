@@ -13,7 +13,7 @@ import ..Actuators: actuator_wrench, actuator_limits, actuator_consumption, actu
 export Facet, Thruster, Magnet, ReactionWheelAssembly, create_facet_list
 export six_axis_thrusters, ReactionWheel, wheel_momentum_saturate, wheel_power, Magnetorquer, LaserTerminal, PanelHinge, hinge_step
 export ThrusterGimbal, gimbal_step, thrust_direction
-export ControlMomentGyro, cmg_momentum, cmg_torque_axis
+export ControlMomentGyro, cmg_momentum, cmg_torque_axis, cmg_angle_saturate
 export SolarArray, Battery, PowerLoad
 export ActuatorFault, FaultSet
 export RateGyro, StarTracker, Magnetometer

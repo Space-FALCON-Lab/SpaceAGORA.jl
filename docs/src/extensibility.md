@@ -273,7 +273,8 @@ The built-in kinds:
   `thrust_direction(thruster)` gives the turned direction.
 - `ControlMomentGyro`: a single-gimbal CMG on the root link, a rotor of
   constant momentum whose spin axis turns about the gimbal axis; its level is
-  the gimbal rate, within its rate limit. The gimbal angle is integrated with
+  the gimbal rate, within its rate limit, and its gimbal stops at
+  `min_gimbal_angle_rad`/`max_gimbal_angle_rad` (none by default). The gimbal angle is integrated with
   the vehicle's state (`cmg_angles`, only when a CMG is mounted); the vehicle
   feels `-δ̇ (g × h)` and the rotor's momentum in its gyroscopic term.
   `cmg_steering(spacecraft, angles, torque)` turns a desired torque into

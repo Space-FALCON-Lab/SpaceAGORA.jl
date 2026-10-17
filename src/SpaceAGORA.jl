@@ -277,7 +277,7 @@ using .SimulationModel: calcGuidanceEffect!, calcNavigationEffect!, getHeatRate
 # Actuators: the contract (Actuators), the thruster kind (Components) and mounting (ActuatorMounting).
 using .SimulationModel: Thruster, ReactionWheel, Magnetorquer, LaserTerminal, PanelHinge, ActuatorContext
 using .SimulationModel: ThrusterGimbal, thrust_direction
-using .SimulationModel: ControlMomentGyro, cmg_momentum, cmg_torque_axis, cmg_steering
+using .SimulationModel: ControlMomentGyro, cmg_momentum, cmg_torque_axis, cmg_angle_saturate, cmg_steering
 using .SimulationModel: actuator_wrench, actuator_limits, actuator_saturate, actuator_consumption, actuator_fraction, actuator_unit_wrench, actuation_mode, actuator_levels, allocate_actuators
 using .SimulationModel: add_actuator!, mounted_actuators, actuator_context, allocation_matrix, mounted_wrench, six_axis_thrusters
 using .SimulationModel: propellant_mass_rate, ActuatorRequirements, actuator_requirements, applied_actuator_levels, mounted_power
@@ -377,6 +377,7 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.ControlMomentGyro) ControlMomentGyro
 @doc (@doc SimulationModel.cmg_momentum) cmg_momentum
 @doc (@doc SimulationModel.cmg_torque_axis) cmg_torque_axis
+@doc (@doc SimulationModel.cmg_angle_saturate) cmg_angle_saturate
 @doc (@doc SimulationModel.cmg_steering) cmg_steering
 @doc (@doc SimulationModel.ActuatorContext) ActuatorContext
 @doc (@doc SimulationModel.actuator_wrench) actuator_wrench
@@ -686,7 +687,7 @@ export control_thruster_levels, touchdown_spec, bind_spacecraft
 export calcGuidanceEffect!, calcNavigationEffect!, getHeatRate
 export AbstractActuator, Thruster, ReactionWheel, Magnetorquer, LaserTerminal, PanelHinge, ActuatorContext
 export ThrusterGimbal, thrust_direction
-export ControlMomentGyro, cmg_momentum, cmg_torque_axis, cmg_steering
+export ControlMomentGyro, cmg_momentum, cmg_torque_axis, cmg_angle_saturate, cmg_steering
 export actuator_wrench, actuator_limits, actuator_saturate, actuator_consumption, actuator_fraction, actuator_unit_wrench, actuation_mode, actuator_levels, allocate_actuators
 export add_actuator!, mounted_actuators, actuator_context, allocation_matrix, mounted_wrench, six_axis_thrusters
 export propellant_mass_rate, ActuatorRequirements, actuator_requirements, applied_actuator_levels, mounted_power

@@ -7,7 +7,7 @@ using StaticArrays
 using ..Robotics
 using ..HYPRUtils
 
-export RobotArmPlannerConfig, RobotArmPlan, plan_robot_arm_motion, robot_arm_plan_sample
+export RobotArmPlannerConfig, RobotArmPlan, RobotArmPlanBuffer, plan_robot_arm_motion, robot_arm_plan_sample
 export RobotArmSphereObstacle, RobotArmHYPRConfig, RobotArmHYPRResult
 export plan_robot_arm_motion_hypr, robot_arm_sample_hypr_path
 export robot_arm_clearance_stats_from_samples, robot_arm_hypr_path_cost_components
@@ -35,6 +35,30 @@ struct RobotArmPlan
     target::SVector{3, Float64}
     final_error_m::Float64
     planner::Symbol
+end
+
+"""
+    RobotArmPlanBuffer(; plan=nothing, updated_at_s=0.0)
+    RobotArmPlanBuffer(model, base_pose, q_start)
+
+The link between a robot arm's planner and its controller: the `RobotArmPlan`
+the arm tracks and the time (s into the run) the plan's time axis starts from.
+A `RobotArmControlEffector` configured with `plan_buffer=` reads it at each tick,
+and the run couples the arm's state to it as to a controller's own `plan`: the
+arm's state is sized and started from the plan the buffer holds when the run
+starts, so it must hold one. The second form holds the arm of `model` at its
+`base_pose` still at the joint angles `q_start` (rad).
+
+An `AlgorithmGuidance` of the joint-reference family (`JointReferenceFamily`)
+configured with `link=` the same buffer installs each accepted plan into it, at
+the time of its request. Each run starts from the plan and time the buffer held
+before its first run.
+"""
+Base.@kwdef mutable struct RobotArmPlanBuffer
+    plan::Union{Nothing, RobotArmPlan} = nothing
+    updated_at_s::Float64 = 0.0
+    # The plan and time before the first run, restored at each run's start.
+    run_start::Union{Nothing, Tuple{Union{Nothing, RobotArmPlan}, Float64}} = nothing
 end
 
 """Evaluate the smooth quintic blend position at a normalized time."""
@@ -150,6 +174,14 @@ function plan_robot_arm_motion(
         final_error,
         planner,
     )
+end
+
+# A plan that keeps the arm at `q_start` (its goal is where those joints put the
+# end effector, so the blend does not move).
+function RobotArmPlanBuffer(model::ClothArmModel, base_pose::ClothArmBasePose, q_start)
+    q = Float64.(collect(q_start))
+    target = cloth_fk(model, base_pose, q).end_effector_position
+    return RobotArmPlanBuffer(plan=plan_robot_arm_motion(model, base_pose, q, target), updated_at_s=0.0)
 end
 
 """Sample a robot-arm plan at an arbitrary time."""

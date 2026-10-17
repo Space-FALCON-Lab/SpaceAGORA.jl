@@ -147,4 +147,34 @@ module GuidanceHooks
     GNCRuntime.spacecraft_scope(m::RPOGuidanceModel) = GNCRuntime.CoupledSpacecraft(m.chaser_idx, (m.target_idx,))
     GNCRuntime.spacecraft_scope(m::ApolloDescentGuidanceModel) = GNCRuntime.BoundSpacecraft(m.spacecraft_indices)
     GNCRuntime.skip_inactive(::ApolloDescentGuidanceModel) = true
+
+    # Run state resets at each run's start (G-8): the descent guidance's entries of
+    # the shared state, and the periapsis-raise guidance's command states.
+    function SimulationLifecycle.initialize_guidance!(m::ApolloDescentGuidanceModel, u, p, t)
+        _reset_descent_entries!(m.state, m.spacecraft_indices)
+        return nothing
+    end
+    function SimulationLifecycle.initialize_guidance!(m::ApoapsisTargetPeriapsisRaiseGuidanceModel, u, p, t)
+        empty!(m.command_state)
+        return nothing
+    end
+
+    # The deprecated RPO guidance rewrites its goal, its plan buffer (shared with the
+    # controller, so restored in place) and its replanning record during a run; each
+    # run starts them from their values before the model's first run.
+    const _RPO_GUIDANCE_RUN_FIELDS = (:goal_rtn, :force_replan, :replanning_events, :replan_count, :retime_count,
+        :safe_hold_count, :replan_failure_count, :last_replanning_time_s, :last_replanning_signature,
+        :replanning_persistence_count, :replanning_phase, :pending_replan)
+    function SimulationLifecycle.initialize_guidance!(m::RPOGuidanceModel, u, p, t)
+        buffer = m.plan_buffer
+        if m.run_start === nothing
+            m.run_start = deepcopy((fields=NamedTuple{_RPO_GUIDANCE_RUN_FIELDS}(map(f -> getfield(m, f), _RPO_GUIDANCE_RUN_FIELDS)),
+                valid=buffer.valid, plan=buffer.plan, updated_at_s=buffer.updated_at_s))
+        else
+            start = deepcopy(m.run_start)
+            foreach(f -> setfield!(m, f, getfield(start.fields, f)), _RPO_GUIDANCE_RUN_FIELDS)
+            buffer.valid, buffer.plan, buffer.updated_at_s = start.valid, start.plan, start.updated_at_s
+        end
+        return nothing
+    end
 end

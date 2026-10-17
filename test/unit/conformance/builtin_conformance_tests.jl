@@ -138,7 +138,7 @@ end
             end
         end
         # Every rejection policy is exercised: :fail and :install_fallback by the RPO
-        # family, :keep_previous by the burn-plan family.
+        # family, :keep_previous by the burn-plan family, :fail by the joint-reference family.
         @test Set(SpaceAGORA.on_rejection(entry.family) for entry in families) ==
             Set((:fail, :install_fallback, :keep_previous))
     end

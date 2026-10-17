@@ -38,6 +38,10 @@ the six allocated forces instead, so the thrust turns with the vehicle between
 ticks: the forces go to the first six mounted thrusters, so mount
 `six_axis_thrusters(model.thrusters)` on the chaser first; any other mounted
 actuator stays idle. The wheel torque is applied as in `:ideal`.
+
+Each run starts the held command from its value before the model's first run,
+the controller's warm start from zero with a fresh solver workspace, and an
+attached command log empty (`initialize_control!`).
 """
 mutable struct RPOMPCControlModel <: AbstractControlEffectorModel
     chaser_index::Int
@@ -55,6 +59,7 @@ mutable struct RPOMPCControlModel <: AbstractControlEffectorModel
     actuation::Symbol
     # `:mounted` actuation: one level per actuator mounted on the chaser, refreshed each tick.
     mounted_levels::Vector{Float64}
+    run_start::Union{Nothing, RPOHeldActuation}   # the held command before the first run
 end
 # The deprecated names forward, as keywords and as properties.
 function RPOMPCControlModel(; chaser_index=_NOT_PASSED, target_index=_NOT_PASSED, chaser_idx=_NOT_PASSED, target_idx=_NOT_PASSED,
@@ -65,7 +70,7 @@ function RPOMPCControlModel(; chaser_index=_NOT_PASSED, target_index=_NOT_PASSED
     return T(_renamed_keyword(T, :chaser_idx, chaser_idx, :chaser_index, chaser_index, 1),
         _renamed_keyword(T, :target_idx, target_idx, :target_index, target_index, 2),
         thrusters, minimum_throttle_fraction, controller, plan_buffer, held, control_dt_s, attitude_kp, rate_kd,
-        max_rw_torque_nm, command_log, actuation, mounted_levels)
+        max_rw_torque_nm, command_log, actuation, mounted_levels, nothing)
 end
 @inline _rpo_mpc_field(name::Symbol) =
     name === :chaser_idx ? _renamed_field_warning(RPOMPCControlModel, :chaser_idx, :chaser_index) :

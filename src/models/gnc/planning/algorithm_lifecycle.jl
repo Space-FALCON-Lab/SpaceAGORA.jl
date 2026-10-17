@@ -71,7 +71,9 @@ refusal follows the family's `on_rejection`.
 
 - `settings`: the family's request settings, or `nothing` when it needs none.
 - `link`: the install target, shared with the product's consumer, for a family
-  that does not find its own in the run.
+  that does not find its own in the run. The binding declares it as a GNC link it
+  produces (`gnc_links`), so the engine checks and initializes it with its
+  consumers (joint-reference family: the arm controller's plan buffer).
 - `seed`: the seed of the binding's random stream,
   `MersenneTwister(gnc_stream_words("AlgorithmGuidance/v1", seed, F, id))`, with
   `F` the family's type name and `id` the spacecraft's ID; fresh in every run.
@@ -108,8 +110,10 @@ Base.@kwdef mutable struct AlgorithmGuidance{A<:GA.AbstractGNCAlgorithm, T} <: S
     runtime::Union{Nothing, GA.AlgorithmRuntime} = nothing
 end
 
-# A binding acts on its one spacecraft (GNCRuntime scope).
+# A binding acts on its one spacecraft (GNCRuntime scope), and produces its
+# configured link, which the product's consumer reads.
 GR.spacecraft_scope(g::AlgorithmGuidance) = GR.BoundSpacecraft((g.spacecraft_index,))
+GR.gnc_links(g::AlgorithmGuidance) = g.link === nothing ? () : (GR.Produces(g.link),)
 
 # Guidance ticks accumulate their period, so an event or interval due at a tick
 # may fall a few rounding units after it.

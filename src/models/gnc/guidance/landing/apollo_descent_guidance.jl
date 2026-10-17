@@ -127,6 +127,21 @@ function ApolloDescentState(num_sats::Integer)
         fill(NaN, 4, n), fill(NaN, n), Vector{Union{Nothing, NamedTuple}}(nothing, n), fill(NaN, n), fill(z3, n), fill(NaN, n))
 end
 
+# Each run starts the selected spacecraft's entries of the shared state as a new
+# state holds them (G-8); entries of other spacecraft are left to their own models.
+function _reset_descent_entries!(state::ApolloDescentState, indices)
+    fresh = ApolloDescentState(1)
+    for i in indices, name in fieldnames(ApolloDescentState)
+        data = getfield(state, name)
+        if name === :phase_start_s
+            data[:, i] .= view(fresh.phase_start_s, :, 1)
+        else
+            data[i] = getfield(fresh, name)[1]
+        end
+    end
+    return state
+end
+
 # Both models use the same selected run indices and explicit terrain datum.
 function _descent_indices(state::ApolloDescentState, indices)
     n = length(state.phase)
@@ -182,7 +197,9 @@ the radial terrain clearance from the terrain model, and writes the thrust and
 attitude commands into `state` for `ApolloDescentControlModel`, which lives in
 the control hooks and is documented beside it.
 `spacecraft_indices` selects the run indices it guides; the paired control
-model must use the same selection, state, configuration and terrain.
+model must use the same selection, state, configuration and terrain. Each run
+starts those spacecraft's entries of `state` as a new state holds them
+(`initialize_guidance!`).
 """
 struct ApolloDescentGuidanceModel{T <: AbstractTerrainModel, N} <: AbstractGuidanceModel
     config::ApolloDescentConfig

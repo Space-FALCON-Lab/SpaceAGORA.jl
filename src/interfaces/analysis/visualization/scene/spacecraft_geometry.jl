@@ -92,7 +92,9 @@ function robot_arm_plan_for(args::SimulationConfiguration, sat_idx::Integer)
         index = hasproperty(effector, :spacecraft_index) ? getproperty(effector, :spacecraft_index) :
             hasproperty(effector, :spacecraft_idx) ? getproperty(effector, :spacecraft_idx) : nothing
         index == sat_idx || continue
-        plan = getproperty(effector, :plan)
+        # An effector that reads a plan buffer tracks the buffer's plan.
+        buffer = hasproperty(effector, :plan_buffer) ? getproperty(effector, :plan_buffer) : nothing
+        plan = buffer === nothing ? getproperty(effector, :plan) : buffer.plan
         plan isa RobotArmPlan && return plan
     end
     return nothing

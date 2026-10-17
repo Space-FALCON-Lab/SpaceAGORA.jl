@@ -51,7 +51,10 @@ estimate of that field.
 To read `h_wheels`/`held_dipole_am2` back after a run, call
 `run_simulation(args; isolate_state=false)`: the default `isolate_state=true`
 deep-copies the configuration — including this model — so the simulation
-advances a copy and the caller's handle is left untouched.
+advances a copy and the caller's handle is left untouched. Each run starts the
+accumulator, the held command and the tick count from their values before the
+model's first run (`initialize_control!` restores them), so two runs of one
+configuration with `isolate_state=false` start equal.
 
 `spacecraft_index` is the run position of the managed spacecraft; `sat_idx`, its
 old name, still works with a deprecation warning until SpaceAGORA 0.5.0.
@@ -72,6 +75,7 @@ mutable struct MagneticMomentumManagerModel <: AbstractControlEffectorModel
     ticks::Int                                # diagnostic: discrete updates applied
     actuation::Symbol                         # :ideal holds the rod torque; :mounted drives mounted torque rods
     mounted_levels::Vector{Float64}           # :mounted: one level per mounted actuator, refreshed each tick
+    run_start::Union{Nothing, NamedTuple}     # the internal state before the first run, restored at each run's start
 end
 # The deprecated name forwards, as a keyword and as a property.
 function MagneticMomentumManagerModel(; spacecraft_index=_NOT_PASSED, sat_idx=_NOT_PASSED, mu_gain=3.0e-4, m_max_am2=Inf,
@@ -82,7 +86,7 @@ function MagneticMomentumManagerModel(; spacecraft_index=_NOT_PASSED, sat_idx=_N
     T = MagneticMomentumManagerModel
     return T(_renamed_keyword(T, :sat_idx, sat_idx, :spacecraft_index, spacecraft_index, 1),
         mu_gain, m_max_am2, h_wheels_0, commanded_torque, b_field_ii, h_wheels, held_torque_body, held_dipole_am2,
-        last_update_s, initialized, ticks, actuation, mounted_levels)
+        last_update_s, initialized, ticks, actuation, mounted_levels, nothing)
 end
 @inline _momentum_manager_field(name::Symbol) = name === :sat_idx ?
     _renamed_field_warning(MagneticMomentumManagerModel, :sat_idx, :spacecraft_index) : name
@@ -90,6 +94,24 @@ end
 @inline function Base.setproperty!(m::MagneticMomentumManagerModel, name::Symbol, x)
     field = _momentum_manager_field(name)
     return setfield!(m, field, convert(fieldtype(MagneticMomentumManagerModel, field), x))
+end
+
+# The internal state a run changes. The first run records it; every later run
+# starts from the recorded values (G-8). The mounted levels start empty, as in a
+# bound copy.
+_manager_run_state(m::MagneticMomentumManagerModel) = (h_wheels=m.h_wheels, held_torque_body=m.held_torque_body,
+    held_dipole_am2=m.held_dipole_am2, last_update_s=m.last_update_s, initialized=m.initialized, ticks=m.ticks)
+
+function SimulationLifecycle.initialize_control!(m::MagneticMomentumManagerModel, u, p, t)
+    if m.run_start === nothing
+        m.run_start = _manager_run_state(m)
+    else
+        s = m.run_start
+        m.h_wheels, m.held_torque_body, m.held_dipole_am2 = s.h_wheels, s.held_torque_body, s.held_dipole_am2
+        m.last_update_s, m.initialized, m.ticks = s.last_update_s, s.initialized, s.ticks
+    end
+    empty!(m.mounted_levels)
+    return nothing
 end
 
 # The body-frame momentum of the wheels the engine integrates for spacecraft

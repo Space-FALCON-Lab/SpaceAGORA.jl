@@ -78,6 +78,22 @@ function ApolloDescentControlState(n::Integer)
     )
 end
 
+# Each run starts the selected spacecraft's actuator entries as a new state holds
+# them (G-8); the level vectors are emptied in place, so a handle to them stays the
+# spacecraft's, and the layout is rebuilt at the first control cycle.
+function _reset_descent_actuators!(act::ApolloDescentControlState, indices)
+    for i in indices
+        act.thrust_n[i] = 0.0
+        act.torque_nm[i] = SVector{3, Float64}(0.0, 0.0, 0.0)
+        act.attitude_error_rad[i] = NaN
+        act.last_update_s[i] = NaN
+        empty!(act.thruster_level[i])
+        act.thruster_layout[i] = nothing
+        empty!(act.thruster_force_n[i])
+    end
+    return act
+end
+
 """
     ApolloDescentControlModel(config, guidance_config, state, terrain=NoTerrainModel(); actuation=:ideal)
 
@@ -158,6 +174,11 @@ function _apollo_unpaired_spacecraft(args)
     unpaired(from, to) = sort!(unique!([i for (state, ids) in from for i in setdiff(ids, get(to, state, Set{Int}()))]))
     return (unguided=other_guidance ? Int[] : unpaired(controlled, guided),
             uncontrolled=other_control ? Int[] : unpaired(guided, controlled))
+end
+
+function SimulationLifecycle.initialize_control!(c::ApolloDescentControlModel, u, p, t)
+    _reset_descent_actuators!(c.actuators, c.spacecraft_indices)
+    return nothing
 end
 
 function SimulationLifecycle.preflight_control(c::ApolloDescentControlModel, args; isolate_state)

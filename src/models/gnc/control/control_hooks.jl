@@ -8,7 +8,8 @@ module ControlHooks
     using ..ConfigTypes: ODEParams
     using ..EffectorSampling: StateSample
     using ..AbstractTypes: AbstractPlanet, AbstractControlEffectorModel, AbstractThrusterModel
-    using ..RobotArmPlanning: RobotArmPlan, robot_arm_plan_sample
+    using ..RobotArmPlanning: RobotArmPlan, RobotArmPlanBuffer, robot_arm_plan_sample
+    using ..Robotics: ClothArmModel
     using ..ThrusterModels: BaseThrusterModel, SixAxisThrusterModel
     import ..Actuators: actuation_mode, actuator_levels
     using ..Actuators: propellant_mass_rate, allocate_actuators
@@ -276,6 +277,7 @@ module ControlHooks
         b.spacecraft_index = sat_idx
         b.controller = deepcopy(m.controller)  # its own MPC warm start, not the template's
         b.held = deepcopy(m.held)              # its own held command, starting from the template's
+        b.run_start = deepcopy(m.run_start)
         return b
     end
     function SimulationLifecycle.bind_spacecraft(m::ApolloDescentControlModel, sat_idx::Int)
@@ -295,6 +297,9 @@ module ControlHooks
              rw_torque_body=m.held.rw_torque_body) : nothing
 
     GNCRuntime.spacecraft_scope(m::RobotArmControlEffector) = BoundSpacecraft((m.spacecraft_index,))
+    # A controller with a plan buffer reads the plans its planner installs there.
+    GNCRuntime.gnc_links(m::RobotArmControlEffector) =
+        m.plan_buffer === nothing ? () : (GNCRuntime.Consumes(m.plan_buffer),)
     GNCRuntime.held_command(m::RobotArmControlEffector, spacecraft_index) =
         spacecraft_index == m.spacecraft_index ?
             (joint_torque_nm=copy(m.held.joint_torque_nm), base_force_ii=m.held.base_force_ii,

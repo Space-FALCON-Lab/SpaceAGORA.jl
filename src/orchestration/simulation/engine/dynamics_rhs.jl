@@ -2842,11 +2842,22 @@ end
     hasproperty(effector, :spacecraft_index) ? getproperty(effector, :spacecraft_index) :
     hasproperty(effector, :spacecraft_idx) ? getproperty(effector, :spacecraft_idx) : nothing
 
+# The plan an effector's arm tracks and the time (s into the run) its axis starts
+# from: the plan buffer's for an effector that reads one (`plan_buffer`, the
+# joint-reference link), otherwise its own `plan` and `updated_at_s`.
+@inline function _robot_arm_reference(effector)
+    if hasproperty(effector, :plan_buffer)
+        buffer = getproperty(effector, :plan_buffer)
+        buffer === nothing || return buffer.plan, Float64(buffer.updated_at_s)
+    end
+    return getproperty(effector, :plan), _effector_float(effector, :updated_at_s, 0.0)
+end
+
 """Return whether an effector owns a robot-arm plan for the requested spacecraft."""
 @inline function _robot_arm_effector_matches(effector, sat_idx::Int)::Bool
     return hasproperty(effector, :plan) &&
         _effector_spacecraft_index(effector) == sat_idx &&
-        getproperty(effector, :plan) isa SimulationModel.RobotArmPlan
+        first(_robot_arm_reference(effector)) isa SimulationModel.RobotArmPlan
 end
 
 """Read a numeric effector field as `Float64`, falling back to a default value."""
@@ -2859,9 +2870,10 @@ end
 
 """Build the compliant robot-arm RHS configuration from an active effector."""
 @inline function _robot_arm_coupling_from_effector(effector, t::Float64)
+    plan, origin_s = _robot_arm_reference(effector)
     return (
-        plan=getproperty(effector, :plan),
-        t_s=max(0.0, t - _effector_float(effector, :updated_at_s, 0.0)),
+        plan=plan,
+        t_s=max(0.0, t - origin_s),
         k_translation_n_m=_effector_value(effector, :k_translation_n_m, 5.0e3),
         c_translation_n_s_m=_effector_value(effector, :c_translation_n_s_m, 30.0),
         k_rotation_n_m_rad=_effector_value(effector, :k_rotation_n_m_rad, 15.0),
@@ -2877,7 +2889,7 @@ function _any_robot_arm_effector(args)::Bool
     if hasproperty(args, :control_model) && hasproperty(args.control_model, :control_effectors)
         @inbounds for effector in args.control_model.control_effectors
             hasproperty(effector, :plan) &&
-                getproperty(effector, :plan) isa SimulationModel.RobotArmPlan && return true
+                first(_robot_arm_reference(effector)) isa SimulationModel.RobotArmPlan && return true
         end
     end
     if hasproperty(args, :dynamics_model) && hasproperty(args.dynamics_model, :dynamic_effectors)

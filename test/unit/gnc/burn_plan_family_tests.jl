@@ -121,6 +121,27 @@ end
     @test planned(request(thrust_n=0.0)).termination === :invalid_thrust
 end
 
+@testset "A burn planner from root names only" begin
+    for name in (:BaseThrusterModel, :PropulsiveBurnPlan, :burn_plan_sizing, :BurnPlanRequest, :AlgorithmResult)
+        @test Base.isexported(SpaceAGORA, name)
+    end
+    @test SpaceAGORA.BaseThrusterModel === SimulationModel.ThrusterModels.BaseThrusterModel
+    @test SpaceAGORA.PropulsiveBurnPlan === SimulationModel.PropulsiveBurnPlan
+    r = request()
+    sized = SpaceAGORA.burn_plan_sizing(r.mass_kg, 5.0, 0.0, r.thrust_n, r.isp_s; available_propellant_kg=r.available_propellant_kg)
+    @test sized == SimulationModel.ControlHooks._burn_plan_sizing(150.0, 5.0, 0.0, 50.0, 300.0, 50.0)
+    @test sized.reason === :accepted
+    start = r.time_s + 60.0
+    plan = SpaceAGORA.PropulsiveBurnPlan(valid=true, delta_v_mps=5.0, direction_rad=0.0, source_orbit=-1,
+        start_burn_s=start, stop_burn_s=start + sized.burn_duration_s, thrust_n=r.thrust_n, isp_s=r.isp_s,
+        commanded_impulse_n_s=sized.commanded_impulse_n_s, propellant_required_kg=sized.propellant_required_kg)
+    result = SpaceAGORA.AlgorithmResult(request_id=r.request_id, status=:candidate, termination=:planned, product=plan)
+    @test validate_burn_plan(r, result).accepted
+    @test SpaceAGORA.burn_plan_sizing(150.0, 5.0, 0.0, 50.0, 300.0; available_propellant_kg=0.01).reason ===
+        :insufficient_propellant
+    @test isnan(SpaceAGORA.burn_plan_sizing(150.0, -1.0, 0.0, 50.0, 300.0).propellant_required_kg)
+end
+
 @testset "Trusted validation reasons" begin
     r = request()
     good = planned(r)

@@ -36,6 +36,12 @@ positive) is not scheduled, and the reason is kept: see
 `AlgorithmGuidance` of the burn-plan family (`BurnPlanFamily`) installs for a
 spacecraft whose own `Δv` is zero and whose window is unset: it takes the
 plan's window, direction, thrust and specific impulse.
+
+During a run the scheduler plans in its `Δv`, `direction`, `start_burn_time` and
+`stop_burn_time` vectors, which show the run's schedule afterwards. Each run
+starts from the schedule configured before it: `initialize_control!` restores
+every entry the scheduler wrote in the previous run, unless it was changed since,
+and starts the burn state and the refusal records empty.
 """
 struct BaseThrusterModel <: AbstractThrusterModel
     thrust::Vector{Float64}
@@ -57,6 +63,11 @@ struct BaseThrusterModel <: AbstractThrusterModel
     burning::Vector{Bool}
     # The burns refused in the run, per spacecraft (`burn_plan_rejections`).
     plan_rejections::Vector{Vector{BurnPlanRejection}}
+    # Per spacecraft (Δv, direction, start, stop): the schedule a run started
+    # from (empty before the first run), and the scheduler's last write of it in
+    # the run (`nothing` before any).
+    configured_schedule::Vector{NTuple{4, Float64}}
+    written_schedule::Vector{Union{Nothing, NTuple{4, Float64}}}
 
     function BaseThrusterModel(
         thrust::Vector{Float64},
@@ -85,7 +96,8 @@ struct BaseThrusterModel <: AbstractThrusterModel
         return new(thrust, direction, Δv, start_burn_time, stop_burn_time, Isp, actuation, Int(engine),
                    Float64(pointing_frequency_rad_s), Float64(pointing_damping),
                    [Float64[] for _ in 1:n], fill((NaN, NaN, 0.0), n), fill(false, n),
-                   [BurnPlanRejection[] for _ in 1:n])
+                   [BurnPlanRejection[] for _ in 1:n], NTuple{4, Float64}[],
+                   Union{Nothing, NTuple{4, Float64}}[nothing for _ in 1:n])
     end
 end
 

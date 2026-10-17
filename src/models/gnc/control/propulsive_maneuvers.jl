@@ -101,6 +101,7 @@ end
         end
         controlModel.Δv[i] = delta_v_mps
         controlModel.direction[i] = direction_rad
+        _note_schedule!(controlModel, i)
         return (
             delta_v_mps=delta_v_mps,
             direction_rad=direction_rad,
@@ -123,6 +124,7 @@ end
         end
         controlModel.Δv[i] = delta_v_cmd
         controlModel.direction[i] = direction_rad
+        _note_schedule!(controlModel, i)
     end
 
     return (
@@ -290,7 +292,36 @@ function burn_plan_rejections(model::BaseThrusterModel, spacecraft_index::Intege
     return copy(model.plan_rejections[spacecraft_index])
 end
 
+# One spacecraft's schedule entry, as the configured and written records hold it.
+@inline _schedule_entry(model::BaseThrusterModel, i::Int) =
+    (model.Δv[i], model.direction[i], model.start_burn_time[i], model.stop_burn_time[i])
+
+# Records the scheduler's write of spacecraft `i`'s schedule.
+@inline function _note_schedule!(model::BaseThrusterModel, i::Int)
+    1 <= i <= length(model.written_schedule) && (model.written_schedule[i] = _schedule_entry(model, i))
+    return nothing
+end
+
+# Each run starts from the configured schedule (G-8): an entry the scheduler wrote
+# in the previous run and nobody changed since returns to the value that run
+# started from; any other entry is the configuration as it stands. The burn state,
+# the mounted levels and the refusal records start empty.
 function SimulationLifecycle.initialize_control!(model::BaseThrusterModel, u, p, t)
+    n = length(model.thrust)
+    first_run = isempty(model.configured_schedule)
+    first_run && resize!(model.configured_schedule, n)
+    for i in 1:n
+        current = _schedule_entry(model, i)
+        written = model.written_schedule[i]
+        start = first_run || written === nothing ? current :
+            ntuple(k -> isequal(current[k], written[k]) ? model.configured_schedule[i][k] : current[k], 4)
+        model.Δv[i], model.direction[i], model.start_burn_time[i], model.stop_burn_time[i] = start
+        model.configured_schedule[i] = start
+        model.written_schedule[i] = nothing
+    end
+    fill!(model.burn_windows, (NaN, NaN, 0.0))
+    fill!(model.burning, false)
+    foreach(empty!, model.mounted_levels)
     foreach(empty!, model.plan_rejections)
     return nothing
 end
@@ -572,6 +603,7 @@ function update_control!(controlModel::BaseThrusterModel, u::ComponentVector, p:
             _trace_maneuver_event!("schedule_clear", controlModel, p, i, t; start_burn_s=start_time, stop_burn_s=stop_time)
             controlModel.start_burn_time[i] = -1.0
             controlModel.stop_burn_time[i] = -1.0
+            _note_schedule!(controlModel, i)
             _clear_burn_plan!(p, i)
             recorded_start, recorded_stop = NaN, NaN
         end
@@ -622,6 +654,7 @@ function update_control!(controlModel::BaseThrusterModel, u::ComponentVector, p:
         start_burn_time, stop_burn_time = window
         controlModel.start_burn_time[i] = start_burn_time
         controlModel.stop_burn_time[i] = stop_burn_time
+        _note_schedule!(controlModel, i)
         new_plan = PropulsiveBurnPlan(
             valid=true,
             delta_v_mps=plan.delta_v_mps,

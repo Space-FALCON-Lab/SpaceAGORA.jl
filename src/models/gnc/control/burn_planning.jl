@@ -15,7 +15,7 @@ const S = SimulationModel
 const H = SimulationModel.ControlHooks
 
 export AbstractBurnPlanner, BurnPlanFamily, BurnPlanRequest, BurnPlanSlot, ApoapsisBurnPlanner
-export validate_burn_plan, burn_plan_is_current
+export validate_burn_plan, burn_plan_is_current, burn_plan_sizing
 
 """
     BurnPlanFamily()
@@ -112,6 +112,27 @@ struct BurnPlanSlot
     plans::Vector{PropulsiveBurnPlan}
     spacecraft_index::Int
 end
+
+"""
+    burn_plan_sizing(mass_kg, delta_v_mps, direction_rad, thrust_n, isp_s; available_propellant_kg=nothing)
+        -> NamedTuple
+
+The burn scheduler's size check of a constant-thrust burn of `delta_v_mps` (m/s)
+in direction `direction_rad` for a spacecraft of `mass_kg` (kg), at `thrust_n` (N)
+and specific impulse `isp_s` (s): `(reason, propellant_required_kg,
+commanded_impulse_n_s, burn_duration_s)`, in kg, N·s and s, with reason
+`:accepted`. Otherwise the reason names the problem (`:invalid_mass`,
+`:invalid_delta_v`, `:invalid_direction`, `:invalid_thrust`, `:invalid_isp`,
+`:invalid_mass_fraction`, `:invalid_burn_size`) and the values are NaN, or it is
+`:insufficient_propellant`, with the values, when the burn needs more than
+`available_propellant_kg` (`nothing`: no limit). `validate_burn_plan` checks a
+proposed `PropulsiveBurnPlan` against it, so a planner states these values and a
+window of this duration.
+"""
+burn_plan_sizing(mass_kg::Real, delta_v_mps::Real, direction_rad::Real, thrust_n::Real, isp_s::Real;
+        available_propellant_kg::Union{Nothing, Real}=nothing) =
+    H._burn_plan_sizing(Float64(mass_kg), Float64(delta_v_mps), Float64(direction_rad), Float64(thrust_n),
+        Float64(isp_s), available_propellant_kg === nothing ? nothing : Float64(available_propellant_kg))
 
 # Relative agreement of a stated value with the trusted one.
 _agrees(stated, trusted) = abs(stated - trusted) <= 1e-9 * abs(trusted)

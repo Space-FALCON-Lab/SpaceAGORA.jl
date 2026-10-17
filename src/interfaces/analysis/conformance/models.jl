@@ -1,7 +1,7 @@
 # GNC models: guidance, navigation and control effectors. The engine's pre-run
 # check, run-level reproducibility (the state and the model's own state at the end
-# of each run), the control output hooks, and the state shared by the copies
-# `bind_spacecraft` makes.
+# of each run), the reset at each run's start, the control output hooks, and the
+# state shared by the copies `bind_spacecraft` makes.
 
 # The control output hooks the dynamics call on `(model, x::StateSample, p, t)`.
 const _CONTROL_OUTPUT_HOOKS = (SimulationModel.control_wrench, SimulationModel.control_propellant_rate,
@@ -25,6 +25,9 @@ const _CONTAINER_NAMES = (guidance_model="guidance_model.guidance_effectors",
 
 const _PER_SPACECRAFT_KEYS = (guidance_model=:guidance, navigation_model=:navigation, control_model=:control)
 
+const _INITIALIZERS = (guidance_model="initialize_guidance!", navigation_model="initialize_navigation!",
+    control_model="initialize_control!")
+
 """
     check_guidance_model(model; fixture=conformance_fixture(guidance=(model,)), spacecraft_index=1)
         -> ConformanceReport
@@ -37,6 +40,9 @@ its configuration's guidance effectors. The checks, in report order:
 - `repeatable_run`, `deepcopy_equivalent`, `global_rng_independent`,
   `concurrent_equals_sequential`: as for force/torque models, comparing the saved
   states and the model's own state at the end of each run, bit for bit.
+- `initialize_resets`: two runs with `isolate_state=false` on one configuration end
+  with equal states and an equal model, so `initialize_guidance!` resets the model's
+  run state.
 - `bind_fresh_state`: for a model with a `bind_spacecraft` method, no mutable object
   reachable from the copies bound to spacecraft 1 and 2 changes during a run of the
   fixture with the model declared on its first two spacecraft instead of in the
@@ -53,9 +59,8 @@ check_guidance_model(model; fixture::ConformanceFixture=conformance_fixture(guid
         spacecraft_index=1) -> ConformanceReport
 
 Check a navigation model, with `sensors` mounted for it to read. The checks are those
-of [`check_guidance_model`](@ref), plus `initialize_resets` before `bind_fresh_state`:
-two runs with `isolate_state=false` on one configuration end with equal states and an
-equal model, so `initialize_navigation!` resets the model's run state.
+of [`check_guidance_model`](@ref), with `initialize_resets` checking that
+`initialize_navigation!` resets the model's run state.
 """
 check_navigation_model(model; sensors::Tuple=(),
     fixture::ConformanceFixture=conformance_fixture(navigation=(model,), sensors=sensors), spacecraft_index::Integer=1) =
@@ -70,7 +75,8 @@ Check a control model. The checks, in report order: `hooks_present`;
 own to warn about); `supported_sample_signature` (no method of `control_wrench`,
 `control_propellant_rate` or `control_wheel_torque` that applies to the model types its
 sample argument narrower than `StateSample`); the four run-level checks of
-[`check_guidance_model`](@ref); `output_hook_pure` (each output hook the model has,
+[`check_guidance_model`](@ref); `initialize_resets` (`initialize_control!` resets the
+model's run state, as for guidance); `output_hook_pure` (each output hook the model has,
 called twice on the same arguments, returns equal values, leaves the model unchanged
 and logs nothing at `Info` level or above); `positive_consumption`
 (`control_propellant_rate` is finite and not negative); `bind_fresh_state`.
@@ -127,13 +133,11 @@ function _check_gnc_model(model, kind::Symbol, fixture::ConformanceFixture, spac
             _positive_consumption_check(model, samples, since),
         ]
     end
-    if kind === :navigation_model
-        reused = deepcopy(configuration)
-        reset_gap = _model_run_difference(run(reused; isolate_state=false), run(reused; isolate_state=false))
-        resets = _check(:initialize_resets, since, reset_gap === nothing,
-            "two runs with isolate_state=false on one configuration differ: $(reset_gap); reset the model's run " *
-            "state in initialize_navigation!")
-    end
+    reused = deepcopy(configuration)
+    reset_gap = _model_run_difference(run(reused; isolate_state=false), run(reused; isolate_state=false))
+    resets = _check(:initialize_resets, since, reset_gap === nothing,
+        "two runs with isolate_state=false on one configuration differ: $(reset_gap); reset the model's run " *
+        "state in $(_INITIALIZERS[kind])")
     bound = _bind_fresh_state_check(model, kind, since; configuration, index)
     # Last: this run uses the caller's objects.
     original = run(; isolate_state=false)
@@ -154,11 +158,9 @@ function _check_gnc_model(model, kind::Symbol, fixture::ConformanceFixture, spac
     ]
     checks = if kind === :control_model
         [hooks, _no_deprecated_hooks_check(fixture, model, since),
-            _sample_signature_check(model, since; hooks=_CONTROL_OUTPUT_HOOKS), runs..., control_checks..., bound]
-    elseif kind === :navigation_model
-        [hooks, runs..., resets, bound]
+            _sample_signature_check(model, since; hooks=_CONTROL_OUTPUT_HOOKS), runs..., resets, control_checks..., bound]
     else
-        [hooks, runs..., bound]
+        [hooks, runs..., resets, bound]
     end
     return ConformanceReport(string(nameof(typeof(model))), kind, checks)
 end

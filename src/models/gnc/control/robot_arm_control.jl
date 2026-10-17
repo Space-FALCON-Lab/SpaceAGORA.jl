@@ -22,6 +22,14 @@ end
 Control effector that tracks a robot-arm plan and emits joint torque commands for
 the spacecraft at run position `spacecraft_index`. `spacecraft_idx`, its old name,
 still works with a deprecation warning until SpaceAGORA 0.5.0.
+
+The plan is `plan`, with its time axis starting at `updated_at_s` (s into the
+run), or, when `plan_buffer` is set, the plan of that `RobotArmPlanBuffer` from its
+own `updated_at_s`: the link a joint-reference planner (an `AlgorithmGuidance` of
+`JointReferenceFamily`) installs into. Configure one of the two; a buffer must
+hold the plan the arm starts from. The run couples the arm's state to the plan
+the controller tracks. Each run starts the held command from its value before the
+model's first run and the MPC warm start from zero (`initialize_control!`).
 """
 mutable struct RobotArmControlEffector <: AbstractControlEffectorModel
     spacecraft_index::Int
@@ -36,15 +44,18 @@ mutable struct RobotArmControlEffector <: AbstractControlEffectorModel
     k_rotation_n_m_rad::Float64
     c_rotation_n_m_s_rad::Float64
     held::RobotArmHeldActuation
+    plan_buffer::Union{Nothing, RobotArmPlanBuffer}
+    run_start::Union{Nothing, RobotArmHeldActuation}   # the held command before the first run
 end
 # The deprecated name forwards, as a keyword and as a property.
 function RobotArmControlEffector(; spacecraft_index=_NOT_PASSED, spacecraft_idx=_NOT_PASSED, plan=nothing, controller=nothing,
         updated_at_s=0.0, joint_kp=0.0, joint_kd=0.0, control_dt_s=0.1, k_translation_n_m=5.0e3,
-        c_translation_n_s_m=30.0, k_rotation_n_m_rad=15.0, c_rotation_n_m_s_rad=0.5, held=RobotArmHeldActuation())
+        c_translation_n_s_m=30.0, k_rotation_n_m_rad=15.0, c_rotation_n_m_s_rad=0.5, held=RobotArmHeldActuation(),
+        plan_buffer=nothing)
     T = RobotArmControlEffector
     return T(_renamed_keyword(T, :spacecraft_idx, spacecraft_idx, :spacecraft_index, spacecraft_index, 1),
         plan, controller, updated_at_s, joint_kp, joint_kd, control_dt_s, k_translation_n_m, c_translation_n_s_m,
-        k_rotation_n_m_rad, c_rotation_n_m_s_rad, held)
+        k_rotation_n_m_rad, c_rotation_n_m_s_rad, held, plan_buffer, nothing)
 end
 @inline _robot_arm_field(name::Symbol) = name === :spacecraft_idx ?
     _renamed_field_warning(RobotArmControlEffector, :spacecraft_idx, :spacecraft_index) : name
@@ -55,8 +66,9 @@ end
 end
 
 """Estimate default joint inertias from link masses and lengths."""
-function _robot_arm_default_joint_inertia(plan::RobotArmPlan)
-    links = plan.model.links
+_robot_arm_default_joint_inertia(plan::RobotArmPlan) = _robot_arm_default_joint_inertia(plan.model)
+function _robot_arm_default_joint_inertia(model::ClothArmModel)
+    links = model.links
     n = length(links)
     inertia = fill(1.0e-4, n)
     @inbounds for i in 1:n
@@ -73,9 +85,24 @@ function _robot_arm_default_joint_inertia(plan::RobotArmPlan)
     return inertia
 end
 
-"""Initialize the robot-arm joint-space MPC gain and limits."""
-function init_robot_arm_joint_mpc(
-    plan::RobotArmPlan;
+"""
+    init_robot_arm_joint_mpc(plan::RobotArmPlan; dt_s=0.1, horizon=8, q_weight=40.0, dq_weight=6.0,
+                             torque_weight=0.1, terminal_weight_scale=4.0, joint_inertia_kg_m2=nothing)
+    init_robot_arm_joint_mpc(model::RobotArmModel; kwargs...)
+
+Initialize the robot-arm joint-space MPC gain and limits, for the arm of `plan` or
+for `model` itself (one joint per joint of the arm), as a controller of a
+`RobotArmControlEffector` whose plans arrive during the run through its
+`plan_buffer`. `dt_s` is the control step (s); the default joint inertias come
+from the arm's link masses and lengths.
+"""
+init_robot_arm_joint_mpc(plan::RobotArmPlan; kwargs...) =
+    _init_robot_arm_joint_mpc(length(plan.q_start), plan.model; kwargs...)
+init_robot_arm_joint_mpc(model::ClothArmModel; kwargs...) = _init_robot_arm_joint_mpc(length(model.joints), model; kwargs...)
+
+function _init_robot_arm_joint_mpc(
+    n::Int,
+    model::ClothArmModel;
     dt_s::Real=0.1,
     horizon::Integer=8,
     q_weight::Real=40.0,
@@ -84,13 +111,12 @@ function init_robot_arm_joint_mpc(
     terminal_weight_scale::Real=4.0,
     joint_inertia_kg_m2=nothing,
 )
-    n = length(plan.q_start)
     horizon_i = Int(horizon)
     horizon_i > 0 || throw(ArgumentError("horizon must be positive."))
     dt = Float64(dt_s)
     dt > 0.0 || throw(ArgumentError("dt_s must be positive."))
     inertia = joint_inertia_kg_m2 === nothing ?
-        _robot_arm_default_joint_inertia(plan) :
+        _robot_arm_default_joint_inertia(model) :
         Float64.(collect(joint_inertia_kg_m2))
     length(inertia) == n || throw(ArgumentError("joint_inertia_kg_m2 must have one entry per joint."))
     all(>(0.0), inertia) || throw(ArgumentError("joint_inertia_kg_m2 entries must be positive."))
@@ -165,20 +191,25 @@ end
 end
 
 """Estimate current robot-arm joint positions and velocities from spacecraft view state."""
-function robot_arm_measured_joint_state(plan::RobotArmPlan, sc_view)
+robot_arm_measured_joint_state(plan::RobotArmPlan, sc_view) =
+    _robot_arm_measured_joints(plan.model, plan.base_pose.quaternion, length(plan.q_start), sc_view)
+
+# The joint angles and rates of an arm of `n` joints, measured from the spacecraft's
+# state view (`nothing` when it carries no arm state), with `base_quaternion` the
+# arm base's attitude when the view has none.
+function _robot_arm_measured_joints(model::ClothArmModel, base_quaternion, n::Int, sc_view)
     hasproperty(sc_view, :arm_q) || return nothing
     hasproperty(sc_view, :arm_ω) || return nothing
-    n = length(plan.q_start)
     q_meas = zeros(n)
     dq_meas = zeros(n)
-    parent_q = hasproperty(sc_view, :q) ? project_unit_quaternion(sc_view.q) : plan.base_pose.quaternion
+    parent_q = hasproperty(sc_view, :q) ? project_unit_quaternion(sc_view.q) : base_quaternion
     parent_ω_world = hasproperty(sc_view, :ω) ?
         rot(parent_q) * SVector{3, Float64}(sc_view.ω) :
         SVector{3, Float64}(0.0, 0.0, 0.0)
     @inbounds for i in 1:n
         child_q = project_unit_quaternion(sc_view.arm_q[:, i])
         rel_q = quat_mult(_robot_arm_control_quat_conj(parent_q), child_q)
-        axis_parent = plan.model.joints[i].axis_parent
+        axis_parent = model.joints[i].axis_parent
         axis_world = rot(parent_q) * axis_parent
         child_ω_world = rot(child_q) * SVector{3, Float64}(sc_view.arm_ω[:, i])
         q_meas[i] = _robot_arm_control_axis_angle_about(rel_q, axis_parent)
@@ -200,18 +231,24 @@ function _robot_arm_control_spacecraft_state(u, idx::Int)
     return hasproperty(u, :sc) && length(u.sc) >= idx ? u.sc[idx] : nothing
 end
 
+# The plan the controller tracks and the time its axis starts from: the plan
+# buffer's when one is configured, otherwise the model's own.
+_robot_arm_reference(model::RobotArmControlEffector) = model.plan_buffer === nothing ?
+    (model.plan, model.updated_at_s) : (model.plan_buffer.plan, model.plan_buffer.updated_at_s)
+
 """Apply the robot-arm controller at the current simulation time and cache the joint actuation command."""
 function update_control!(model::RobotArmControlEffector, u, p::ODEParams, t::Float64, sat_idx::Int)
     sat_idx == model.spacecraft_index || return nothing
-    model.plan === nothing && return nothing
-    plan_t = max(0.0, t - model.updated_at_s)
-    sample = robot_arm_plan_sample(model.plan, plan_t)
+    plan, origin_s = _robot_arm_reference(model)
+    plan === nothing && return nothing
+    plan_t = max(0.0, t - origin_s)
+    sample = robot_arm_plan_sample(plan, plan_t)
     joint_torque = zeros(length(sample.q))
     if model.controller isa RobotArmJointMPCController
         sc_view = _robot_arm_control_spacecraft_state(u, model.spacecraft_index)
-        x_meas = sc_view === nothing ? nothing : robot_arm_measured_joint_state(model.plan, sc_view)
-        x = x_meas === nothing ? _robot_arm_control_reference_state(model.plan, plan_t) : x_meas
-        x_ref = robot_arm_joint_mpc_reference_preview(model.plan, plan_t, model.control_dt_s, model.controller.horizon)
+        x_meas = sc_view === nothing ? nothing : robot_arm_measured_joint_state(plan, sc_view)
+        x = x_meas === nothing ? _robot_arm_control_reference_state(plan, plan_t) : x_meas
+        x_ref = robot_arm_joint_mpc_reference_preview(plan, plan_t, model.control_dt_s, model.controller.horizon)
         joint_torque .= robot_arm_joint_mpc_control(model.controller, x, x_ref)
     end
     model.held = RobotArmHeldActuation(
@@ -219,6 +256,33 @@ function update_control!(model::RobotArmControlEffector, u, p::ODEParams, t::Flo
         base_force_ii=SVector{3, Float64}(0.0, 0.0, 0.0),
         base_torque_body=SVector{3, Float64}(0.0, 0.0, 0.0),
     )
+    return nothing
+end
+
+# A controller tracks its own plan or its plan buffer's, not both; a buffer holds
+# the plan the arm starts from, which sizes the arm's state.
+function SimulationLifecycle.preflight_control(model::RobotArmControlEffector, args; isolate_state)
+    model.plan_buffer === nothing && return nothing
+    model.plan === nothing || throw(ArgumentError(
+        "RobotArmControlEffector for spacecraft $(model.spacecraft_index) has both a plan and a plan_buffer; " *
+        "configure one: plan= for a fixed plan, plan_buffer= for the plans a joint-reference planner installs."))
+    model.plan_buffer.plan === nothing && throw(ArgumentError(
+        "RobotArmControlEffector for spacecraft $(model.spacecraft_index) reads an empty plan_buffer: give it the " *
+        "plan the arm starts from, from which the run sizes the arm's state; RobotArmPlanBuffer(model, base_pose, " *
+        "q_start) holds the arm still at q_start."))
+    return nothing
+end
+
+# Each run starts the held command from its value before the first run (a held
+# command configured with no plan is the command for the whole run) and the MPC
+# warm start from zero (G-8).
+function SimulationLifecycle.initialize_control!(model::RobotArmControlEffector, u, p, t)
+    if model.run_start === nothing
+        model.run_start = deepcopy(model.held)
+    else
+        model.held = deepcopy(model.run_start)
+    end
+    model.controller isa RobotArmJointMPCController && fill!(model.controller.U_prev, 0.0)
     return nothing
 end
 

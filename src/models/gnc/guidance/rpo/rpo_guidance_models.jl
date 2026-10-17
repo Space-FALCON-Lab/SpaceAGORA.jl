@@ -7,6 +7,9 @@ HYPR planning), which configures a `PlannerGuidance`. That path also covers the
 model's replanning spheres (`geometry_provider=RPOReplanningSpheres(...)`), its
 safe hold (`on_rejection=:install_fallback`) and retiming
 (`retime_tracking_error_m`). The model will be removed in a later release.
+
+Each run starts the goal, the plan buffer and the replanning record from their
+values before the model's first run (`initialize_guidance!`).
 """
 Base.@kwdef mutable struct RPOGuidanceModel <: AbstractGuidanceModel
     chaser_idx::Int = 1
@@ -30,4 +33,6 @@ Base.@kwdef mutable struct RPOGuidanceModel <: AbstractGuidanceModel
     pending_replan::Any = nothing
     hold_position_tolerance_m::Float64 = 0.02
     hold_speed_tolerance_mps::Float64 = 0.002
+    # The run-written fields and plan buffer before the first run, restored at each run's start.
+    run_start::Any = nothing
 end

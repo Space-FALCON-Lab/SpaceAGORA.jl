@@ -33,12 +33,14 @@ import ..RPOPlannerInterfaces
 import ..RPOPlannerLifecycle
 import ..AlgorithmLifecycle
 import ..BurnPlanning
+import ..JointReferencePlanning
 
 export ConformanceCheck, ConformanceReport, ConformanceFixture, passed, conformance_fixture
 export check_force_torque_model, check_service_facade, check_sensor
 export check_guidance_model, check_navigation_model, check_control_model
 export check_algorithm, check_algorithm_family, rpo_conformance_requests, rpo_trusted_queries, rpo_conformance_simulation
 export burn_plan_conformance_requests, burn_plan_conformance_simulation
+export joint_reference_conformance_requests, joint_reference_conformance_simulation
 export test_report, test_force_torque_model, test_service_facade, test_sensor
 export test_guidance_model, test_navigation_model, test_control_model
 export test_algorithm, test_algorithm_family
@@ -53,6 +55,7 @@ include(joinpath(@__DIR__, "models.jl"))
 include(joinpath(@__DIR__, "algorithms.jl"))
 include(joinpath(@__DIR__, "rpo.jl"))
 include(joinpath(@__DIR__, "burn_plan.jl"))
+include(joinpath(@__DIR__, "joint_reference.jl"))
 
 # The check ids of each report kind, in report order. Core's negative controls
 # fail when an id here has no control.
@@ -64,12 +67,12 @@ const CHECK_IDS = (
     sensor = (:run_state_fields, :requirements_supported, :measurement_shape, :repeatable_run, :deepcopy_equivalent,
         :global_rng_independent, :concurrent_equals_sequential, :seed_repeatable, :custom_state_reset),
     guidance_model = (:hooks_present, :repeatable_run, :deepcopy_equivalent, :global_rng_independent,
-        :concurrent_equals_sequential, :bind_fresh_state),
+        :concurrent_equals_sequential, :initialize_resets, :bind_fresh_state),
     navigation_model = (:hooks_present, :repeatable_run, :deepcopy_equivalent, :global_rng_independent,
         :concurrent_equals_sequential, :initialize_resets, :bind_fresh_state),
     control_model = (:hooks_present, :no_deprecated_hooks, :supported_sample_signature, :repeatable_run,
-        :deepcopy_equivalent, :global_rng_independent, :concurrent_equals_sequential, :output_hook_pure,
-        :positive_consumption, :bind_fresh_state),
+        :deepcopy_equivalent, :global_rng_independent, :concurrent_equals_sequential, :initialize_resets,
+        :output_hook_pure, :positive_consumption, :bind_fresh_state),
     algorithm = _ALGORITHM_CHECK_IDS,
     algorithm_family = _ALGORITHM_FAMILY_CHECK_IDS,
 )

@@ -131,6 +131,14 @@ const PUBLIC_API_SECTIONS = [
         (owner = :SpaceAGORA, symbol = :release_command!, rendered = "SpaceAGORA.release_command!"),
         (owner = :SpaceAGORA, symbol = :held_command, rendered = "SpaceAGORA.held_command"),
         (owner = :SpaceAGORA, symbol = :held_command_time, rendered = "SpaceAGORA.held_command_time"),
+        (owner = :SpaceAGORA, symbol = :preflight_guidance, rendered = "SpaceAGORA.preflight_guidance"),
+        (owner = :SpaceAGORA, symbol = :preflight_control, rendered = "SpaceAGORA.preflight_control"),
+        (owner = :SpaceAGORA, symbol = :initialize_navigation!, rendered = "SpaceAGORA.initialize_navigation!"),
+        (owner = :SpaceAGORA, symbol = :initialize_guidance!, rendered = "SpaceAGORA.initialize_guidance!"),
+        (owner = :SpaceAGORA, symbol = :initialize_control!, rendered = "SpaceAGORA.initialize_control!"),
+        (owner = :SpaceAGORA, symbol = :requires_atmosphere_events, rendered = "SpaceAGORA.requires_atmosphere_events"),
+        (owner = :SpaceAGORA, symbol = :atmosphere_transition!, rendered = "SpaceAGORA.atmosphere_transition!"),
+        (owner = :SpaceAGORA, symbol = :before_reference_control!, rendered = "SpaceAGORA.before_reference_control!"),
     ]),
     (
         title = "Simulation Setup",
@@ -549,13 +557,29 @@ const PUBLIC_API_SECTIONS = [
         title = "Burn-plan family",
         items = [
             (owner = :SpaceAGORA, symbol = :BurnPlanFamily, rendered = "SpaceAGORA.BurnPlanFamily"),
+            (owner = :SpaceAGORA, symbol = :BaseThrusterModel, rendered = "SpaceAGORA.BaseThrusterModel"),
+            (owner = :SpaceAGORA, symbol = :PropulsiveBurnPlan, rendered = "SpaceAGORA.PropulsiveBurnPlan"),
             (owner = :SpaceAGORA, symbol = :AbstractBurnPlanner, rendered = "SpaceAGORA.AbstractBurnPlanner"),
             (owner = :SpaceAGORA, symbol = :BurnPlanRequest, rendered = "SpaceAGORA.BurnPlanRequest"),
             (owner = :SpaceAGORA, symbol = :BurnPlanSlot, rendered = "SpaceAGORA.BurnPlanSlot"),
             (owner = :SpaceAGORA, symbol = :ApoapsisBurnPlanner, rendered = "SpaceAGORA.ApoapsisBurnPlanner"),
             (owner = :SpaceAGORA, symbol = :validate_burn_plan, rendered = "SpaceAGORA.validate_burn_plan"),
             (owner = :SpaceAGORA, symbol = :burn_plan_is_current, rendered = "SpaceAGORA.burn_plan_is_current"),
+            (owner = :SpaceAGORA, symbol = :burn_plan_sizing, rendered = "SpaceAGORA.burn_plan_sizing"),
             (owner = :SpaceAGORA, symbol = :burn_plan_rejections, rendered = "SpaceAGORA.burn_plan_rejections")
+        ]
+    ),
+    (
+        title = "Joint-reference family",
+        items = [
+            (owner = :SpaceAGORA, symbol = :JointReferenceFamily, rendered = "SpaceAGORA.JointReferenceFamily"),
+            (owner = :SpaceAGORA, symbol = :AbstractJointReferencePlanner, rendered = "SpaceAGORA.AbstractJointReferencePlanner"),
+            (owner = :SpaceAGORA, symbol = :JointReferenceRequest, rendered = "SpaceAGORA.JointReferenceRequest"),
+            (owner = :SpaceAGORA, symbol = :JointReferenceSettings, rendered = "SpaceAGORA.JointReferenceSettings"),
+            (owner = :SpaceAGORA, symbol = :RobotArmPlanBuffer, rendered = "SpaceAGORA.RobotArmPlanBuffer"),
+            (owner = :SpaceAGORA, symbol = :QuinticJointPlanner, rendered = "SpaceAGORA.QuinticJointPlanner"),
+            (owner = :SpaceAGORA, symbol = :validate_joint_reference, rendered = "SpaceAGORA.validate_joint_reference"),
+            (owner = :SpaceAGORA, symbol = :joint_reference_is_current, rendered = "SpaceAGORA.joint_reference_is_current")
         ]
     ),
     (
@@ -648,6 +672,8 @@ const PUBLIC_API_SECTIONS = [
             (owner = :Conformance, symbol = :rpo_conformance_simulation, rendered = "SpaceAGORA.Conformance.rpo_conformance_simulation"),
             (owner = :Conformance, symbol = :burn_plan_conformance_requests, rendered = "SpaceAGORA.Conformance.burn_plan_conformance_requests"),
             (owner = :Conformance, symbol = :burn_plan_conformance_simulation, rendered = "SpaceAGORA.Conformance.burn_plan_conformance_simulation"),
+            (owner = :Conformance, symbol = :joint_reference_conformance_requests, rendered = "SpaceAGORA.Conformance.joint_reference_conformance_requests"),
+            (owner = :Conformance, symbol = :joint_reference_conformance_simulation, rendered = "SpaceAGORA.Conformance.joint_reference_conformance_simulation"),
             (owner = :Conformance, symbol = :test_report, rendered = "SpaceAGORA.Conformance.test_report"),
             (owner = :Conformance, symbol = :test_force_torque_model, rendered = "SpaceAGORA.Conformance.test_force_torque_model"),
             (owner = :Conformance, symbol = :test_service_facade, rendered = "SpaceAGORA.Conformance.test_service_facade"),

@@ -50,6 +50,31 @@ function update_control!(model::RPOMPCControlModel, u, p::ODEParams, t::Float64,
     return nothing
 end
 
+# Each run starts from the held command the model had before its first run (a
+# planner's plan-buffer link resets it first), a zero warm start, a fresh solver
+# workspace, an empty command log and no mounted levels (G-8).
+function SimulationLifecycle.initialize_control!(model::RPOMPCControlModel, u, p, t)
+    if model.run_start === nothing
+        model.run_start = deepcopy(model.held)
+    else
+        model.held = deepcopy(model.run_start)
+    end
+    ctrl = model.controller
+    if ctrl isa RpoLQMPCController
+        fill!(ctrl.U_prev, 0.0)
+        ctrl.qp_model = _rpo_lqmpc_workspace(ctrl.H, ctrl.G, ctrl.W)
+        ctrl.qp_results = OSQP.Results()
+    end
+    log = model.command_log
+    if log !== nothing
+        for name in fieldnames(RPOControlCommandLog)
+            empty!(getfield(log, name))
+        end
+    end
+    empty!(model.mounted_levels)
+    return nothing
+end
+
 """Return the held force and torque command for a control effector."""
 function control_wrench(model::RPOMPCControlModel, x::StateSample, p::ODEParams, t::Float64)
     x.spacecraft_index == model.chaser_index || return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)

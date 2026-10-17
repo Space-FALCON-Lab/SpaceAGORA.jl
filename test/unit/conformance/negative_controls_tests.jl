@@ -231,8 +231,8 @@ gnc_step(::Val{:Rand}, m, u, i) = rand()
 gnc_step(::Val{:Shared}, m, u, i) = (m.ticked || (m.ticked = true; NC_GNC_SCRATCH[] = 0.0); NC_GNC_SCRATCH[] += 1.0)
 gnc_step(::Val{:SharedBind}, m, u, i) = (m.buffer[1] += 1.0; m.buffer[1])
 gnc_step(::Val{:NoReset}, m, u, i) = 1.0
-for (prefix, Abstract, tick) in ((:NcG, SpaceAGORA.AbstractGuidanceModel, :update_guidance!),
-        (:NcN, SpaceAGORA.AbstractNavigationModel, :update_navigation!))
+for (prefix, Abstract, tick, initializer) in ((:NcG, SpaceAGORA.AbstractGuidanceModel, :update_guidance!, :initialize_guidance!),
+        (:NcN, SpaceAGORA.AbstractNavigationModel, :update_navigation!, :initialize_navigation!))
     for variant in (:Clean, :NoTick, :RunEpoch, :Identity, :Rand, :Shared, :SharedBind, :NoReset)
         name = Symbol(prefix, variant)
         @eval begin
@@ -245,9 +245,9 @@ for (prefix, Abstract, tick) in ((:NcG, SpaceAGORA.AbstractGuidanceModel, :updat
         end
         variant === :NoTick && continue
         @eval SpaceAGORA.$tick(m::$name, u, p, t::Float64, i::Int) = (m.acc += gnc_step(Val($(QuoteNode(variant))), m, u, i); nothing)
-        # Navigation models reset their own state at a run's start, except NoReset.
-        prefix === :NcN && variant !== :NoReset &&
-            @eval SpaceAGORA.SimulationLifecycle.initialize_navigation!(m::$name, u, p, t) = (m.acc = 0.0; m.ticked = false; nothing)
+        # The models reset their own state at a run's start, except NoReset.
+        variant !== :NoReset &&
+            @eval SpaceAGORA.SimulationLifecycle.$initializer(m::$name, u, p, t) = (m.acc = 0.0; m.ticked = false; nothing)
         variant === :SharedBind && @eval SpaceAGORA.bind_spacecraft(m::$name, i::Int) = $name(m.acc, m.ticked, m.buffer)
     end
 end
@@ -269,8 +269,9 @@ mutable struct NcCtl{V} <: SpaceAGORA.AbstractControlEffectorModel
     calls::Int
 end
 NcCtl{V}() where {V} = NcCtl{V}(0.0, false, [0.0], 0)
-const NC_CTL_STEPS = (:Clean, :RunEpoch, :Identity, :Rand, :Shared, :SharedBind)
-for variant in (:Clean, :RunEpoch, :Identity, :Rand, :Shared, :SharedBind, :NoWrench, :Deprecated, :Narrow, :Impure, :Negative)
+const NC_CTL_STEPS = (:Clean, :RunEpoch, :Identity, :Rand, :Shared, :SharedBind, :NoReset)
+for variant in (:Clean, :RunEpoch, :Identity, :Rand, :Shared, :SharedBind, :NoReset, :NoWrench, :Deprecated, :Narrow,
+        :Impure, :Negative)
     step = variant in NC_CTL_STEPS ? variant : :Clean
     @eval SpaceAGORA.update_control!(m::NcCtl{$(QuoteNode(variant))}, u, p, t::Float64, i::Int) =
         (m.acc += gnc_step(Val($(QuoteNode(step))), m, u, i); nothing)
@@ -280,6 +281,9 @@ for variant in (:Clean, :RunEpoch, :Identity, :Rand, :Shared, :SharedBind, :NoWr
     variant === :Negative || @eval SpaceAGORA.control_propellant_rate(m::NcCtl{$(QuoteNode(variant))}, x::Sample, p, t::Float64) =
         1.0e-6 * abs(m.acc) / (1 + abs(m.acc))
 end
+# The models reset their own state at a run's start, except NoReset.
+SpaceAGORA.SimulationLifecycle.initialize_control!(m::NcCtl, u, p, t) = (m.acc = 0.0; m.ticked = false; m.calls = 0; nothing)
+SpaceAGORA.SimulationLifecycle.initialize_control!(m::NcCtl{:NoReset}, u, p, t) = nothing
 SpaceAGORA.bind_spacecraft(m::NcCtl{:SharedBind}, i::Int) = NcCtl{:SharedBind}(m.acc, m.ticked, m.buffer, m.calls)
 SpaceAGORA.calcControlForceTorque(::NcCtl{:Deprecated}, u, p, i, t) = (Z3, Z3)
 SpaceAGORA.control_wrench(m::NcCtl{:Narrow}, x::Sample{Nothing}, p, t::Float64) = (Z3, Z3)
@@ -293,7 +297,7 @@ function gnc_controls()
     controls = Any[]
     for (kind, prefix, check) in ((:guidance_model, :NcG, check_guidance_model), (:navigation_model, :NcN, check_navigation_model))
         model(variant) = getfield(@__MODULE__, Symbol(prefix, variant))()
-        resets = kind === :navigation_model ? (:initialize_resets,) : ()
+        initializer = kind === :navigation_model ? "initialize_navigation!" : "initialize_guidance!"
         push!(controls,
             (kind=kind, id=:hooks_present, broken="no tick method", expect="has no method",
                 report=() -> check(model(:NoTick)), passing=(:bind_fresh_state,)),
@@ -308,12 +312,12 @@ function gnc_controls()
             (kind=kind, id=:concurrent_equals_sequential, broken="scratch shared by every instance",
                 expect="and sequential run ", report=() -> check(model(:Shared)),
                 passing=gnc_except(kind, :concurrent_equals_sequential)),
+            # Its shared buffer is never reset either.
             (kind=kind, id=:bind_fresh_state, broken="bind_spacecraft copies share a buffer the tick changes",
                 expect="changed during the run", report=() -> check(model(:SharedBind)),
-                passing=gnc_except(kind, :bind_fresh_state, resets...)))
-        kind === :navigation_model && push!(controls,
-            (kind=kind, id=:initialize_resets, broken="its own state never reset in initialize_navigation!",
-                expect="two runs with isolate_state=false on one configuration differ: ",
+                passing=gnc_except(kind, :bind_fresh_state, :initialize_resets)),
+            (kind=kind, id=:initialize_resets, broken="its own state never reset in $(initializer)",
+                expect="reset the model's run state in $(initializer)",
                 report=() -> check(model(:NoReset)), passing=gnc_except(kind, :initialize_resets)))
     end
     ctl(variant) = NcCtl{variant}()
@@ -343,9 +347,13 @@ function gnc_controls()
         (kind=kind, id=:positive_consumption, broken="a negative propellant rate",
             expect="control_propellant_rate returned -1.0e-5",
             report=() -> check_control_model(ctl(:Negative)), passing=gnc_except(kind, :positive_consumption)),
+        (kind=kind, id=:initialize_resets, broken="its own state never reset in initialize_control!",
+            expect="reset the model's run state in initialize_control!",
+            report=() -> check_control_model(ctl(:NoReset)), passing=gnc_except(kind, :initialize_resets)),
+        # Its shared buffer is never reset either.
         (kind=kind, id=:bind_fresh_state, broken="bind_spacecraft copies share a buffer the tick changes",
             expect="changed during the run", report=() -> check_control_model(ctl(:SharedBind)),
-            passing=gnc_except(kind, :bind_fresh_state)),
+            passing=gnc_except(kind, :bind_fresh_state, :initialize_resets)),
         (kind=:force_torque_model, id=:no_deprecated_hooks, broken="a calcForceTorque method beside wrench",
             expect="implements both wrench and calcForceTorque",
             report=() -> check_force_torque_model(NcDeprecatedForce()), passing=(:hooks_present, :supported_sample_signature)))

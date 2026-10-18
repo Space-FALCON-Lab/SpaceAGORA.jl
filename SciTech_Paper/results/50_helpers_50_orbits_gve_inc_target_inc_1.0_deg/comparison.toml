@@ -1,0 +1,60 @@
+inclination_gain_spread_deg = 2.9088605846272486e-6
+inclination_gain_spread_percent_of_mean = 0.13220358637474486
+sma_gain_spread_m = 3.228280355222523
+
+[4_v1]
+estimated_active_time_s = 60000.00753118606
+estimated_duty_fraction = 0.18834343838598314
+final_physical_helper_slot = 0
+maximum_sample_gap_s = 10.00000000000091
+median_sample_gap_s = 10.0
+nonstartup_segments = 50
+physical_helper_sequence = [1, 50, 50, 49, 49, 48, 48, 47, 47, 46, 46, 45, 45, 44, 44, 43, 43, 42, 42, 41, 41, 40, 40, 39, 38, 38, 37, 37, 36, 36, 35, 35, 34, 34, 33, 33, 32, 32, 31, 31, 30, 30, 29, 29, 28, 28, 27, 27, 26, 26]
+recorded_active_segments = 50
+startup_segments = 0
+
+[4_v1_vs_9_full]
+absolute_delta_sma_difference_m = 1.4451482659205794
+held_schedule_agreement_fraction = 0.998881697245463
+held_schedule_disagreement_s = 356.25437376189416
+max_absolute_end_time_difference_s = 11.863505587505642
+max_absolute_start_time_difference_s = 11.223785341833718
+same_nonstartup_helper_sequence = true
+
+[9_full]
+estimated_active_time_s = 60102.18636235241
+estimated_duty_fraction = 0.1886641835522588
+final_physical_helper_slot = 0
+maximum_sample_gap_s = 10.000000000029104
+median_sample_gap_s = 10.0
+nonstartup_segments = 50
+physical_helper_sequence = [1, 50, 50, 49, 49, 48, 48, 47, 47, 46, 46, 45, 45, 44, 44, 43, 43, 42, 42, 41, 41, 40, 40, 39, 38, 38, 37, 37, 36, 36, 35, 35, 34, 34, 33, 33, 32, 32, 31, 31, 30, 30, 29, 29, 28, 28, 27, 27, 26, 26]
+recorded_active_segments = 50
+startup_segments = 0
+
+[prototype]
+estimated_active_time_s = 60067.36373426049
+estimated_duty_fraction = 0.18855487334083826
+final_physical_helper_slot = 0
+maximum_sample_gap_s = 124.44751593071851
+median_sample_gap_s = 20.226457549944826
+nonstartup_segments = 50
+physical_helper_sequence = [1, 50, 50, 49, 49, 48, 48, 47, 47, 46, 46, 45, 45, 44, 44, 43, 43, 42, 42, 41, 41, 40, 40, 39, 38, 38, 37, 37, 36, 36, 35, 35, 34, 34, 33, 33, 32, 32, 31, 31, 30, 30, 29, 29, 28, 28, 27, 27, 26, 26]
+recorded_active_segments = 50
+startup_segments = 0
+
+[prototype_vs_4_v1]
+absolute_delta_sma_difference_m = 1.7831320893019438
+held_schedule_agreement_fraction = 0.9984701702450935
+held_schedule_disagreement_s = 487.35330310636226
+max_absolute_end_time_difference_s = 9.958556418161606
+max_absolute_start_time_difference_s = 13.410572656575823
+same_nonstartup_helper_sequence = true
+
+[prototype_vs_9_full]
+absolute_delta_sma_difference_m = 3.228280355222523
+held_schedule_agreement_fraction = 0.9981019617597178
+held_schedule_disagreement_s = 604.6523823040079
+max_absolute_end_time_difference_s = 17.099717921286356
+max_absolute_start_time_difference_s = 21.51527111112955
+same_nonstartup_helper_sequence = true

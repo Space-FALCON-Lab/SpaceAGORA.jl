@@ -1,0 +1,15 @@
+active_updates = 6470
+helper_count = 50
+runtime_s = 11.68329328
+final_sma_m = 7.429617030078995e6
+initial_sma_m = 7.4281366e6
+code = "9_SpaceAGORA.jl-main_full integration"
+requested_target_orbits = 50
+final_eccentricity = 3.971232555475557e-5
+scheduler_updates = 31866
+target_period_s = 6371.340360498735
+delta_sma_m = 1480.430078995414
+duration_s = 318567.0180249368
+final_helper = 26
+retcode = "Success"
+link_activations = 26

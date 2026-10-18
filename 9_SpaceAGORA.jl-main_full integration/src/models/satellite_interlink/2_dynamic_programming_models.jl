@@ -31,10 +31,13 @@ end
 """
 	SchedulingPolicyModel(policy; target_idx=1, target_idxs=nothing)
 
-Create a scheduling policy. For `:gve_sma` and `:gve_eccentricity`, `target_idx`
+Create a scheduling policy. For `:gve_sma`, `:gve_inc`, and `:gve_eccentricity`, `target_idx`
 selects one target and `target_idx=nothing` scores both link endpoints.
-For `:gve_sma`, `target_idxs` optionally selects a set of targets and takes
+For `:gve_sma` and `:gve_inc`, `target_idxs` optionally selects a set of targets and takes
 precedence over `target_idx`; all selected indices must exist in the simulation state.
+`:gve_inc` scores physical inclination rate in radians/s relative to the inertial
+xy plane, using actual force/mass. Exactly equatorial states use the forward
+one-sided rate (positive at zero inclination, negative at pi).
 """
 mutable struct SchedulingPolicyModel
 	const policy::Symbol
@@ -44,10 +47,10 @@ mutable struct SchedulingPolicyModel
 
 	function SchedulingPolicyModel(policy::Symbol; target_idx::Union{Nothing, Integer}=1,
 		target_idxs::Union{Nothing, AbstractVector{<:Integer}}=nothing)
-		policy in (:gve_sma, :gve_eccentricity, :gve_sma_first_index) ||
-			throw(ArgumentError("Supported scheduling policies: :gve_sma, :gve_eccentricity, and :gve_sma_first_index."))
-		target_idxs === nothing || policy === :gve_sma ||
-			throw(ArgumentError("target_idxs is supported only by the :gve_sma policy."))
+		policy in (:gve_sma, :gve_inc, :gve_eccentricity, :gve_sma_first_index) ||
+			throw(ArgumentError("Supported scheduling policies: :gve_sma, :gve_inc, :gve_eccentricity, and :gve_sma_first_index."))
+		target_idxs === nothing || policy in (:gve_sma, :gve_inc) ||
+			throw(ArgumentError("target_idxs is supported only by the :gve_sma and :gve_inc policies."))
 		target_idx === nothing || target_idx > 0 ||
 			throw(ArgumentError("target_idx must be nothing or a positive spacecraft vector index."))
 		target_indices = target_idxs === nothing ? nothing : Int[target_idxs...]
@@ -92,6 +95,8 @@ function score_candidates!(model::ConstellationInterLinkModel, policy::Schedulin
 	candidate_force)
 	if policy.policy === :gve_sma
 		return score_gve_sma!(model, policy, state, mu; candidate_force)
+	elseif policy.policy === :gve_inc
+		return score_gve_inc!(model, policy, state, mu; candidate_force)
 	elseif policy.policy === :gve_eccentricity
 		return score_gve_eccentricity!(model, policy, state, mu; candidate_force)
 	elseif policy.policy === :gve_sma_first_index

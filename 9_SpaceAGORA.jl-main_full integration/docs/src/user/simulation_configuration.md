@@ -329,9 +329,25 @@ Supported policies:
 
 - `:gve_sma`: maximize the summed semimajor-axis rate of `target_idxs`, one
   `target_idx` (default 1), or both endpoints when `target_idx=nothing`.
+- `:gve_inc`: maximize physical inclination rate (radians/s) relative to the
+  inertial xy plane, using actual candidate force divided by endpoint mass.
+  It supports the same `target_idx`, `target_idx=nothing`, and overriding
+  `target_idxs` selection as `:gve_sma`.
 - `:gve_eccentricity`: maximize the eccentricity rate of `target_idx`, or both
   endpoints when `target_idx=nothing`.
 - `:gve_sma_first_index`: score each pair using its lower spacecraft array index.
+
+For example, `SM.SchedulingPolicyModel(:gve_inc; target_idx=1)` raises the
+inclination of spacecraft 1 rather than its SMA. Only positive edge scores
+enter matching. The policy differentiates `atan(norm(h_xy), h_z)` with
+`h = cross(r, v)` and `dh = cross(r, F/m)`. Away from equatorial orbits this
+equals the inclination GVE `di/dt = r*cos(u)*A_N/norm(h)`, without computing
+orbital elements. At exactly zero or pi inclination it uses the forward
+one-sided derivative: positive at zero and negative at pi for a plane-tilting
+force. It does not use an arbitrary node longitude or a finite inclination
+threshold. Invalid mass or zero/nonfinite angular momentum raises an error.
+Inclination is evaluated from the propagated state; no integrated
+`laser_delta_inclination` diagnostic is added.
 
 The copied force law is repulsive, equal and opposite, with magnitude `B * P / c`
 in newtons. It acts on spacecraft translation, without terminal offsets or

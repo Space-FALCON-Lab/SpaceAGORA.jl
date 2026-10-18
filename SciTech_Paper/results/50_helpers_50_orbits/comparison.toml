@@ -1,0 +1,59 @@
+sma_gain_spread_m = 4.307313180528581
+sma_gain_spread_percent_of_mean = 0.2907095306804166
+
+[4_v1]
+estimated_active_time_s = 64638.56285768794
+estimated_duty_fraction = 0.2029041275472785
+final_physical_helper_slot = 25
+maximum_sample_gap_s = 10.000000000003638
+median_sample_gap_s = 10.0
+nonstartup_segments = 26
+physical_helper_sequence = [50, 49, 48, 47, 46, 45, 44, 43, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 25]
+recorded_active_segments = 27
+startup_segments = 1
+
+[4_v1_vs_9_full]
+absolute_delta_sma_difference_m = 0.3158190995454788
+held_schedule_agreement_fraction = 0.9993725185988316
+held_schedule_disagreement_s = 199.89487883631767
+max_absolute_end_time_difference_s = 7.204205342895875
+max_absolute_start_time_difference_s = 7.204205342917703
+same_nonstartup_helper_sequence = true
+
+[9_full]
+estimated_active_time_s = 64685.76705062215
+estimated_duty_fraction = 0.2030523041954038
+final_physical_helper_slot = 25
+maximum_sample_gap_s = 10.000000000007276
+median_sample_gap_s = 10.0
+nonstartup_segments = 26
+physical_helper_sequence = [50, 49, 48, 47, 46, 45, 44, 43, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 25]
+recorded_active_segments = 26
+startup_segments = 0
+
+[prototype]
+estimated_active_time_s = 64654.98722024383
+estimated_duty_fraction = 0.20295568455609164
+final_physical_helper_slot = 25
+maximum_sample_gap_s = 124.51240474855877
+median_sample_gap_s = 119.59708929190674
+nonstartup_segments = 26
+physical_helper_sequence = [50, 49, 48, 47, 46, 45, 44, 43, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 25]
+recorded_active_segments = 26
+startup_segments = 0
+
+[prototype_vs_4_v1]
+absolute_delta_sma_difference_m = 4.307313180528581
+held_schedule_agreement_fraction = 0.9985658244356358
+held_schedule_disagreement_s = 456.88103286372456
+max_absolute_end_time_difference_s = 16.18414030864369
+max_absolute_start_time_difference_s = 18.175746255612466
+same_nonstartup_helper_sequence = true
+
+[prototype_vs_9_full]
+absolute_delta_sma_difference_m = 3.9914940809831023
+held_schedule_agreement_fraction = 0.9985263177874534
+held_schedule_disagreement_s = 469.46654796737494
+max_absolute_end_time_difference_s = 18.979934965725988
+max_absolute_start_time_difference_s = 20.223272008879576
+same_nonstartup_helper_sequence = true

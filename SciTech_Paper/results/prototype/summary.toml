@@ -1,0 +1,15 @@
+link_activations = 1
+active_updates = 50
+runtime_s = 4.614847265
+final_sma_m = 7.428196492972844e6
+initial_sma_m = 7.4281366e6
+code = "1_Kuang's Prototype Code"
+requested_target_orbits = 5.0
+final_eccentricity = 7.793357068026356e-6
+target_period_s = 6371.340360498735
+sampled_selection_changes = 2
+delta_sma_m = 59.89297284465283
+duration_s = 31856.701802493677
+final_helper = 0
+retcode = "Success"
+selection_samples = 350

@@ -1,6 +1,7 @@
 # The existing spacecraft collection and selected dynamics effectors for one run.
 # Included inside SpacecraftModels to preserve DynamicsModel type identity and public access.
-# No additional collection wrapper or constellation-generation algorithm is introduced.
+# The spacecraft stay a plain vector; build_constellation (src/models/vehicle/constellations/)
+# fills one from orbital planes.
 
 """
     DynamicsModel(spacecraft, dynamic_effectors)

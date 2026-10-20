@@ -59,6 +59,25 @@ function _validate_orientation_inertia!(args)
     return nothing
 end
 
+# A spacecraft's id names it in the scene and viewer, seeds its sensors' noise
+# and names its ensemble folder, so spacecraft that share an id are confused
+# there. Repeated ids warn once per process; SpaceAGORA 1.0 will refuse them.
+function _warn_repeated_spacecraft_ids(args)
+    ids = [sc.id for sc in args.dynamics_model.spacecraft]
+    allunique(ids) && return nothing
+    repeated = sort!(unique(id for id in ids if count(==(id), ids) > 1))
+    shown = map(first(repeated, 3)) do id
+        positions = findall(==(id), ids)
+        "id $id at positions $(join(first(positions, 4), ", "))$(length(positions) > 4 ? ", ..." : "")"
+    end
+    listing = join(shown, "; ") * (length(repeated) > 3 ? "; and $(length(repeated) - 3) more ids" : "")
+    SimulationModel.HookDeprecation._hook_deprecation((:SpacecraftModel, :repeated_id),
+        "Spacecraft ids repeat ($listing). An id names its spacecraft in the scene and viewer, seeds its " *
+        "sensors' noise and names its ensemble folder. Repeated ids are deprecated and SpaceAGORA 1.0 will " *
+        "refuse them: give each spacecraft its own id (build_constellation and walker_constellation number them).")
+    return nothing
+end
+
 function _validate_thermal_model_support!(args)
     thermal_model = args.environment_model.thermal_model
     if !hasmethod(SimulationModel.getHeatRate, Tuple{typeof(thermal_model), Float64, Float64, Float64, Float64, Float64})

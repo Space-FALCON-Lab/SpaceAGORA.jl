@@ -115,7 +115,7 @@ export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!,
 @doc (@doc SimulationModel.ExampleConfiguration.make_example_config) make_example_config
 @doc (@doc SimulationModel.ExampleConfiguration.make_three_body_spacecraft) make_three_body_spacecraft
 @doc """Dynamics model of a run: the spacecraft list and the tuple of force/torque effectors, `DynamicsModel([spacecraft], effectors)`.""" DynamicsModel
-@doc """Initial orbit of a spacecraft from Keplerian elements (`ra`, `rp`, `i`, `ω`, `Ω`, `ν`), with an optional initial attitude `q` (x, y, z, w, inertial to body) and body rate `ang_vel` (rad/s), each any vector or tuple of 4 or 3 numbers.""" InitialCondition
+@doc """Initial orbit of a spacecraft from Keplerian elements (`a` and `e`, or `ra` and `rp`; `i`, `ω`, `Ω`, and the true anomaly `ν` or the mean anomaly `M`, in degrees), with an optional initial attitude `q` (x, y, z, w, inertial to body) and body rate `ang_vel` (rad/s), each any vector or tuple of 4 or 3 numbers.""" InitialCondition
 @doc """Complete one-run scenario: simulation settings, mission configuration, environment, dynamics, guidance, navigation and control models, initial time, and integration tolerances. Pass it to `run_simulation`.""" SimulationConfiguration
 @doc """Mission length and bookkeeping: `mission_type` (`MissionTime` or `MissionOrbits`), `mission_time`, `number_of_orbits`, `keplerian`, `orientation_sim`, and `num_steps_to_save`.""" MissionConfiguration
 @doc """Enum selecting how a mission ends: `MissionTime` (fixed duration) or `MissionOrbits` (fixed orbit count).""" MissionType
@@ -125,7 +125,7 @@ export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!,
 @doc """Guidance effectors and their update rates for a run (`guidance_effectors`, `guidance_rates`).""" GuidanceModel
 @doc """Navigation effectors and their update rates for a run (`navigation_effectors`, `navigation_rates`).""" NavigationModel
 @doc """Control effectors and their update rates for a run (`control_effectors`, `control_rates`).""" ControlModel
-@doc """Multi-link spacecraft: joints, links, root link, mass properties, propellant mass, initial condition, and id. Build the links with `Link` and `Joint`, or use `make_three_body_spacecraft`.""" SpacecraftModel
+@doc """Multi-link spacecraft: joints, links, root link, mass properties, propellant mass, initial condition, id, and its `constellation_slot` (a `ConstellationSlot`, set by `build_constellation`, or `nothing`). Build the links with `Link` and `Joint`, or use `make_three_body_spacecraft`.""" SpacecraftModel
 @doc """One rigid body of a `SpacecraftModel`: mass, dimensions, reference area, offset `r`, attitude `q`, and reflection coefficient. Exported at the root; note that other packages may also export a `Link` name.""" Link
 @doc """Articulated connection between two `Link`s of a `SpacecraftModel`. Exported at the root; note that other packages may also export a `Joint` name.""" Joint
 @doc """Initial spacecraft state given as a Cartesian position and velocity, with an optional initial attitude `q` (x, y, z, w, inertial to body) and body rate `ang_vel` (rad/s), each any vector or tuple of 4 or 3 numbers.""" CartesianInitialCondition
@@ -292,6 +292,7 @@ using .SimulationModel: CompliantTopologyNode, CompliantTopologyEdge, CompliantT
 using .SimulationModel: CompliantJointActuator, CompliantJointLoad, CompliantAttachment
 using .SimulationModel: rectangular_prism_inertia, thin_panel_inertia
 using .SimulationModel: build_compliant_topology, build_rectangular_compliant_grid
+using .SimulationModel: ConstellationSlot, OrbitalPlane, build_constellation, walker_planes, walker_constellation
 using .SimulationModel: compliant_state_vector, compliant_state_parts, compliant_multibody_dynamics
 using .SimulationModel: compliant_joint_loads
 using .SimulationModel: step_compliant_multibody_rk4, step_compliant_multibody_implicit_midpoint
@@ -530,6 +531,11 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.thin_panel_inertia) thin_panel_inertia
 @doc (@doc SimulationModel.build_compliant_topology) build_compliant_topology
 @doc (@doc SimulationModel.build_rectangular_compliant_grid) build_rectangular_compliant_grid
+@doc (@doc SimulationModel.ConstellationSlot) ConstellationSlot
+@doc (@doc SimulationModel.OrbitalPlane) OrbitalPlane
+@doc (@doc SimulationModel.build_constellation) build_constellation
+@doc (@doc SimulationModel.walker_planes) walker_planes
+@doc (@doc SimulationModel.walker_constellation) walker_constellation
 @doc (@doc SimulationModel.compliant_state_vector) compliant_state_vector
 @doc (@doc SimulationModel.compliant_state_parts) compliant_state_parts
 @doc (@doc SimulationModel.compliant_multibody_dynamics) compliant_multibody_dynamics
@@ -724,6 +730,7 @@ export CompliantTopologyNode, CompliantTopologyEdge, CompliantTopologyBuild
 export CompliantJointActuator, CompliantJointLoad, CompliantAttachment
 export rectangular_prism_inertia, thin_panel_inertia
 export build_compliant_topology, build_rectangular_compliant_grid
+export ConstellationSlot, OrbitalPlane, build_constellation, walker_planes, walker_constellation
 export compliant_state_vector, compliant_state_parts, compliant_multibody_dynamics, compliant_joint_loads
 export step_compliant_multibody_rk4, step_compliant_multibody_implicit_midpoint, simulate_compliant_multibody
 export coupled_cloth_robot_arm_state_shape, initialize_coupled_cloth_robot_arm_state!

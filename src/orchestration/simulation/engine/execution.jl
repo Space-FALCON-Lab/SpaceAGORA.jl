@@ -413,7 +413,7 @@ _without_gnc(sc::SimulationModel.SpacecraftModel) = SimulationModel.SpacecraftMo
     sc.initial_condition, sc.id,
     SimulationModel.GuidanceModel((), Float64[]), SimulationModel.NavigationModel((), Float64[]),
     SimulationModel.ControlModel((), Float64[]), sc.attachments,
-    sc.n_terminal, sc.battery_energy_index, sc.tempurature_index)
+    sc.n_terminal, sc.battery_energy_index, sc.tempurature_index, sc.constellation_slot)
 
 """
 Fold per-spacecraft GNC declarations (`SpacecraftModel` `guidance`/`navigation`/`control`) into the
@@ -609,6 +609,7 @@ function run_simulation(
     _validate_attachments!(args, solver_mode)
     _validate_external_propagators!(args, solver_mode)
     _validate_interlinks!(args, solver_mode)
+    _warn_repeated_spacecraft_ids(args)
     _validate_orientation_inertia!(args)
     _validate_thermal_model_support!(args)
     _validate_ephemerides_support!(args)

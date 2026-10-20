@@ -222,6 +222,7 @@ include("vehicle/thruster_firing_checkpoint_tests.jl")
 include("vehicle/sensor_tests.jl")
 include("vehicle/thruster_gimbal_tests.jl")
 include("vehicle/control_moment_gyro_tests.jl")
+include("vehicle/constellation_builder_tests.jl")
 include("quality/runtime_any_gate_tests.jl")
 
 # Optional renderer installer planning is stdlib-only and performs no installation.

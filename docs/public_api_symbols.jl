@@ -184,6 +184,16 @@ const PUBLIC_API_SECTIONS = [
         ]
     ),
     (
+        title = "Constellations",
+        items = [
+            (owner = :SpaceAGORA, symbol = :OrbitalPlane, rendered = "SpaceAGORA.OrbitalPlane"),
+            (owner = :SpaceAGORA, symbol = :build_constellation, rendered = "SpaceAGORA.build_constellation"),
+            (owner = :SpaceAGORA, symbol = :walker_planes, rendered = "SpaceAGORA.walker_planes"),
+            (owner = :SpaceAGORA, symbol = :walker_constellation, rendered = "SpaceAGORA.walker_constellation"),
+            (owner = :SpaceAGORA, symbol = :ConstellationSlot, rendered = "SpaceAGORA.ConstellationSlot"),
+        ]
+    ),
+    (
         title = "Simulation",
         items = [
             (owner = :SpaceAGORA, symbol = :run_simulation, rendered = "SpaceAGORA.run_simulation"),

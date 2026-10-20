@@ -32,6 +32,11 @@ function _ensemble_member_settings(settings::SimulationSettings, member_tag::Str
     )
 end
 
+# The folder of ensemble member `index` of `count`: its index, zero-padded to the
+# digits of `count` so the folders sort in member order, and its spacecraft id.
+_ensemble_member_tag(index::Integer, count::Integer, id::Integer) =
+    "sat_$(lpad(index, ndigits(count), '0'))_id_$(id)"
+
 function _ensemble_member_configuration(
     args::SimulationConfiguration,
     spacecraft::SpacecraftModel,
@@ -41,6 +46,22 @@ function _ensemble_member_configuration(
         simulation_settings=_ensemble_member_settings(args.simulation_settings, member_tag),
         dynamics_model=DynamicsModel([spacecraft], args.dynamics_model.dynamic_effectors),
     )
+end
+
+# The configuration of ensemble member `index` of `count`. Checkpoints of an
+# ensemble of ten or more members written before the folders were zero-padded
+# (SpaceAGORA 0.4 and earlier) are under the unpadded name, `sat_1_id_1`: on
+# resume, a member whose padded folder has no checkpoint and whose unpadded one
+# has resumes there, and goes on writing there.
+function _ensemble_member_configuration(args::SimulationConfiguration, spacecraft::SpacecraftModel,
+                                        index::Integer, count::Integer)::SimulationConfiguration
+    tag = _ensemble_member_tag(index, count, spacecraft.id)
+    config = _ensemble_member_configuration(args, spacecraft, tag)
+    unpadded = "sat_$(index)_id_$(spacecraft.id)"
+    (args.simulation_settings.resume_from_checkpoint && unpadded != tag) || return config
+    isfile(SimulationEngine._checkpoint_paths(config).data) && return config
+    earlier = _ensemble_member_configuration(args, spacecraft, unpadded)
+    return isfile(SimulationEngine._checkpoint_paths(earlier).data) ? earlier : config
 end
 
 function _validate_ensemble_uncoupled(args::SimulationConfiguration, allow_gnc_effectors::Bool)
@@ -80,7 +101,10 @@ Sample `i` of the returned [`MonteCarloResult`](@ref) holds the `run_simulation`
 value for spacecraft `i` (in `args.dynamics_model.spacecraft` order) in `value`. When
 result saving, checkpointing, or checkpoint resume is enabled, each member uses
 per-satellite `sat_<index>_id_<spacecraft id>` subdirectories so members do not read or
-clobber each other's files.
+clobber each other's files. The index is zero-padded to the digits of the member count
+(`sat_01` to `sat_12` for twelve members), so the folders sort in member order. On resume,
+a member with a checkpoint only under its unpadded folder (written by SpaceAGORA 0.4 or
+earlier, `sat_1_id_1`) resumes from that folder and keeps writing to it.
 
 # Parallel execution
 
@@ -140,9 +164,10 @@ function run_constellation_ensemble(
         "run_constellation_ensemble requires at least one spacecraft in args.dynamics_model.spacecraft."
     ))
     _validate_ensemble_uncoupled(args, allow_gnc_effectors)
+    SimulationEngine._warn_repeated_spacecraft_ids(args)
 
     member_configs = [
-        _ensemble_member_configuration(args, sc, "sat_$(idx)_id_$(sc.id)")
+        _ensemble_member_configuration(args, sc, idx, length(spacecraft))
         for (idx, sc) in enumerate(spacecraft)
     ]
 

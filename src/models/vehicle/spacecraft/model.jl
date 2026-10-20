@@ -10,6 +10,7 @@ using ..OrbitalGeometry
 using ..EphemeridesModels: SpiceEphemeridesModel, ephemerides_epoch_seconds, ephemerides_frame_lpi
 
 export Link, Joint, CompliantAttachment, attachment_body_count, SpacecraftModel, DynamicsModel, InitialCondition, CartesianInitialCondition, AbstractInitialCondition, GuidanceModel, NavigationModel, ControlModel
+export ConstellationSlot, OrbitalPlane, build_constellation, walker_planes, walker_constellation
 
 const I3 = SMatrix{3, 3, Float64}(diagm(ones(3)))
 const DEFAULT_INITIAL_CONDITION_Q = SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
@@ -79,15 +80,29 @@ function InitialCondition(
     )
 end
 
+"""
+    InitialCondition(; a=0.0, e=0.0, i=0.0, ω=0.0, Ω=0.0, ν=0.0, q=(0, 0, 0, 1), ang_vel=(0, 0, 0))
+    InitialCondition(; ra, rp, i=0.0, ω=0.0, Ω=0.0, ν=180.0, q=(0, 0, 0, 1), ang_vel=(0, 0, 0))
+
+Keplerian elements: the semimajor axis `a` (m) and eccentricity `e`, or the
+apoapsis and periapsis radii `ra` and `rp` (m); the inclination `i`, argument of
+periapsis `ω`, RAAN `Ω` and true anomaly `ν`, in degrees. Pass the mean anomaly
+`M` (degrees, `0 <= e < 1`) in place of `ν` to place the spacecraft by time
+since periapsis; it is converted to the true anomaly once, here. Without either,
+`ν` is 0 (periapsis) for `a` and `e`, and 180 (apoapsis) for `ra` and `rp`. Any
+real numbers are accepted. `q` is the initial attitude quaternion (x, y, z, w),
+inertial to body, and `ang_vel` the initial body rate (rad/s).
+"""
 function InitialCondition(;
-    a::Float64=0.0,
-    e::Float64=0.0,
-    ra::Union{Nothing, Float64}=nothing,
-    rp::Union{Nothing, Float64}=nothing,
-    i::Float64=0.0,
-    ω::Float64=0.0,
-    Ω::Float64=0.0,
-    ν::Union{Nothing, Float64}=nothing,
+    a::Real=0.0,
+    e::Real=0.0,
+    ra::Union{Nothing, Real}=nothing,
+    rp::Union{Nothing, Real}=nothing,
+    i::Real=0.0,
+    ω::Real=0.0,
+    Ω::Real=0.0,
+    ν::Union{Nothing, Real}=nothing,
+    M::Union{Nothing, Real}=nothing,
     q=DEFAULT_INITIAL_CONDITION_Q,
     ang_vel=DEFAULT_INITIAL_CONDITION_ANG_VEL
 )
@@ -96,14 +111,27 @@ function InitialCondition(;
     end
 
     if ra !== nothing
+        ra, rp = Float64(ra), Float64(rp)
         a = (ra + rp) / 2.0
         e = (ra - rp) / (ra + rp)
-        ν_eff = ν === nothing ? 180.0 : ν
+        ν_eff = _true_anomaly_deg(ν, M, e, 180.0)
         return InitialCondition(a, e, i, ω, Ω, ν_eff, q, ang_vel)
     end
 
-    ν_eff = ν === nothing ? 0.0 : ν
+    ν_eff = _true_anomaly_deg(ν, M, Float64(e), 0.0)
     return InitialCondition(a, e, i, ω, Ω, ν_eff, q, ang_vel)
+end
+
+# The true anomaly (degrees) from the keywords: `ν`, the mean anomaly `M`
+# (degrees) converted on an ellipse of eccentricity `e`, or `default`.
+function _true_anomaly_deg(ν, M, e::Float64, default::Float64)::Float64
+    ν === nothing || M === nothing ||
+        throw(ArgumentError("InitialCondition takes the true anomaly ν or the mean anomaly M, not both."))
+    M === nothing && return ν === nothing ? default : Float64(ν)
+    0.0 <= e < 1.0 || throw(ArgumentError(
+        "InitialCondition: the mean anomaly M needs an elliptic orbit, 0 <= e < 1; got e = $e."))
+    e == 0.0 && return Float64(M)   # on a circle the mean and true anomalies are equal
+    return rad2deg(OrbitalGeometry._true_anomaly_from_mean(deg2rad(Float64(M)), e))
 end
 
 @inline function _initial_condition_lpi(planet, L_PI, initial_time, ephemerides_model)::SMatrix{3, 3, Float64, 9}
@@ -158,7 +186,8 @@ end
 
 Construct orbital elements from apoapsis altitude `ra` and periapsis altitude
 `hp`, measured above the planet's oblate reference ellipsoid along the apsis
-directions. Pass `initial_time` and `ephemerides_model` to compute the
+directions. The angles are in degrees; pass the mean anomaly `M` in place of the
+true anomaly `ν` to place the spacecraft by time since periapsis. Pass `initial_time` and `ephemerides_model` to compute the
 inertial-to-planet-fixed frame at construction time. Pass `L_PI` to use a
 specific frame directly; otherwise the constructor uses `planet.L_PI` when it
 has been initialized. `q` is the initial attitude quaternion (x, y, z, w),
@@ -173,6 +202,7 @@ function InitialCondition(
     ω::Real=0.0,
     Ω::Real=0.0,
     ν::Union{Nothing, Real}=nothing,
+    M::Union{Nothing, Real}=nothing,
     q=DEFAULT_INITIAL_CONDITION_Q,
     ang_vel=DEFAULT_INITIAL_CONDITION_ANG_VEL,
     initial_time=nothing,
@@ -196,15 +226,14 @@ function InitialCondition(
     rp_radius = _initial_condition_radius_for_oblate_altitude(Float64(hp), u_peri_pp, planet)
     ra_radius > rp_radius ||
         throw(ArgumentError("Oblate InitialCondition requires apoapsis radius > periapsis radius; got ra=$ra_radius m, rp=$rp_radius m."))
-    ν_eff = ν === nothing ? 180.0 : Float64(ν)
-
     return InitialCondition(
         ra=ra_radius,
         rp=rp_radius,
         i=Float64(i),
         ω=Float64(ω),
         Ω=Float64(Ω),
-        ν=ν_eff,
+        ν=ν === nothing ? nothing : Float64(ν),
+        M=M,
         q=q,
         ang_vel=ang_vel
     )
@@ -590,6 +619,25 @@ end
 # Compliant multibody models mounted on links (needs `Link`, needed by `SpacecraftModel`).
 include(joinpath(@__DIR__, "..", "..", "dynamics", "multibody", "compliant", "compliant_attachment.jl"))
 
+"""
+    ConstellationSlot(plane, slot)
+
+Where a spacecraft sits in a constellation: its orbital plane and its slot in
+that plane, both numbered from 1. `build_constellation` and
+`walker_constellation` set it on each spacecraft they build, as
+`spacecraft.constellation_slot`; any other spacecraft has `nothing` there.
+"""
+struct ConstellationSlot
+    plane::Int
+    slot::Int
+
+    function ConstellationSlot(plane::Integer, slot::Integer)
+        plane >= 1 && slot >= 1 || throw(ArgumentError(
+            "A constellation slot's plane and slot are numbered from 1; got plane $plane, slot $slot."))
+        return new(Int(plane), Int(slot))
+    end
+end
+
 mutable struct SpacecraftModel
     joints::Vector{Joint} # List of joints
     links::Vector{Link} # List of links (bodies)
@@ -611,7 +659,16 @@ mutable struct SpacecraftModel
     n_terminal::Int64 # Number of interlink terminals
     battery_energy_index::Float64
     tempurature_index::Float64
+    constellation_slot::Union{Nothing, ConstellationSlot} # Plane and slot in a constellation (see build_constellation), or nothing
 end
+
+# The full positional form before the constellation slot was added: no slot.
+SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor,
+                initial_condition, id, guidance, navigation, control, attachments,
+                n_terminal, battery_energy_index, tempurature_index) =
+    SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor,
+                    initial_condition, id, guidance, navigation, control, attachments,
+                    n_terminal, battery_energy_index, tempurature_index, nothing)
 
 _empty_guidance() = GuidanceModel((), Float64[])
 _empty_navigation() = NavigationModel((), Float64[])
@@ -686,7 +743,8 @@ function SpacecraftModel(; joints::AbstractVector{<:Joint}=Joint[], links::Abstr
                             attachments::AbstractVector{CompliantAttachment}=CompliantAttachment[],
                             n_terminal::Int64=1,
                             battery_energy_index::Real=100.0,
-                            tempurature_index::Real=100.0)
+                            tempurature_index::Real=100.0,
+                            constellation_slot::Union{Nothing, ConstellationSlot}=nothing)
     n_terminal >= 0 || throw(ArgumentError("n_terminal must be nonnegative."))
     0 <= battery_energy_index <= 100 || throw(ArgumentError("battery_energy_index must be in [0, 100]."))
     0 <= tempurature_index <= 100 || throw(ArgumentError("tempurature_index must be in [0, 100]."))
@@ -708,10 +766,14 @@ function SpacecraftModel(; joints::AbstractVector{<:Joint}=Joint[], links::Abstr
 
     return SpacecraftModel(joints_vec, links_vec, root, instant_actuation, dry_mass, prop_mass, inertia_tensor, initial_condition, id,
                            guidance, navigation, control, Vector{CompliantAttachment}(attachments),
-                           n_terminal, Float64(battery_energy_index), Float64(tempurature_index))
+                           n_terminal, Float64(battery_energy_index), Float64(tempurature_index),
+                           constellation_slot)
 end
 
 # Preserve the collection type in this module while giving configuration its own file.
 include(joinpath(@__DIR__, "..", "..", "..", "orchestration", "simulation", "config", "constellation_configuration.jl"))
+
+# Constellation layouts: orbital planes, the Walker patterns and the builder.
+include(joinpath(@__DIR__, "..", "constellations", "builder.jl"))
 
 end # module SpacecraftModels

@@ -30,6 +30,8 @@ const API_REFERENCE_PAGES = (
     (section="Sensors", title="Sensors API", file="sensors_api.md"),
     (section="Model Extension Hooks", title="Extension Hooks API", file="extension_hooks_api.md"),
     (section="Contributor conformance", title="Contributor Conformance API", file="contributor_conformance_api.md"),
+    (section="Interlinks", title="Interlinks API", file="interlinks_api.md"),
+    (section="Constellations", title="Constellations API", file="constellations_api.md"),
 )
 const BUILD_DIR = joinpath(@__DIR__, "build")
 const PUBLIC_API_REPORT = joinpath(BUILD_DIR, "undocumented_public_exports.txt")
@@ -254,6 +256,7 @@ makedocs(
         "Vehicles and Models" => Any[
             "Articulated and Compliant Vehicles" => "user/articulated_compliant.md",
             "Mesh Aerodynamics" => "user/mesh_aerodynamics.md",
+            "Constellations" => "user/constellations.md",
             "Plume Interaction" => "user/plume_interaction.md",
             "Interlinks" => "user/interlinks.md",
         ],
@@ -329,6 +332,8 @@ makedocs(
             "Sensors API" => "generated/sensors_api.md",
             "Extension Hooks API" => "generated/extension_hooks_api.md",
             "Contributor Conformance API" => "generated/contributor_conformance_api.md",
+            "Interlinks API" => "generated/interlinks_api.md",
+            "Constellations API" => "generated/constellations_api.md",
         ],
     ],
     doctest = true,

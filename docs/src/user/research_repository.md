@@ -66,7 +66,7 @@ directory inside the checkout and a name that is not a package name.
 url = "https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git"
 rev = "<the full 40-character commit>"
 uuid = "afbfb69f-5c0b-4832-b760-43725dff8540"
-version = "0.4.0"          # optional: the core's version at rev
+version = "0.5.0"          # optional: the core's version at rev
 companions = ["mujoco"]    # optional: hypr, mujoco or edg, at that commit's own pins
 ```
 

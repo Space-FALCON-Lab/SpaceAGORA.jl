@@ -116,10 +116,10 @@ link was a laser link, are listed on the
   discretization step, a spacecraft scope that names a position outside the run,
   and Apollo descent guidance and control that do not share their state and
   spacecraft.
-- **0.5.0, or 1.0 if that comes first.** The deprecated names are removed, and
-  `control_propellant_rate` and `control_wheel_torque` gain defaults, `0.0` and
-  `nothing`. The removal waits until a tagged release has carried the warnings
-  and the companion packages have moved.
+- **0.5.0.** The deprecated names are removed, and `control_propellant_rate` and
+  `control_wheel_torque` gain defaults, `0.0` and `nothing`. The tagged releases
+  0.3.0 to 0.4.0 carried the warnings, and the companion packages moved to the
+  new names in 0.4.0.
 
 Release numbers follow `version` in `Project.toml`. The older `v1.0.0` and
 `v2.0.0` git tags predate it.

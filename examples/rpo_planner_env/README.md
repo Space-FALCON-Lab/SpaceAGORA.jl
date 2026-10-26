@@ -5,19 +5,22 @@ with interchangeable planners, including HYPR. From the repository root,
 prepare it once:
 
 ```sh
-julia --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
+julia --startup-file=no examples/rpo_planner_env/setup.jl
 ```
 
-Setup copies the tracked `Project.template.toml` to a local `Project.toml`,
-starts `Manifest.toml` from the repository manifest, adds this checkout by
-path, and adds HYPR at the revision pinned in `packages/HYPRSource.toml`.
-Packages the repository manifest records keep their versions; only the
-libraries bundled with Julia, such as OpenSSL_jll, follow your Julia install.
-Git ignores both generated files, and running setup again reuses them. After
-setup the pilot needs no native assets and no network:
+Setup uses HYPR's standalone installer and the same source-pair and destination
+safeguards as EDG and MuJoCo. The managed environment lives under the first Julia
+depot's `environments/` directory, with a name derived from this checkout. It is
+outside both source checkouts. No Project or Manifest is written into this example
+folder, and the tracked template remains unchanged. Set `SPACEAGORA_RPO_ENV` to
+choose another separate destination. The setup script and launcher use the same
+setting; repeat setup reuses only an environment owned by this source pair.
+
+The launcher below selects that environment. After setup the smoke run needs no
+native assets and no network:
 
 ```sh
-JULIA_PKG_OFFLINE=true julia --project=examples/rpo_planner_env examples/rpo_planner_env/smoke.jl
+JULIA_PKG_OFFLINE=true julia --startup-file=no examples/rpo_planner_env/run.jl examples/rpo_planner_env/smoke.jl
 ```
 
 `smoke.jl` loads `SpaceAGORA` and `HYPR` and uses only the public planner API.
@@ -38,7 +41,7 @@ that one too:
 
 ```sh
 julia --startup-file=no examples/setup.jl
-julia --project=examples/rpo_planner_env examples/Earth_RPO_CubeSat_MPC.jl
+julia --startup-file=no examples/rpo_planner_env/run.jl examples/Earth_RPO_CubeSat_MPC.jl
 ```
 
 Without the examples environment they stop at once and print its setup command.

@@ -22,7 +22,10 @@ SpaceAGORA. The tests also start example and command-line child processes,
 which run in the examples environment (`examples/Project.toml`, prepared by
 `examples/setup.jl`). The EDG and HYPR providers stay in separate
 environments: point `SPACEAGORA_EDG_TEST_ENV` and `SPACEAGORA_HYPR_TEST_ENV` at
-environments prepared with `scripts/setup_edg.jl` and `scripts/setup_hypr.jl`.
+environments prepared with `scripts/optional_packages.jl setup edg <directory>`
+and `scripts/optional_packages.jl setup hypr <directory>`. The older
+`scripts/setup_edg.jl` and `scripts/setup_hypr.jl` commands are compatibility
+shortcuts to those companion-owned installers.
 
 ## Run
 

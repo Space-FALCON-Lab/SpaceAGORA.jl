@@ -77,7 +77,7 @@ RPO as well as robot-arm motion. The
 [installation guide](installation_environment.md#Optional-package-commands)
 describes the source checks, and the
 [RPO guide](rpo_planner_pilot.md#Installing-optional-HYPR) also covers the
-`scripts/setup_hypr.jl` route. Record the HYPR pin and the SpaceAGORA revision
+`scripts/setup_hypr.jl` compatibility shortcut to the same companion installer. Record the HYPR pin and the SpaceAGORA revision
 with each run.
 
 The short example runs both the direct planner and HYPR through the public

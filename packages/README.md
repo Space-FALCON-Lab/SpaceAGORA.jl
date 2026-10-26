@@ -10,7 +10,7 @@ separate viewer comes from. `using SpaceAGORA` loads none of them.
 | [robotics/](robotics/README.md) | HYPR (motion planning for both spacecraft rendezvous and robot arms) and SpaceAGORAMuJoCo (contact scenes). |
 | [gnc/](gnc/README.md) | SpaceAGORAEDG, the energy-depletion guidance kernels. |
 | `OptionalPackages.toml` | Name, path, repository, UUID and version of the three companions above. Their revisions are the submodule gitlinks. |
-| `HYPRSource.toml` | HYPR's repository and revision for the standalone installer `scripts/setup_hypr.jl`. `scripts/optional_packages.jl` refuses to run if it differs from the HYPR gitlink. |
+| `HYPRSource.toml` | HYPR's repository and revision for the optional-package helper and its compatibility shortcut `scripts/setup_hypr.jl`. `scripts/optional_packages.jl` refuses to run if it differs from the HYPR gitlink. |
 | `VisualizerSource.toml` | The SpaceAGORAVisualizer revision that `scripts/setup_visualizer.jl` installs. The viewer is not a submodule here. |
 
 The GRAMSuite wrapper is a submodule too, at `data/GRAMSuite.jl`. SpaceAGORA
@@ -41,11 +41,10 @@ Use `mujoco` or `edg` in place of `hypr` for the other companions.
 - `check` confirms that the checkout is at the pinned revision, comes from the
   declared repository, has the declared name, UUID and version, and has no local
   changes. It does not run the package or its tests.
-- `setup` does `checkout` and `check`, then runs the appropriate installer
-  with this SpaceAGORA checkout: `scripts/setup_hypr.jl` for HYPR, the
-  companion's `scripts/setup_env.jl` for MuJoCo and EDG. The environment
-  directory must be outside the SpaceAGORA checkout. Installing can download
-  packages.
+- `setup` does `checkout` and `check`, then runs the selected companion's
+  `scripts/setup_env.jl` with this SpaceAGORA checkout. HYPR, MuJoCo and EDG
+  use the same generated installation policy. The environment directory must
+  be outside both source checkouts. Installing can download packages.
 
 The helper never resets a checkout with local changes or at another revision;
 it stops and asks you to sort that out. The environment it creates points at

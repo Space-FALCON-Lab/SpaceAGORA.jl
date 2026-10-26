@@ -71,7 +71,7 @@ Prepare the optional HYPR companion environment once from the repository root,
 and the examples environment if it is not prepared yet:
 
 ```text
-julia --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
+julia --startup-file=no examples/rpo_planner_env/setup.jl
 julia --startup-file=no examples/setup.jl
 ```
 
@@ -81,13 +81,13 @@ packages, so both environments are needed. Baseline examples use
 `--project=examples`.
 
 ```text
-SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=examples/rpo_planner_env examples/Earth_RPO_CubeSat_MPC_PlannerComparison.jl --runs 1
+SPACEAGORA_EXAMPLE_SMOKE=1 julia --startup-file=no examples/rpo_planner_env/run.jl examples/Earth_RPO_CubeSat_MPC_PlannerComparison.jl --runs 1
 ```
 
 ## Run the robot-arm and compliant multibody dynamics smoke batch
 
 ```text
-SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=examples/rpo_planner_env examples/Robot_Arm_Planner_Cloth_Demo.jl
+SPACEAGORA_EXAMPLE_SMOKE=1 julia --startup-file=no examples/rpo_planner_env/run.jl examples/Robot_Arm_Planner_Cloth_Demo.jl
 ```
 
 The example filename and output identifiers keep their historical "Cloth"

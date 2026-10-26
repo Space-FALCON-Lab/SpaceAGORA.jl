@@ -23,8 +23,9 @@ report.commands[1].log
 
 To plan with HYPR instead, load `SpaceAGORA` and `HYPR` in your project and
 pass `planner=HYPRRPOPlanner(RPOPSOConfig(...))`. The separate
-`examples/rpo_planner_env` project fixes exact, deterministic settings and runs
-both planners through this interface; its README covers setup and offline
+`examples/rpo_planner_env` scripts prepare an environment outside the source
+checkout, fix exact, deterministic settings, and run both planners through this
+interface; their README covers setup and offline
 runs. The default two-second case is only the start of a maneuver, the two
 planners need not return the same trajectory, and the case is not a completed
 rendezvous.
@@ -270,26 +271,31 @@ julia --startup-file=no scripts/optional_packages.jl setup hypr /path/to/my-rpo-
 
 The helper checks out `packages/robotics/HYPR.jl` at the revision the
 SpaceAGORA repository records, which agrees with `packages/HYPRSource.toml`,
-verifies the checkout's identity and clean state, and then runs the HYPR
-installer with that path. The result is HYPR 0.5.0 next to the current
+verifies the checkout's identity and clean state, and then runs the companion's
+`scripts/setup_env.jl` with that path and this core checkout. The result is HYPR 0.5.0 next to the current
 SpaceAGORA source. HYPR stays optional for the simulator core, and there is no
 separate compatibility loader to install.
 
-The installer can also fetch HYPR from its own repository:
+The older command remains as a compatibility shortcut to the same installer:
 
 ```sh
 julia --startup-file=no scripts/setup_hypr.jl /path/to/my-rpo-project
 ```
 
-Without an override, this route resolves the immutable HYPR source pin
-directly from the HYPR repository instead of using the submodule checkout. For
-coordinated local development, `SPACEAGORA_HYPR_PATH` substitutes another local
-HYPR checkout; an environment built that way does not show that the published
-installation works. A failed resolution is an error; the installer never falls
-back to another revision. Both routes seed a new environment with the core
-manifest and preserve the versions it records (`Pkg.PRESERVE_ALL`). See
-[Optional package commands](installation_environment.md#Optional-package-commands)
-for the source checks and the Git-clone requirement.
+Without an override, this shortcut checks out the same pinned submodule. For
+coordinated local development, `SPACEAGORA_HYPR_PATH` explicitly substitutes
+another local HYPR checkout; that override is not published-installation evidence.
+Failed resolution is an error, not a fallback to another revision. HYPR, EDG and
+MuJoCo use the same shared installation policy: the destination must be outside
+both source checkouts, and existing unmanaged directories are refused.
+
+To preserve an older HYPR environment, migrate its project, manifest and local
+preferences into a fresh destination with
+`scripts/setup_hypr.jl --migrate-from /path/to/old /path/to/new`. This leaves the
+old directory unchanged, selects the current core and HYPR together, and removes
+the retired `SpaceAGORAHYPR` loader. Migration refuses other packages that still
+require that loader; update those packages first. See [Optional package commands](installation_environment.md#Optional-package-commands)
+for source checks and Git-clone requirements.
 
 Start Julia with `--project=/path/to/my-rpo-project` and load the companion
 explicitly:
@@ -322,14 +328,15 @@ need HYPR. The baseline LQ-MPC controller still needs OSQP, with or without
 HYPR. Installing HYPR separately does not change the physical limits, the
 planning reserve or the numerical policies.
 
-The two-planner demonstration has its own environment, which installs both
-packages. From the repository root:
+The two-planner demonstration prepares an external managed environment with
+both packages. From the repository root:
 
 ```sh
-julia --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
+julia --startup-file=no examples/rpo_planner_env/setup.jl
 ```
 
-The HYPR RPO and compliant robot-arm examples also start from that project.
+The HYPR RPO and compliant robot-arm examples select that environment through
+`examples/rpo_planner_env/run.jl`.
 They load the companion and then continue in the examples environment, which
 `julia --startup-file=no examples/setup.jl` prepares. The ISS viewer demo,
 `scripts/dev/viewer_demos/iss_hypr.jl`, runs from a visualizer environment

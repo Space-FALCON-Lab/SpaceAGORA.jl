@@ -74,24 +74,24 @@ from the tracked ISS display model. It needs the starter SPICE kernels in the
 GRAMSuite asset folder, but not native GRAM or private telemetry. The station
 model and the controller are a demonstration, not an ISS flight model.
 
-Add HYPR to the visualizer environment and prepare the examples environment if
-you have not already:
+Copy the prepared visualizer environment into a fresh HYPR-enabled environment,
+leaving the original unchanged, and prepare the examples environment if needed:
 
 ```text
-julia --startup-file=no scripts/setup_hypr.jl /path/to/visualizer-env
+julia --startup-file=no scripts/setup_hypr.jl --migrate-from /path/to/visualizer-env /path/to/hypr-visualizer-env
 julia --startup-file=no examples/setup.jl
 ```
 
 Start with the short hop:
 
 ```sh
-SPACEAGORA_DEMO_SMOKE=1 julia --project=/path/to/visualizer-env scripts/dev/viewer_demos/iss_hypr.jl
+SPACEAGORA_DEMO_SMOKE=1 julia --project=/path/to/hypr-visualizer-env scripts/dev/viewer_demos/iss_hypr.jl
 ```
 
 Leave out `SPACEAGORA_DEMO_SMOKE` for the complete approach:
 
 ```sh
-julia --project=/path/to/visualizer-env scripts/dev/viewer_demos/iss_hypr.jl
+julia --project=/path/to/hypr-visualizer-env scripts/dev/viewer_demos/iss_hypr.jl
 ```
 
 The script prints the HTML path under

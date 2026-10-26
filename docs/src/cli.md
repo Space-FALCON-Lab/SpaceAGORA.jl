@@ -37,7 +37,7 @@ The rest depends on the script the command starts, not on the CLI:
 | `run --example=<no-GRAM example>` (`AGORA_Basic_Quickstart.jl`, `AGORA_Earth_NoGRAM.jl`, `AGORA_Earth_MonteCarlo.jl`, `Solar_Panel_Cloth_Deployment_Demo.jl`) | nothing |
 | `run --example=<GRAM-backed or SPICE-backed example>` (`AGORA_Earth_Aerobraking.jl`, `AGORA_Odyssey.jl`, `AGORA_Vex.jl`, `Earth_Thruster_Test.jl`, `AGORA_Keplerian.jl`) | the `data/GRAMSuite.jl` submodule ([GRAMSuite Setup](user/gramsuite_setup.md)); the GRAM-backed examples also need the native GRAM library built |
 | `run --example=` an EDG example (`odyssey_surrogate.jl`, `AGORA_Odyssey_Energy_Depletion_Control_Test.jl`) | a prepared project that declares `SpaceAGORA` and `SpaceAGORAEDG`; see [Run an example](#Run-an-example) |
-| HYPR and RPO examples | the prepared `examples/rpo_planner_env` environment, and SPICE kernels for the RPO cases. Run them directly with the commands in the [Examples Catalog](user/examples_catalog.md#RPO-and-robotics); the CLI does not select that environment. |
+| HYPR and RPO examples | the external environment prepared by `examples/rpo_planner_env/setup.jl`, and SPICE kernels for the RPO cases. Run them directly with the commands in the [Examples Catalog](user/examples_catalog.md#RPO-and-robotics); the CLI does not select that environment. |
 | `telemetry ...` | the `data/GRAMSuite.jl` submodule: the study loads the vendored `GRAMSuite` package before it reads any scenario, even with `--scenarios=odyssey`. The truth files it grades against are in the repository. |
 | `benchmark ...` | the `data/GRAMSuite.jl` submodule, and the native GRAM library for the GRAM-backed cases |
 

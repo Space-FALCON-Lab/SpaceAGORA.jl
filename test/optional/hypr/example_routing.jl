@@ -1,6 +1,7 @@
 using Test
 const smoke=joinpath(@__DIR__,"..","..","smoke","ci_examples_suite_smoke.jl")
-const routing=Module(:ExampleRoutingWitness)
+module ExampleRoutingWitness end
+const routing=ExampleRoutingWitness
 Base.include(ex -> ex == :(examples = list_examples()) ? :(examples = String[]) : ex,
     routing,smoke)
 @testset "Example commands isolate the optional companion" begin

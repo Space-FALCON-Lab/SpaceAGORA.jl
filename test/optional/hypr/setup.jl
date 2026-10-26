@@ -4,11 +4,11 @@ length(ARGS) == 1 || error("Usage: setup.jl <scratch-directory>")
 directory = abspath(only(ARGS))
 CoreEnvironment.setup(joinpath(directory, "core"))
 OptionalPackages.setup("hypr", joinpath(directory, "hypr"))
-# The integration campaign (optional.jl) also runs the RPO comparison figure
-# tests, whose figures come from SpaceAGORA's PlotlyJS extension: the
-# environment that runs them adds PlotlyJS, as a user's project would.
+# The integration campaign directly imports these test tools. Declare them in
+# its environment rather than relying on the old copied core project to expose
+# transitive dependencies. PlotlyJS activates the comparison-figure extension.
 using Pkg
 Pkg.activate(joinpath(directory, "hypr"))
 # Keep direct package versions, but let transitive dependencies resolve with
 # the newly requested plotting extension in this fresh test environment.
-Pkg.add("PlotlyJS"; preserve=Pkg.PRESERVE_DIRECT)
+Pkg.add(["ComponentArrays", "DiffEqCallbacks", "JSON", "PlotlyJS"]; preserve=Pkg.PRESERVE_DIRECT)

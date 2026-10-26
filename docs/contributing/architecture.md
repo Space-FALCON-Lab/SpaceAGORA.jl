@@ -735,8 +735,11 @@ and proposals describe separate work; they do not reopen delivered repairs.
   discovery and conditional fallback-path insertion through
   `RuntimeServices._prepare_gramsuite_load_path!`. Imports, prepend/append order,
   installation/retry behavior, aliases and native ownership remain with their
-  callers. The runtime benchmark still uses independent model types and adapter
-  methods. See the [GRAM loading contract](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/blob/main/docs/quality/gram_loading_contract.md)
+  callers. The runtime benchmark used independent model types and adapter
+  methods at that revision. It now uses the canonical package model and GRAM
+  extension, preserving loader precedence while adopting the separately accepted
+  numerical baseline described in the [migration evidence](../quality/runtime_benchmark_loading_migration.md).
+  See the [GRAM loading contract](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/blob/main/docs/quality/gram_loading_contract.md)
   before changing a loader policy.
 
 **Benchmark entry point:**

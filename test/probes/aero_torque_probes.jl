@@ -294,8 +294,8 @@ end
             u.sc[1].q .= q
         end
         p = ODEParams(n_sats=1, args=args)
-        p.shared_buffers.et_start[] = SimulationModel.ephemerides_time_seconds(
-            args.initial_time, args.environment_model.ephemerides_model)
+        p.shared_buffers.et_start[] = SimulationModel.ephemerides_epoch_seconds(
+            args.environment_model.ephemerides_model, args.initial_time)
         p.shared_buffers.current_time[] = 0.0
         SimulationEngine._initialize_save_cache_buffers!(p)
         SimulationEngine._initialize_aero_workspace_buffers!(p)
@@ -327,8 +327,8 @@ end
             @test SimulationModel.environment_requirements(model).planet_frame
             @test SimulationModel.environment_requirements(model).atmosphere
             wrapped = dispatch_aero(model)
-            # Before the fix, real engine dispatch enters calcForceTorque for
-            # this wrapper and returns exactly zero torque. Calling only the
+            # Before the fix, real engine dispatch took the retired force hook
+            # for this wrapper and returned exactly zero torque. Calling only the
             # underlying pure wrench would miss that dispatch defect.
             @test norm(wrapped.torque) > 1e-12
             @test wrapped.f ≈ scale * reference.f atol=1e-16 rtol=1e-12
@@ -356,12 +356,9 @@ end
         @test reference.state.q_ib === nothing
         @test reference.torque == no_cop.torque == zero3
         @test reference.f == no_cop.f
-        # Pin the existing legacy force contract as well as wrapped/unwrapped
-        # agreement, because orientation-off scenarios already use the wrapper.
-        legacy_f, legacy_torque = SimulationModel.calcForceTorque(
-            fm, reference.u.sc[1], reference.p, 1)
-        @test reference.f ≈ legacy_f atol=1e-16 rtol=1e-12
-        @test legacy_torque == zero3
+
+        # Wrapped/unwrapped agreement holds, because orientation-off scenarios
+        # already use the wrapper.
 
         for scale in (1.0, 1.7)
             model = TV.ScaledAerodynamicCoefficientfM(fm, scale)
@@ -369,7 +366,7 @@ end
             wrapped_no_cop = dispatch_aero(model; orientation_sim=false, offset=zero3)
             @test wrapped.torque == wrapped_no_cop.torque == zero3
             @test wrapped.f == wrapped_no_cop.f
-            @test wrapped.f ≈ scale * legacy_f atol=1e-16 rtol=1e-12
+            @test wrapped.f ≈ scale * reference.f atol=1e-16 rtol=1e-12
             for (actual, expected) in zip(wrapped.components, reference.components)
                 @test actual ≈ scale * expected atol=1e-16 rtol=1e-12
             end

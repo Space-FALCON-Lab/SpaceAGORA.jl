@@ -5,7 +5,7 @@ using Test
 module SharedMetricsOnly
     using LinearAlgebra, StaticArrays
     const ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
-    include(joinpath(ROOT, "src", "gnc", "shared", "rpo", "path_metrics.jl"))
+    include(joinpath(ROOT, "src", "models", "gnc", "planning", "rpo", "path_metrics.jl"))
 end
 
 @testset "Shared metric kernels need no HYPR configuration" begin

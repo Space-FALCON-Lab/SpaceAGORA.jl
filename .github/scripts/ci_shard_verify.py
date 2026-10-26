@@ -12,18 +12,48 @@ of that universe was not attempted exactly once. The universe comes from the
 Julia side's parse of the sources, not from the planner, so an item the planner
 missed is caught here.
 
-Prints each item's measured minutes, for re-balancing .github/ci-shards.toml.
+Prints each item's measured minutes, for re-balancing .github/ci-shards.toml
+(ci_shard_weights.py), and a warning annotation for each test item that took
+far longer than its planned weight and each shard whose start-up before its
+first item took long (start-up runs in every shard).
 """
 import json
 import os
+import re
 import sys
 import tomllib
 from collections import Counter
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import ci_shard_plan  # noqa: E402
+
+PREAMBLE_WARN_MIN = 6.0
+
 
 def load(path):
     return tomllib.loads(path.read_text()) if path.is_file() else None
+
+
+def slow_timings(matrix, timings):
+    """(row, minutes, planned) for each test item whose measured minutes exceed
+    both twice and five minutes more than the weight the planner used for it,
+    and for each shard preamble over PREAMBLE_WARN_MIN (planned None)."""
+    modes = {e["shard"].rsplit("-", 1)[0] for e in matrix}
+    cfg = tomllib.loads(ci_shard_plan.CONFIG.read_text())["tests"]
+    mode = modes.pop() if len(modes) == 1 else None
+    weights = cfg[mode].get("weights", {}) if mode in cfg else None
+    defaults = cfg[mode]["default_weight"] if mode in cfg else None
+    slow = []
+    for row, secs in sorted(timings.items()):
+        if re.fullmatch(r"[\w-]+-\d+:preamble", row):
+            if secs / 60 > PREAMBLE_WARN_MIN:
+                slow.append((row, secs / 60, None))
+        elif weights is not None and ci_shard_plan.kind(row) in ("suite", "probe", "unit"):
+            planned = float(weights.get(row, defaults.get(ci_shard_plan.kind(row), defaults.get("other", 1.0))))
+            if secs / 60 > max(2 * planned, planned + 5):
+                slow.append((row, secs / 60, planned))
+    return slow
 
 
 def main():
@@ -91,6 +121,17 @@ def main():
     print(f"{kind}: {len(matrix)} shards, {len(universe)} items in the universe")
     for item, secs in sorted(timings.items(), key=lambda kv: -kv[1]):
         print(f"  {secs / 60:6.2f} min  {item}")
+    if kind == "tests":
+        slow = slow_timings(matrix, timings)
+        starts = sorted((m, row.split(":")[0]) for row, m, planned in slow if planned is None)
+        if starts:
+            print(f"::warning title=Slow CI shard start-up::{len(starts)} of {len(matrix)} shards took over "
+                  f"{PREAMBLE_WARN_MIN:g} min before their first item (longest {starts[-1][0]:.1f} min, "
+                  f"{starts[-1][1]}); tests run there repeat in every shard")
+        for row, minutes, planned in slow:
+            if planned is not None:
+                print(f"::warning title=Stale CI shard weight::{row} took {minutes:.1f} min, planned "
+                      f"{planned:.1f} min; refresh .github/ci-shards.toml with .github/scripts/ci_shard_weights.py")
     if problems:
         print("\nFAILED:")
         for p in problems:

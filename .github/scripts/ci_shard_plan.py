@@ -60,7 +60,7 @@ def unit_files():
 
 def example_files():
     # Mirrors list_examples() in test/smoke/ci_examples_suite_smoke.jl.
-    skip = {"common.jl", "aerobraking_mission_plot_utils.jl", "odyssey_surrogate.jl"}
+    skip = {"common.jl", "setup.jl", "odyssey_surrogate.jl"}
     return sorted(p.name for p in (ROOT / "examples").glob("*.jl") if p.name not in skip)
 
 

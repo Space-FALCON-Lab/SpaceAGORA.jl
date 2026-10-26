@@ -6,9 +6,6 @@ const STUDIES = normpath(joinpath(@__DIR__, "..", "..", "..", "benchmarks", "stu
 for file in ("cli.jl", "modes.jl", "cases.jl", "reporting.jl", "execution.jl")
     include(joinpath(STUDIES, "parallelization_performance", file))
 end
-for file in ("cli.jl", "main.jl", "reporting.jl")
-    include(joinpath(STUDIES, "paper_parallelization_benchmarks", file))
-end
 
 cmd_env(cmd) = Dict(k => v for (k, v) in (split(pair, '='; limit=2) for pair in cmd.env))
 worker_command(mode; threads=4) = ppc_worker_cmd(PPCConfig(process_workers=4);
@@ -174,13 +171,13 @@ end
 
 @testset "aggregation keeps budget conditions and their own baselines" begin
     raw = budget_rows()
-    for summarize in (df -> ppc_summarize(df, DataFrame()), _ppb_aggregate)
+    for summarize in (df -> ppc_summarize(df, DataFrame()),)
         result = summarize(raw)
         @test nrow(result) == 6
         @test Set(result.budget_condition) == Set(["uncapped", "equal_core"])
         @test :core_budget in propertynames(result)
         @test :hardware_class in propertynames(result)
-        speedup = summarize === _ppb_aggregate ? :speedup : :speedup_vs_serial
+        speedup = :speedup_vs_serial
         for (condition, expected) in (("uncapped", 2.0), ("equal_core", 4.0))
             row = only(eachrow(result[(result.mode .== "predictive") .&
                                       (result.budget_condition .== condition), :]))
@@ -193,12 +190,6 @@ end
         @test nrow(summarize(mixed)) == 6
         @test Set(summarize(mixed).budget_condition) == Set(["legacy_unrecorded", "equal_core"])
     end
-    agg = _ppb_aggregate(raw)
-    @test only(agg[(agg.mode .== "predictive") .& (agg.budget_condition .== "uncapped"), :regret_vs_best_static]) == 0.25
-    @test only(agg[(agg.mode .== "predictive") .& (agg.budget_condition .== "equal_core"), :regret_vs_best_static]) == -0.5
-    replace!(agg.mode, "predictive" => "full_smart")
-    report = _ppb_router_regret_summary(agg)
-    @test nrow(report) == 4
-    @test Set(report.budget_condition) == Set(["uncapped", "equal_core"])
+
 end
 end # module

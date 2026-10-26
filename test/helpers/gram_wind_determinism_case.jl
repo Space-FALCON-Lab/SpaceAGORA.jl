@@ -54,3 +54,35 @@ function wind_case_first_native_winds(model)
     w = Base.invokelatest(getfield(core.gram, :get_winds_state), core.gram_atmosphere)
     return (w.perturbedEWWind, w.perturbedNSWind, w.perturbedVerticalWind)
 end
+
+# Run once in a fresh child after Earth is loaded. The Mars system SPK can
+# change Earth's ephemeris too, so an Earth cache entry at the same epoch must
+# be refreshed before the next atmosphere query. Keeping this in the existing
+# children makes the load order independent of earlier test files.
+function wind_case_kernel_refresh()
+    ext = Base.get_extension(SpaceAGORA, :SpaceAGORAGRAMSuiteExt)
+    planets = SM.Planets
+    epoch = SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0)
+    return withenv("SPACEAGORA_GRAM_EPHEMERIS_CACHE" => "on") do
+        ephemeris() = ext._gram_spice_ephemeris_state(
+            "earth", epoch, 0.0, rad2deg(0.3), rad2deg(-1.2))
+        before = ephemeris()
+        furnished_before = copy(planets._FURNISHED_KERNELS)
+        SM.Mars("", WD_SPICE_PATH)
+        added_kernels = setdiff(planets._FURNISHED_KERNELS, furnished_before)
+        mars_kernel_added = any(path -> basename(path) in
+            ("mar097_GRAM.bsp", "mar097.bsp"), added_kernels)
+        automatic = ephemeris()
+        uncached = withenv(ephemeris, "SPACEAGORA_GRAM_EPHEMERIS_CACHE" => "off")
+
+        used = wind_case_model()
+        path = [(150.0e3 - 50.0k, 0.3 + 1e-3k, -1.2 + 2e-3k, 0.5k) for k in 0:20]
+        query(model) = [EM._gram_point_density(model, point..., true) for point in path]
+        reference = query(wind_case_model())
+        query(used); query(used)
+        reset = EM.reset_density_model_history!(used)
+        return (mars_kernel_added=mars_kernel_added, before=before,
+            automatic=automatic, uncached=uncached, reset=reset,
+            reference=reference, reseeded=query(used))
+    end
+end

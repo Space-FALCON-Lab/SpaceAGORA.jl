@@ -1,6 +1,7 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const SRC_ROOT = joinpath(REPO_ROOT, "src")
-const SOURCE_ROOTS = (SRC_ROOT, joinpath(REPO_ROOT, "packages", "SpaceAGORAHYPR", "src"))
+const EDG_SRC_ROOT = joinpath(REPO_ROOT, "packages", "gnc", "SpaceAGORAEDG.jl", "src")
+const SOURCE_ROOTS = (SRC_ROOT, EDG_SRC_ROOT)
 
 using Printf
 
@@ -22,17 +23,22 @@ end
 
 const MAIN_FILE_MIN_OVERRIDES = Dict(
     # Adapter-only file is exercised indirectly via config/entrypoint tests.
-    "src/simulation/engine/adapters/from_env.jl" => 70.0,
+    "src/orchestration/simulation/engine/adapters/from_env.jl" => 70.0,
     # Dynamic RHS is branch-heavy across many mission/control combinations.
-    "src/simulation/engine/dynamics_rhs.jl" => 70.0,
+    "src/orchestration/simulation/engine/dynamics_rhs.jl" => 70.0,
 
 )
 
 const CRITICAL_FILE_MIN_OVERRIDES = Dict(
-    "src/simulation/engine/execution.jl" => 90.0,
-    "src/gnc/control/propulsive_maneuvers.jl" => 90.0,
-    "src/core/interfaces/reference_system.jl" => 90.0,
+    "src/orchestration/simulation/engine/execution.jl" => 90.0,
+    "src/models/gnc/control/maneuvers/propulsive_maneuvers.jl" => 90.0,
+    "src/foundation/core/interfaces/reference_system.jl" => 90.0,
 )
+
+# A moved or misspelled owner must not silently fall back to a weaker threshold.
+for relative in union(keys(MAIN_FILE_MIN_OVERRIDES), keys(CRITICAL_FILE_MIN_OVERRIDES))
+    isfile(joinpath(REPO_ROOT, relative)) || error("Missing coverage-threshold owner: $relative")
+end
 
 const COVERAGE_WINDOW_SECONDS = let raw = get(ENV, "SPACEAGORA_COVERAGE_WINDOW_SECONDS", "900")
     parsed = tryparse(Float64, raw)
@@ -308,9 +314,26 @@ function enforce_gate(summaries::Vector{CoverageSummary})
     end
 end
 
+# The extracted kernels retain the same coverage thresholds as their old core
+# paths. Missing companion artifacts must not silently shrink the denominator.
+function require_edg_coverage(summaries; source_root::String=EDG_SRC_ROOT,
+                              repo_root::String=REPO_ROOT)
+    isdir(source_root) || error("Pinned EDG source is absent from the coverage gate: $source_root")
+    expected = String[]
+    for (root, _, files) in walkdir(source_root), file in files
+        endswith(file, ".jl") && push!(expected, relpath(joinpath(root, file), repo_root))
+    end
+    isempty(expected) && error("Pinned EDG source contains no Julia files")
+    measured = Set(summary.path for summary in summaries)
+    missing = sort!(filter(path -> !(path in measured), expected))
+    isempty(missing) || error("EDG source has no coverage artifact: " * join(missing, ", "))
+    return nothing
+end
+
 function run_coverage_quality_gate()
     cov_files = list_active_cov_files()
     summaries = summarize_coverage(cov_files)
+    require_edg_coverage(summaries)
     print_summary(summaries)
     enforce_gate(summaries)
     println("coverage_quality_gate_ok")

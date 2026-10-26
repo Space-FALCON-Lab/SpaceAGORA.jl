@@ -6,11 +6,11 @@ function _read(rel)
     return read(path, String)
 end
 
-calib_src   = _read(joinpath("src", "simulation", "engine", "rhs_calibration.jl"))
-setup_src   = _read(joinpath("src", "simulation", "engine", "setup.jl"))
-engine_src  = _read(joinpath("src", "simulation", "engine", "simulation_engine.jl"))
-exec_src    = _read(joinpath("src", "simulation", "engine", "execution.jl"))
-types_src   = _read(joinpath("src", "core", "types", "runtime_types.jl"))
+calib_src   = _read(joinpath("src", "orchestration", "simulation", "engine", "rhs_calibration.jl"))
+setup_src   = _read(joinpath("src", "orchestration", "simulation", "engine", "setup.jl"))
+engine_src  = _read(joinpath("src", "orchestration", "simulation", "engine", "simulation_engine.jl"))
+exec_src    = _read(joinpath("src", "orchestration", "simulation", "engine", "execution.jl"))
+types_src   = _read(joinpath("src", "orchestration", "simulation", "state", "runtime_types.jl"))
 
 # ── §1: All required functions present in rhs_calibration.jl ─────────────────
 

@@ -13,15 +13,8 @@ using SpaceAGORA
 const SCamp = SpaceAGORA.SimulationCampaigns
 const PCost = SpaceAGORA.SimulationModel.ParallelCost
 
-_curve() = PCost.RateCurve([0.0, 10.0], [1.0, 1.0])
-
 function _constants(; alpha = 0.156, beta_alloc = 0.00605)
     return PCost.MachineConstants(
-        simd_lane = _curve(), coeff_touch = _curve(), parallel_speedup = _curve(),
-        ns_per_scalar_item = 1.0, ns_per_queue_node = 1.0,
-        dispatch_pool_ns_base = 1.0, dispatch_pool_ns_per_worker = 1.0,
-        dispatch_batch_ns_base = 1.0, dispatch_batch_ns_per_worker = 1.0,
-        ns_per_atomic = 1.0, reference_fma_ns = 1.0, reference_mem_ns = 1.0,
         usl_alpha_base = alpha, usl_beta_alloc = beta_alloc,
         schema_version = PCost.CALIBRATION_SCHEMA_VERSION,
     )
@@ -32,7 +25,7 @@ _cfg(; threads, heap_model = :locals) = SCamp.PredictivePlannerConfig(
     route_switch = false, heap_model = heap_model, local_thrash = 3.0)
 
 # The round tail extracted from the archived run: the median over its 55
-# pure-process rows (scripts/extract_campaign_cost_terms.py).
+# pure-process rows (scripts/calibration/extract_campaign_cost_terms.py).
 const TRX50_TAIL = 0.2261
 
 _plan(; n, threads, pool = threads, heap_model = :locals, terms = SCamp.PredictiveCostTerms(),
@@ -350,7 +343,7 @@ end
 end
 
 # The `:locals` model's fitted pairwise term, s(k) = 1 + c k (k - 1), with c
-# fitted by scripts/extract_campaign_cost_terms.py on the archived gate run:
+# fitted by scripts/calibration/extract_campaign_cost_terms.py on the archived gate run:
 # least squares over the four measured mixed-plan points (k = 4, 7, 15, 31).
 const TRX50_LOCAL_SLOPE = 0.006011
 

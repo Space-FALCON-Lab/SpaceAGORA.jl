@@ -43,6 +43,17 @@ fresh_controller() = RC.init_rpo_lqmpc(0.001, 1.0, Matrix{Float64}(I, 6, 6),
     @test all(isfinite, RC.rpo_lqmpc_control(second, x, ref))
 end
 
+@testset "RPO controller's solver adapts on a fixed schedule" begin
+    # OSQP's default rho interval (0) is chosen during the first solve from the
+    # measured setup time; a fixed interval keeps the commands independent of timing.
+    # OSQP.jl ignores unknown setting names, so the native workspace is read back.
+    settings(c) = unsafe_load(unsafe_load(c.qp_model.workspace).settings)
+    for c in (fresh_controller(), deepcopy(fresh_controller()))
+        s = settings(c)
+        @test s.adaptive_rho == 1 && s.adaptive_rho_interval == 25 && s.time_limit == 0.0
+    end
+end
+
 @testset "Particle random streams are independent of thread scheduling" begin
     geometry = RM.RPOReferenceGeometry(RM.RPOStationGeometry(
         [0.0 0.0 0.0; -0.5 0.0 0.5; 0.0 0.0 0.0]; keepout_radius_m=0.25);

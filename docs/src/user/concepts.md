@@ -1,7 +1,7 @@
 # Concepts
 
 Use this page when you want the mental model behind the main workflows without
-digging into maintainer-only architecture documents.
+reading the contributor documentation kept in the repository.
 
 This page is for users who can already run commands and now want to understand
 which route, mode, or surface is appropriate for their work.
@@ -9,12 +9,12 @@ which route, mode, or surface is appropriate for their work.
 Shortest successful command:
 
 ```text
-julia --project=. src/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --output-dir=output/cli_run
+julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --output-dir=output/cli_run
 ```
 
 What to read next:
 
-- [First Simulation](first_simulation.md)
+- [First Simulation](first_script.md)
 - [Assets & Modes](../assets.md)
 - [Public API](../generated/public_api.md)
 

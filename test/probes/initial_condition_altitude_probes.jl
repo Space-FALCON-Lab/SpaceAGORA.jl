@@ -5,7 +5,7 @@ using SPICE: recgeo
 using SpaceAGORA
 using SpaceAGORA.SimulationModel: InitialCondition, CartesianInitialCondition,
     Earth, Mars, Venus, InitialTime, SimpleEphemeridesModel,
-    ephemerides_time_seconds, planet_frame_lpi
+    ephemerides_epoch_seconds, ephemerides_frame_lpi
 
 const ALT_ENGINE = SpaceAGORA.SimulationEngine
 const ALT_GEODESY = SpaceAGORA.SimulationModel.Geodesy
@@ -90,8 +90,8 @@ _altitude_probe_elements(ic) = (ic.a, ic.e, ic.i, ic.ω, ic.Ω, ic.ν, ic.q, ic.
 
         epoch = InitialTime(year=2024, month=3, day=2, hour=4, minute=5, second=6.0)
         ephemerides = SimpleEphemeridesModel()
-        time_seconds = ephemerides_time_seconds(epoch, ephemerides)
-        epoch_frame = planet_frame_lpi(planet, time_seconds, ephemerides)
+        time_seconds = ephemerides_epoch_seconds(ephemerides, epoch)
+        epoch_frame = ephemerides_frame_lpi(ephemerides, planet, time_seconds)
         from_epoch = InitialCondition(planet; inputs...,
             initial_time=epoch, ephemerides_model=ephemerides)
         explicit_epoch = InitialCondition(planet; inputs..., L_PI=epoch_frame)

@@ -3,6 +3,7 @@ using StaticArrays
 using LinearAlgebra
 using Random
 using SpaceAGORA
+import PlotlyJS # the comparison figures come from its package extension
 const SM = SpaceAGORA.SimulationModel
 
 @testset "RPO RTN frame helpers" begin
@@ -134,32 +135,6 @@ end
             adaptive_enable=true,
         )
 
-        retime_geom = SM.RPOReferenceGeometry(
-            SM.RPOStationGeometry(reshape([0.0, 0.0, 0.0], 3, 1); keepout_radius_m=0.0);
-            chaser=SM.RPOCubeSatGeometry(dims_m=(0.02, 0.02, 0.02)),
-        )
-        retime_cfg = SM.RPOPSOConfig(
-            sample_ds_m=0.05,
-            curve_type=:polyline,
-            retime_dt_s=1.0,
-            retime_reaction_time_s=0.0,
-            retime_a_max_mps2=0.5,
-            retime_speed_scale=1.0,
-            retime_min_speed_mps=0.0,
-            retime_max_speed_mps=Inf,
-            retime_max_steps=100,
-            adaptive_enable=false,
-        )
-        retime_path = [
-            0.21 0.31;
-            0.0  0.0;
-            0.0  0.0
-        ]
-        _, _, v_zero_safe = SM.GuidanceHooks.rpo_retime_path(retime_path, retime_geom, retime_cfg; safe_distance_m=0.0)
-        _, _, v_large_safe = SM.GuidanceHooks.rpo_retime_path(retime_path, retime_geom, retime_cfg; safe_distance_m=0.19)
-        @test v_large_safe[1] ≈ v_zero_safe[1]
-        @test v_zero_safe[1] ≈ sqrt(2.0 * retime_cfg.retime_a_max_mps2 * 0.21)
-
         modular_cfg = SM.rpo_pso_config(SM.RPOPSOConfigurator(
             swarm=SM.RPOPSOSwarmSettings(
                 n_waypoints=2,
@@ -215,17 +190,7 @@ end
         @test SM.RPOPSOConfig().search_margin_m == 10.0
         @test SM.RPOPSOConfig().reexplore_search_margin_scale == 2.0
         @test SM.RPOPSOConfig().rrt_warmstart_enable === false
-        warmstart_bounds_cfg = SM.rpo_pso_config(modular_cfg; pso_rrt_warmstart_box_margin=0.25)
-        warmstart_lo, warmstart_hi = SM.GuidanceHooks.rpo_pso_warmstart_bounds(
-            [
-                -1.0 0.0 2.0;
-                 0.0 1.0 0.5;
-                 0.0 0.0 0.0
-            ],
-            warmstart_bounds_cfg,
-        )
-        @test warmstart_lo ≈ SVector{3, Float64}(-1.25, -0.25, -0.25)
-        @test warmstart_hi ≈ SVector{3, Float64}(2.25, 1.25, 0.25)
+        @test SM.rpo_pso_config(modular_cfg; pso_rrt_warmstart_box_margin=0.25).rrt_warmstart_box_margin_m == 0.25
         updated_cfg = SM.rpo_pso_config(modular_cfg; pso_particles=11, pso_cull_start_iter=2, pso_rrt_warmstart_iters=5)
         @test updated_cfg.n_particles == 11
         @test updated_cfg.cull_start_iter == 2
@@ -245,69 +210,6 @@ end
         @test warm_plan.warmstart.n_points >= 2
         @test warm_plan.early_stopped === true
         @test length(warm_plan.cost_history) < updated_cfg.n_iters
-
-        fixed_cfg, adaptive_stats = SM.GuidanceHooks.rpo_adaptive_pso_config(
-            modular_cfg,
-            SVector{3, Float64}(-6.0, 0.0, 0.0),
-            SVector{3, Float64}(6.0, 0.0, 0.0),
-            geom;
-            safe_distance_m=0.1,
-        )
-        @test fixed_cfg.n_particles == modular_cfg.n_particles
-        @test adaptive_stats.enabled === false
-
-        cull_cfg = SM.RPOPSOConfig(
-            n_waypoints=3,
-            n_particles=4,
-            n_iters=1,
-            cull_enable=true,
-            cull_fraction_max=0.25,
-            cull_start_iter=1,
-            cull_noise_scale=0.0,
-            cull_arc_velocity_scale=0.0,
-            adaptive_enable=false,
-        )
-        start = SVector{3, Float64}(0.0, 0.0, 0.0)
-        goal = SVector{3, Float64}(10.0, 0.0, 0.0)
-        gbest_path = [
-            0.0 2.5 5.0 7.5 10.0;
-            0.0 2.0 3.0 2.0  0.0;
-            0.0 0.0 0.0 0.0  0.0
-        ]
-        gbest = [gbest_path[:, j] for j in 2:4]
-        gbest = reduce(vcat, gbest)
-        dim = length(gbest)
-        positions = repeat(gbest, 1, 4)
-        velocities = fill(1.0, dim, 4)
-        pbest = copy(positions)
-        pbest_cost = [1.0, 2.0, 3.0, 4.0]
-        lo_rep = fill(-20.0, dim)
-        hi_rep = fill(20.0, dim)
-        replaced = SM.GuidanceHooks.rpo_pso_cull_swarm!(
-            positions,
-            velocities,
-            pbest,
-            pbest_cost,
-            lo_rep,
-            hi_rep,
-            gbest,
-            start,
-            goal,
-            3,
-            cull_cfg,
-            1,
-            MersenneTwister(3),
-        )
-        @test replaced == 1
-        expected_cull = zeros(dim)
-        for j in 1:3
-            q_star = SVector{3, Float64}(gbest_path[:, j + 1])
-            q_line = (1.0 - j / 4) * start + (j / 4) * goal
-            q_loc = SM.GuidanceHooks.rpo_pso_project_to_segment(q_star, gbest_path[:, j], gbest_path[:, j + 2])
-            expected_cull[(3 * (j - 1) + 1):(3 * j)] .= q_star + 0.6 * (q_line - q_star) + 0.4 * (q_loc - q_star)
-        end
-        @test positions[:, 4] ≈ expected_cull
-        @test all(velocities[:, 4] .== 0.0)
 
         refine_cfg = SM.RPOPSOConfig(
             n_waypoints=2,
@@ -384,8 +286,15 @@ end
         retime_clearance_m=0.5,
         sphere_surface_samples=160,
     )
-    decision = SM.GuidanceHooks.rpo_replanning_decision(plan, SVector{3, Float64}(1.0, 0.0, 0.0), geom, behind, 1.0)
+    # Match the measured x=1 position to its reference time. At t=1 the
+    # reference is still x=-1, so reconnecting to its remaining route correctly
+    # approaches the sphere; it is not a behind-only obstacle test.
+    decision = SM.GuidanceHooks.rpo_replanning_decision(plan, SVector{3, Float64}(1.0, 0.0, 0.0), geom, behind, 3.0)
     @test decision.action == :none
+    @test decision.reason == :clearance_ok
+    decision = SM.GuidanceHooks.rpo_replanning_decision(plan, SVector{3, Float64}(1.0, 0.0, 0.0), geom, behind, 1.0)
+    @test decision.action == :retime
+    @test decision.reason == :low_clearance_remaining_path
 
     disturbed = SM.GuidanceHooks.RPOReplanningConfig(
         safe_distance_m=0.1,
@@ -439,9 +348,10 @@ end
         safe_distance_m=0.1,
         retime_clearance_m=0.5,
     )
-    decision = SM.GuidanceHooks.rpo_replanning_decision(plan, SVector{3, Float64}(0.0, 0.0, 0.0), geom, same_goal, 1.0)
+    decision = SM.GuidanceHooks.rpo_replanning_decision(plan, SVector{3, Float64}(0.0, 0.0, 0.0), geom, same_goal, 2.0)
     @test decision.action == :none
-    @test decision.reason == :no_active_spheres
+    # The station and reference are still checked when no added sphere is active.
+    @test decision.reason == :clearance_ok
 end
 
 @testset "RPO planner comparison smoke csv-only outputs" begin
@@ -517,12 +427,33 @@ end
             write_plotly_outputs=false,
             rng_seed=cfg.rng_seed,
         )
+        # A misspelled planner is refused with the valid names, never run as another planner.
+        valid_planner_names = (":hypr", ":pso_unrefined", ":rrt_connect", ":rrt_connect_bezier", ":rrt_star", ":chomp", ":stomp")
+        typo_message = try
+            SM.normalize_rpo_comparison_planner_type(:stopm)
+            ""
+        catch err
+            err isa ArgumentError ? err.msg : ""
+        end
+        @test occursin("planner stopm.", typo_message)
+        @test all(occursin(name, typo_message) for name in valid_planner_names)
+        if !SpaceAGORA.hypr_available()
+            # Core keeps this explicit boundary; the required optional-HYPR job
+            # runs this same file with the companion and exercises the results below.
+            @test_throws SpaceAGORA.HYPRUnavailableError SM.rpo_run_planner_comparison_batch(cases, geom, cfg)
+            return
+        end
         batch = SM.rpo_run_planner_comparison_batch(cases, geom, cfg)
         rows = SM.GuidanceHooks.rpo_flatten_planner_results(batch)
         @test SM.normalize_rpo_comparison_planner_type(:rrtconnect) == :rrt_connect
         @test SM.normalize_rpo_comparison_planner_type(:rrt_connect_bezier) == :rrt_connect_bezier
         @test SM.normalize_rpo_comparison_planner_type(:unrefined_pso) == :pso_unrefined
         @test SM.normalize_rpo_comparison_planner_type(:rrtstar) == :rrt_star
+        # A name is not a planner (name selection was removed in 0.5.0).
+        @test_throws MethodError SM.rpo_plan_comparison_path(:stopm, cases[1].start_rtn, cases[1].goal_rtn, geom, cfg;
+            rng=MersenneTwister(cfg.rng_seed))
+        @test_throws MethodError SM.RPOPlannerComparisonConfig(planners=[:hypr, :stopm], pso_config=cfg.pso_config,
+            output_dir=output_dir, write_plotly_outputs=false, show_progress=false)
         @test Set([row.planner for row in rows]) == Set([:hypr, :pso_unrefined, :rrt_connect, :rrt_connect_bezier, :rrt_star, :chomp, :stomp])
         @test all(isfinite(row.fuel_used) && row.fuel_used > 0.0 for row in rows)
         @test all(isfinite(row.fuel_used_pct) && row.fuel_used_pct > 0.0 for row in rows)

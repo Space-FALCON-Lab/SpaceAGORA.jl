@@ -1,6 +1,8 @@
 using Test
 using LinearAlgebra
 using SpaceAGORA
+using SpaceAGORA.SimulationModel.DynamicsKS
+using SpaceAGORA.SimulationModel.ControlHooks: commanded_area_fraction, interpolate_mpc_plan
 
 @testset "selected planet polyfit feeds the MPC density adapter" begin
     planet = SpaceAGORA.SimulationModel.Earth()

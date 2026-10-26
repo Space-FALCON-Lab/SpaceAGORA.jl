@@ -1,8 +1,48 @@
 # Interactive Visualization
 
+!!! note "Optional package"
+    Requires the optional `SpaceAGORAVisualizer` package; see
+    [Install the optional viewer](#Install-the-optional-viewer).
+
 The viewer turns saved results into an HTML page: orbit the central body,
 scrub through time, select a spacecraft and inspect its trajectory. The page
 opens from disk and can be shared with someone who does not have Julia.
+
+## Install the optional viewer
+
+SpaceAGORA writes scene data and portable viewer JSON. The independent
+[SpaceAGORAVisualizer package](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl)
+owns HTML assembly, browser playback and its third-party renderer assets.
+Install the tested combination in a separate environment from the repository root:
+
+```sh
+julia --project=. scripts/setup_visualizer.jl .visualizer-env
+julia --project=.visualizer-env
+```
+
+Then load both packages in Julia:
+
+```julia
+using SpaceAGORA
+using SpaceAGORAVisualizer
+```
+
+The helper selects SpaceAGORAVisualizer 0.2.0, including recorded interlink
+windows and ground-station markers, while the renderer contract remains version 1.
+The helper leaves the root project unchanged. Its immutable companion revision
+is recorded in `packages/VisualizerSource.toml`. You can also install only the viewer in
+another Julia environment to inspect exported JSON without loading SpaceAGORA.
+See the companion's README for that installation and its supported input format.
+
+A simulation can save results and scene data without the viewer installed.
+`export_viewer_payload(prefix; textures=false)` converts those saved files into
+portable `*_viewer.json`; `SpaceAGORAVisualizer.visualize(path)` opens the same
+data as a self-contained HTML file. HTML requests through SpaceAGORA require
+both packages to be loaded, in either order. A missing viewer produces a clear
+error before a requested simulation or visualization campaign starts.
+
+For a reusable definition and a single returned run handle, start with
+[Define, run and inspect a mission](mission_workflows.md).
 
 ## Make your first page
 
@@ -11,6 +51,7 @@ root to put the no-GRAM example and its viewer in a dedicated output directory:
 
 ```julia
 using SpaceAGORA
+using SpaceAGORAVisualizer
 SpaceAGORA.run_cli(["run", "--example=AGORA_Earth_NoGRAM.jl", "--visualize",
                    "--output-dir=output/viewer-earth"])
 ```
@@ -20,6 +61,10 @@ The same directory contains the normal results and
 `simulation_results_scene.json`. Repeating the command overwrites those files.
 Choose another `--output-dir` to keep an earlier run. See
 [Simulation Outputs](outputs.md) for the full output behavior.
+
+![The viewer page for that run: Earth in the centre with the spacecraft's elliptical orbit drawn as a trail coloured by altitude, the run summary at the top left, and the playback controls and overlay checkboxes along the bottom.](../assets/figures/viewer_overview.jpg)
+
+In this screenshot the trail is coloured by altitude with the trail-colour selector. The run has no atmosphere, so the default heat-rate colouring has nothing to show.
 
 For a configuration you already built:
 
@@ -113,26 +158,40 @@ export_visualization("output/viewer-earth/simulation_results";
 ```
 
 The exporter decimates saved rows to the frame and data limits. The page
-reports its resulting cadence. Smaller textures or `textures=false` reduce
+reports its resulting cadence.
+
+Positions are embedded as Float64 for runs of up to 64 spacecraft. Above that,
+they stay Float64 when that keeps the same frames as Float32 within
+`max_frames` and `data_budget_mb`, and are Float32 otherwise. Float32 resolves
+about half a metre at 7000 km, so close formations can jitter.
+`position_precision=:f64` keeps Float64 at the cost of frames;
+`position_precision=:f32` forces Float32. With mission segments, `:f64` can
+refuse an export that `:auto` completes: the boundary rows must fit the budget
+as Float64 frames. The ensemble export applies the same rule to its total
+number of sample spacecraft.
+
+Smaller textures or `textures=false` reduce
 the page size; no texture changes the recorded trajectory. Export defaults to
 `texture_resolution="4k"`. Earth, Mars and Moon also include 8192 x 4096
 textures: opt in with `texture_resolution="8k"` or select the largest available
 tier with `:best`. Venus and Titan fall back to 4k. An 8k image has four times
 the decoded pixels of 4k, and its embedded JPEG also makes the HTML larger.
-The standalone builder likewise defaults to 4k; use `--textures 8k` for
-a page containing the higher tiers.
+The companion standalone builder defaults to `--textures none`. To embed local
+textures, pass `--textures 4k` or `--textures 8k` with
+`--textures-dir /path/to/catalog`. That directory must contain `manifest.toml`
+and the selected image files; the builder does not download textures.
 
 STL, OBJ and uncompressed GLB models can replace link boxes:
 
 ```julia
 export_visualization("output/viewer-earth/simulation_results";
-    models=Dict(1 => "data/models/iss_nasa_3d_resources_b.glb"),
+    models=Dict(1 => "data/scene/models/iss_nasa_3d_resources_b.glb"),
     model_scale=2.4, model_rotation_deg=Dict(1 => (-90, 0, -90)))
 ```
 
 Match the spacecraft ID, scale and orientation to your model. The model is
 display geometry; it does not replace the aerodynamic or structural model.
-`data/models/README.md` and `data/textures/manifest.toml` record asset sources.
+`data/scene/models/README.md` and `data/scene/textures/manifest.toml` record asset sources.
 Bundled mission display meshes include Apollo Lunar Module, Cassini with and
 without Huygens, CYGNSS, Magellan and Mars Odyssey, in addition to ISS. Supply
 the corresponding GLB path through `models`; models are embedded only when
@@ -203,7 +262,7 @@ agree:
 
 ```julia
 export_visualization("output/viewer-earth/simulation_results";
-    models=Dict(1 => "data/models/iss_nasa_3d_resources_b.glb"), model_scale=2.4,
+    models=Dict(1 => "data/scene/models/iss_nasa_3d_resources_b.glb"), model_scale=2.4,
     model_articulations=Dict(1 => [
         (region=(x_min=10.0,), axis=(0.0, 1.0, 0.0), angle_deg=90.0, pivot=:centroid)]))
 ```
@@ -215,7 +274,7 @@ point on the axis in model units, or `:centroid` for the centre of the selected
 vertices' bounding box. Vertices inside the region rotate.
 
 Thruster firing levels saved with the run (the `thruster_level` field, see
-[Simulation Outputs](outputs.md#Visualization-fields)) drive a plume on every
+[Simulation Outputs](output_columns.md#Visualization-fields)) drive a plume on every
 thruster: an additive, flickering cone pair along the thruster's direction,
 long and orange-white for a main engine and short and blue-white for an
 attitude jet, with reach and brightness set by the rated thrust and by the
@@ -236,12 +295,18 @@ Faces turned away from the flow stay cold. The legend reads W/cm². This is a vi
 built from the saved density and the drawn geometry, not the simulation's
 thermal solution; `sc1_heat_rate` remains the saved stagnation value.
 
+![Close-up of the Mars Odyssey model at periapsis of an aerobraking pass, its faces coloured by the heating overlay, with the Martian limb behind it and the selection panel listing altitude, speed, density, dynamic pressure, heat rate and drag.](../assets/figures/viewer_heating_closeup.jpg)
+
+A Mars aerobraking pass with drag, drawn with the NASA Mars Odyssey model from `data/scene/models/` (NASA/JPL/Eyes on the Solar System, NASA 3D Resources).
+
 Click a face of a drawn assembly to inspect it. The face panel reports the
 incidence θ in degrees, the local heat flux ½ρV³cosθ in W/cm², the ram
 pressure ρV²cos²θ in Pa, the airspeed, the flow direction in body axes, the
 face normal in body axes and the spacecraft's inertial position and velocity,
 all updating as the timeline plays. Each row plots like any other channel.
 Escape clears the face selection before the spacecraft selection.
+
+![The same close-up with one face of the model selected: the face panel lists its incidence, local heat flux, ram pressure, airspeed, flow direction and face normal in body axes, and the spacecraft's inertial position, velocity and attitude.](../assets/figures/viewer_face_inspection.jpg)
 
 ## Sun lighting and path tracing
 
@@ -257,7 +322,7 @@ The lighting selector always offers **lighting: real-time**. The default
 self-contained page embeds its renderer and stops there. A page whose import
 map includes the optional path tracer also offers **lighting: path traced when paused**.
 This is available in the standalone builder's `--cdn` mode and pages made with
-`viewer/build_cdn_page.py` unless `--no-pathtracer` is set:
+`SpaceAGORAVisualizer.jl/viewer/build_cdn_page.py` unless `--no-pathtracer` is set:
 the GPU path tracer loads on demand, refines the still image whenever playback
 is paused and hands back to real-time rendering while the timeline moves. When
 the tracer cannot load, the selector offers real-time lighting only and the
@@ -301,7 +366,7 @@ export_visualization("output/viewer-earth/simulation_results";
 
 ## Robot arms
 
-A spacecraft carrying the cloth robot-arm chain records the `arm_pose` field:
+A spacecraft carrying the compliant robot-arm chain records the `arm_pose` field:
 per arm link, the link centre of mass relative to the spacecraft in inertial
 metres and the link's inertial attitude quaternion. The page draws one
 cylinder per link along the link's own vector, a joint sphere at its origin and
@@ -313,7 +378,7 @@ without the body rotation, because the poses are already inertial.
 
 With the default save-field list, a run with the plume-surface effector saves
 the seven `sc{i}_plume_*` columns described in [Plume interaction](plume_interaction.md) and listed in
-[Simulation Outputs](outputs.md#Plume-interaction). The page reads them into
+[Simulation Outputs](output_columns.md#Plume-interaction). The page reads them into
 its plume block and, with the **dust** toggle, draws regolith blown off the
 surface by the descent engine: a particle sheet fed by the saved erosion rate,
 ejecta speed, eroded mass and engine height, a ground haze disk and a scour
@@ -351,7 +416,7 @@ for another quantity. An existing campaign can be exported with
 ## Standalone files
 
 ```text
-python3 viewer/build_standalone.py --out output/viewer.html
+python3 <SpaceAGORAVisualizer-checkout>/viewer/build_standalone.py --out output/viewer.html
 ```
 
 Open the page and choose a CSV or JSON file, body and epoch. CSV accepts
@@ -362,13 +427,11 @@ not replace the frame metadata saved by a simulation.
 
 The default page embeds its renderer and assets and makes no network
 requests. Imported models with external resource URLs can request them. For
-a host that refuses embedded `data:` scripts, `viewer/build_cdn_page.py`
+a host that refuses embedded `data:` scripts, `SpaceAGORAVisualizer.jl/viewer/build_cdn_page.py`
 rewrites an exported page to load the pinned three.js and mp4-muxer from
 `cdn.jsdelivr.net` with the renderer modules inlined; the built page lists
 its network hosts and third-party notices in its footer, and adds fonts
-from Google Fonts only with `--fonts`. See `viewer/README.md`.
-
-See `viewer/README.md` for renderer development, module layout and
+from Google Fonts only with `--fonts`. See [the companion renderer guide](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl/blob/76f9037edb61e19e7314eb4db9bb7772a42f2ddc/viewer/README.md) for renderer development, module layout and
 licensing. Landing dynamics and plume-surface physics are separate from the
 viewer: the page only draws what the run saved.
 
@@ -384,7 +447,7 @@ export_visualization("output/moon-run/simulation_results";
 Reopen `output/moon-run/simulation_results_viewer.html`. The site bundle
 contains `site.json`, the named DEM metadata and `.f32` samples, and optional
 JPEG tiles. The Moon download tools and legacy imagery converter live in
-`scripts/dev/terrain/`; `docs/reference/lunar_imagery_sources.md` explains their
+`scripts/dev/terrain/`; `docs/src/user/lunar_imagery_sources.md` explains their
 Python requirements, commands, data sources and output layout. Downloading
 assets is a separate step. Existing local bundles export without a network
 connection or native GRAM.
@@ -427,3 +490,18 @@ with 1 MiB per JSON document. Imagery accepts at most 8192 tiles through level
 checked against their JPEG header. Paths, including symlinks, must resolve
 inside the site or imagery directory. Export neither downloads terrain nor
 changes propagation, touchdown or atmosphere state.
+
+## Follow mission segments
+
+Runs created with operational segments carry their executed segment history in
+the portable payload. In the standalone viewer, select a segment or a transition
+within the saved playback range to move the timeline to that point. Transitions
+outside that range remain listed but cannot be selected for playback. The
+current-segment label changes as you play or scrub through the run. At a shared
+boundary it names the incoming segment.
+
+The history records actual transition times and reasons, including early stops.
+It does not infer events from a trajectory or display unexecuted segments as
+completed. Old payloads without mission history retain the usual timeline. See
+[Mission Workflows](mission_workflows.md) for segment definitions and command
+actions.

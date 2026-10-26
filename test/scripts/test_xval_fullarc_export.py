@@ -7,7 +7,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-SCRIPT = Path(__file__).resolve().parents[2] / 'scripts' / 'xval_fullarc_export.py'
+SCRIPT = Path(__file__).resolve().parents[2] / 'scripts' / 'xval' / 'xval_fullarc_export.py'
 spec = importlib.util.spec_from_file_location('xval_export', SCRIPT)
 export = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(export)
@@ -33,7 +33,7 @@ class ExportProvenanceTests(unittest.TestCase):
                 degree = {'j0': 0, 'j2': 2, 'j50': 50}[grav]
                 bodies = {'earth': ['sun', 'moon'], 'mars': ['sun'],
                           'venus': ['sun'], 'moon': ['sun', 'earth']}[body] if third_body == 'tbtrue' else []
-                field = f'data/Gravity_harmonics_data/{body}.csv'
+                field = f'data/planets/gravity/{body}.csv'
                 model = {'name': name, 'planet': body, 'gravity_model': 'inverse_squared',
                          'gravity_harmonics_degree': degree, 'gravity_harmonics_order': degree,
                          'gravity_harmonics_file': field, 'nbody_bodies': bodies,
@@ -166,7 +166,7 @@ class ExportProvenanceTests(unittest.TestCase):
 
     def test_identity_for_a_different_gravity_file_is_rejected(self):  # C5
         self.edit_case(lambda case, row: case['inputs'][1].update(
-            path='/retained/repo/data/Gravity_harmonics_data/other.csv'))
+            path='/retained/repo/data/planets/gravity/other.csv'))
         with self.assertRaisesRegex(ValueError, 'gravity file input identity'):
             export.validate_campaign(self.root)
 
@@ -240,7 +240,7 @@ class ExportProvenanceTests(unittest.TestCase):
         self.edit_case(absolute, rewrite_manifest=True)
         self.assertEqual(len(export.validate_campaign(self.root)), 2)
         def normalized(case, row):
-            field = 'data/./Gravity_harmonics_data/earth.csv'
+            field = 'data/./planets/gravity/earth.csv'
             case['model']['gravity_harmonics_file'] = field
             row['gravity_file'] = field
         self.edit_case(normalized, rewrite_manifest=True)
@@ -248,12 +248,12 @@ class ExportProvenanceTests(unittest.TestCase):
 
     def test_ambiguous_relative_gravity_identity_is_rejected(self):
         self.edit_case(lambda case, row: case['inputs'].append(
-            {'path': '/another/repo/data/Gravity_harmonics_data/earth.csv', 'sha256': 'f'*64}))
+            {'path': '/another/repo/data/planets/gravity/earth.csv', 'sha256': 'f'*64}))
         self.rejected()
 
     def test_absolute_path_must_match_whole_identity(self):
         def change(case, row):
-            field = '/different/repo/data/Gravity_harmonics_data/earth.csv'
+            field = '/different/repo/data/planets/gravity/earth.csv'
             case['model']['gravity_harmonics_file'] = field
             row['gravity_file'] = field
         self.edit_case(change, rewrite_manifest=True)
@@ -261,7 +261,7 @@ class ExportProvenanceTests(unittest.TestCase):
 
     def test_relative_parent_traversal_is_rejected(self):
         def change(case, row):
-            field = 'data/../Gravity_harmonics_data/earth.csv'
+            field = 'data/../planets/gravity/earth.csv'
             case['model']['gravity_harmonics_file'] = field
             row['gravity_file'] = field
         self.edit_case(change, rewrite_manifest=True)
@@ -420,7 +420,7 @@ class ExportProvenanceTests(unittest.TestCase):
         self.assertEqual(len(rows), 48)
         self.assertEqual(len({(r['body'], r['gravity'], r['third_body'], r['reference']) for r in rows}), 48)
         for row in rows:
-            self.assertEqual(row['gravity_file'], f"data/Gravity_harmonics_data/{row['body']}.csv")
+            self.assertEqual(row['gravity_file'], f"data/planets/gravity/{row['body']}.csv")
             self.assertEqual(row['source_commit'], 'b'*40)
             self.assertEqual(row['reference_provenance'], 'unverified_generation_settings')
             self.assertEqual(len(row['run_record_sha256']), 64)

@@ -9,7 +9,65 @@
 # of ci_benchmark_wrapper_parity_gate, and the retired-path loops that
 # ci_architecture_contract_gate and ci_src_completeness_contract_gate used to
 # repeat. Record new retirements here instead of adding a gate.
+using TOML
+
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
+
+# Physical grouping only: these folders do not add Julia namespace modules.
+const SOURCE_GROUPS = (
+    "interfaces" => ("cli", "io", "analysis"),
+    "orchestration" => ("simulation", "mission", "parallel"),
+    "models" => ("vehicle", "environment", "dynamics", "gnc"),
+    "foundation" => ("core", "assets"),
+)
+
+function source_layout_violations(root)
+    errors = String[]
+    source = joinpath(root, "src")
+    isdir(source) || return ["src: source root is missing"]
+    actual_groups = Set(name for name in readdir(source) if isdir(joinpath(source, name)))
+    expected_groups = Set(first.(SOURCE_GROUPS))
+    actual_groups == expected_groups || push!(errors,
+        "src: expected exactly the four source groups; found $(sort!(collect(actual_groups)))")
+    for (group, domains) in SOURCE_GROUPS
+        parent = joinpath(source, group)
+        if !isdir(parent) || islink(parent)
+            push!(errors, "src/$group: source group must be a real directory")
+            continue
+        end
+        actual_domains = Set(name for name in readdir(parent) if isdir(joinpath(parent, name)))
+        actual_domains == Set(domains) || push!(errors,
+            "src/$group: domain directories do not match the declared layout")
+        for domain in domains
+            relative = joinpath("src", group, domain)
+            path = joinpath(root, relative)
+            if !isdir(path) || islink(path)
+                push!(errors, "$relative: required source domain must be a real directory")
+            elseif !any(endswith(file, ".jl") for (_, _, files) in walkdir(path) for file in files)
+                push!(errors, "$relative: source domain has no Julia implementation files")
+            end
+            old_path = joinpath(source, domain)
+            (ispath(old_path) || islink(old_path)) &&
+                push!(errors, "src/$domain: former domain root must remain absent")
+        end
+    end
+    for name in ("SpaceAGORA.jl", "precompile_workload.jl")
+        isfile(joinpath(source, name)) || push!(errors, "src/$name: package entry/helper must remain at the source root")
+    end
+    extensions = joinpath(root, "ext")
+    isdir(extensions) && !islink(extensions) || push!(errors, "ext: Julia extensions must remain at the repository root")
+    project_path = joinpath(root, "Project.toml")
+    if isfile(project_path)
+        for name in keys(get(TOML.parsefile(project_path), "extensions", Dict()))
+            (isfile(joinpath(extensions, name * ".jl")) ||
+             isfile(joinpath(extensions, name, name * ".jl"))) ||
+                push!(errors, "ext/$name: registered Julia extension entry is missing")
+        end
+    else
+        push!(errors, "Project.toml: package metadata is missing")
+    end
+    return errors
+end
 
 # Retired by the topology cleanup; must not reappear (relative to REPO_ROOT).
 const RETIRED_PATHS = (
@@ -22,37 +80,58 @@ const RETIRED_PATHS = (
     joinpath("src", "simulation_model"),
     joinpath("src", "benchmarks"),
     joinpath("src", "examples"),
-    joinpath("src", "dynamics", "models"),
-    joinpath("src", "analysis", "plotting"),
-    joinpath("src", "analysis", "reports"),
-    joinpath("src", "gnc", "estimation"),
-    joinpath("src", "mission", "constellation"),
-    joinpath("src", "parallel", "state"),
-    joinpath("src", "parallel", "tuning"),
-    joinpath("src", "simulation", "events"),
-    joinpath("src", "simulation", "execution"),
-    joinpath("src", "simulation", "solver_orchestration"),
-    joinpath("src", "vehicle", "actuators", "laser_terminal"),
-    joinpath("src", "vehicle", "resources"),
-    joinpath("src", "vehicle", "sensors"),
-    joinpath("src", "gnc", "guidance", "targeting_control"),
-    joinpath("src", "gnc", "control", "heatload_control"),
-    # the browser viewer is top-level viewer/ (interactive_visualization_plan.md)
+    joinpath("src", "models", "dynamics", "models"),
+    joinpath("src", "models", "dynamics", "multibody_cloth"),
+    joinpath("src", "interfaces", "analysis", "plotting"),
+    joinpath("src", "interfaces", "analysis", "reports"),
+    joinpath("src", "models", "gnc", "estimation"),
+    joinpath("src", "orchestration", "mission", "constellation"),
+    joinpath("src", "orchestration", "parallel", "state"),
+    joinpath("src", "orchestration", "parallel", "tuning"),
+    joinpath("src", "orchestration", "simulation", "events"),
+    joinpath("src", "orchestration", "simulation", "execution"),
+    joinpath("src", "orchestration", "simulation", "solver_orchestration"),
+    joinpath("src", "models", "vehicle", "actuators", "laser_terminal"),
+    # the laser-terminal placeholder; the kind is src/models/vehicle/actuators/laser.jl
+    joinpath("experimental", "vehicle", "laser_terminal"),
+    joinpath("src", "models", "vehicle", "resources"),
+    joinpath("src", "models", "gnc", "guidance", "targeting_control"),
+    joinpath("src", "models", "gnc", "control", "heatload_control"),
+    # the older E-EDG/T-EDG strategy routes; typed EDG and the SpaceAGORAEDG
+    # companion are the only EDG implementation
+    joinpath("src", "models", "gnc", "guidance", "aerobraking", "e_edg"),
+    joinpath("src", "models", "gnc", "guidance", "aerobraking", "t_edg"),
+    joinpath("src", "models", "gnc", "guidance", "aerobraking", "common"),
+    joinpath("src", "models", "gnc", "internal"),
+    joinpath("src", "orchestration", "mission", "operations", "aerobraking_policy"),
+    # browser rendering belongs to the optional SpaceAGORAVisualizer companion
     joinpath("src", "viewer"),
     # retired source files
-    joinpath("src", "core", "state", "simulation_configuration.jl"),
-    joinpath("src", "core", "utils", "typed_example_utils.jl"),
-    joinpath("src", "gnc", "control", "effectors.jl"),
-    joinpath("src", "gnc", "guidance", "effectors.jl"),
-    joinpath("src", "gnc", "navigation", "effectors.jl"),
-    joinpath("src", "gnc", "control", "bridge_helpers.jl"),
-    joinpath("src", "mission", "campaigns", "run.jl"),
-    joinpath("src", "mission", "campaigns", "set_and_run.jl"),
-    joinpath("src", "mission", "campaigns", "define_mission.jl"),
-    joinpath("src", "mission", "campaigns", "mission_model.jl"),
-    joinpath("src", "mission", "campaigns", "initial_cond_calc.jl"),
-    joinpath("src", "vehicle", "actuators", "thruster_effectors.jl"),
-    joinpath("src", "vehicle", "spacecraft", "spacecraft_analysis.jl"),
+    joinpath("src", "foundation", "core", "state", "simulation_configuration.jl"),
+    joinpath("src", "foundation", "core", "utils", "typed_example_utils.jl"),
+    joinpath("src", "models", "gnc", "control", "effectors.jl"),
+    joinpath("src", "models", "gnc", "guidance", "effectors.jl"),
+    joinpath("src", "models", "gnc", "navigation", "effectors.jl"),
+    joinpath("src", "models", "gnc", "control", "bridge_helpers.jl"),
+    joinpath("src", "models", "gnc", "guidance", "aerobraking", "interfaces.jl"),
+    joinpath("src", "models", "gnc", "guidance", "aerobraking", "dispatcher.jl"),
+    # the older E-EDG/T-EDG control routes; control/aerobraking/ now holds the
+    # typed EDG control files
+    joinpath("src", "models", "gnc", "control", "aerobraking", "constraint_tracking.jl"),
+    joinpath("src", "models", "gnc", "control", "aerobraking", "control_commands.jl"),
+    joinpath("src", "models", "gnc", "control", "aerobraking", "tracking_executor.jl"),
+    # the EDG compatibility bindings; SpaceAGORA forwards only the two EDG decisions
+    joinpath("src", "models", "gnc", "control", "aerobraking", "heat_rate_control.jl"),
+    joinpath("src", "models", "gnc", "control", "aerobraking", "heat_load_control.jl"),
+    joinpath("src", "models", "gnc", "control", "aerobraking", "struct_load_control.jl"),
+    joinpath("src", "models", "gnc", "control", "aerobraking", "edg_compatibility.jl"),
+    joinpath("src", "orchestration", "mission", "campaigns", "run.jl"),
+    joinpath("src", "orchestration", "mission", "campaigns", "set_and_run.jl"),
+    joinpath("src", "orchestration", "mission", "campaigns", "define_mission.jl"),
+    joinpath("src", "orchestration", "mission", "campaigns", "mission_model.jl"),
+    joinpath("src", "orchestration", "mission", "campaigns", "initial_cond_calc.jl"),
+    joinpath("src", "models", "vehicle", "actuators", "thruster_effectors.jl"),
+    joinpath("src", "models", "vehicle", "spacecraft", "spacecraft_analysis.jl"),
     # benchmark/study wrappers retired from test/ (canonical homes under benchmarks/)
     joinpath("test", "performance_runtime_analysis.jl"),
     joinpath("test", "performance_smart_parallel_ladder.jl"),
@@ -78,33 +157,27 @@ const RETIRED_PATHS = (
 
 # Canonical owner paths that must exist.
 const REQUIRED_PATHS = (
-    joinpath("src", "simulation", "config", "configuration.jl"),
-    joinpath("src", "simulation", "config", "run_settings.jl"),
-    joinpath("src", "simulation", "config", "solver_settings.jl"),
-    joinpath("src", "simulation", "config", "environment_settings.jl"),
-    joinpath("src", "simulation", "config", "constellation_configuration.jl"),
-    joinpath("src", "simulation", "config", "simulation_configuration.jl"),
-    joinpath("src", "io", "config", "io_config.jl"),
-    joinpath("src", "io", "serialization", "io_serialization.jl"),
-    joinpath("src", "io", "outputs", "io_outputs.jl"),
-    joinpath("src", "analysis", "visualization", "scene", "scene_visualization.jl"),
+    joinpath("src", "models", "dynamics", "multibody", "compliant", "compliant_multibody.jl"),
+    joinpath("src", "models", "dynamics", "multibody", "compliant", "compliant_robot_arm_dynamics.jl"),
+    joinpath("src", "models", "dynamics", "multibody", "compliant", "compliant_attachment.jl"),
+    joinpath("src", "models", "dynamics", "multibody", "compliant", "compliant_attachment_dynamics.jl"),
+    joinpath("src", "orchestration", "simulation", "config", "configuration.jl"),
+    joinpath("src", "orchestration", "simulation", "config", "run_settings.jl"),
+    joinpath("src", "orchestration", "simulation", "config", "solver_settings.jl"),
+    joinpath("src", "orchestration", "simulation", "config", "environment_settings.jl"),
+    joinpath("src", "orchestration", "simulation", "config", "constellation_configuration.jl"),
+    joinpath("src", "orchestration", "simulation", "config", "simulation_configuration.jl"),
+    joinpath("src", "interfaces", "io", "paths", "io_paths.jl"),
+    joinpath("src", "interfaces", "io", "checkpoints", "checkpoint_storage.jl"),
+    joinpath("src", "interfaces", "io", "outputs", "io_outputs.jl"),
+    joinpath("src", "interfaces", "analysis", "visualization", "scene", "scene_visualization.jl"),
     joinpath("benchmarks", "studies", "performance_runtime_analysis.jl"),
     joinpath("benchmarks", "studies", "performance_smart_parallel_ladder.jl"),
     joinpath("benchmarks", "studies", "parallelization_performance.jl"),
-    joinpath("benchmarks", "studies", "performance_smart_parallel_ladder_cross_machine.jl"),
-    joinpath("benchmarks", "studies", "performance_split_imex_compare.jl"),
-    joinpath("benchmarks", "studies", "performance_static_vs_parallel.jl"),
-    joinpath("benchmarks", "studies", "performance_effector_reduction_microbench.jl"),
+    joinpath("benchmarks", "studies", "performance", "performance_split_imex_compare.jl"),
+    joinpath("benchmarks", "studies", "performance", "performance_static_vs_parallel.jl"),
+    joinpath("benchmarks", "studies", "performance", "performance_effector_reduction_microbench.jl"),
     joinpath("benchmarks", "scripts", "performance_paper_pipeline.jl"),
-    joinpath("benchmarks", "studies", "gram_interpolation_vs_point_to_point_analysis.jl"),
-    joinpath("benchmarks", "studies", "gram_single_call_vs_point_to_point_analysis.jl"),
-    joinpath("benchmarks", "studies", "gram_real_sim_runtime_compare.jl"),
-    joinpath("benchmarks", "studies", "gram_real_sim_surrogate_matrix.jl"),
-    joinpath("benchmarks", "studies", "gram_real_sim_surrogate_decision_table.jl"),
-    joinpath("benchmarks", "studies", "gram_offline_db_accuracy_study.jl"),
-    joinpath("benchmarks", "studies", "gram_planet_rho_altitude_sweep.jl"),
-    joinpath("benchmarks", "studies", "telemetry_hybrid_tuner.jl"),
-    joinpath("benchmarks", "studies", "telemetry_odyssey_tuner.jl"),
     joinpath("benchmarks", "studies", "telemetry_orbit_accuracy_study.jl"),
     joinpath("benchmarks", "studies", "telemetry_orbit_accuracy_plots.jl"),
 )
@@ -114,10 +187,16 @@ const TEXT_EXTS = (".jl", ".md", ".yml", ".yaml")
 # Forbidden tokens: (rule name, scan roots, file extensions, tokens).
 const TOKEN_RULES = (
     (
+        name = "retired compliant multibody source tree",
+        roots = ("src", "test", "docs"),
+        exts = TEXT_EXTS,
+        tokens = ("multibody_cloth",),
+    ),
+    (
         name = "retired dynamics/models tree",
         roots = ("src", "test"),
         exts = TEXT_EXTS,
-        tokens = ("src/dynamics/models/", "\"dynamics\", \"models\"", "\"dynamics\",\"models\""),
+        tokens = ("src/models/dynamics/models/", "\"dynamics\", \"models\"", "\"dynamics\",\"models\""),
     ),
     (
         name = "src/benchmarks root",
@@ -134,9 +213,9 @@ const TOKEN_RULES = (
             "src/physical_models/",
             "src/guidance/",
             "src/integrator/",
-            "src/simulation/events/",
-            "src/simulation/execution/",
-            "src/simulation/solver_orchestration/",
+            "src/orchestration/simulation/events/",
+            "src/orchestration/simulation/execution/",
+            "src/orchestration/simulation/solver_orchestration/",
             "src/utils/",
             "src/simulation_model/",
             "Compatibility wrapper: canonical path forwarding to legacy implementation.",
@@ -160,25 +239,25 @@ const TOKEN_RULES = (
             "src/control/",
             "src/physical_models/",
             "src/guidance/",
-            "src/dynamics/models/",
+            "src/models/dynamics/models/",
             "src/integrator/",
             "src/utils/",
             "src/simulation_model/",
-            "src/mission/campaigns/define_mission.jl",
-            "src/mission/campaigns/mission_model.jl",
-            "src/mission/campaigns/initial_cond_calc.jl",
-            "src/mission/campaigns/run.jl",
-            "src/mission/campaigns/set_and_run.jl",
-            "src/vehicle/actuators/thruster_effectors.jl",
-            "src/vehicle/spacecraft/spacecraft_analysis.jl",
-            "src/gnc/guidance/targeting_control/",
-            "src/gnc/control/heatload_control/",
-            "src/simulation/events/",
-            "src/simulation/execution/",
-            "src/simulation/solver_orchestration/",
+            "src/orchestration/mission/campaigns/define_mission.jl",
+            "src/orchestration/mission/campaigns/mission_model.jl",
+            "src/orchestration/mission/campaigns/initial_cond_calc.jl",
+            "src/orchestration/mission/campaigns/run.jl",
+            "src/orchestration/mission/campaigns/set_and_run.jl",
+            "src/models/vehicle/actuators/thruster_effectors.jl",
+            "src/models/vehicle/spacecraft/spacecraft_analysis.jl",
+            "src/models/gnc/guidance/targeting_control/",
+            "src/models/gnc/control/heatload_control/",
+            "src/orchestration/simulation/events/",
+            "src/orchestration/simulation/execution/",
+            "src/orchestration/simulation/solver_orchestration/",
             "src/examples/",
-            "src/analysis/plotting/",
-            "src/core/utils/typed_example_utils.jl",
+            "src/interfaces/analysis/plotting/",
+            "src/foundation/core/utils/typed_example_utils.jl",
         ),
     ),
 )
@@ -200,7 +279,7 @@ const TOKEN_RULES = (
     return false
 end
 
-violations = String[]
+violations = source_layout_violations(REPO_ROOT)
 
 for rel in RETIRED_PATHS
     ispath(joinpath(REPO_ROOT, rel)) && push!(violations, "$rel: retired path must not exist")
@@ -213,7 +292,7 @@ end
 scan_roots = unique(vcat([collect(rule.roots) for rule in TOKEN_RULES]...))
 for root_rel in scan_roots
     root = joinpath(REPO_ROOT, root_rel)
-    isdir(root) || continue
+    isdir(root) || error("Missing path-policy scan root: $root_rel")
     rules = [rule for rule in TOKEN_RULES if root_rel in rule.roots]
     for (dir, _, files) in walkdir(root)
         for file in files

@@ -1,6 +1,7 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const EXAMPLES_DIR = joinpath(REPO_ROOT, "examples")
-const PROJECT_PATH = REPO_ROOT
+# The examples run in the examples environment (examples/setup.jl prepares it).
+const PROJECT_PATH = joinpath(REPO_ROOT, "examples")
 
 using CSV
 using DataFrames
@@ -161,3 +162,29 @@ end
 end
 
 println("examples_regression_ok")
+
+using SpaceAGORA
+
+@testset "EDG smoke preserves solver policy and respects its duration" begin
+    SM=SpaceAGORA.SimulationModel
+    TV=SpaceAGORA.TelemetryVerification
+    # Intercept only the solve, after each real example constructs its config.
+    # These source-prefix checks run no trajectory or GRAM query.
+    for name in ("AGORA_Odyssey_Energy_Depletion_Control_Test.jl",)
+        path=joinpath(REPO_ROOT,"examples",name)
+        source=read(path,String)
+        prefix=first(split(source,"\ntarget_energy_save_field ="))
+        for smoke in ("0","1")
+            mod=Module(gensym(:EDGSmokeConfig))
+            Core.eval(mod,:(include(p)=Base.include($mod,p)))
+            withenv("SPACEAGORA_EXAMPLE_SMOKE"=>smoke,"SPACEAGORA_EXAMPLE_SMOKE_RESULTS"=>"1","SPACEAGORA_EXAMPLE_SMOKE_MISSION_TIME"=>"120.0") do
+                Base.include_string(mod,prefix,path)
+            end
+            args=Base.invokelatest(getfield,mod,:args)
+            @test args.mission_configuration.mission_time == (smoke=="1" ? 120.0 : Base.invokelatest(getfield,mod,:orbit_period_s))
+            @test args.solver_config.maxiters==2_000_000
+            @test args.guidance_model.guidance_rates==[1/3]
+            @test args.control_model.control_rates == [1/3]
+        end
+    end
+end

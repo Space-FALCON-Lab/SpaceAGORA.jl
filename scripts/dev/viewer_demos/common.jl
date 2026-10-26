@@ -21,8 +21,8 @@ using DataFrames
 
 const DEMO_OUT_ROOT = get(ENV, "SPACEAGORA_VIEWER_DEMO_OUT", joinpath(REPO_ROOT, "output", "viewer_demos"))
 const MISSION_SPK_DIR = abspath(get(ENV, "SPACEAGORA_MISSION_SPK_DIR", joinpath(SPICE_PATH, "spk", "missions")))
-const MODELS_DIR = joinpath(REPO_ROOT, "data", "models")
-const HARMONICS_DIR = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data")
+const MODELS_DIR = joinpath(REPO_ROOT, "data", "scene", "models")
+const HARMONICS_DIR = joinpath(REPO_ROOT, "data", "planets", "gravity")
 
 demo_outdir(name::AbstractString) = viewer_demo_options(name, 1.0; argv=String[]).output_dir
 
@@ -72,7 +72,7 @@ function furnish!(m::MissionSpice)
 end
 
 "SPICE ET at the simulator's millisecond-resolved `SM.InitialTime`."
-et_of(t::SM.InitialTime)::Float64 = SM.ephemerides_time_seconds(t, SM.SpiceEphemeridesModel())
+et_of(t::SM.InitialTime)::Float64 = SM.ephemerides_epoch_seconds(SM.SpiceEphemeridesModel(), t)
 
 et_of(utc::AbstractString)::Float64 = lock(RuntimeServices.SPICE_LOCK) do
     str2et(String(utc))
@@ -299,7 +299,7 @@ end
 function build_cdn_page(html::AbstractString, out::AbstractString, title::AbstractString, heading::AbstractString,
                         orbit::AbstractString, span::AbstractString, foot::AbstractString)
     get(ENV, "SPACEAGORA_DEMO_CDN", "0") == "1" || return nothing
-    script = joinpath(REPO_ROOT, "viewer", "build_cdn_page.py")
+    script = joinpath(SpaceAGORA.VisualizerServices.viewer_directory(), "build_cdn_page.py")
     isfile(script) || throw(ArgumentError("optional CDN export requires the separately installed build_cdn_page.py tool; standalone HTML is already complete"))
     run(`python3 $script $html $out $title $heading $orbit $span $foot`)
     return String(out)
@@ -333,6 +333,6 @@ end
 
 function demo_model_path(filename::AbstractString)
     path = joinpath(MODELS_DIR, filename)
-    isfile(path) && filesize(path) > 0 || throw(ArgumentError("mission display model missing: $path; restore the tracked asset from data/models in this repository"))
+    isfile(path) && filesize(path) > 0 || throw(ArgumentError("mission display model missing: $path; restore the tracked asset from data/scene/models in this repository"))
     return path
 end

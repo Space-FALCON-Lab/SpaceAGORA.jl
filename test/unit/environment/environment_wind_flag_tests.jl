@@ -128,8 +128,8 @@ wf_all_zero_wind(run) = all(ws -> all(w -> w == WF_ZERO, ws), run.wind)
 function wf_stage_samples(args; batch::String="off")
     n = length(args.dynamics_model.spacecraft)
     p = SM.ODEParams(n_sats=n, args=args)
-    p.shared_buffers.et_start[] = SM.ephemerides_time_seconds(args.initial_time,
-        args.environment_model.ephemerides_model)
+    p.shared_buffers.et_start[] = SM.ephemerides_epoch_seconds(args.environment_model.ephemerides_model,
+        args.initial_time)
     withenv("SPACEAGORA_DENSITY_BATCH_PARALLEL" => batch, WF_RUN_ENV...) do
         p.shared_buffers.callback_env_config[] = CB._snapshot_callback_env_config()
         u = SE.build_initial_conditions(args)

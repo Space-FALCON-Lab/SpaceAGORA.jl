@@ -30,7 +30,7 @@ detail = "Machine-local SPICE kernels used by high-fidelity frame, SRP, and N-bo
 [[asset]]
 name = "gravity_harmonics_directory"
 scope = "gravity harmonics"
-relative_path = "data/Gravity_harmonics_data"
+relative_path = "data/planets/gravity"
 kind = "directory"
 required = false
 licensing = "open-repo"
@@ -39,7 +39,7 @@ detail = "Repository data directory for gravity harmonics CSV inputs."
 [[asset]]
 name = "topography_harmonics_directory"
 scope = "topography harmonics"
-relative_path = "data/Topography_harmonics_data"
+relative_path = "data/planets/topography"
 kind = "directory"
 required = false
 licensing = "open-repo"
@@ -102,7 +102,7 @@ detail = "ESA OPS-SAT-1 re-entry UHF telemetry, TLEs and ESA notebook; nothing r
 [[asset]]
 name = "gram_surrogate_directory"
 scope = "GRAM surrogate grids"
-relative_path = "data/GRAM_surrogate"
+relative_path = "data/planets/gram_surrogate"
 kind = "directory"
 required = false
 licensing = "user-provided"
@@ -111,7 +111,7 @@ detail = "Optional surrogate/static-grid bundle for GRAM-accelerated studies."
 [[asset]]
 name = "rpo_gateway_core_stl"
 scope = "RPO station reference geometry"
-relative_path = "data/rpo/station_geometry/gateway/Gateway_Core.stl"
+relative_path = "data/scene/models/gateway_core.stl"
 kind = "file"
 required = false
 licensing = "open-repo"
@@ -120,20 +120,20 @@ detail = "Gateway Core STL used by the RPO station reference geometry and MPC RP
 [[asset]]
 name = "visualization_textures"
 scope = "visualization"
-relative_path = "data/textures"
+relative_path = "data/scene/textures"
 kind = "directory"
 required = false
 licensing = "open-repo"
-detail = "Public-domain NASA/USGS surface textures for the post-hoc 3D viewer, registered in data/textures/manifest.toml."
+detail = "Public-domain NASA/USGS surface textures for the post-hoc 3D viewer, registered in data/scene/textures/manifest.toml."
 
 [[asset]]
 name = "visualization_models"
 scope = "visualization"
-relative_path = "data/models"
+relative_path = "data/scene/models"
 kind = "directory"
 required = false
 licensing = "open-repo"
-detail = "NASA display models with source and attribution in data/models/README.md."
+detail = "NASA display models with source and attribution in data/scene/models/README.md."
 
 [[asset]]
 name = "surrogate_preset_catalog"

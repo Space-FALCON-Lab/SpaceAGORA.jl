@@ -1,7 +1,7 @@
 module AeroBatchParityTests
 
 # Guards for the aerodynamic and density batching measured in
-# docs/architecture/aero_batch.md.
+# benchmarks/studies/aero_batch/FINDINGS.md.
 #
 # The claim under test is not "close enough". It is that a constellation's
 # aerodynamic force and its atmosphere sample are the same Float64 values

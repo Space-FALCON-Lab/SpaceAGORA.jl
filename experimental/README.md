@@ -6,7 +6,6 @@ package-owned `src/` surface.
 Current experimental modules:
 
 - `experimental/vehicle/resources/`
-- `experimental/vehicle/laser_terminal/`
 - `experimental/mission/constellation/`
 - `experimental/gnc/estimation/`
 

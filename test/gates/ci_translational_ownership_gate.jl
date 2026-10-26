@@ -1,8 +1,15 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const SRC_ROOT = joinpath(REPO_ROOT, "src")
-const TRANSLATIONAL_ROOT = joinpath(SRC_ROOT, "dynamics", "translational")
+const TRANSLATIONAL_ROOT = joinpath(SRC_ROOT, "models", "dynamics", "translational")
+isdir(TRANSLATIONAL_ROOT) || error("Missing translational ownership root")
 
-# Translational equations must be owned by src/dynamics/translational/* only.
+# A file belongs to the owner only when the owner directory is a proper path
+# prefix. A raw string prefix would also exempt a sibling such as
+# `translational_outside/`.
+_owned_by(path::AbstractString, root::AbstractString) =
+    startswith(path, string(rstrip(root, ('/', '\\')), Base.Filesystem.path_separator))
+
+# Translational equations must be owned by src/models/dynamics/translational/* only.
 const FORBIDDEN_PATTERNS = (
     r"du_view\.pos\s*\.=\s*sc_view\.vel",
     r"du_view\.pos\s*\.=\s*0\.0",
@@ -18,7 +25,7 @@ for (root, _, files) in walkdir(SRC_ROOT)
     for file in files
         endswith(file, ".jl") || continue
         path = joinpath(root, file)
-        startswith(path, TRANSLATIONAL_ROOT) && continue
+        _owned_by(path, TRANSLATIONAL_ROOT) && continue
 
         rel = relpath(path, REPO_ROOT)
         src = read(path, String)

@@ -614,12 +614,13 @@ function _write_smart_ladder_report(
         )
         println(io, "```")
         println(io)
-        println(io, "Cross-machine replay/merge helper:")
+        println(io, "Cross-machine replay/merge helper (for lab members with access to the separately prepared private study repository):")
+        println(io, "SpaceAGORAParallelizationStudies")
         println(io, "```bash")
         cross_outdir = joinpath(dirname(config.outdir), "smart_parallel_ladder_cross_machine")
         println(
             io,
-            "julia --project=. benchmarks/studies/performance_smart_parallel_ladder_cross_machine.jl " *
+            "julia --project=/path/to/study-env benchmarks/studies/performance/performance_smart_parallel_ladder_cross_machine.jl " *
             "--profile=$(config.profile.name) --outdir=$(cross_outdir) " *
             "--input=machine_a:/path/to/machine_a/ladder_outdir --input=machine_b:/path/to/machine_b/ladder_outdir"
         )

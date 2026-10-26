@@ -35,5 +35,5 @@ runs:
         prefix="julia-depot-v2-${RUNNER_OS}-${{ steps.julia.outputs.julia-version }}-"
         {
           echo "depot-prefix=${prefix}"
-          echo "depot=${prefix}${{ hashFiles('Project.toml', 'Manifest.toml', 'test/grid_atmosphere/Project.toml', 'scripts/dev/Project.toml', 'scripts/dev/Manifest.toml', '.github/gramsuite-revisions') }}"
+          echo "depot=${prefix}${{ hashFiles('Project.toml', 'Manifest.toml', 'docs/Project.toml', 'test/Project.toml', 'examples/Project.toml', 'test/grid_atmosphere/Project.toml', 'scripts/dev/Project.toml', 'scripts/dev/Manifest.toml', '.github/gramsuite-revisions') }}"
         } >> "$GITHUB_OUTPUT"

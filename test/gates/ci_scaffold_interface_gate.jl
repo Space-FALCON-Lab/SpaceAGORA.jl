@@ -9,9 +9,6 @@ end
 if !isdefined(@__MODULE__, :Estimation)
     include(joinpath(REPO_ROOT, "experimental", "gnc", "estimation", "estimation.jl"))
 end
-if !isdefined(@__MODULE__, :LaserTerminal)
-    include(joinpath(REPO_ROOT, "experimental", "vehicle", "laser_terminal", "laser_terminal.jl"))
-end
 
 function _expect_not_implemented(callable::Function, label::String)
     try
@@ -55,12 +52,6 @@ let
     estimator_state = Estimation.EstimatorState()
     measurement = Estimation.MeasurementPacket()
     _expect_not_implemented(() -> Estimation.estimate_state!(estimator_state, measurement), "estimate_state!")
-end
-
-let
-    actuator = LaserTerminal.LaserTerminalActuator()
-    command = LaserTerminal.LaserTerminalCommand()
-    _expect_not_implemented(() -> LaserTerminal.apply_laser_terminal_command!(actuator, command, 0.0), "apply_laser_terminal_command!")
 end
 
 println("scaffold_interface_gate_ok")

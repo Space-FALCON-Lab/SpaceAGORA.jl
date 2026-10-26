@@ -71,7 +71,11 @@ const CPU_THREADS_COUNT_EVERY_CORE = Sys.islinux()
         @test MT.memory_worker_cap() >= 0
         # A worker never costs less than the floor unless overridden.
         @test MT.worker_memory_estimate_bytes() >= MT._WORKER_MEMORY_FLOOR_BYTES
-        @test MT.worker_memory_estimate_bytes(extra = 7) == MT.worker_memory_estimate_bytes() + 7
+        # Pin the base: unpinned it is this process's resident set, which can
+        # grow by a page between the two calls (seen in CI: off by 8,192 B).
+        withenv("SPACEAGORA_PERF_WORKER_MEMORY_GB" => "2") do
+            @test MT.worker_memory_estimate_bytes(extra = 7) == MT.worker_memory_estimate_bytes() + 7
+        end
         withenv("SPACEAGORA_MEMORY_BUDGET_GB" => "1024", "SPACEAGORA_PERF_WORKER_MEMORY_GB" => "0.001") do
             @test MT.memory_budget_bytes() == 1024 * 2^30
             @test MT.memory_worker_cap() >= 2

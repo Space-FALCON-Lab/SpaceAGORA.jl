@@ -1,31 +1,29 @@
 # Distributed and HPC
 
-Use this page when you are running SpaceAGORA benchmark or study workflows with
-process workers or scheduler launchers.
+This guide is for users preparing process workers or scheduler jobs for
+SpaceAGORA studies. It covers two routes: benchmark launchers with explicit
+worker settings, and library campaigns whose planner can select a process
+backend. Custom campaign functions need additional preparation, described below.
 
-This page is for operators and advanced users who need reproducible multi-process
-execution, worker-project setup, or scheduler examples.
-
-Shortest successful example:
+Start with a prepared repository environment and preview the study command from
+the repository root:
 
 ```text
-julia --project=. src/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/hpc_local_runtime_analysis
+julia --project=. src/interfaces/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/hpc_local_runtime_analysis --print-only
 ```
 
-What to read next:
+The preview shows the launch command without running the study. The CLI starts
+the study in the examples environment, so before executing it, prepare that
+environment with `julia --startup-file=no examples/setup.jl`, and the selected
+study's assets and worker environment; remove `--print-only` when those
+prerequisites are ready. See the [CLI](cli.md) for
+command options and [Parallel Execution](user/parallel_execution.md) for campaign
+routing and worker preparation.
 
-- [CLI](cli.md)
-- [Parallel Execution](user/parallel_execution.md)
-- [Recipes](user/recipes.md)
-- [Maintainer Overview](maintainer/index.md)
-
-SpaceAGORA's supported distributed execution surface today is centered on
-multi-process benchmark and study workflows, self-bootstrapping process-backend
-outer parallelism for library-level campaigns, and deterministic
-parallel-policy hint persistence.
-
-This is not a promise that every runtime path is cluster-hardened. It is the
-documented path that currently has real ownership in the repository.
+The maintained distributed workflows are benchmark and study launches and
+process-backed campaigns. Arbitrary scheduler-driven simulations, distributed
+checkpoint orchestration and automatic staging across nodes are outside the
+scope described here.
 
 ## Supported process-worker path
 
@@ -47,33 +45,45 @@ reason to point workers at a different environment.
 
 ## Campaign-level process backend
 
-For library-level campaigns (`run_monte_carlo`, `run_constellation_ensemble`),
-process-worker parallelism does not require any of the manual `addprocs` or
-scheduler setup below. The parallel flag (`SolverConfig(parallel=true)` on the
-configuration, or `parallel=true` on `run_monte_carlo`) lets the campaign
-planner choose the `:process` route itself for workload shapes where it wins,
-and auto-bootstraps a `Distributed` worker pool through
-`SpaceAGORA.ParallelProcess`:
+For library-level campaigns, the parallel flag lets the planner select among
+eligible routes. `run_constellation_ensemble` derives workload information from
+its configuration. A generic `run_monte_carlo` callback supplies less information:
+without explicit `route_features`, `parallel=true` keeps its candidates within
+the coordinator process. A process route additionally needs workload metadata
+and workers prepared with the callback's definitions, dependencies and assets.
+Starting the pool does not make arbitrary functions or state in `Main` available
+on workers.
+
+For example, after your study defines `make_config_for_seed`, this fragment
+requests parallel execution but does not by itself request process workers:
 
 ```julia
+using SpaceAGORA
+
 result = run_monte_carlo(1:100; parallel=true) do seed
     run_simulation(make_config_for_seed(seed); return_solution=true)
 end
 ```
 
-Under the hood this uses `campaign_process_pool()` (the process-global
+See [Parallel Execution](user/parallel_execution.md) for the distinction between
+in-process execution and the advanced process route. The benchmark worker
+settings described above do not replace that campaign preparation.
+
+When a campaign selects the process backend, it uses `campaign_process_pool()` (the process-global
 `ProcessPool` shared across campaigns in the session) and
 `ensure_process_workers!(pool, n; warmup_fn=...)`, which spawns only the
 worker shortfall, bootstraps each new worker with `SpaceAGORA`, `GRAMSuite`
 (best-effort), and the default SPICE kernel set, and optionally pays a
-representative call's JIT/specialization cost once per new worker (measured
-at roughly 70 s cold vs. a fraction of a second warm) via `warmup_fn` instead
-of inside the first real, timed dispatch. Each process worker runs with
+representative call's compilation and initialization cost via `warmup_fn`
+before the first timed dispatch. Warmup is attempted on each new worker; its
+cost and coverage depend on the workload, argument types, Julia environment
+and cache state. Later calls can still require additional compilation. Each
+process worker runs with
 `--threads=1`, so it does not contend with the coordinator's thread pool.
 `shutdown_process_pool!(pool)` tears the pool down; campaign code otherwise
 leaves it warm across calls by design.
 
-See [Parallel Execution: Process-backend outer parallelism](user/parallel_execution.md#process-backend-outer-parallelism)
+See [Parallel Execution: Process-backend outer parallelism](user/parallel_execution.md#Process-backend-outer-parallelism)
 for the full walkthrough. This path is entirely separate from the
 scheduler/`addprocs`-based benchmark path documented above — it needs no
 `SPACEAGORA_PERF_PROCS` or worker-project configuration, since the pool
@@ -149,6 +159,11 @@ Those helper scripts are Unix-oriented examples; on Windows, set the same
 environment variables in PowerShell or `cmd.exe` and run the Julia CLI
 entrypoint directly.
 
+The Slurm launcher is a starting point for a site-specific job script. Its
+default `JULIA_DEPOT_PATH` is a job-local path, so it must be populated before
+execution or adapted to include the prepared shared depot. Merely creating an
+empty writable directory does not make the project dependencies available.
+
 The Slurm launcher shows:
 
 - project selection for spawned workers
@@ -162,8 +177,9 @@ The current first-class distributed support is:
 
 - process-worker benchmark and study execution
 - deterministic persistent-hint state for parallel-policy tuning
-- self-bootstrapping process-backend outer parallelism for `run_monte_carlo`
-  and `run_constellation_ensemble` campaigns (`SpaceAGORA.ParallelProcess`)
+- self-bootstrapping process-backend outer parallelism
+  (`SpaceAGORA.ParallelProcess`) for `run_constellation_ensemble` campaigns, and
+  for `run_monte_carlo` campaigns given `route_features` and prepared workers
 
 The following are not yet treated as a full cluster product surface:
 

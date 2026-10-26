@@ -112,8 +112,7 @@ with `orientation_sim` the propagated root attitude and the stored child
 attitudes place the links; without it the root is held in the
 velocity-aligned frame (x along the airspeed, z toward nadir) and each
 link's configured quaternion selects its incidence. It uses the `wrench`
-interface described in [Adding a Force or Torque](custom_effector.md); the
-older `calcForceTorque` hook is not provided.
+interface described in [Adding a Force or Torque](custom_effector.md).
 
 ### Reference points and torque
 
@@ -151,8 +150,8 @@ vertical descent decelerates under drag exactly as a horizontal pass does.
 Shadowing between links; per-link atmosphere sampling (one density and
 temperature sample per spacecraft, as for the box model's default); thermal
 incidence (the heating callback keeps its stored link angles); torque in the
-fixed-attitude mode. The effector is not on the automatic effector-level
-threading allowlist.
+fixed-attitude mode. For supported threaded routes and their restrictions, see
+[Parallel execution](#Parallel-execution).
 
 ## Validation
 

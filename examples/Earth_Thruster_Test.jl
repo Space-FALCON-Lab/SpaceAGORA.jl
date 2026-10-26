@@ -10,18 +10,17 @@ struct TimedVelocityThrusterModel
     stop_time::Float64
 end
 
-function SimulationModel.calcControlForceTorque(
+function SimulationModel.control_wrench(
     model::TimedVelocityThrusterModel,
-    u,
+    x::StateSample,
     p::ODEParams,
-    i::Int64,
     t::Float64
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     if t < model.start_time || t > model.stop_time
         return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
     end
 
-    vel = SVector{3, Float64}(u.vel)
+    vel = x.vel_ii
     speed = norm(vel)
     if speed <= 1e-9
         return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
@@ -31,7 +30,7 @@ function SimulationModel.calcControlForceTorque(
     return force, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
-function SimulationModel.calcControlEffect!(
+function SimulationModel.update_control!(
     model::TimedVelocityThrusterModel,
     u,
     p::ODEParams,

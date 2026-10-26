@@ -56,7 +56,7 @@ function thermal_fixture(effectors; sc=thermal_spacecraft(), orientation=false,
     u.sc[1].pos .= SVector(6698e3, 0.0, 0.0)
     u.sc[1].vel .= SVector(1000.0, 7500.0, 500.0)
     p = SM.ODEParams(n_sats=1, args=args)
-    p.shared_buffers.et_start[] = SM.ephemerides_time_seconds(args.initial_time, args.environment_model.ephemerides_model)
+    p.shared_buffers.et_start[] = SM.ephemerides_epoch_seconds(args.environment_model.ephemerides_model, args.initial_time)
     p.shared_buffers.current_time[] = 0.0
     SE._initialize_save_cache_buffers!(p)
     SE._initialize_aero_workspace_buffers!(p)

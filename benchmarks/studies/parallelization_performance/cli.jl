@@ -17,7 +17,7 @@ using Statistics
 # Startup trace: with SPACEAGORA_PPC_STARTUP_TRACE=1 a worker prints one line
 # per startup milestone (files loaded, first solve returned, first timed repeat
 # started), stamped with wall-clock time(), which is how the precompile
-# workload's validation (paper_parallelization_benchmarks/workload/
+# workload's validation (in SpaceAGORAParallelizationStudies, paper_parallelization_benchmarks/workload/
 # validate_workload.jl) splits a point's startup into import and compilation.
 # Each label is printed once per process. Off by default; one ENV read when on.
 const _PPC_STARTUP_TRACED = Set{String}()
@@ -36,7 +36,7 @@ function ppc_startup_trace(label::String)
 end
 
 # The paper harness's precompile workload
-# (benchmarks/studies/paper_parallelization_benchmarks/workload). The controller
+# (SpaceAGORAParallelizationStudies: paper_parallelization_benchmarks/workload). The controller
 # sets SPACEAGORA_PPC_WORKLOAD=1 on a worker it launches with the workload's
 # environment on JULIA_LOAD_PATH (see ppc_workload_env in execution.jl), and
 # Distributed pool workers inherit both. Loading the package only brings its
@@ -428,7 +428,12 @@ function parse_parallelization_performance_cli(args::Vector{String}=ARGS)::PPCCo
     defaults = _ppc_defaults(profile)
     isempty(modes) && (modes = defaults.modes)
     isempty(cases) && (cases = defaults.cases)
-    isempty(parity_cases) && (parity_cases = defaults.parity_cases)
+    # `--parity-cases=none` runs no parity points; an empty list means the defaults.
+    if parity_cases == ["none"]
+        parity_cases = String[]
+    elseif isempty(parity_cases)
+        parity_cases = defaults.parity_cases
+    end
     isempty(threads) && (threads = defaults.threads)
     repeats <= 0 && (repeats = defaults.repeats)
     warmup < 0 && (warmup = defaults.warmup)

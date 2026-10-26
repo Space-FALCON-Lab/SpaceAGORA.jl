@@ -177,7 +177,7 @@ spacecraft = make_three_body_spacecraft(
 )
 
 harmonics_file = joinpath(
-    REPO_ROOT, "data", "Gravity_harmonics_data", planet_settings.gravity_file)
+    REPO_ROOT, "data", "planets", "gravity", planet_settings.gravity_file)
 dynamic_effectors = (
     NBodyGravityModel(body_names=planet_settings.third_bodies,
         primary_body_name=planet.name, planet=planet),

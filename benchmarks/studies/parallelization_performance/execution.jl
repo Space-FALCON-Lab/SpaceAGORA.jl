@@ -16,12 +16,17 @@ end
 # SPACEAGORA_PPC_DUMP_STATE_DIR=<dir>: write each successful sample's step times
 # and final state, as raw Float64, to <dir>. For byte-for-byte comparison of two
 # runs of the same point (the precompile workload's validation compares a run
-# with the workload against one without). Off by default.
+# with the workload against one without). Off by default. Files carry a
+# per-process call counter, so the timed repeats of one point each keep their
+# own dump instead of overwriting the previous one.
+const _PPC_DUMP_STATE_CALLS = Threads.Atomic{Int}(0)
+
 function _ppc_dump_state(case_name::String, sample_idx::Int, sample_seed::Int, sol)
     dir = get(ENV, "SPACEAGORA_PPC_DUMP_STATE_DIR", "")
     isempty(dir) && return nothing
     mkpath(dir)
-    open(joinpath(dir, "state_$(case_name)_i$(sample_idx)_s$(sample_seed).bin"), "w") do io
+    call = Threads.atomic_add!(_PPC_DUMP_STATE_CALLS, 1) + 1
+    open(joinpath(dir, "state_$(case_name)_i$(sample_idx)_s$(sample_seed)_c$(call).bin"), "w") do io
         write(io, Float64.(sol.t))
         isempty(sol.u) || write(io, Float64[x for x in sol.u[end]])
     end
@@ -125,11 +130,11 @@ end
 # SpaceAGORA.ParallelProcess.ensure_process_workers! (used via
 # adopt_process_workers! below the outer_process route also touches), with
 # its own hardcoded exeflags -- so the pool-worker heap-size-hint default
-# has to be applied here too, not just in src/parallel/process/worker_pool.jl.
+# has to be applied here too, not just in src/orchestration/parallel/process/worker_pool.jl.
 # It reuses that module's exact formula/constants and its env override
 # (SPACEAGORA_POOL_WORKER_HEAP_SIZE_HINT), rather than a third knob, since
 # these are the same kind of worker under the same per-process memory-share
-# reasoning; see docs/architecture/heap_contention.md.
+# reasoning; see benchmarks/studies/heap_contention/FINDINGS.md.
 @inline function _ppc_pool_worker_exeflags(desired::Int)::Cmd
     exeflags = String["--threads=1", "--startup-file=no", "--project=$(PPC_REPO_ROOT)"]
     hint = SpaceAGORA.ParallelProcess._pool_worker_heap_size_hint(desired)
@@ -142,7 +147,16 @@ function ppc_ensure_process_workers!(n::Int)::Vector{Int}
     current_external = max(0, nprocs() - 1)
     if current_external < desired
         add_count = desired - current_external
-        new_workers = addprocs(add_count; exeflags=_ppc_pool_worker_exeflags(desired))
+        # JULIA_LOAD_PATH is set explicitly, as SpaceAGORA's own pool does
+        # (ParallelProcess._spawn_process_workers). Without it Distributed hands
+        # the workers this process's LOAD_PATH, and a native-GRAM case has
+        # already put the vendored GRAMSuite environment first on it
+        # (ppc_ensure_gramsuite_loaded!), so every worker resolved SpaceAGORA's
+        # dependencies differently, judged the SpaceAGORA pkgimage stale and
+        # recompiled it in place -- 32 workers at once, under the coordinator's
+        # mapped copy, and again in the next child that used the other load path.
+        new_workers = addprocs(add_count; exeflags=_ppc_pool_worker_exeflags(desired),
+            env=["JULIA_LOAD_PATH" => SpaceAGORA.ParallelProcess._process_worker_load_path()])
         # GRAMSuite goes onto the pool exactly when this process has it, i.e.
         # when this process's case builds a live GRAM atmosphere: cases.jl loads
         # it at include time from the --case on the command line, which a
@@ -207,7 +221,7 @@ picks `:process` (8.1x) while the pin forced `:threads` (2.0x), and the resultin
 "router regret" was a property of this table rather than of the router.
 
 The shipped profile definitions already say `outer_backend=:auto` for R3/R4/R5
-(`src/parallel/routing/profile_definitions.jl`), so this restores agreement with
+(`src/orchestration/parallel/routing/profile_definitions.jl`), so this restores agreement with
 them for the two adaptive profiles. R3 deliberately keeps its explicit `threads`
 pin: it is the *static* hybrid baseline the adaptive profiles are measured
 against, so it has to stay fixed.
@@ -302,6 +316,24 @@ function _ppc_mode_with_backend(mode::PPCModeSpec, backend::String)::PPCModeSpec
     )
 end
 
+# SPACEAGORA_PPB_WARMUP_SPAN=<fraction in (0, 1]> (default 1): warm-ups after the
+# first run that fraction of the case's mission. Only the coordinator warm-ups of
+# the pinned modes (policy_adaptive=false) are shortened:
+#   * the first warm-up stays full length, so every path the timed run reaches
+#     (atmosphere entry, events, drag passes) is compiled before the clock as now;
+#   * pinned modes run with SPACEAGORA_RHS_CALIBRATE=off and their profiles
+#     (R0-R3) persist no policy state, so their warm-ups feed nothing the timed
+#     repeats read except compiled code and the heap;
+#   * adaptive modes keep full-length warm-ups: their warm-ups record solve times,
+#     honoured time and votes in the RHS calibration store, persistent hints and
+#     the outer-route state, and the timed repeats act on those;
+#   * pool workers still run one full sample each, and adaptive campaigns their
+#     full warm-up campaigns (ppc_run_adaptive_batch is untouched).
+function _ppc_warmup_span()::Float64
+    v = something(tryparse(Float64, strip(get(ENV, "SPACEAGORA_PPB_WARMUP_SPAN", "1"))), 1.0)
+    return (isfinite(v) && 0.0 < v < 1.0) ? v : 1.0
+end
+
 function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSpec, sample_count::Int)
     sample_indices = collect(1:sample_count)
     sample_seeds = [cfg.worker_seed + i - 1 for i in sample_indices]
@@ -331,12 +363,19 @@ function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSp
     end
     withenv(ppc_mode_env_pairs(mode, cfg; outer_tasks=outer_tasks)...) do
         for warmup_idx in 1:cfg.warmup
-            warmup_args = ppc_single_config(
-                case.name,
-                cfg;
-                seed=cfg.worker_seed - warmup_idx,
-                mc_index=warmup_idx
-            )
+            # Short warm-ups (SPACEAGORA_PPB_WARMUP_SPAN): see _ppc_warmup_span.
+            span = (warmup_idx > 1 && !mode.policy_adaptive) ? _ppc_warmup_span() : 1.0
+            _PPC_MISSION_SCALE[] = span
+            warmup_args = try
+                ppc_single_config(
+                    case.name,
+                    cfg;
+                    seed=cfg.worker_seed - warmup_idx,
+                    mc_index=warmup_idx
+                )
+            finally
+                _PPC_MISSION_SCALE[] = 1.0
+            end
             try
                 ppc_solve_once(warmup_args, cfg)
             catch
@@ -502,7 +541,7 @@ end
 #
 # `CachingPool` keys its worker-side cache on the IDENTITY of the function it
 # is handed (see `_acquire_dispatch_runner` in
-# src/simulation/campaigns/monte_carlo.jl), so a closure rebuilt for every
+# src/orchestration/simulation/campaigns/monte_carlo.jl), so a closure rebuilt for every
 # repeat is a guaranteed cache miss on every worker, every time: the campaign's
 # closure is serialized to each of them again and torn down again. Repeats of
 # one point are the same campaign run again, and that is what they should cost.
@@ -687,7 +726,7 @@ end
 # selects poorly for the GRAM case" could be measured but not attributed. The
 # selected RHS plan lives in per-solve `shared_buffers.rhs_plan_override`, which
 # is gone by the time the solve returns; `record_rhs_plan_selection!`
-# (src/parallel/policy/policy_telemetry.jl) copies it into the process-level
+# (src/orchestration/parallel/policy/policy_telemetry.jl) copies it into the process-level
 # policy telemetry so it survives, and this reads it back.
 #
 # Process-route caveat: the counters are per-process, and on the `outer_process`
@@ -956,7 +995,7 @@ end
 #
 # `--gcthreads` is opt-in and unset by default (`SPACEAGORA_PPC_WORKER_GCTHREADS`),
 # reproducing the pre-existing argv exactly when not given. See
-# docs/architecture/heap_contention.md ("Collector settings") for the grid
+# benchmarks/studies/heap_contention/FINDINGS.md ("Collector settings") for the grid
 # this was measured against: on a 12-core/24-thread workstation, at 8
 # threads, on the P3/P4 shapes' outer_threads route -- well below the
 # 16+-thread regime where single-heap GC contention actually shows up; see
@@ -964,7 +1003,7 @@ end
 #
 # `--heap-size-hint` is ON by default (a derived value; see the block
 # comment above `_default_pool_worker_heap_hint_bytes` in
-# src/parallel/process/worker_pool.jl for the diagnostic and the formula).
+# src/orchestration/parallel/process/worker_pool.jl for the diagnostic and the formula).
 # `SPACEAGORA_PPC_WORKER_HEAP_SIZE_HINT=off` removes the flag entirely; any
 # other value overrides the computed default and is passed through verbatim.
 function _ppc_worker_gc_flags(cfg::PPCConfig)::Vector{String}
@@ -977,8 +1016,8 @@ function _ppc_worker_gc_flags(cfg::PPCConfig)::Vector{String}
         lowercase(heap_hint) == "off" || push!(flags, "--heap-size-hint=$(heap_hint)")
     else
         # Default (env unset): the same derived hint the process pool uses
-        # by default (see src/parallel/process/worker_pool.jl and
-        # docs/architecture/heap_contention.md), reusing its exact formula
+        # by default (see src/orchestration/parallel/process/worker_pool.jl and
+        # benchmarks/studies/heap_contention/FINDINGS.md), reusing its exact formula
         # and constants rather than a second copy of them. The harness's own
         # per-point worker subprocess showed the identical unbounded-heap
         # pattern the pool diagnostic did: a 4096-sample serial point
@@ -997,7 +1036,7 @@ end
 # Every point is a fresh Julia process, and so is every process-pool worker, so
 # each one pays package loading plus compilation of the solver specializations
 # it is about to run before it can time anything. The paper harness's precompile
-# workload (benchmarks/studies/paper_parallelization_benchmarks/workload, built
+# workload (SpaceAGORAParallelizationStudies, paper_parallelization_benchmarks/workload, built
 # with its build_workload.sh) holds those specializations in a package image;
 # a worker that loads it skips most of that compilation. See the README there
 # for what it covers and the measured effect.
@@ -1069,7 +1108,7 @@ function ppc_workload_env()::Union{Nothing, String}
     end
     fresh && return env
     msg = "Precompile workload image not built or not current for $(env); " *
-          "build it with benchmarks/studies/paper_parallelization_benchmarks/workload/build_workload.sh"
+          "lab members can prepare it in the pinned private SpaceAGORAParallelizationStudies repository"
     required && throw(ErrorException(msg * " (SPACEAGORA_PPB_WORKLOAD=$(setting))."))
     setting == "auto" && isfile(joinpath(env, "Project.toml")) && @warn msg * "; running without it."
     return nothing
@@ -1198,6 +1237,183 @@ function ppc_validate_resume_budget(root::String, condition::String)::Nothing
     return nothing
 end
 
+# ── Shared worker process (SPACEAGORA_PPB_SHARED_PROCESS=1, default off) ──────
+#
+# Off, every (case, mode, threads, mc) point is its own Julia process, which
+# then compiles everything it runs, and so does each of its pool workers. On,
+# the points of one controller run that would be launched with the same
+# command-line flags and the same environment (same --threads, same pool cap,
+# same per-point env such as the equal-core-budget pair) run in ONE process,
+# in a seeded random order, sharing its compiled code and its Distributed pool.
+# Each point still runs its own warm-ups before its own timed repeats and writes
+# the same rows to the same file.
+#
+# A point keeps a process of its own when
+#   * its mode is adaptive (policy_adaptive): its warm-ups and repeats read and
+#     write the RHS calibration store, persistent hints and route state, which a
+#     process caches once loaded, so it stays exactly as before;
+#   * its case is a native-GRAM case (PPC_GRAM_LIVE_CASES): cases.jl sets
+#     process-wide GRAM env and loads GRAMSuite from the --case on the command
+#     line, and GRAM models are cached per process.
+_ppc_shared_process()::Bool = _ppc_bool(get(ENV, "SPACEAGORA_PPB_SHARED_PROCESS", "0"))
+
+# ── Child-process supervision ────────────────────────────────────────────────
+# A failed child used to abort the controller: `run(cmd)` threw a
+# ProcessFailedException whose text opens with the whole command line (and its
+# environment), so the one thing that distinguishes a crash from an error -- the
+# exit code or terminating signal -- sat past any truncation. Every child launch
+# now goes through ppc_run_child, which
+#   * reduces the failure to a short status ("killed by signal 11 (SIGSEGV)",
+#     "exit code 1") that leads every log line and error_message cell;
+#   * retries once when the child was killed by a CRASH signal (SIGSEGV, SIGBUS,
+#     SIGILL, SIGABRT, SIGFPE), discarding the first attempt's rows so only the
+#     successful attempt counts. Any other signal (SIGKILL, SIGTERM, SIGINT,
+#     SIGHUP: what job watchdogs and `systemctl --user stop` send) is a plain
+#     failure, not retried, or a watchdog-killed point would run twice as long.
+#     A retried shared process reruns all of its points;
+#   * appends one line per attempt to child_attempts.csv beside worker_rows/, so
+#     a retried point stays visible after it succeeded;
+#   * returns instead of throwing, so the controller records the point as a
+#     failure row and carries on with the rest of the rung.
+const PPC_CRASH_SIGNALS = (4, 6, 7, 8, 11)  # SIGILL SIGABRT SIGBUS SIGFPE SIGSEGV
+const PPC_SIGNAMES = Dict(4 => "SIGILL", 6 => "SIGABRT", 7 => "SIGBUS", 8 => "SIGFPE",
+                          9 => "SIGKILL", 11 => "SIGSEGV", 15 => "SIGTERM")
+
+function ppc_child_status(err)
+    if err isa ProcessFailedException
+        for p in err.procs
+            sig = Int(p.termsignal)
+            sig != 0 && return (kind="signal", code=sig,
+                text="killed by signal $(sig) ($(get(PPC_SIGNAMES, sig, "unnamed")))")
+            code = Int(p.exitcode)
+            code != 0 && return (kind="exit", code=code, text="exit code $(code)")
+        end
+    end
+    return (kind="error", code=0, text=first(sprint(showerror, err), 300))
+end
+
+# Test-only fault injection, off unless SPACEAGORA_PPC_TEST_FAULT is set:
+# "<signal_once|signal_always|sigterm_once|exit_always>:<substring of the child's label>".
+function _ppc_test_fault_cmd(cmd::Cmd, label::String, attempt::Int)::Cmd
+    spec = get(ENV, "SPACEAGORA_PPC_TEST_FAULT", "")
+    isempty(spec) && return cmd
+    kind, match = String.(split(spec, ':'; limit=2))
+    occursin(match, label) || return cmd
+    kind in ("signal_once", "sigterm_once") && attempt > 1 && return cmd
+    kind in ("signal_once", "signal_always") && return `bash -c 'kill -SEGV $$'`
+    kind == "sigterm_once" && return `bash -c 'kill -TERM $$'`
+    kind == "exit_always" && return `bash -c 'exit 7'`
+    return cmd
+end
+
+function _ppc_record_attempt(events::String, label::String, attempt::Int, st, seconds::Float64)
+    isempty(events) && return nothing
+    row = DataFrame(timestamp_utc=string(now(UTC)), child=label, attempt=attempt, status=st.kind,
+                    code=st.code, detail=replace(st.text, r"[\r\n,]+" => " "), seconds=round(seconds; digits=1))
+    CSV.write(events, row; append=isfile(events))
+    return nothing
+end
+
+function ppc_run_child(cmd::Cmd, label::String; outfiles::Vector{String}=String[], events::String="")
+    attempt = 0
+    while true
+        attempt += 1
+        t0 = time()
+        try
+            run(_ppc_test_fault_cmd(cmd, label, attempt))
+            _ppc_record_attempt(events, label, attempt, (kind="ok", code=0, text="ok"), time() - t0)
+            attempt > 1 && println("[retry-ok] $(label) succeeded on attempt $(attempt); only its rows are kept")
+            return (ok=true, attempts=attempt, kind="ok", code=0, text="ok")
+        catch err
+            err isa InterruptException && rethrow()
+            st = ppc_child_status(err)
+            println("[child-failed] $(label) attempt=$(attempt): $(st.text)")
+            _ppc_record_attempt(events, label, attempt, st, time() - t0)
+            if st.kind == "signal" && st.code in PPC_CRASH_SIGNALS && attempt == 1
+                println("[retry] $(label): crash signal, rerunning once; attempt 1 rows are discarded")
+                foreach(f -> rm(f; force=true), outfiles)
+                continue
+            end
+            return (ok=false, attempts=attempt, kind=st.kind, code=st.code, text=st.text)
+        end
+    end
+end
+
+# A point with no timing rows gets one row saying why, so the raw CSV shows the
+# hole (success=false, retcode and error_message lead with the status) instead
+# of the point silently missing. A rerun with --resume retries it.
+function ppc_write_failure_row(outfile::String, cfg::PPCConfig, case::String, mode::String,
+                               threads::Int, mc::Int, retcode::String, message::String, attempts::Int)
+    isfile(outfile) && return nothing
+    hw = ppc_hardware_snapshot()
+    ppc_write_rows(outfile, NamedTuple[(
+        timestamp_utc=hw.timestamp_utc, git_commit=hw.git_commit, budget_condition=hw.budget_condition,
+        core_budget=hw.core_budget, hardware_class=hw.hardware_class, machine=hw.machine,
+        case=case, mode=mode, thread_count=threads, process_workers=cfg.process_workers,
+        repeat=0, mc_samples=mc, solver_mode=cfg.solver_mode, success=false,
+        retcode=retcode, error_message=first(message, 2000), child_attempts=attempts,
+        wall_time_s=NaN, throughput_samples_per_s=NaN,
+        execution_scope="not_run", outer_backend_actual="not_run")])
+    return nothing
+end
+
+# force_<route>@w<W>+l<L>[+b<B>] needs W pool workers plus L coordinator-local
+# slots inside the core budget (the src-side check is _predictive_forced_plan_check:
+# the mixed-slot cap is budget - W). Returns a reason string when the budget makes
+# the pinned plan impossible, else nothing; anything else the planner rejects
+# still shows up as a failed child.
+function ppc_forced_plan_infeasible(mode::String, threads::Int)::Union{Nothing, String}
+    m = match(r"^force_(\w+)@w(\d+)\+l(\d+)(?:\+b(\d+))?$", mode)
+    m === nothing && return nothing
+    m.captures[1] == "process" || return nothing
+    w, l = parse(Int, m.captures[2]), parse(Int, m.captures[3])
+    raw = strip(get(ENV, "SPACEAGORA_CORE_BUDGET", ""))
+    budget = isempty(raw) ? SpaceAGORA.ParallelProfiles.usable_core_budget() : parse(Int, raw)
+    w > budget && return "infeasible at budget $(budget): $(w) pool workers exceed the budget"
+    l > max(0, budget - w) &&
+        return "infeasible at budget $(budget): $(l) local slots exceed the mixed-slot cap budget - workers = $(max(0, budget - w))"
+    l > max(0, threads - 1) && return "infeasible at budget $(budget): $(l) local slots exceed threads - 1 = $(threads - 1)"
+    return nothing
+end
+
+function _ppc_shared_key(case::String, mode::PPCModeSpec, threads::Int, cmd::Cmd)
+    _ppc_shared_process() || return nothing
+    (mode.policy_adaptive || ppc_workload_skips_case(case)) && return nothing
+    return (threads, cmd.env)
+end
+
+function _ppc_run_shared!(points::Vector{Any}, scratch::String, cfg::PPCConfig)
+    first_pt = first(points)
+    events = joinpath(dirname(scratch), "child_attempts.csv")
+    outfiles = String[p.outfile for p in points]
+    label = "shared[" * join(("$(p.case)/$(p.mode)/mc$(p.mc_count)" for p in points), ", ") * "]"
+    if length(points) == 1
+        println("[run] $(first_pt.case) mode=$(first_pt.mode) repeats=$(cfg.repeats) mc=$(first_pt.mc_count)")
+        return ppc_run_child(first_pt.cmd, label; outfiles, events)
+    end
+    path = joinpath(scratch, "shared_points_$(basename(first_pt.outfile)).tsv")
+    write(path, join(("$(p.case)\t$(p.mode)\t$(p.mc_count)\t$(p.outfile)\n" for p in points)))
+    println("[run-shared] $(length(points)) points in one process: " *
+            join(("$(p.case)/$(p.mode)/mc$(p.mc_count)" for p in points), ", "))
+    return ppc_run_child(addenv(first_pt.cmd, "SPACEAGORA_PPC_POINTS_FILE" => path), label; outfiles, events)
+end
+
+# Worker side of the shared process: the points file's points, shuffled.
+function ppc_run_worker_points(cfg::PPCConfig, path::String)
+    points = [split(l, '\t') for l in eachline(path) if !isempty(strip(l))]
+    shuffle!(MersenneTwister(cfg.worker_seed), points)
+    for (case, mode, mc, outfile) in points
+        println("[shared] $(case) mode=$(mode) mc=$(mc) threads=$(cfg.worker_threads)")
+        flush(stdout)
+        # Per-point harness state, as a fresh process would have it.
+        _PPC_ADAPTIVE_ROUTE_STATE[] = nothing
+        _PPC_SAMPLE_FN_CACHE[] = nothing
+        ppc_run_worker_performance(_ppc_with(cfg; worker_case=String(case), worker_mode=String(mode),
+            worker_mc_samples=parse(Int, mc), worker_outfile=String(outfile)))
+    end
+    return nothing
+end
+
 function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Function}=nothing)
     stamp = Dates.format(now(UTC), dateformat"yyyymmdd_HHMMSS")
     outdir = cfg.outdir == PPC_DEFAULT_OUTDIR ? joinpath(PPC_DEFAULT_OUTDIR, stamp) : cfg.outdir
@@ -1235,6 +1451,10 @@ function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Func
     println("[parallelization-performance] precompile_workload=$(workload_env === nothing ? "off" : workload_env)")
 
     perf_paths = String[]
+    failures = NamedTuple[]
+    events = joinpath(outdir, "child_attempts.csv")
+    shared = Dict{Any, Vector{Any}}()
+    shared_order = Any[]
     for case in cases
         case_meta = ppc_case_catalog()[case]
         is_mc = case_meta.montecarlo
@@ -1263,8 +1483,13 @@ function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Func
                 continue
             end
             outfile = joinpath(scratch, "perf_$(case)_$(mode)_t$(thread_count)_mc$(mc_count).csv")
+            infeasible = ppc_forced_plan_infeasible(mode, thread_count)
             if _ppc_worker_already_done(outfile; budget_condition=condition)
                 println("[skip] $(case) mode=$(mode) threads=$(thread_count) mc=$(mc_count) (already completed — resume)")
+            elseif infeasible !== nothing
+                println("[infeasible] $(case) mode=$(mode) threads=$(thread_count) mc=$(mc_count): $(infeasible); not run")
+                ppc_write_failure_row(outfile, cfg, case, mode, thread_count, mc_count,
+                                      "infeasible_at_budget", infeasible, 0)
             else
                 cmd = ppc_worker_cmd(
                     cfg;
@@ -1279,12 +1504,34 @@ function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Func
                     parity=false,
                     workload_env=workload_env
                 )
-                println("[run] $(case) mode=$(mode) threads=$(thread_count) repeats=$(cfg.repeats) mc=$(mc_count)")
-                run(cmd)
-                on_run_complete === nothing || on_run_complete()
+                key = _ppc_shared_key(case, modes[mode], thread_count, cmd)
+                if key === nothing
+                    println("[run] $(case) mode=$(mode) threads=$(thread_count) repeats=$(cfg.repeats) mc=$(mc_count)")
+                    res = ppc_run_child(cmd, "$(case)/$(mode)/t$(thread_count)/mc$(mc_count)"; outfiles=[outfile], events)
+                    res.ok || begin
+                        ppc_write_failure_row(outfile, cfg, case, mode, thread_count, mc_count,
+                                              "child_$(res.kind)_$(res.code)", res.text, res.attempts)
+                        push!(failures, (; case, mode, threads=thread_count, mc=mc_count, res.attempts, res.text))
+                    end
+                    on_run_complete === nothing || on_run_complete()
+                else
+                    haskey(shared, key) || push!(shared_order, key)
+                    push!(get!(Vector{Any}, shared, key), (; case, mode, mc_count, outfile, cmd))
+                end
             end
             push!(perf_paths, outfile)
         end
+    end
+    for key in shared_order
+        res = _ppc_run_shared!(shared[key], scratch, cfg)
+        if res !== nothing && !res.ok
+            for p in shared[key]
+                ppc_write_failure_row(p.outfile, cfg, p.case, p.mode, key[1], p.mc_count,
+                                      "child_$(res.kind)_$(res.code)", res.text, res.attempts)
+                push!(failures, (; p.case, p.mode, threads=key[1], mc=p.mc_count, res.attempts, res.text))
+            end
+        end
+        on_run_complete === nothing || on_run_complete()
     end
 
     parity_paths = String[]
@@ -1292,7 +1539,9 @@ function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Func
     for case in parity_cases, mode in parity_modes
         thread_count = maximum(cfg.threads)
         outfile = joinpath(scratch, "parity_$(case)_$(mode)_t$(thread_count).csv")
-        if _ppc_worker_already_done(outfile; budget_condition=condition)
+        if (why = ppc_forced_plan_infeasible(mode, thread_count)) !== nothing
+            println("[infeasible] parity $(case) mode=$(mode) threads=$(thread_count): $(why); not run")
+        elseif _ppc_worker_already_done(outfile; budget_condition=condition)
             println("[skip] parity $(case) mode=$(mode) threads=$(thread_count) (already completed — resume)")
         else
             cmd = ppc_worker_cmd(
@@ -1308,7 +1557,8 @@ function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Func
                 workload_env=workload_env
             )
             println("[parity] $(case) mode=$(mode) threads=$(thread_count)")
-            run(cmd)
+            res = ppc_run_child(cmd, "parity/$(case)/$(mode)/t$(thread_count)"; outfiles=[outfile], events)
+            res.ok || push!(failures, (; case, mode, threads=thread_count, mc=1, res.attempts, text="parity: " * res.text))
         end
         push!(parity_paths, outfile)
     end
@@ -1340,7 +1590,10 @@ function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Func
     println("[done] parity=$(parity_path)")
     println("[done] report=$(report_path)")
     println("[done] plots=$(length(plot_paths))")
-    return nothing
+    for f in failures
+        println("[failed-point] $(f.case) mode=$(f.mode) threads=$(f.threads) mc=$(f.mc) attempts=$(f.attempts): $(f.text)")
+    end
+    return failures
 end
 
 function main_parallelization_performance()
@@ -1349,7 +1602,10 @@ function main_parallelization_performance()
         if isempty(cfg.worker_outfile) || isempty(cfg.worker_case) || isempty(cfg.worker_mode)
             throw(ArgumentError("--worker requires --case, --mode, and --outfile."))
         end
-        if cfg.worker_parity
+        points_file = pop!(ENV, "SPACEAGORA_PPC_POINTS_FILE", "")
+        if !isempty(points_file)
+            ppc_run_worker_points(cfg, points_file)
+        elseif cfg.worker_parity
             ppc_run_worker_parity(cfg)
         else
             ppc_run_worker_performance(cfg)

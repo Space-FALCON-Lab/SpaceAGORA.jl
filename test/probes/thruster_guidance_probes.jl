@@ -244,7 +244,7 @@ end
         @test GH._oblate_altitude_from_radius(r_squashed, u_low_lat, squashed) ≈ target_alt atol=1e-8
     end
 
-    @testset "AerobrakingCampaignPropulsiveManeuverGuidanceModel calcGuidanceEffect!" begin
+    @testset "AerobrakingCampaignPropulsiveManeuverGuidanceModel update_guidance!" begin
         campaign = AerobrakingCampaignPropulsiveManeuverGuidanceModel(
             maneuver_orbit_number=[2, 3, 4],
             maneuver_Δv=[5.0, -3.0, 0.0]
@@ -254,13 +254,13 @@ end
         u = build_initial_conditions(args)
 
         # Out-of-range spacecraft indices are ignored.
-        @test calcGuidanceEffect!(campaign, u, p, 0.0, 0) === nothing
-        @test calcGuidanceEffect!(campaign, u, p, 0.0, 3) === nothing
+        @test update_guidance!(campaign, u, p, 0.0, 0) === nothing
+        @test update_guidance!(campaign, u, p, 0.0, 3) === nothing
         @test all(cmd -> !cmd.valid && cmd.delta_v_mps == 0.0, p.shared_buffers.maneuver_commands)
 
         # Orbit with no scheduled maneuver: valid command with zero delta-v.
         p.orbit_counter[1] = 1
-        calcGuidanceEffect!(campaign, u, p, 0.0, 1)
+        update_guidance!(campaign, u, p, 0.0, 1)
         cmd_idle = p.shared_buffers.maneuver_commands[1]
         @test cmd_idle.valid
         @test cmd_idle.delta_v_mps == 0.0
@@ -269,7 +269,7 @@ end
 
         # Positive scheduled delta-v: prograde command (direction 0).
         p.orbit_counter[1] = 2
-        calcGuidanceEffect!(campaign, u, p, 10.0, 1)
+        update_guidance!(campaign, u, p, 10.0, 1)
         cmd_pro = p.shared_buffers.maneuver_commands[1]
         @test cmd_pro.valid
         @test cmd_pro.delta_v_mps == 5.0
@@ -278,7 +278,7 @@ end
 
         # Negative scheduled delta-v: magnitude with retrograde direction (π).
         p.orbit_counter[2] = 3
-        calcGuidanceEffect!(campaign, u, p, 10.0, 2)
+        update_guidance!(campaign, u, p, 10.0, 2)
         cmd_retro = p.shared_buffers.maneuver_commands[2]
         @test cmd_retro.valid
         @test cmd_retro.delta_v_mps == 3.0
@@ -287,7 +287,7 @@ end
 
         # Zero scheduled delta-v falls into the retrograde direction branch.
         p.orbit_counter[2] = 4
-        calcGuidanceEffect!(campaign, u, p, 20.0, 2)
+        update_guidance!(campaign, u, p, 20.0, 2)
         cmd_zero = p.shared_buffers.maneuver_commands[2]
         @test cmd_zero.valid
         @test cmd_zero.delta_v_mps == 0.0
@@ -295,7 +295,7 @@ end
         @test cmd_zero.source_orbit == 4
     end
 
-    @testset "ApoapsisTargetPeriapsisRaiseGuidanceModel calcGuidanceEffect!" begin
+    @testset "ApoapsisTargetPeriapsisRaiseGuidanceModel update_guidance!" begin
         μ = EARTH.μ
         ra_m = EARTH.Rp_e + 500e3
         rp_m = EARTH.Rp_e + 100e3
@@ -314,7 +314,7 @@ end
         set_state!(u, 1, pos, vel)
         p.orbit_counter[1] = 7
 
-        @test calcGuidanceEffect!(model, u, p, 0.0, 1) === nothing
+        @test update_guidance!(model, u, p, 0.0, 1) === nothing
         cmd = p.shared_buffers.maneuver_commands[1]
         @test cmd.valid
         @test cmd.direction_rad == 0.0
@@ -325,7 +325,7 @@ end
         # (r_apo, r_peri_target) ellipse. Periapsis direction is +x (equatorial
         # orbit built with ω = Ω = i = 0).
         a_cur = 0.5 * (ra_m + rp_m)
-        l_pi = GH.planet_frame_lpi(EARTH, p.shared_buffers.et_start[], eph)
+        l_pi = SimulationModel.ephemerides_frame_lpi(eph, EARTH, p.shared_buffers.et_start[])
         u_pp = SVector{3, Float64}(l_pi * SVector(1.0, 0.0, 0.0))
         u_pp = u_pp / norm(u_pp)
         rp_target = GH._radius_for_oblate_altitude(200e3, u_pp, EARTH)
@@ -336,26 +336,26 @@ end
         @test 5.0 < cmd.delta_v_mps < 100.0
 
         # ---- COMMAND_ISSUED with no valid burn plan: command left in place ----
-        calcGuidanceEffect!(model, u, p, 1.0, 1)
+        update_guidance!(model, u, p, 1.0, 1)
         @test p.shared_buffers.maneuver_commands[1].valid
         @test model.command_state[1] == GH._APO_TARGET_COMMAND_ISSUED
 
         # ---- COMMAND_ISSUED with a valid burn plan: command retired ----
         p.shared_buffers.maneuver_burn_plans[1] = CT.PropulsiveBurnPlan(valid=true, delta_v_mps=cmd.delta_v_mps)
-        calcGuidanceEffect!(model, u, p, 2.0, 1)
+        update_guidance!(model, u, p, 2.0, 1)
         @test !p.shared_buffers.maneuver_commands[1].valid
         @test model.command_state[1] == GH._APO_TARGET_DISCARDED
 
         # ---- DISCARDED state: command stays cleared, no re-issue ----
         p.shared_buffers.maneuver_commands[1] = CT.PropulsiveManeuverCommand(valid=true, delta_v_mps=99.0)
-        calcGuidanceEffect!(model, u, p, 3.0, 1)
+        update_guidance!(model, u, p, 3.0, 1)
         @test !p.shared_buffers.maneuver_commands[1].valid
         @test model.command_state[1] == GH._APO_TARGET_DISCARDED
 
         # ---- Out-of-range index leaves state untouched ----
         model_oob = ApoapsisTargetPeriapsisRaiseGuidanceModel(target_apoapsis_radius_m=EARTH.Rp_e + 600e3)
-        @test calcGuidanceEffect!(model_oob, u, p, 0.0, 0) === nothing
-        @test calcGuidanceEffect!(model_oob, u, p, 0.0, 2) === nothing
+        @test update_guidance!(model_oob, u, p, 0.0, 0) === nothing
+        @test update_guidance!(model_oob, u, p, 0.0, 2) === nothing
         @test isempty(model_oob.command_state)
 
         # ---- Degenerate state: osculating-element extraction fails, no command ----
@@ -363,7 +363,7 @@ end
         p_bad = ODEParams(n_sats=1, args=args)
         u_bad = build_initial_conditions(args)
         set_state!(u_bad, 1, pos, SVector(0.0, 0.0, 0.0))
-        calcGuidanceEffect!(model_bad, u_bad, p_bad, 0.0, 1)
+        update_guidance!(model_bad, u_bad, p_bad, 0.0, 1)
         @test !p_bad.shared_buffers.maneuver_commands[1].valid
         @test model_bad.command_state[1] == GH._APO_TARGET_IDLE
 
@@ -372,7 +372,7 @@ end
         p_naninf = ODEParams(n_sats=1, args=args)
         u_naninf = build_initial_conditions(args)
         set_state!(u_naninf, 1, pos, vel)
-        calcGuidanceEffect!(model_naninf, u_naninf, p_naninf, 0.0, 1)
+        update_guidance!(model_naninf, u_naninf, p_naninf, 0.0, 1)
         @test !p_naninf.shared_buffers.maneuver_commands[1].valid
         @test model_naninf.command_state[1] == GH._APO_TARGET_IDLE
 
@@ -384,7 +384,7 @@ end
         p_high = ODEParams(n_sats=1, args=args)
         u_high = build_initial_conditions(args)
         set_state!(u_high, 1, pos, vel)
-        calcGuidanceEffect!(model_high, u_high, p_high, 0.0, 1)
+        update_guidance!(model_high, u_high, p_high, 0.0, 1)
         @test !p_high.shared_buffers.maneuver_commands[1].valid
         @test model_high.command_state[1] == GH._APO_TARGET_IDLE
 
@@ -397,7 +397,7 @@ end
         p_tol = ODEParams(n_sats=1, args=args)
         u_tol = build_initial_conditions(args)
         set_state!(u_tol, 1, pos, vel)
-        calcGuidanceEffect!(model_tol, u_tol, p_tol, 0.0, 1)
+        update_guidance!(model_tol, u_tol, p_tol, 0.0, 1)
         @test p_tol.shared_buffers.maneuver_commands[1].valid
         @test model_tol.command_state[1] == GH._APO_TARGET_COMMAND_ISSUED
 
@@ -407,7 +407,7 @@ end
         u_early = build_initial_conditions(args)
         pos_e, vel_e = equatorial_state(ra_m, rp_m, deg2rad(90.0))
         set_state!(u_early, 1, pos_e, vel_e)
-        calcGuidanceEffect!(model_early, u_early, p_early, 0.0, 1)
+        update_guidance!(model_early, u_early, p_early, 0.0, 1)
         @test !p_early.shared_buffers.maneuver_commands[1].valid
         @test model_early.command_state[1] == GH._APO_TARGET_IDLE
 
@@ -417,7 +417,7 @@ end
         u_late = build_initial_conditions(args)
         pos_l, vel_l = equatorial_state(ra_m, rp_m, deg2rad(185.0))
         set_state!(u_late, 1, pos_l, vel_l)
-        calcGuidanceEffect!(model_late, u_late, p_late, 0.0, 1)
+        update_guidance!(model_late, u_late, p_late, 0.0, 1)
         @test !p_late.shared_buffers.maneuver_commands[1].valid
         @test model_late.command_state[1] == GH._APO_TARGET_IDLE
 
@@ -429,7 +429,7 @@ end
         p_inf = ODEParams(n_sats=1, args=args)
         u_inf = build_initial_conditions(args)
         set_state!(u_inf, 1, pos, vel)
-        calcGuidanceEffect!(model_infeasible, u_inf, p_inf, 0.0, 1)
+        update_guidance!(model_infeasible, u_inf, p_inf, 0.0, 1)
         @test !p_inf.shared_buffers.maneuver_commands[1].valid
         @test model_infeasible.command_state[1] == GH._APO_TARGET_IDLE
 
@@ -442,11 +442,11 @@ end
         u_low = build_initial_conditions(args)
         set_state!(u_low, 1, pos, vel)
         p_low.shared_buffers.maneuver_commands[1] = CT.PropulsiveManeuverCommand(valid=true, delta_v_mps=1.0)
-        calcGuidanceEffect!(model_lower, u_low, p_low, 0.0, 1)
+        update_guidance!(model_lower, u_low, p_low, 0.0, 1)
         @test !p_low.shared_buffers.maneuver_commands[1].valid
         @test model_lower.command_state[1] == GH._APO_TARGET_DISCARDED
         # Once discarded, later passes keep the command cleared.
-        calcGuidanceEffect!(model_lower, u_low, p_low, 1.0, 1)
+        update_guidance!(model_lower, u_low, p_low, 1.0, 1)
         @test !p_low.shared_buffers.maneuver_commands[1].valid
     end
 end

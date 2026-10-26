@@ -1,5 +1,6 @@
 # AGORA_Earth.jl configuration, propagated for four days so the viewer holds several orbits.
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
+using SpaceAGORAVisualizer
 using SpaceAGORA
 using SpaceAGORA.SimulationModel
 using StaticArrays

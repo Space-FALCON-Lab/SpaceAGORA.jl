@@ -1,4 +1,5 @@
 # ISS in its orbit with NASA's ISS (B) glTF standing in for the link boxes.
+using SpaceAGORAVisualizer
 using SpaceAGORA, StaticArrays
 const SM = SpaceAGORA.SimulationModel
 planet = make_no_gram_planet(:earth)
@@ -14,7 +15,7 @@ args = make_example_config(planet=planet, spacecraft=sc, mission_time=options.du
     dynamic_effectors=(SM.InverseSquaredJ2GravityModel(),), density_model=SM.NoAtmosphereModel(), ephemerides_model=SM.SimpleEphemeridesModel(),
     orientation_sim=false, keplerian=true, EI_km=120.0, verbose=false, results=true, results_directory=outdir)
 @time run_simulation(args; visualization=true)
-iss = joinpath(REPO_ROOT, "data", "models", "iss_nasa_3d_resources_b.glb")
+iss = joinpath(REPO_ROOT, "data", "scene", "models", "iss_nasa_3d_resources_b.glb")
 html = export_visualization(joinpath(outdir, "simulation_results"); max_frames=2500, trail_orbits=1, title="AGORA ISS · NASA 3D model in a 408 km orbit",
     models=Dict(1 => iss), model_scale=2.4, model_rotation_deg=Dict(1 => (-90, 0, -90)))
 println("html: ", html, " ", filesize(html))

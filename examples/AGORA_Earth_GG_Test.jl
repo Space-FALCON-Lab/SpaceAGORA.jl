@@ -8,19 +8,19 @@ struct GravityGradientTorqueModel <: AbstractForceTorqueModel
     inertia::SMatrix{3, 3, Float64}
 end
 
-function SimulationModel.calcForceTorque(
+function SimulationModel.wrench(
     model::GravityGradientTorqueModel,
-    x,
-    p::ODEParams,
-    i::Int64
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    r = SVector{3, Float64}(x.pos)
+    r = x.pos_ii
     rmag = norm(r)
     if rmag <= 1e-9
         return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
     end
 
-    mu = p.args.environment_model.planet.μ
+    mu = env.planet.μ
     rhat = r / rmag
     torque = 3.0 * mu / rmag^3 * cross(rhat, model.inertia * rhat)
     return SVector{3, Float64}(0.0, 0.0, 0.0), torque

@@ -4,6 +4,7 @@ using Test, SpaceAGORA
     listing = sprint(io -> @test SpaceAGORA.run_cli(["assets", "list"]; io) == 0)
     @test occursin("odyssey_p20_frozen_v1@1.0.0", listing)
     @test occursin("mars, available", listing)
+    @test occursin("mars_global_descent_p20_frozen_v1@1.0.0 (mars, available)", listing)
     @test_throws ArgumentError SpaceAGORA.run_cli(["assets", "list", "extra"])
 
     for command in ("fetch", "check")

@@ -8,7 +8,7 @@ const SM = SpaceAGORA.SimulationModel
 const SE = SpaceAGORA.SimulationEngine
 
 # Opt-in results thinning (SPACEAGORA_RESULTS_THIN_STRIDE /
-# SPACEAGORA_RESULTS_FINAL_ONLY). See docs/architecture/heap_contention.md.
+# SPACEAGORA_RESULTS_FINAL_ONLY). See benchmarks/studies/heap_contention/FINDINGS.md.
 #
 # What this pins: with both settings at their default (off), the written
 # results output is byte-identical to before the feature existed

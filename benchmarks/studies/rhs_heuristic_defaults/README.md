@@ -6,13 +6,13 @@ sweep would consider, size by size, on one machine at one thread budget.
 ## Why
 
 The pinned parallel routes (`R1a`/`R2`/`R3` in
-`benchmarks/studies/paper_parallelization_benchmarks`) run whatever
-`_rhs_execution_plan_uncached` (`src/simulation/engine/setup.jl`) decides; the
+the paper study (SpaceAGORAParallelizationStudies)) run whatever
+`_rhs_execution_plan_uncached` (`src/orchestration/simulation/engine/setup.jl`) decides; the
 adaptive routes (`R6`/`R7`) run whatever the pre-solve calibration sweep
-measured. On the archived TRX50 P1 ladder the two answers differ by up to ten
-times in the middle of the constellation-size range, so what needs fixing is
-the default, not the sweep. `docs/architecture/rhs_heuristic_defaults.md` is
-the write-up; this directory holds the measurement that backs it.
+measured. Compare the heuristic and calibrated plans at the same resource
+budget before changing either. `docs/architecture/rhs_heuristic_defaults.md`
+describes the shipped rule and its scope; this directory holds the measurement
+procedure.
 
 ## Running it
 
@@ -31,10 +31,9 @@ Useful flags:
   or two commits, can be compared with `cmp`.
 - `--mission=<s>` — functional smoke only; overrides every rung's mission.
 
-Results land in `results/` and are committed. Only ratios within one invocation
-mean anything: the machine is shared, and the whole point of running every plan
-back to back in one process is that the comparison does not depend on the
-machine being quiet.
+Results land in `results/` and belong in the private research record. Compare
+plans within one invocation and record host load; running back to back reduces
+some variability but does not eliminate contention or make a ratio portable.
 
 ## How a plan is pinned
 

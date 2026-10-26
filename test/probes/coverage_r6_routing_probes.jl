@@ -41,7 +41,7 @@ end
 # is flat-queue only, which is the mix the sweep exists to rank.
 function _r6_fixture(; n_sats::Int = 4, verbose::Bool = false, mission_time::Float64 = 30.0,
                        density_model = ExponentialAtmosphereModel(EARTH))
-    harmonics_file = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+    harmonics_file = joinpath(REPO_ROOT, "data", "planets", "gravity", "EarthGGM05C.csv")
     args = build_config_multi(
         spacecraft = [
             make_spacecraft(ra_alt_m = 500e3 + 10e3 * i, rp_alt_m = 480e3 + 5e3 * i, ν_deg = 120.0 + 5.0 * i)

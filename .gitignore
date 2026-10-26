@@ -17,16 +17,21 @@ output/*
 GRAMpy/*
 *.pdf
 *.csv
-# ...but gravity-coefficient assets are versioned (see test/gmat_scenario_matrix.jl)
-!data/Gravity_harmonics_data/*.csv
-# Viewer surface textures: public-domain NASA/USGS mosaics registered in data/textures/manifest.toml
-!data/textures/
-!data/textures/*.jpg
-!data/textures/manifest.toml
-# 3D models for the viewer (public-domain NASA assets, see data/models/README.md)
-!data/models/
-!data/models/README.md
+# ...but gravity and topography coefficient assets are versioned (see test/gmat_scenario_matrix.jl)
+!data/planets/gravity/*.csv
+!data/planets/topography/*.csv
+# SPICE pole/orientation overrides shipped with the planet inputs
+!data/planets/spice_overrides/*.tpc
+# Viewer surface textures: public-domain NASA/USGS mosaics registered in data/scene/textures/manifest.toml
+!data/scene/textures/
+!data/scene/textures/*.jpg
+!data/scene/textures/manifest.toml
+# 3D models for the viewer and the RPO station geometry (see data/scene/models/README.md)
+!data/scene/models/
+!data/scene/models/README.md
 *.png
+# Documentation figures are committed; scripts/docs_figures/ regenerates them
+!docs/src/assets/figures/*.png
 *.tex
 .DS_Store
 *.cov
@@ -35,9 +40,11 @@ docs/site/
 docs/src/generated/
 docs/.CondaPkg/
 docs/Manifest.toml
-output/calibration/
-!test/golden/*/fixture.csv
-!test/golden/agora_earth_regression.csv
+test/Manifest.toml
+examples/Manifest.toml
+!test/fixtures/*/fixture.csv
+!test/fixtures/agora_earth_regression.csv
+!test/fixtures/research_contracts/pass_exponential_profile.csv
 data/telemetry/CYGNSS/
 data/telemetry/GRIFEX/
 # Reference and public flight sets synced from Space-FALCON-Lab/spaceagora-verification-data
@@ -112,8 +119,10 @@ CLAUDE.md
 *.[fF][bB][xX]
 *.[dD][aA][eE]
 *.[gG][lL][bB]
-# ...except the viewer models registered in data/models/README.md (this must follow the *.glb rule)
-!data/models/*.glb
+# ...except the viewer models registered in data/scene/models/README.md (this must follow the *.glb rule)
+!data/scene/models/*.glb
+# ...and the RPO station mesh registered in the same README (this must follow the *.stl rule)
+!data/scene/models/*.stl
 *.[gG][lL][tT][fF]
 *.[pP][lL][yY]
 *.[wW][rR][lL]
@@ -147,6 +156,8 @@ viewer/dev_data.js
 
 # Optional terrain asset tooling environment
 .venv-terrain/
+# Fetched terrain site bundles (scripts/dev/terrain/fetch_moon_site.py writes here)
+data/terrain/
 
 # Reproducible public Odyssey example environment resolves on each platform.
 examples/odyssey_surrogate_env/Manifest.toml
@@ -169,3 +180,26 @@ benchmarks/studies/small_wins/results/
 # Generated optional HYPR example environment; Project.template.toml is tracked.
 /examples/rpo_planner_env/Project.toml
 /examples/rpo_planner_env/Manifest.toml
+
+# Generated GNC algorithm example environment; Project.template.toml is tracked.
+/examples/gnc_algorithm_env/Project.toml
+/examples/gnc_algorithm_env/Manifest.toml
+
+# Generated extension walkthrough environment and the walkthroughs' results.
+/examples/walkthrough_env/Project.toml
+/examples/walkthrough_env/Manifest.toml
+/examples/walkthrough_env/output/
+
+# Optional viewer installation environment
+.visualizer-env/
+
+# Generated study reports and captures; historical copies belong in the research archive.
+/benchmarks/studies/edl_aerocapture_gp_uncertainty/RESULTS.md
+/benchmarks/studies/third_body_cost/profile_*.txt
+/benchmarks/studies/aero_batch/profile_*.txt
+/benchmarks/studies/gram_multisat_harness/*.mem
+/benchmarks/studies/gram_multisat_harness/*.out
+/benchmarks/studies/gram_multisat_harness/b6_fixed.json
+/benchmarks/studies/gram_multisat_harness/b6_nominal.json
+/benchmarks/studies/gram_multisat_harness/mars_patch/patched_mars.txt
+/benchmarks/studies/gram_multisat_harness/mars_patch/stock_mars.txt

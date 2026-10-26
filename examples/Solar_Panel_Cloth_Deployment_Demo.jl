@@ -1,5 +1,8 @@
 #!/usr/bin/env julia
 
+# Solar-panel deployment using compliant lumped-body dynamics.
+# The historical filename and output directory are retained for compatibility.
+
 using LinearAlgebra
 using Printf
 using StaticArrays
@@ -637,7 +640,7 @@ function _deployment_3d_plot(sim)
     return PlotlyJS.Plot(
         traces,
         PlotlyJS.Layout(
-            title="SpaceAGORA Cloth Solar Panel Deployment Mesh",
+            title="SpaceAGORA Compliant Solar Panel Deployment Mesh",
             scene=PlotlyJS.attr(
                 aspectmode="data",
                 xaxis=PlotlyJS.attr(title="x (m)"),
@@ -916,7 +919,7 @@ function run_solar_panel_cloth_deployment_demo()
 
     final_angles = sim.actual_angles_deg[:, end]
     final_rotation = rotation_sim.actual_angle_deg[end]
-    println("Solar panel Cloth mesh deployment demo complete.")
+    println("Solar panel compliant multibody deployment demo complete.")
     println("  tile bodies             = ", length(build.model.bodies))
     println("  compliant joints        = ", length(build.model.joints))
     println("  final hinge angles deg  = ", join((@sprintf("%.2f", a) for a in final_angles), ", "))

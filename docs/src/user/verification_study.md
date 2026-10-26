@@ -43,15 +43,16 @@ when threshold failures should stop the run.
 The packaged CLI route is:
 
 ```text
-julia --project=. src/cli/main.jl telemetry quick --output-dir=output/telemetry_cli --enforce=1
+julia --project=. src/interfaces/cli/main.jl telemetry quick --output-dir=output/telemetry_cli --enforce=1
 ```
 
 Plot generation is off by default in the CLI path so the command remains usable
 even when plotting dependencies or scripts are unavailable. Enable it explicitly
 with `--plots=1` when needed.
 
-The CLI form runs the same study script under the repository project, so it
-has the same prerequisite as the script entrypoint: the `data/GRAMSuite.jl`
+The CLI form runs the same study script in the examples environment, so it
+needs that environment prepared (`julia --startup-file=no examples/setup.jl`)
+and has the same prerequisite as the script entrypoint: the `data/GRAMSuite.jl`
 submodule (see Prerequisites above). Without it the command stops with
 "Package GRAMSuite not found in current path".
 
@@ -129,7 +130,7 @@ engine detects a switch from the per-step algorithm record, and an explicit
 `SPACEAGORA_SOLVER_SAVE_EVERYSTEP` / `SPACEAGORA_SOLVER_SAVE_ON` value in the
 environment is passed through unchanged.
 
-The mechanism is general: `StateAnchor(elapsed_s, sat_idx, state)` and
+The mechanism is general: `StateAnchor(elapsed_s, spacecraft_index, state)` and
 `get_state_anchor_callback(anchors)` build a discrete callback that any run can
 pass through `run_simulation(args; extra_callbacks=(cb,))`. It is supported on
 the first-order solver paths; under `SPACEAGORA_SOLVER_MODE=gravity_backbone_split`

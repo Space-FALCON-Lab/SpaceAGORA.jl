@@ -6,6 +6,9 @@ description: >
   (The GRAMSuite checkout is ~23 GB compressed, over the repository's 10 GB
   cache limit, so it is fetched in every job that needs it.)
 inputs:
+  edg:
+    description: Install the pinned EDG provider for the existing runtime suites.
+    default: "true"
   gram:
     description: >-
       none, or the GRAMSuite sparse profile to fetch (.github/gramsuite-sparse/):
@@ -125,7 +128,7 @@ runs:
       shell: bash
       env:
         JULIA_PKG_PRECOMPILE_AUTO: ${{ inputs.precompile == 'true' && '1' || '0' }}
-      run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
+      run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate(julia_version_strict=true)'
 
     # Instantiate does not rebuild SpaceAGORA's package image when nothing was
     # installed, and jobs that run with --compiled-modules=existing would then
@@ -134,6 +137,21 @@ runs:
       if: (inputs.instantiate == 'true' || (inputs.instantiate == '' && inputs.depot == 'true')) && inputs.precompile == 'true'
       shell: bash
       run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.precompile()'
+
+    # Full EDG suites, including native and coverage shards, require the real
+    # extracted provider. Keep its environment outside the checkout and expose
+    # it to child processes without rewriting the tracked core Project/Manifest.
+    - name: Prepare mandatory EDG provider for runtime tests
+      if: inputs.edg == 'true' && (inputs.instantiate == 'true' || (inputs.instantiate == '' && inputs.depot == 'true'))
+      shell: bash
+      env:
+        JULIA_PKG_PRECOMPILE_AUTO: "0"
+      run: |
+        set -euo pipefail
+        julia --startup-file=no --project=@stdlib scripts/setup_edg.jl "$RUNNER_TEMP/spaceagora-edg-env"
+        echo "SPACEAGORA_EDG_TEST_ENV=$RUNNER_TEMP/spaceagora-edg-env" >> "$GITHUB_ENV"
+        echo "SPACEAGORA_EDG_ENV=$RUNNER_TEMP/spaceagora-edg-env" >> "$GITHUB_ENV"
+        echo "JULIA_LOAD_PATH=@:$RUNNER_TEMP/spaceagora-edg-env:@stdlib" >> "$GITHUB_ENV"
 
     - name: Wait for GRAMSuite (and native GRAM)
       if: inputs.gram != 'none'

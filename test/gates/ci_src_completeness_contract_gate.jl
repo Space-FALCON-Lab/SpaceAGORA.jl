@@ -1,15 +1,23 @@
+if !isdefined(@__MODULE__, :EDGOwnershipChecks)
+    include(joinpath(@__DIR__, "..", "contracts", "edg_ownership_checks.jl"))
+end
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const SRC_ROOT = joinpath(REPO_ROOT, "src")
-const SOURCE_ROOTS = (SRC_ROOT, joinpath(REPO_ROOT, "packages", "SpaceAGORAHYPR", "src"))
+const SOURCE_ROOTS = (SRC_ROOT,)
 
 const CANONICAL_AGGREGATOR_FILES = Set([
-    joinpath("src", "gnc", "guidance", "rpo", "rpo_planner_module.jl"),
-    joinpath("src", "simulation", "engine", "simulation_engine.jl"),
-    joinpath("src", "simulation", "callbacks", "callbacks.jl"),
-    joinpath("src", "parallel", "routing", "parallel_profiles.jl"),
-    joinpath("src", "parallel", "process", "parallel_process.jl"),
-    joinpath("src", "core", "simulation_model.jl")
+    joinpath("src", "models", "gnc", "planning", "rpo", "lifecycle.jl"),
+    joinpath("src", "orchestration", "simulation", "engine", "simulation_engine.jl"),
+    joinpath("src", "orchestration", "simulation", "callbacks", "callbacks.jl"),
+    joinpath("src", "orchestration", "parallel", "routing", "parallel_profiles.jl"),
+    joinpath("src", "orchestration", "parallel", "process", "parallel_process.jl"),
+    joinpath("src", "orchestration", "simulation", "composition", "simulation_model.jl")
 ])
+
+# The EDG owner forwards the two decisions; it is not an include aggregator.
+# Its exact forwarders are checked rather than exempted as arbitrary code.
+const EDG_DECISION_FORWARDERS = joinpath("src", "models", "gnc", "guidance",
+    "aerobraking", "typed_edg", "algorithms.jl")
 
 const STUB_PATTERN = r"\b[a-zA-Z0-9_]*_stub\(\)\s*=\s*nothing\b"
 const FORBIDDEN_TOKENS = (
@@ -55,6 +63,10 @@ for source_root in SOURCE_ROOTS, (root, _, files) in walkdir(source_root)
         path = joinpath(root, file)
         rel = relpath(path, REPO_ROOT)
         src = read(path, String)
+
+        if rel == EDG_DECISION_FORWARDERS
+            append!(violations, EDGOwnershipChecks.aggregator_violations(src))
+        end
 
         occursin(STUB_PATTERN, src) &&
             push!(violations, "$rel: contains forbidden silent stub pattern '*_stub() = nothing'.")

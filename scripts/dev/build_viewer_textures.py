@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the viewer's surface textures from their public-domain sources.
 
-Writes equirectangular JPEGs into data/textures/ at the requested tiers and
+Writes equirectangular JPEGs into data/scene/textures/ at the requested tiers and
 prints the manifest entries they correspond to. Sources (all NASA/USGS, public
 domain):
 
@@ -21,7 +21,7 @@ from PIL import Image
 
 Image.MAX_IMAGE_PIXELS = None
 REPO = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
-OUT = os.path.join(REPO, "data", "textures")
+OUT = os.path.join(REPO, "data", "scene", "textures")
 TIERS = {"4k": 4096, "8k": 8192, "16k": 16384}
 TREK = "https://trek.nasa.gov/tiles/Mars/EQ/Mars_Viking_MDIM21_ClrMosaic_global_232m/1.0.0/default/default028mm"
 BMNG_4K = "https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x5400x2700.jpg"
@@ -97,4 +97,4 @@ if __name__ == "__main__":
     for body in a.body.split(","):
         print(body, a.tier, flush=True)
         BUILDERS[body](a.tier)
-    print("done; add or update the matching [[texture]] entries in data/textures/manifest.toml")
+    print("done; add or update the matching [[texture]] entries in data/scene/textures/manifest.toml")

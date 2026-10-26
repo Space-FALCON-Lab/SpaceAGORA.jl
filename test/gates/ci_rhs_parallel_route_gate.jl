@@ -6,13 +6,19 @@ function _read(rel)
     return read(path, String)
 end
 
-setup_src    = _read(joinpath("src", "simulation", "engine", "setup.jl"))
-dynamics_src = _read(joinpath("src", "simulation", "engine", "dynamics_rhs.jl"))
-assembly_src = _read(joinpath("src", "simulation", "callbacks", "density_callbacks", "assembly.jl"))
-types_src    = _read(joinpath("src", "parallel", "policy", "types.jl"))
-obs_src      = _read(joinpath("src", "parallel", "policy", "observation_tracking.jl"))
-telemetry_src = _read(joinpath("src", "parallel", "policy", "policy_telemetry.jl"))
-pp_src       = _read(joinpath("src", "parallel", "policy", "parallel_policy.jl"))
+setup_src    = _read(joinpath("src", "orchestration", "simulation", "engine", "setup.jl"))
+dynamics_src = _read(joinpath("src", "orchestration", "simulation", "engine", "dynamics_rhs.jl"))
+assembly_src = _read(joinpath("src", "orchestration", "simulation", "callbacks", "density_callbacks", "assembly.jl"))
+types_src    = _read(joinpath("src", "orchestration", "parallel", "policy", "types.jl"))
+obs_src      = _read(joinpath("src", "orchestration", "parallel", "policy", "observation_tracking.jl"))
+telemetry_src = _read(joinpath("src", "orchestration", "parallel", "policy", "policy_telemetry.jl"))
+pp_src       = _read(joinpath("src", "orchestration", "parallel", "policy", "parallel_policy.jl"))
+
+routing_src = _read(joinpath("src", "orchestration", "parallel", "routing", "effector_routing.jl"))
+for name in ("batchable_effector", "harmonics_prepass_effector", "aero_prepass_effector")
+    occursin("const _$name = SimulationModel.EffectorRouting.$name", dynamics_src) ||
+        error("Engine routing predicate $name does not alias the shared owner")
+end
 
 # ── §1/§2: Satellite-batch route contract ───────────────────────────────────
 # _satellite_batch_saturates_pool must exist and be used in auto routing.
@@ -81,15 +87,15 @@ occursin("_requires_drag_state_callback(effectors, args)", assembly_src) ||
     error("_requires_staged_density_callback does not check _requires_drag_state_callback in assembly.jl")
 
 # ── §6: Batchable effector trait ────────────────────────────────────────────
-occursin("@inline _batchable_effector(::Any)::Bool = false", dynamics_src) ||
-    error("Fallback _batchable_effector(::Any) = false trait is missing from dynamics_rhs.jl")
-occursin("@inline _batchable_effector(::SimulationModel.NBodyGravityModel)::Bool = true", dynamics_src) ||
-    error("NBodyGravityModel is not marked as batchable in dynamics_rhs.jl")
-occursin("@inline _batchable_effector(::SimulationModel.SolarRadiationPressureModel)::Bool = true", dynamics_src) ||
-    error("SolarRadiationPressureModel is not marked as batchable in dynamics_rhs.jl")
+occursin("@inline batchable_effector(::Any)::Bool = false", routing_src) ||
+    error("Fallback _batchable_effector(::Any) = false trait is missing from effector_routing.jl")
+occursin("@inline batchable_effector(::NBodyGravityModel)::Bool = true", routing_src) ||
+    error("NBodyGravityModel is not marked as batchable in effector_routing.jl")
+occursin("@inline batchable_effector(::SolarRadiationPressureModel)::Bool = true", routing_src) ||
+    error("SolarRadiationPressureModel is not marked as batchable in effector_routing.jl")
 
 # GRAM/aero must NOT be marked batchable.
-!occursin("_batchable_effector(::SimulationModel.AerodynamicCoefficientfM)::Bool = true", dynamics_src) ||
+!occursin("batchable_effector(::AerodynamicCoefficientfM)::Bool = true", routing_src) ||
     error("AerodynamicCoefficientfM is incorrectly marked as batchable — GRAM density is per-satellite")
 
 # Batchable pre-pass: only runs on the unpartitioned path.
@@ -130,10 +136,10 @@ occursin("function _accumulate_batchable_effector_flat!", dynamics_src) ||
 # ── §6b: Harmonics SIMD pre-pass ────────────────────────────────────────────
 # The harmonics pre-pass runs the SIMD batch kernel in the multi-effector flat
 # queue path, writing directly into totals without re-zeroing the matrix.
-occursin("@inline _harmonics_prepass_effector(::Any)::Bool = false", dynamics_src) ||
-    error("Fallback _harmonics_prepass_effector(::Any) = false trait is missing from dynamics_rhs.jl")
-occursin("@inline _harmonics_prepass_effector(::SimulationModel.GravitationalHarmonicsModel)::Bool = true", dynamics_src) ||
-    error("GravitationalHarmonicsModel is not marked as harmonics-prepass in dynamics_rhs.jl")
+occursin("@inline harmonics_prepass_effector(::Any)::Bool = false", routing_src) ||
+    error("Fallback _harmonics_prepass_effector(::Any) = false trait is missing from effector_routing.jl")
+occursin("@inline harmonics_prepass_effector(::GravitationalHarmonicsModel)::Bool = true", routing_src) ||
+    error("GravitationalHarmonicsModel is not marked as harmonics-prepass in effector_routing.jl")
 occursin("function _has_any_harmonics_effector(", dynamics_src) ||
     error("_has_any_harmonics_effector helper is missing from dynamics_rhs.jl")
 occursin("function _count_flat_queue_only_effectors(", dynamics_src) ||

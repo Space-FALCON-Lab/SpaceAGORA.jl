@@ -20,7 +20,7 @@ const quat_mult = SimulationModel.quat_mult
 if !isdefined(@__MODULE__, :SimulationEngine)
     const SimulationEngine = SpaceAGORA.SimulationEngine
 end
-# Frame helpers called unqualified below (src/core/interfaces/reference_system.jl).
+# Frame helpers called unqualified below (src/foundation/core/interfaces/reference_system.jl).
 const rtolatlong = SimulationEngine.rtolatlong
 const r_intor_p! = SimulationEngine.r_intor_p!
 if !isdefined(@__MODULE__, :build_initial_conditions)
@@ -28,6 +28,7 @@ if !isdefined(@__MODULE__, :build_initial_conditions)
 end
 
 const SPICE_PATH = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
+include(joinpath(REPO_ROOT, "test", "helpers", "dynamics_force_torque.jl"))
 const EARTH = Earth("", SPICE_PATH)
 
 const HAS_GRAMSUITE = let
@@ -80,7 +81,7 @@ struct ProbeImplicitForceModel <: SimulationModel.AbstractForceTorqueModel
     torque::SVector{3, Float64}
 end
 
-function SimulationModel.calcControlEffect!(
+function SimulationModel.update_control!(
     model::ProbeControlModel,
     u::ComponentVector,
     p::ODEParams,
@@ -91,7 +92,7 @@ function SimulationModel.calcControlEffect!(
     return nothing
 end
 
-function SimulationModel.calcGuidanceEffect!(
+function SimulationModel.update_guidance!(
     model::ProbeGuidanceModel,
     u::ComponentVector,
     p::ODEParams,
@@ -104,11 +105,11 @@ end
 
 SimulationModel.solver_partition(::ProbeImplicitForceModel) = :implicit
 
-function SimulationModel.calcForceTorque(
+function SimulationModel.wrench(
     model::ProbeImplicitForceModel,
-    x::AbstractVector{Float64},
-    p::ODEParams,
-    i::Int64
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64
 )
     return model.force, model.torque
 end
@@ -549,13 +550,13 @@ end
     p_aero.shared_buffers.winds[1] = SVector{3, Float64}(0.0, 0.0, 0.0)
 
     withenv("SPACEAGORA_MULTIBODY_PARALLEL" => "on") do
-        force_aero, torque_aero = calcForceTorque(AerodynamicCoefficientfM(), x_aero, p_aero, 1)
+        force_aero, torque_aero = dynamics_force_torque(AerodynamicCoefficientfM(), x_aero, p_aero, 1)
         @test length(force_aero) == 3
         @test length(torque_aero) == 3
     end
 
     p_aero.shared_buffers.densities[1] = NaN
-    force_nan, torque_nan = calcForceTorque(AerodynamicCoefficientfM(), x_aero, p_aero, 1)
+    force_nan, torque_nan = dynamics_force_torque(AerodynamicCoefficientfM(), x_aero, p_aero, 1)
     @test force_nan == SVector{3, Float64}(0.0, 0.0, 0.0)
     @test torque_nan == SVector{3, Float64}(0.0, 0.0, 0.0)
 
@@ -572,7 +573,7 @@ end
     p_nbody = ODEParams(n_sats=1, args=args_nbody)
     x_nbody = build_initial_conditions(args_nbody).sc[1]
     withenv("SPACEAGORA_MULTIBODY_PARALLEL" => "on") do
-        force_nbody, torque_nbody = calcForceTorque(nbody, x_nbody, p_nbody, 1)
+        force_nbody, torque_nbody = dynamics_force_torque(nbody, x_nbody, p_nbody, 1)
         @test all(isfinite, force_nbody)
         @test torque_nbody == SVector{3, Float64}(0.0, 0.0, 0.0)
     end

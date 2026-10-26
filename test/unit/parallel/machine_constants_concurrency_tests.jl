@@ -12,18 +12,8 @@ const MC_SC = SpaceAGORA.SimulationCampaigns
 
 function mc_constants(; threads::Int)
     return MC_PC.MachineConstants(
-        simd_lane = MC_PC.RateCurve([4.0, 8.0], [0.24, 0.026]),
-        coeff_touch = MC_PC.RateCurve([12.0, 16.0], [0.10, 0.17]),
-        parallel_speedup = MC_PC.RateCurve([0.0, 1.0], [1.0, 2.0]),
-        ns_per_scalar_item = 1.0,
-        ns_per_queue_node = 0.05,
-        dispatch_pool_ns_base = 3000.0,
-        dispatch_pool_ns_per_worker = 1000.0,
-        dispatch_batch_ns_base = 400.0,
-        dispatch_batch_ns_per_worker = 25.0,
-        ns_per_atomic = 20.0,
-        reference_fma_ns = 20.0,
-        reference_mem_ns = 1.0,
+        usl_alpha_base = 0.05,
+        usl_beta_alloc = 0.01,
         fingerprint = "mc-test",
         schema_version = MC_PC.CALIBRATION_SCHEMA_VERSION,
         measured_threads = threads,
@@ -37,10 +27,11 @@ mc_leftover_temps(dir) = filter(f -> endswith(f, ".tmp") || endswith(f, ".lock")
         path = joinpath(dir, "constants.toml")
         MC_PC.save_machine_constants(mc_constants(threads = 7), path)
         @test MC_PC.load_machine_constants(path).measured_threads == 7
-        # A file written before the count was recorded reads as 0 (unknown).
+        # A file without the count is not read, so it is measured again rather
+        # than served to sessions of any width.
         text = replace(read(path, String), r"measured_threads = 7\n" => "")
         write(path, text)
-        @test MC_PC.load_machine_constants(path).measured_threads == 0
+        @test MC_PC.load_machine_constants(path) === nothing
         @test isempty(mc_leftover_temps(dir))
     end
 end
@@ -62,10 +53,13 @@ end
         @test calls[] == 1
         @test MC_PC.load_machine_constants(wide).measured_threads == 16
 
-        legacy = joinpath(dir, "legacy.toml")
-        MC_PC.save_machine_constants(mc_constants(threads = 0), legacy)
-        @test MC_PC.ensure_machine_constants!(path = legacy, calibrate = calibrate(64), threads = 64) === :present
-        @test calls[] == 1
+        # A count of 0 (unknown) is not current at any width.
+        unknown = joinpath(dir, "unknown.toml")
+        MC_PC.save_machine_constants(mc_constants(threads = 0), unknown)
+        @test MC_PC.load_machine_constants(unknown).measured_threads == 0
+        @test MC_PC.ensure_machine_constants!(path = unknown, calibrate = calibrate(1), threads = 1) === :calibrated
+        @test calls[] == 2
+        @test MC_PC.load_machine_constants(unknown).measured_threads == 1
 
         # A campaign table survives the re-measurement.
         table = joinpath(dir, "table.toml")
@@ -74,6 +68,73 @@ end
         @test MC_PC.ensure_machine_constants!(path = table, calibrate = calibrate(4), threads = 4) === :calibrated
         @test occursin("pool_cold_start_s", read(table, String))
         @test isempty(mc_leftover_temps(dir))
+    end
+end
+
+# A complete constants file as schemas 4 and 5 wrote it (the two differ only in
+# what the numbers mean), with a campaign table. Written from text because the
+# struct no longer carries these fields.
+mc_old_schema_file(version::Int) = """
+schema_version = $version
+fingerprint = "mc-test"
+measured_threads = 16
+ns_per_scalar_item = 1.0
+ns_per_queue_node = 0.05
+dispatch_pool_ns_base = 3000.0
+dispatch_pool_ns_per_worker = 1000.0
+dispatch_batch_ns_base = 400.0
+dispatch_batch_ns_per_worker = 25.0
+ns_per_atomic = 20.0
+reference_fma_ns = 20.0
+reference_mem_ns = 1.0
+usl_alpha_base = 0.05
+usl_beta_arith = 0.001
+usl_beta_alloc = 0.01
+usl_beta_bw = 1.0
+llc_bytes = 33554432.0
+
+[simd_lane]
+log2_size = [4.0, 8.0]
+ns = [0.24, 0.026]
+
+[coeff_touch]
+log2_size = [12.0, 16.0]
+ns = [0.1, 0.17]
+
+[parallel_speedup]
+log2_size = [0.0, 1.0]
+ns = [1.0, 2.0]
+
+[campaign]
+pool_cold_start_s = 1.5
+"""
+
+@testset "constants saved at schema 4 or 5 are measured again, not refused" begin
+    # Schema 4 constants were measured by ladders that read past their table;
+    # schema 5 files hold the predictor's constants, which nothing reads now.
+    @test MC_PC.CALIBRATION_SCHEMA_VERSION >= 6
+    for version in (4, 5)
+        mktempdir() do dir
+            calls = Ref(0)
+            calibrate = () -> (calls[] += 1; mc_constants(threads = 4))
+
+            old = joinpath(dir, "schema$(version).toml")
+            write(old, mc_old_schema_file(version))
+            @test MC_PC.load_machine_constants(old) === nothing
+
+            # Measured with more threads than this session, so only the schema
+            # makes the file stale.
+            @test MC_PC.ensure_machine_constants!(path = old, calibrate = calibrate, threads = 4) === :calibrated
+            @test calls[] == 1
+            again = MC_PC.load_machine_constants(old)
+            @test again !== nothing
+            @test again.schema_version == MC_PC.CALIBRATION_SCHEMA_VERSION
+            @test again.measured_threads == 4
+            text = read(old, String)
+            @test occursin("pool_cold_start_s", text)
+            @test !occursin("simd_lane", text) && !occursin("reference_fma_ns", text)
+            @test isempty(mc_leftover_temps(dir))
+        end
     end
 end
 

@@ -1,10 +1,29 @@
-## 1. Load project repo and activate its environment
+## 1. Load project repo and use an environment that runs the examples
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..")) # path to the root of the repository
 const REPO_PROJECT = joinpath(REPO_ROOT, "Project.toml") # path to the Project.toml file of the repository
-if something(Base.active_project(), "") != REPO_PROJECT
-    import Pkg
-    Pkg.activate(REPO_ROOT; io=devnull)
-end # If Julia is not already using this project’s environment, switch to it
+# An environment runs the examples when it loads SpaceAGORA from this checkout and
+# provides the packages the examples use beyond SpaceAGORA itself. The examples
+# environment (`julia --startup-file=no examples/setup.jl`, then
+# `julia --project=examples examples/<name>.jl`) and the test environment do. A
+# provider environment (HYPR, EDG, the visualizer) does not: an example loads its
+# provider there first and then continues in the examples environment.
+let core = Base.PkgId(Base.UUID("afbfb69f-5c0b-4832-b760-43725dff8540"), "SpaceAGORA"),
+    source = joinpath(REPO_ROOT, "src", "SpaceAGORA.jl"),
+    examples = joinpath(REPO_ROOT, "examples")
+    runs_examples() = (path = Base.locate_package(core);
+        path !== nothing && isfile(path) && samefile(path, source) &&
+        all(name -> Base.find_package(name) !== nothing, ("Plots", "Roots", "PlotlyJS")))
+    if !runs_examples()
+        isfile(joinpath(examples, "Manifest.toml")) || error(
+            "Prepare the examples environment first: run `julia --startup-file=no examples/setup.jl`, " *
+            "then run this command again.")
+        Pkg = Base.require(Base.PkgId(Base.UUID("44cfe95a-1eb2-52ea-b672-e2afdf69b78f"), "Pkg"))
+        # Pkg may have been loaded just now, after this block started.
+        Base.invokelatest(Pkg.activate, examples; io=devnull)
+        runs_examples() || error("The examples environment does not provide this checkout's SpaceAGORA " *
+            "and the example packages; rerun `julia --startup-file=no examples/setup.jl`.")
+    end
+end
 
 
 ## 2. Load SpaceAGORA and its submodules
@@ -51,7 +70,7 @@ function _instantiate_vendored_gramsuite!(vendored_gramsuite::String)
         if !isempty(previous_project)
             Pkg.activate(dirname(previous_project); io=devnull)
         else
-            Pkg.activate(REPO_ROOT; io=devnull)
+            Pkg.activate(joinpath(REPO_ROOT, "examples"); io=devnull)
         end
     end
     return nothing
@@ -69,9 +88,7 @@ function ensure_gramsuite_loaded!()
     if !isdefined(SpaceAGORA, :GRAMSuite)
         vendored_gramsuite = joinpath(REPO_ROOT, "data", "GRAMSuite.jl")
         try
-            if Base.find_package("GRAMSuite") === nothing && isdir(vendored_gramsuite)
-                pushfirst!(LOAD_PATH, vendored_gramsuite)
-            end
+            RuntimeServices._prepare_gramsuite_load_path!(vendored_gramsuite; prepend=true)
             @eval import GRAMSuite
         catch err
             if isdir(vendored_gramsuite) && _missing_dependency_error(err)

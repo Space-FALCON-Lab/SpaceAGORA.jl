@@ -7,7 +7,7 @@ using LinearAlgebra
 using Random
 using CSV
 using DataFrames
-const EARTH_HARMONICS_FILE = joinpath(REPO_ROOT, "data/Gravity_harmonics_data", "EarthGGM05C.csv")
+const EARTH_HARMONICS_FILE = joinpath(REPO_ROOT, "data/planets/gravity", "EarthGGM05C.csv")
 const MISSION_TIME_SEC = 4800
 const THRESHOLD_DISTANCE_KM = 500.0 
 const COMMUNICATION_RANGE_KM = 300.0
@@ -79,7 +79,7 @@ end
     return R * los_true / norm(R * los_true)
 end
 
-function SimulationModel.calcNavigationEffect!(
+function SimulationModel.update_navigation!(
     model::OpticalLOSSensorModel,
     u,
     p,
@@ -749,7 +749,7 @@ function _create_or_update_tentative_tracks_from_orphans!(
 end
 
 
-function SimulationModel.calcNavigationEffect!(
+function SimulationModel.update_navigation!(
     model::ObserverNavigationModel,
     u,
     p,
@@ -1170,7 +1170,7 @@ end
     return (u_local, uhat_local, U_local, true)
 end
 
-function SimulationModel.calcNavigationEffect!(
+function SimulationModel.update_navigation!(
     model::DistributedFusionModel,
     u,
     p,
@@ -1518,7 +1518,7 @@ const _moon_fallback_warned = Ref(false)
 
 function body_pos_wrt_earth_pci(body_name::String, et::Float64, planet::AbstractPlanet)::SVector{3, Float64}
     name = uppercase(body_name)
-    l_pi = SimulationModel.planet_frame_lpi(planet, et, SimulationModel.SpiceEphemeridesModel())
+    l_pi = SimulationModel.ephemerides_frame_lpi(SimulationModel.SpiceEphemeridesModel(), planet, et)
     if name == "MOON"
         try
             r_moon_j2000 = lock(RuntimeServices.SPICE_LOCK) do
@@ -1540,27 +1540,31 @@ function body_pos_wrt_earth_pci(body_name::String, et::Float64, planet::Abstract
     return l_pi * r_body_j2000
 end
 
+# `wrench` receives the time since the run's start, so the two models below keep
+# the run's start epoch (`et_start`, in ephemeris seconds) to evaluate SPICE.
 struct SunMoonThirdBodyModel{P <: AbstractPlanet} <: AbstractForceTorqueModel
     planet::P
+    et_start::Float64
     body_names::NTuple{2, String}
     body_mus::NTuple{2, Float64}
 end
 
-SunMoonThirdBodyModel(planet::P) where {P <: AbstractPlanet} = SunMoonThirdBodyModel(
+SunMoonThirdBodyModel(planet::P, et_start::Float64) where {P <: AbstractPlanet} = SunMoonThirdBodyModel(
     planet,
+    et_start,
     ("SUN", "MOON"),
     (1.3271244002331e20, 4.9028005821478e12)
 )
 
-function SimulationModel.calcForceTorque(
+function SimulationModel.wrench(
     model::SunMoonThirdBodyModel,
-    x,
-    p::SimulationModel.ODEParams,
-    i::Int64
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    pos_sc = SVector{3, Float64}(x.pos)
-    mass_sc = x.mass
-    et = p.shared_buffers.et_start[] + p.shared_buffers.current_time[]
+    pos_sc = x.pos_ii
+    mass_sc = x.mass_kg
+    et = model.et_start + t
     a_tb = MVector{3, Float64}(0.0, 0.0, 0.0)
 
     @inbounds for k in eachindex(model.body_names)
@@ -1576,20 +1580,21 @@ end
 
 struct CannonballSRPModel{P <: AbstractPlanet} <: AbstractForceTorqueModel
     planet::P
+    et_start::Float64
     areas_m2::Vector{Float64}
     cr::Float64
     p_ref::Float64
     au_m::Float64
 end
 
-function SimulationModel.calcForceTorque(
+function SimulationModel.wrench(
     model::CannonballSRPModel,
-    x,
-    p::SimulationModel.ODEParams,
-    i::Int64
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    pos_sc = SVector{3, Float64}(x.pos)
-    et = p.shared_buffers.et_start[] + p.shared_buffers.current_time[]
+    pos_sc = x.pos_ii
+    et = model.et_start + t
     r_sun = body_pos_wrt_earth_pci("SUN", et, model.planet)
     r_sc_to_sun = r_sun - pos_sc
     d_sc_sun = norm(r_sc_to_sun)
@@ -1597,7 +1602,7 @@ function SimulationModel.calcForceTorque(
 
     eclipse = eclipse_factor_cylindrical(pos_sc, r_sun, model.planet.Rp_e)
     p_srp = model.p_ref * (model.au_m / d_sc_sun)^2
-    area = model.areas_m2[min(i, length(model.areas_m2))]
+    area = model.areas_m2[min(x.spacecraft_index, length(model.areas_m2))]
     force = p_srp * model.cr * area * eclipse * u_sun_to_sc
     return force, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
@@ -1734,20 +1739,32 @@ push!(navigation_effectors, observer_nav)
 push!(navigation_effectors, fusion_model)
 navigation_rates = fill(NAVIGATION_RATE_SEC, length(navigation_effectors))
 
+now_utc = Dates.now(Dates.UTC)
+initial_time = InitialTime(
+    year=Dates.year(now_utc),
+    month=Dates.month(now_utc),
+    day=Dates.day(now_utc),
+    hour=Dates.hour(now_utc),
+    minute=Dates.minute(now_utc),
+    second=Float32(Dates.second(now_utc))
+)
+ephemerides = SpiceEphemeridesModel()
+# The run's start epoch, as the engine computes it from the same initial time.
+et_start = ephemerides_epoch_seconds(ephemerides, initial_time)
+
 areas = [sc.root.ref_area for sc in spacecraft]
 dynamic_effectors = (
     GravitationalHarmonicsModel(4, 0, EARTH_HARMONICS_FILE, planet), # up to J4 (zonal)
-    SunMoonThirdBodyModel(planet),
-    CannonballSRPModel(planet, areas, 1.3, 4.56e-6, 149_597_870_700.0)
+    SunMoonThirdBodyModel(planet, et_start),
+    CannonballSRPModel(planet, et_start, areas, 1.3, 4.56e-6, 149_597_870_700.0)
 )
 
-now_utc = Dates.now(Dates.UTC)
 args = SimulationConfiguration(
     simulation_settings=SimulationSettings(
         results=true,
         verbose=true,
         generate_plots=false,
-        results_directory=joinpath(REPO_ROOT, "output_observer_noDA"),
+        results_directory=joinpath(REPO_ROOT, "output", "observer_noDA"),
         normalize=false
     ),
     mission_configuration=MissionConfiguration(
@@ -1764,7 +1781,8 @@ args = SimulationConfiguration(
         density_model=NoAtmosphereModel(),
         thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
         topography=false,
-        wind=false
+        wind=false,
+        ephemerides_model=ephemerides
     ),
     dynamics_model=DynamicsModel(spacecraft, dynamic_effectors),
     guidance_model=GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
@@ -1773,14 +1791,7 @@ args = SimulationConfiguration(
         navigation_rates=navigation_rates
     ),
     control_model=ControlModel(control_effectors=(), control_rates=Float64[]),
-    initial_time=InitialTime(
-        year=Dates.year(now_utc),
-        month=Dates.month(now_utc),
-        day=Dates.day(now_utc),
-        hour=Dates.hour(now_utc),
-        minute=Dates.minute(now_utc),
-        second=Float32(Dates.second(now_utc))
-    ),
+    initial_time=initial_time,
     integration_tolerances=IntegrationTolerances(
         reltol_orbit=1e-9,
         abstol_orbit=1e-9,
@@ -1833,6 +1844,8 @@ for target_idx in target_idxs
     end
 end
 
+# A smoke run (SPACEAGORA_EXAMPLE_SMOKE=1) shortens the mission and writes to its own directory.
+args = SpaceAGORA.TelemetryVerification._example_smoke_args(args)
 save_fields = vcat(SimulationModel.default_save_fields(args), extra_save_fields)
 t = @elapsed run_simulation(args; isolate_state=false, save_fields=save_fields)
 

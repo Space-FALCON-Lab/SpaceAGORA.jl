@@ -438,10 +438,11 @@ function native_testsets()
         script = child_prelude * """
         first_winds = wind_case_first_native_winds(wind_case_model())
         second_winds = wind_case_first_native_winds(wind_case_model())
+        kernel_refresh = wind_case_kernel_refresh()
         args = wind_case_args(wind_case_model(); n=8, mission_time=40.0)
         runs = [wind_case_final(args) for _ in 1:2]
         serialize(ARGS[1], (first_winds=first_winds, second_winds=second_winds, runs=runs,
-                            threads=Threads.nthreads()))
+                            kernel_refresh=kernel_refresh, threads=Threads.nthreads()))
         """
         results = run_children(script, (1, 4); env_overrides=[WD_FORCED_THREADING...,
             "SPACEAGORA_GRAM_WIND_MODE" => "perturbed",
@@ -452,6 +453,10 @@ function native_testsets()
             for r in (one, four)
                 @test all(isfinite, r.first_winds)
                 @test isequal(r.first_winds, r.second_winds)
+                @test r.kernel_refresh.mars_kernel_added
+                @test isequal(r.kernel_refresh.automatic, r.kernel_refresh.uncached)
+                @test r.kernel_refresh.reset
+                @test isequal(r.kernel_refresh.reseeded, r.kernel_refresh.reference)
                 @test r.runs[1].u == r.runs[2].u
             end
             @test isequal(one.first_winds, four.first_winds)

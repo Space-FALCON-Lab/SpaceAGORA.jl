@@ -1,18 +1,19 @@
 # Robot arm on an orbiting bus: the Robot_Arm_Planner_Cloth_Demo single-arm case
-# (q_start -> target through the cloth planner) coupled into run_simulation.
+# (q_start -> target through the baseline robot-arm planner) coupled into run_simulation.
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
+using SpaceAGORAVisualizer
 using SpaceAGORA, StaticArrays, Arrow, DataFrames, JSON
 import SpaceAGORA.TelemetryVerification: make_example_config, make_three_body_spacecraft
 const SM = SpaceAGORA.SimulationModel
 planet = make_no_gram_planet(:earth)
 sc = make_three_body_spacecraft(bus_dims=(1.2, 1.2, 1.5), panel_dims=(0.01, 1.4, 0.8), bus_mass=180.0, panel_mass_each=6.0, panel_offset_y=1.3,
     ic=SM.InitialCondition(ra=planet.Rp_e + 410e3, rp=planet.Rp_e + 400e3, i=51.6, ω=0.0, Ω=30.0, ν=0.0), prop_mass=0.0, id=1)
-arm = SM.default_cloth_arm_model(link_lengths_m=(1.2, 1.0, 0.7), link_radii_m=(0.07, 0.06, 0.05), link_masses_kg=(8.0, 5.0, 2.5), mount_offset_body=(0.6, 0.0, 0.75))
-base = SM.ClothArmBasePose(SVector{3, Float64}(0.0, 0.0, 0.0), SVector{4, Float64}(0.0, 0.0, 0.0, 1.0))
+arm = SM.default_robot_arm_model(link_lengths_m=(1.2, 1.0, 0.7), link_radii_m=(0.07, 0.06, 0.05), link_masses_kg=(8.0, 5.0, 2.5), mount_offset_body=(0.6, 0.0, 0.75))
+base = SM.RobotArmBasePose(SVector{3, Float64}(0.0, 0.0, 0.0), SVector{4, Float64}(0.0, 0.0, 0.0, 1.0))
 # The planner targets an end-effector position; the demo's goal joint angles give it through FK.
-target = SM.cloth_fk(arm, base, [-0.12, -0.08, 0.06]).end_effector_position
+target = SM.robot_arm_fk(arm, base, [-0.12, -0.08, 0.06]).end_effector_position
 plan = SM.plan_robot_arm_motion(arm, base, [0.08, 0.95, -0.85], target; config=SM.RobotArmPlannerConfig(dt_s=0.1, duration_s=40.0))
-eff = SM.RobotArmControlEffector(plan=plan, spacecraft_idx=1, controller=SM.init_robot_arm_joint_mpc(plan; dt_s=0.1, horizon=8), control_dt_s=0.1)
+eff = SM.RobotArmControlEffector(plan=plan, spacecraft_index=1, controller=SM.init_robot_arm_joint_mpc(plan; dt_s=0.1, horizon=8), control_dt_s=0.1)
 include(joinpath(@__DIR__, "demo_options.jl"))
 options = viewer_demo_options("arm_demo", 60.0)
 outdir = options.output_dir

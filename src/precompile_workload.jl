@@ -149,9 +149,11 @@ function _reset_process_local_state!()::Nothing
         empty!(SE._rhs_calib_solve_honoured)
     end
     SE._PARALLEL_FLAG_ONE_THREAD_NOTED[] = false
+    SE._clear_ephemeris_reuse_cache!()
 
     PPol = SimulationModel.ParallelPolicy
     PPol._HINT_OVERHEAD_NS[] = -1.0
+    PPol._MULTIBODY_MODE_CACHE[] = nothing
     lock(PPol._persistent_hint_lock) do
         PPol._persistent_hint_state[] = PPol._PersistentHintState()
         PPol._persistent_hint_atexit_registered[] = false

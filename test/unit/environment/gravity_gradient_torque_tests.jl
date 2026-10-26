@@ -59,6 +59,12 @@ function rhs(args)
     return u,du,p
 end
 
+# The gravity-gradient model's force and torque on spacecraft `i`, as the dynamics evaluate it.
+function gg_dynamics_wrench(x,p,i)
+    sample = SE.build_state_sample(x,p.args.dynamics_model.spacecraft[i],p.args.mission_configuration.orientation_sim,i)
+    return SE._evaluate_dynamic_effector(SM.GravityGradientTorqueModel(),x,sample,p,i,0.0)
+end
+
 @testset "torque-only gravity uses the existing owner and independent body-frame law" begin
     model = SM.GravityGradientTorqueModel()
     args = configuration(:separate)
@@ -103,17 +109,16 @@ end
         @test SVector{3,Float64}(du.sc[i].ω) ≈ expected_rate rtol=1e-12 atol=1e-16
         @test norm(SVector{3,Float64}(du.sc[i].ω)-SVector{3,Float64}(bare.sc[i].ω))>1e-8
         @test du.sc[i].vel ≈ bare.sc[i].vel rtol=2e-14 atol=1e-13
-        @test SM.calcForceTorque(SM.GravityGradientTorqueModel(),x,p,Int64(i))[1] == ZERO3
-        @test SM.calcForceTorque(SM.GravityGradientTorqueModel(),x,p,Int64(i))[2] ≈ tau rtol=2e-14 atol=1e-18
+        force, torque = gg_dynamics_wrench(x,p,i)
+        @test force == ZERO3
+        @test torque ≈ tau rtol=2e-14 atol=1e-18
     end
     @test collect(ComponentArrays.getdata(du)) ≈ collect(ComponentArrays.getdata(builtin)) rtol=1e-12 atol=1e-13
     @test collect(ComponentArrays.getdata(disabled)) ≈ collect(ComponentArrays.getdata(bare)) rtol=1e-12 atol=1e-13
-    @test SM.calcForceTorque(SM.GravityGradientTorqueModel(),u.sc[1],p,Int64(0))==(ZERO3,ZERO3)
-    @test SM.calcForceTorque(SM.GravityGradientTorqueModel(),u.sc[1],p,Int64(3))==(ZERO3,ZERO3)
     noatt,du_noatt,p_noatt = rhs(configuration(:separate;orientation=false))
     _,baseline_noatt,_ = rhs(configuration(:none;orientation=false))
     @test collect(ComponentArrays.getdata(du_noatt)) ≈ collect(ComponentArrays.getdata(baseline_noatt)) rtol=1e-12 atol=1e-13
-    @test SM.calcForceTorque(SM.GravityGradientTorqueModel(),noatt.sc[1],p_noatt,Int64(1))==(ZERO3,ZERO3)
+    @test gg_dynamics_wrench(noatt.sc[1],p_noatt,1)==(ZERO3,ZERO3)
 end
 
 function run_recorded(args; execution_mode="serial", return_runtime=false)
@@ -176,7 +181,7 @@ end
         @test_skip Threads.nthreads() >= 2
     else
         planet=args.environment_model.planet
-        coefficients=joinpath(@__DIR__,"..","..","..","data","Gravity_harmonics_data","EarthGGM05C.csv")
+        coefficients=joinpath(@__DIR__,"..","..","..","data","planets","gravity","EarthGGM05C.csv")
         harmonics=GravitationalHarmonicsModel(4,4,coefficients,planet)
         args=SM.SimConfig._with_configuration(args;dynamics_model=
             DynamicsModel(args.dynamics_model.spacecraft,(harmonics,model)))

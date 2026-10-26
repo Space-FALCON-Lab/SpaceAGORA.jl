@@ -26,7 +26,7 @@ using SpaceAGORA.SimulationModel
 const SE_RHD = SpaceAGORA.SimulationEngine
 
 const RHD_HARMONICS_FILE = joinpath(
-    dirname(dirname(dirname(@__DIR__))), "data", "Gravity_harmonics_data", "EarthGGM05C.csv"
+    dirname(dirname(dirname(@__DIR__))), "data", "planets", "gravity", "EarthGGM05C.csv"
 )
 
 function rhd_spacecraft(planet, id::Int)

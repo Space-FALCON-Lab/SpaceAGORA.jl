@@ -1,10 +1,10 @@
 using Test, SpaceAGORA, JSON
 const ROOT = normpath(joinpath(@__DIR__, "..", ".."))
-const EPHEMERIDES = parentmodule(first(methods(SpaceAGORA.SimulationModel.planet_frame_lpi)))
+const EPHEMERIDES = SpaceAGORA.SimulationModel.EphemeridesModels
 const ORIGINAL_FRAME_METHOD = first(methods(EPHEMERIDES._spice_planet_frame_lpi))
 # Loading definitions must not perform a campaign or replace the package method.
 withenv("XVAL_FRAME_TABLE_DIR" => nothing) do
-    include(joinpath(ROOT, "scripts", "xval_fullarc.jl"))
+    include(joinpath(ROOT, "scripts", "xval", "xval_fullarc.jl"))
 end
 const XP = XvalProvenance
 
@@ -59,9 +59,9 @@ end # isolated lifecycle environment
               "0,0,-1,0,1,0,0,0,0,1\n1,0,-1,0,1,0,0,0,0,1\n")
         code = """
             using Test, SpaceAGORA, SPICE
-            eph = parentmodule(first(methods(SpaceAGORA.SimulationModel.planet_frame_lpi)))
+            eph = SpaceAGORA.SimulationModel.EphemeridesModels
             original = first(methods(eph._spice_planet_frame_lpi))
-            include($(repr(joinpath(ROOT, "scripts", "xval_fullarc.jl"))))
+            include($(repr(joinpath(ROOT, "scripts", "xval", "xval_fullarc.jl"))))
             @test first(methods(eph._spice_planet_frame_lpi)) !== original
             _install_frame_table!("earth_j2_tbfalse")
             SPICE.pdpool("BODY399_POLE_RA", [0., 0., 0.])
@@ -74,7 +74,9 @@ end # isolated lifecycle environment
             end
             SPICE.kclear()
             """
-        command = `$(Base.julia_cmd()) --startup-file=no --compiled-modules=existing --project=$ROOT -e $code`
+        # The environment the tests run in: the full-arc runner loads the scenario
+        # matrix, which plots with Plots, and the root project lacks it.
+        command = `$(Base.julia_cmd()) --startup-file=no --compiled-modules=existing --project=$(dirname(Base.active_project())) -e $code`
         @test success(addenv(command, "XVAL_FRAME_TABLE_DIR" => root))
     end
 end

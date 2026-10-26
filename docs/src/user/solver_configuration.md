@@ -9,7 +9,7 @@ to adjust the solver beyond the defaults.
 Shortest successful command:
 
 ```text
-julia --project=. examples/AGORA_Basic_Quickstart.jl
+julia --project=examples examples/AGORA_Basic_Quickstart.jl
 ```
 
 What to read next:
@@ -112,10 +112,10 @@ that subsolve. Previously, a crossing inside a reused subsolve carried its phase
 settings into later subsolves, so physical multirate runs with atmospheric
 crossings change.
 
-Fixed-step symplectic and gravity-backbone drivers are exempt from adaptive
-phase updates. This exemption does not establish support for atmospheric
-gravity-backbone runs: the density callback currently requires the ordinary
-spacecraft state layout.
+The fixed-step gravity-backbone driver is exempt from adaptive
+phase updates. Gravity-backbone runs sample no atmosphere: `run_simulation`
+refuses one whose density model is not `NoAtmosphereModel()`, however the
+solver mode was chosen.
 
 ## Practical recipes
 
@@ -158,12 +158,38 @@ All other fields take their struct defaults when not specified.
 
 ## Solver policy and partitioning
 
-The solver automatically selects between explicit, IMEX (implicit-explicit),
-and multirate strategies based on the dynamics model and profile. The solver
-partition hooks on force/torque effectors (`solver_partition`) determine
-whether an effector goes on the explicit or implicit side of `split_imex`. For
-most users this is transparent; see [Extensibility](../extensibility.md) if you
-are building a custom effector and need to control partitioning explicitly.
+The integration mode is a setting, not an automatic choice. The default is
+`solver_mode = :tsit5`, the explicit route. An explicit solver configuration on
+the simulation configuration wins:
+
+```julia
+args = SimulationConfiguration(...; solver_config=SolverConfig(solver_mode=:split_imex))
+```
+
+When `solver_config` is left as `nothing`, `run_simulation` reads the effective
+engine settings at call time, so `SPACEAGORA_SOLVER_MODE` (or a
+`SimulationEngineConfig` override) applies. The mode chosen this way decides
+both the integrator and the callbacks the run installs. Accepted modes are `:tsit5`,
+`:gravity_backbone_split`, `:dp8`, `:auto_stiff`, `:rodas5p`, `:split_imex`
+`:multirate` and `:multirate_mri`. IMEX (`:split_imex`) and multirate integration run only when
+selected this way; nothing in the dynamics model or routing profile switches a
+run to them.
+
+`SolverConfig` checks its settings when it is built: an unknown `solver_mode`,
+`split_imex_solver` or `multirate_*_solver` name, or a non-positive
+`maxiters`, `multirate_fast_substeps` or step size, throws an `ArgumentError`
+that names the accepted values. The matching environment variables
+(`SPACEAGORA_SOLVER_MODE`, `SPACEAGORA_SPLIT_IMEX_SOLVER`,
+`SPACEAGORA_MULTIRATE_SLOW_SOLVER`, `SPACEAGORA_MULTIRATE_FAST_SOLVER`) accept
+the same names plus a few alternative spellings. `:symplectic` is refused:
+`run_simulation` has no path for it. Use `:gravity_backbone_split`, which
+integrates the gravity core with the fixed-step KahanLi8 symplectic method.
+
+Within `:split_imex`, the solver partition hooks on force/torque effectors
+(`solver_partition`) determine whether an effector goes on the explicit or
+implicit side of the split. They do not select the mode. See
+[Extensibility](../extensibility.md) if you are building a custom effector and
+need to control partitioning explicitly.
 
 ### Nonlinear solves in split IMEX mode
 
@@ -181,3 +207,80 @@ limitation. Validate the chosen method and tolerances for the intended
 trajectory. KenCarp47, KenCarp58 and other solver modes retain their existing
 nonlinear-solver policy. Refreshing Jacobians and their factorizations adds work;
 the runtime cost for large constellations has not been measured.
+
+
+## Coupled multirate integration
+
+For rigid spacecraft connected by interlinks, select `:multirate_mri`:
+
+```julia
+solver = SolverConfig(
+    solver_mode=:multirate_mri,
+    multirate_slow_dt_s=0.5,
+    multirate_fast_substeps=8,
+)
+args = SimulationConfiguration(...; solver_config=solver)
+```
+
+This opt-in route uses OrdinaryDiffEq's explicit MRI-GARK45a method. The slow
+component includes orbit and environmental forces and torques, quaternion
+kinematics, gyroscopic terms and custom dynamic effectors. Control and interlink
+forces and torques, power, data production and transfer, stores and station
+counters form the fast component. `solver_partition` does not move a custom
+effector into MRI's fast component. Both components act on the same spacecraft
+states. One integrator owns the callbacks, so a guidance tick, sensor sample,
+store boundary or other event is processed on one physical timeline. Fast
+attitude motion can still limit the outer step because its kinematics are slow.
+
+`multirate_slow_dt_s` limits the outer step. If omitted, its cap is
+`min(dt_max_orbit, 2.0)` seconds; orbital and atmospheric step limits can shorten
+it further. `multirate_fast_substeps` is the number of RK4 microsteps **per MRI
+stage**, not per outer step.
+
+!!! warning "Fast microstep accuracy needs a separate convergence check"
+    The outer method adapts its step using an embedded estimate of the slow
+    coupling error. That estimate does **not** control the error or stability
+    of the fast RK4 microsteps. Tightening `reltol` and `abstol` alone is not
+    sufficient: an under-resolved fast controller can return `Success` with
+    severely wrong intermediate states.
+
+    Choose `multirate_fast_substeps` and `multirate_slow_dt_s` to resolve the
+    fastest time constant in the fast component. Increase the substep count
+    and reduce the outer cap separately, and compare the full trajectory and
+    event/output quantities against a suitable single-rate reference. A
+    plausible final state alone does not establish convergence. Use a
+    full-state stiff solver such as `:rodas5p` or `:auto_stiff` for stiff fast
+    dynamics.
+
+For the scalar fast decay `y′ = -λy` with `λ > 0`, each RK4 microstep must
+satisfy approximately `λ * δt ≤ 2.785` for linear stability. In the selected
+OrdinaryDiffEqMultirate 3.0.3 method, the five stages have equal duration, so
+`δt = outer_step / (5 * multirate_fast_substeps)`. This scalar stability bound
+is not an accuracy target or a general stability test for a nonlinear coupled
+model; use a smaller step and verify convergence. The dependency is constrained
+to the 3.0 patch series while this implementation is qualified.
+
+The `multirate_slow_solver` and `multirate_fast_solver` fields configure only the
+original `:multirate` Strang route. They do not change MRI's internal methods or
+enable automatic switching to a stiff solver. MRI does not reuse an integrator
+through `solver_cache`.
+
+The MRI route supports rigid-spacecraft interlinks, batteries, data stores,
+mounted sensors and normal checkpoint continuation. Keep the solver mode and
+numerical settings unchanged when checking resumed runs against uninterrupted
+runs: switching between MRI and the ordinary single-rate modes is currently
+accepted without a warning and does not promise the same trajectory. Same-mode
+MRI restart checks recover identical solver states, but saved rows at checkpoint
+boundaries can differ by floating-point rounding.
+
+MRI uses Hermite dense output. A custom discrete callback that jumps the state
+can affect interpolated output rows earlier in that accepted step; merely
+putting the callback time in `tstops` does not remove this limitation. Validate
+saved rows around such jumps rather than inferring their accuracy from the
+accepted solver states.
+
+Articulated spacecraft, compliant attachments, coupled robot-arm effectors,
+external propagation and mission segments retain their setup refusals. The
+existing `:multirate` route and default `:tsit5` behavior are unchanged. This is
+a numerical option, not a promise that coupled runs will be faster; measure
+accuracy and runtime on the intended case.

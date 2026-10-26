@@ -14,7 +14,7 @@ const SPICE_PATH_PARITY = joinpath(REPO_ROOT_PARITY, "data/GRAMSuite.jl/GRAM Sui
 
 @testset "Flat constellation route matches the serial route bit for bit" begin
     planet = Earth("", SPICE_PATH_PARITY)
-    harmonics_file = joinpath(REPO_ROOT_PARITY, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+    harmonics_file = joinpath(REPO_ROOT_PARITY, "data", "planets", "gravity", "EarthGGM05C.csv")
     function make_sc(id::Int64, ν_deg::Float64)
         root = Link(root=true, m=140.0, ref_area=1.2)
         ic = InitialCondition(ra=planet.Rp_e + 520e3, rp=planet.Rp_e + 500e3, i=28.0, ω=15.0, Ω=20.0, ν=ν_deg)

@@ -52,7 +52,7 @@ end
     @test count(t -> t.max_thrust == DPS_THRUST_N, thrusters) == 1
     @test count(t -> t.max_thrust == RCS_THRUST_N, thrusters) == 16
     dps = only(filter(t -> t.max_thrust == DPS_THRUST_N, thrusters))
-    @test SVector{3, Float64}(dps.direction) == SVector(0.0, 0.0, 1.0)        # display exhaust direction; the control effector applies thrust along body -z
+    @test SVector{3, Float64}(dps.direction) == SVector(0.0, 0.0, -1.0)       # thrust direction: the descent engine pushes along body -z
     quads = unique(SVector{3, Float64}(t.location) for t in thrusters if t.max_thrust == RCS_THRUST_N)
     @test length(quads) == 4
     @test all(q -> abs(q[1]) == RCS_QUAD_ARM_M && abs(q[2]) == RCS_QUAD_ARM_M && q[3] == RCS_QUAD_Z_M, quads)
@@ -61,7 +61,7 @@ end
         jets = [SVector{3, Float64}(t.direction) for t in thrusters if t.max_thrust == RCS_THRUST_N && SVector{3, Float64}(t.location) == q]
         @test length(jets) == 4
         @test SVector(0.0, 0.0, 1.0) in jets && SVector(0.0, 0.0, -1.0) in jets           # one up, one down
-        @test SVector(sign(q[1]), 0.0, 0.0) in jets && SVector(0.0, sign(q[2]), 0.0) in jets   # two lateral, outward from the quad
+        @test SVector(-sign(q[1]), 0.0, 0.0) in jets && SVector(0.0, -sign(q[2]), 0.0) in jets   # two lateral, exhausting outward from the quad, so thrusting inward
     end
     @test all(t -> t.thrust == 0.0, thrusters)   # the control effector applies the forces; the engine's thruster state stays idle
     @test sc.prop_mass == LM_PROPELLANT_KG && sc.root.m == LM_MASS_KG
@@ -131,7 +131,7 @@ if SPICE_READY
             @test norm(v_p) ≈ PDI_SPEED_MPS rtol=1e-12
             # the constant-spin inverse is not that transform: at this epoch it leaves a
             # residual near 1.7e-4 m/s, which the earlier 1e-6-relative tolerance could not see
-            l_pi = SM.planet_frame_lpi(planet, et0, SM.SpiceEphemeridesModel())
+            l_pi = SM.ephemerides_frame_lpi(SM.SpiceEphemeridesModel(), planet, et0)
             v_const = SVector{3, Float64}(l_pi * v_i) - cross(SVector{3, Float64}(planet.ω), SVector{3, Float64}(l_pi * r_i))
             @test norm(v_const - v_p) > 1e-5
             φ = deg2rad(site.lat_deg); λ = deg2rad(site.lon_deg)

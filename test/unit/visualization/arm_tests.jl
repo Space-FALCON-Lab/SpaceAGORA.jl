@@ -1,3 +1,4 @@
+Base.include(@__MODULE__, joinpath(@__DIR__, "..", "..", "helpers", "load_visualizer.jl"))
 using Test
 using SpaceAGORA
 using StaticArrays
@@ -38,7 +39,7 @@ function _arm_config(; results_directory::String, mission_time::Float64=12.0, wi
     )
     effectors = if with_arm
         plan = _arm_plan(duration_s=min(10.0, mission_time))
-        (SM.RobotArmControlEffector(plan=plan, spacecraft_idx=1, controller=SM.init_robot_arm_joint_mpc(plan; dt_s=0.1, horizon=6), control_dt_s=0.1),)
+        (SM.RobotArmControlEffector(plan=plan, spacecraft_index=1, controller=SM.init_robot_arm_joint_mpc(plan; dt_s=0.1, horizon=6), control_dt_s=0.1),)
     else
         ()
     end

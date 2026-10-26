@@ -27,7 +27,7 @@ function _save_quickstart_plot!(saved_paths::Vector{String}, p, plots_dir::Strin
     return nothing
 end
 
-function save_quickstart_plots(csv_path)
+function save_quickstart_plots(csv_path; planet_radius_km=nothing)
     csv_path === nothing && return String[]
     isfile(csv_path) || return String[]
 
@@ -48,13 +48,23 @@ function save_quickstart_plots(csv_path)
         p_alt = plot(
             t_hr,
             altitude_km;
-            label="Instantaneous geodetic altitude",
+            label=false,
             xlabel="Time since start (hr)",
             ylabel="Altitude (km)",
-            title="Geodetic altitude and spherical periapsis",
+            title="Instantaneous geodetic altitude",
             lw=2
         )
-        plot!(p_alt, t_hr, periapsis_altitude_km; label="Osculating spherical periapsis", lw=2, ls=:dash)
+        # The periapsis altitude is a few hundred km while the altitude spans tens
+        # of thousands, so it gets its own panel and scale.
+        p_peri = plot(
+            t_hr,
+            periapsis_altitude_km;
+            label=false,
+            xlabel="Time since start (hr)",
+            ylabel="Altitude (km)",
+            title="Osculating periapsis altitude (spherical)",
+            lw=2
+        )
 
         p_speed = plot(
             t_hr,
@@ -68,25 +78,49 @@ function save_quickstart_plots(csv_path)
 
         _save_quickstart_plot!(
             saved_paths,
-            plot(p_alt, p_speed; layout=(2, 1), size=(900, 650)),
+            plot(p_alt, p_peri, p_speed; layout=(3, 1), size=(900, 900), left_margin=5Plots.mm),
             plots_dir,
             "quickstart_altitude_speed.png"
         )
     end
 
-    if _has_columns(df, (:sc1_pos_1, :sc1_pos_2))
+    if _has_columns(df, (:sc1_pos_1, :sc1_pos_2, :sc1_pos_3))
+        x_km = df[!, :sc1_pos_1] ./ 1e3
+        y_km = df[!, :sc1_pos_2] ./ 1e3
+        z_km = df[!, :sc1_pos_3] ./ 1e3
+        # Two projections share one planet-centred scale: a polar orbit seen in a
+        # single x-y projection collapses to a nearly straight line.
+        halfspan = 1.05 * maximum(maximum(abs, v) for v in (x_km, y_km, z_km))
+        θ = range(0.0, 2π; length=181)
+        function projection(a, b, a_label, b_label, title; legend)
+            p = plot(
+                a,
+                b;
+                label="Orbit",
+                xlabel=a_label,
+                ylabel=b_label,
+                title=title,
+                aspect_ratio=:equal,
+                xlims=(-halfspan, halfspan),
+                ylims=(-halfspan, halfspan),
+                legend=legend,
+                lw=2
+            )
+            if planet_radius_km !== nothing
+                plot!(p, planet_radius_km .* cos.(θ), planet_radius_km .* sin.(θ);
+                      label="Planet", color=:gray, lw=1.5)
+            end
+            scatter!(p, [first(a)], [first(b)]; label="Start", ms=4)
+            scatter!(p, [last(a)], [last(b)]; label="End", ms=4)
+            return p
+        end
         p = plot(
-            df[!, :sc1_pos_1] ./ 1e3,
-            df[!, :sc1_pos_2] ./ 1e3;
-            label=false,
-            xlabel="Inertial x (km)",
-            ylabel="Inertial y (km)",
-            title="Inertial Trajectory",
-            aspect_ratio=:equal,
-            lw=2
+            projection(x_km, y_km, "Inertial x (km)", "Inertial y (km)", "Inertial trajectory, x-y"; legend=:bottomright),
+            projection(x_km, z_km, "Inertial x (km)", "Inertial z (km)", "Inertial trajectory, x-z"; legend=false);
+            layout=(1, 2),
+            size=(1100, 540),
+            margin=5Plots.mm
         )
-        scatter!(p, [df[1, :sc1_pos_1] / 1e3], [df[1, :sc1_pos_2] / 1e3]; label="Start", ms=4)
-        scatter!(p, [df[end, :sc1_pos_1] / 1e3], [df[end, :sc1_pos_2] / 1e3]; label="End", ms=4)
         _save_quickstart_plot!(saved_paths, p, plots_dir, "quickstart_inertial_trajectory.png")
     end
 
@@ -94,18 +128,39 @@ function save_quickstart_plots(csv_path)
         x_km = df[!, :sc1_pos_1] ./ 1e3
         y_km = df[!, :sc1_pos_2] ./ 1e3
         z_km = df[!, :sc1_pos_3] ./ 1e3
+        # Use the same span on every axis so a thin orbit remains readable.
+        bounds = extrema.((x_km, y_km, z_km))
+        halfspan = max(maximum(hi - lo for (lo, hi) in bounds) * 0.55, 1.0)
+        limits = [((lo + hi) / 2 - halfspan, (lo + hi) / 2 + halfspan)
+                  for (lo, hi) in bounds]
+        tick_values = [round.([(lo + hi) / 2 - 0.8 * halfspan,
+                               (lo + hi) / 2,
+                               (lo + hi) / 2 + 0.8 * halfspan]; sigdigits=2)
+                       for (lo, hi) in limits]
+        axis_ticks = [(values, string.(values)) for values in tick_values]
         p = plot(
             x_km,
             y_km,
             z_km;
             label="Orbit",
-            xlabel="Inertial x (km)",
-            ylabel="Inertial y (km)",
-            zlabel="Inertial z (km)",
+            xlabel="x (km)",
+            ylabel="y (km)",
+            zlabel="z (km)",
             title="3D Inertial Orbit",
             aspect_ratio=:equal,
             camera=(35, 25),
-            lw=2
+            lw=2,
+            size=(900, 700),
+            xlims=limits[1],
+            ylims=limits[2],
+            zlims=limits[3],
+            xticks=axis_ticks[1],
+            yticks=axis_ticks[2],
+            zticks=axis_ticks[3],
+            legend=:outertopright,
+            margin=5Plots.mm,
+            tickfontsize=9,
+            guidefontsize=11
         )
         scatter!(p, [first(x_km)], [first(y_km)], [first(z_km)]; label="Start", ms=4)
         scatter!(p, [last(x_km)], [last(y_km)], [last(z_km)]; label="End", ms=4)
@@ -113,9 +168,21 @@ function save_quickstart_plots(csv_path)
     end
 
     if _has_columns(df, (:sc1_longitude_deg, :sc1_latitude_deg))
+        longitude = Float64.(df[!, :sc1_longitude_deg])
+        latitude = Float64.(df[!, :sc1_latitude_deg])
+        track_lon = Float64[]
+        track_lat = Float64[]
+        for k in eachindex(longitude)
+            if k > 1 && abs(longitude[k] - longitude[k - 1]) > 180.0
+                push!(track_lon, NaN)
+                push!(track_lat, NaN)
+            end
+            push!(track_lon, longitude[k])
+            push!(track_lat, latitude[k])
+        end
         p = plot(
-            df[!, :sc1_longitude_deg],
-            df[!, :sc1_latitude_deg];
+            track_lon,
+            track_lat;
             label=false,
             xlabel="Longitude (deg)",
             ylabel="Latitude (deg)",
@@ -182,4 +249,4 @@ args = make_example_config(
 )
 
 csv_path = run_and_report(args)
-save_quickstart_plots(csv_path)
+save_quickstart_plots(csv_path; planet_radius_km=planet.Rp_e / 1e3)

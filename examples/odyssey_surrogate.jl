@@ -7,7 +7,7 @@ for other caps and the output directory. Include it to use
 """
 module OdysseySurrogateExample
 
-using SpaceAGORA, GRAMSuite, StaticArrays, LinearAlgebra, TOML, CSV, Printf, Libdl
+using SpaceAGORA, SpaceAGORAEDG, GRAMSuite, StaticArrays, LinearAlgebra, TOML, CSV, Printf, Libdl
 import SpaceAGORA.TelemetryVerification: make_example_config, make_three_body_spacecraft
 
 const SM = SpaceAGORA.SimulationModel
@@ -72,7 +72,7 @@ function configure_case(model, assets, panel_cap_deg)
     cap = validate_panel_cap(panel_cap_deg)
     planet = SM.Mars()
     epoch = initial_time()
-    start_et = SM.ephemerides_time_seconds(epoch, SM.SpiceEphemeridesModel())
+    start_et = SM.ephemerides_epoch_seconds(SM.SpiceEphemeridesModel(), epoch)
     state = SP.spkezr("-53", start_et, "J2000", "NONE", "499")[1] .* 1000.0
     spacecraft = make_three_body_spacecraft(
         bus_dims=(2.2, 2.6, 1.7), panel_dims=(0.01, 1.945, 1.7),
@@ -197,7 +197,7 @@ function run_case(; panel_cap_deg=90.0, grid_file="", offline=false,
         CB.terminate!(integrator)
     end
     exit_condition(u,t,i) = SE.sample_planet_frame(u.sc[1], i.p, 1, Float64(t)).alt_m - 250_000.0
-    exit_callback = CB.ContinuousCallback(exit_condition, exit_passage!, nothing;
+    exit_callback = CB.ContinuousCallback(CB.EDGGeodeticBoundaryCondition(exit_condition, 1, 250_000.0), exit_passage!, nothing;
         rootfind=CB.DiffEqBase.SciMLBase.RightRootFind, abstol=1e-6, reltol=0.0, save_positions=(true,true))
     @printf("Running the %g-degree panel-cap passage with the frozen Odyssey atmosphere.\n", panel_cap_deg)
     flush(stdout)
@@ -213,7 +213,15 @@ function run_case(; panel_cap_deg=90.0, grid_file="", offline=false,
     common = sample_record(sol(COMMON_TIME_S), sol.prob.p, COMMON_TIME_S)
     push!(rows, endpoint)
     active = filter(r->r.elapsed_s >= 1.0, rows)
-    all(r->r.mode == "max_energy_depletion", active) || error("Guidance was inactive.")
+    passage = filter(r->r.elapsed_s < Float64(sol.t[end]), active)
+    !isempty(passage) && all(r->r.mode == "max_energy_depletion", passage) || error("Guidance was inactive during the passage.")
+    # The registered geodetic exit closes EDG before the stop effect. Physical
+    # heat and applied geometry remain, while the passage plan becomes inactive.
+    endpoint.mode == "inactive" || error("Guidance was not cleared at passage exit.")
+    edg_state = sol.prob.p.args.control_model.control_effectors[1].state
+    edg_state.heat_boundary_inside[1] === false || error("EDG exit side was not recorded.")
+    edg_state.heat_load_exit_j_cm2[1] == Float64.(sol.u[end].sc[1].heat_loads) ||
+        error("Exit heat was not captured before termination.")
     all(r->isapprox(r.panel_left_deg, panel_cap_deg; atol=1e-10, rtol=0) &&
         isapprox(r.panel_right_deg, panel_cap_deg; atol=1e-10, rtol=0), active) || error("Panel cap was not applied.")
     all(r->isapprox(r.panel_left_incidence_deg, panel_cap_deg; atol=1e-10, rtol=0) &&
@@ -226,6 +234,8 @@ function run_case(; panel_cap_deg=90.0, grid_file="", offline=false,
         "initial_state_m_m_s"=>setup.initial_state, "state_frame"=>STATE_FRAME, "native_gram_loaded"=>false,
         "atmosphere"=>SpaceAGORA.atmosphere_provenance(model), "scenario_assets"=>assets.provenance,
         "panel_cap_active"=>true, "thermal_feedback_tested"=>false,
+        "guidance_active_during_passage"=>true, "guidance_cleared_at_exit"=>true,
+        "exit_heat_captured"=>true,
         "comparison_time_s"=>COMMON_TIME_S,
         "common_state_m_m_s"=>[common.x_m, common.y_m, common.z_m, common.vx_m_s, common.vy_m_s, common.vz_m_s],
         "common_panel_heat_load_J_cm2"=>[common.heat_left_J_cm2, common.heat_right_J_cm2],
@@ -256,6 +266,7 @@ function compare_panel_caps(; output_dir=joinpath(pwd(), "odyssey_surrogate_resu
     variant = validate_panel_cap(variant_cap_deg, "variant_cap_deg")
     baseline != variant || throw(ArgumentError("The baseline and variant caps must differ; both are $(baseline) degrees."))
     require_new_directory(output_dir)
+    println("Note: the first passage in this Julia process also compiles the example; its run time is not comparable with the second.")
     first = run_case(; panel_cap_deg=baseline, output_dir=joinpath(output_dir,cap_directory(baseline)), kwargs...)
     second = run_case(; panel_cap_deg=variant, output_dir=joinpath(output_dir,cap_directory(variant)), kwargs...)
     a = first.summary["common_state_m_m_s"]; b = second.summary["common_state_m_m_s"]

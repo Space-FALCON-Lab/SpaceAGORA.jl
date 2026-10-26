@@ -12,11 +12,11 @@ function _active_source(path::String)
     )
 end
 
-const COMMAND_TYPES_PATH = joinpath(REPO_ROOT, "src", "gnc", "command_types.jl")
-const GUIDANCE_HOOKS_PATH = joinpath(REPO_ROOT, "src", "gnc", "guidance", "guidance_hooks.jl")
-const GUIDANCE_THRUSTER_PATH = joinpath(REPO_ROOT, "src", "gnc", "guidance", "thruster_guidance", "thruster_guidance_functions.jl")
-const CONTROL_HOOKS_PATH = joinpath(REPO_ROOT, "src", "gnc", "control", "control_hooks.jl")
-const CONTROL_PROPULSIVE_PATH = joinpath(REPO_ROOT, "src", "gnc", "control", "propulsive_maneuvers.jl")
+const COMMAND_TYPES_PATH = joinpath(REPO_ROOT, "src", "models", "gnc", "contracts", "command_types.jl")
+const GUIDANCE_HOOKS_PATH = joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "hooks.jl")
+const GUIDANCE_THRUSTER_PATH = joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "maneuvers", "thruster_guidance_functions.jl")
+const CONTROL_HOOKS_PATH = joinpath(REPO_ROOT, "src", "models", "gnc", "control", "hooks.jl")
+const CONTROL_PROPULSIVE_PATH = joinpath(REPO_ROOT, "src", "models", "gnc", "control", "maneuvers", "propulsive_maneuvers.jl")
 
 for path in (
     COMMAND_TYPES_PATH,
@@ -61,14 +61,18 @@ occursin("controlModel.Δv[i] = command.delta_v_mps", control_propulsive_src) &&
 occursin("controlModel.direction[i] = command.direction_rad", control_propulsive_src) &&
     error("Typed-command boundary violation: control propulsive maneuvers are still copying guidance direction into BaseThrusterModel state.")
 
-const GUIDANCE_ROOT = joinpath(REPO_ROOT, "src", "gnc", "guidance")
-const CONTROL_ROOT = joinpath(REPO_ROOT, "src", "gnc", "control")
-const GUIDANCE_ROOTS = (GUIDANCE_ROOT, joinpath(REPO_ROOT, "packages", "SpaceAGORAHYPR", "src"),
-    (joinpath(REPO_ROOT, "src", "gnc", owner) for owner in ("shared", "hypr", "rrt"))...)
-const GNC_ROOTS = (GUIDANCE_ROOTS..., CONTROL_ROOT)
+const GUIDANCE_ROOT = joinpath(REPO_ROOT, "src", "models", "gnc", "guidance")
+const CONTROL_ROOT = joinpath(REPO_ROOT, "src", "models", "gnc", "control")
+const GUIDANCE_ROOTS = (GUIDANCE_ROOT,
+    (joinpath(REPO_ROOT, "src", "models", "gnc", owner) for owner in ("planning", "companions"))...,
+    joinpath(REPO_ROOT, "src", "interfaces", "analysis", "planning"))
+# The general contract serves guidance and control alike: the GNC-wide checks
+# apply to it, the guidance-only patterns do not.
+const CONTRACTS_ROOT = joinpath(REPO_ROOT, "src", "models", "gnc", "contracts")
+const GNC_ROOTS = (GUIDANCE_ROOTS..., CONTROL_ROOT, CONTRACTS_ROOT)
 const ALLOWED_MANEUVER_COMMAND_OWNERS = Set([
-    joinpath("src", "gnc", "guidance", "thruster_guidance", "thruster_guidance_functions.jl"),
-    joinpath("src", "gnc", "control", "propulsive_maneuvers.jl"),
+    joinpath("src", "models", "gnc", "guidance", "maneuvers", "thruster_guidance_functions.jl"),
+    joinpath("src", "models", "gnc", "control", "maneuvers", "propulsive_maneuvers.jl"),
 ])
 const GUIDANCE_FORBIDDEN_PATTERNS = (
     r"\bBaseThrusterModel\b" => "guidance must not depend on BaseThrusterModel directly",
@@ -81,10 +85,18 @@ const GUIDANCE_FORBIDDEN_PATTERNS = (
     r"\.\s*thrust\s*\[" => "guidance must not mutate thruster thrust state directly",
 )
 
+# Comparison execution owns the concrete six-axis actuator used by its plant.
+# Permit that one binding only; every other thruster dependency/state access and
+# the GNC-wide checks below still apply to this file.
+function _guidance_scan_source(rel::String, src::String)
+    rel == joinpath("src", "interfaces", "analysis", "planning", "rpo_comparison_tracking.jl") || return src
+    return replace(src, r"(?m)^using \.\.ThrusterModels: SixAxisThrusterModel$" => ""; count=1)
+end
+
 violations = String[]
 
 for root in GNC_ROOTS
-    isdir(root) || continue
+    isdir(root) || error("Missing typed GNC scan root: $(relpath(root, REPO_ROOT))")
     for (dir, _, files) in walkdir(root)
         for file in files
             endswith(file, ".jl") || continue
@@ -100,8 +112,9 @@ for root in GNC_ROOTS
             end
 
             if root in GUIDANCE_ROOTS
+                guidance_src = _guidance_scan_source(rel, src)
                 for (rx, message) in GUIDANCE_FORBIDDEN_PATTERNS
-                    occursin(rx, src) || continue
+                    occursin(rx, guidance_src) || continue
                     push!(violations, "$rel: $message")
                 end
             end

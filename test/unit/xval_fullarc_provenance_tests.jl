@@ -1,6 +1,6 @@
 using Test, JSON
 module FullarcPreflightFixture
-    include(joinpath(@__DIR__, "..", "..", "scripts", "xval_provenance.jl"))
+    include(joinpath(@__DIR__, "..", "..", "scripts", "xval", "xval_provenance.jl"))
 end
 const XVAL_PREFLIGHT = FullarcPreflightFixture.XvalProvenance
 @testset "Full-arc preflight preserves published rejection cases" begin

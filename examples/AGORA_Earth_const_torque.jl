@@ -9,11 +9,11 @@ struct ConstantBodyTorqueModel <: AbstractForceTorqueModel
     torque::SVector{3, Float64}
 end
 
-function SimulationModel.calcForceTorque(
+function SimulationModel.wrench(
     model::ConstantBodyTorqueModel,
-    x::ComponentVector,
-    p::ODEParams,
-    i::Int64
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     return SVector{3, Float64}(0.0, 0.0, 0.0), model.torque
 end

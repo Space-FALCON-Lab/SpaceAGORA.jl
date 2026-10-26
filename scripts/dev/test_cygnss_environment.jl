@@ -10,7 +10,7 @@ println("Development catalogue dependencies available outside the core project")
 # solver/SatelliteToolbox upgrade. Keep the same WGS84 model and km units.
 using Test
 @testset "Catalogue propagation survives the dependency upgrade" begin
-    lines = readlines(joinpath(@__DIR__, "viewer_demos", "cygnss_historical.tle"))
+    lines = readlines(joinpath(@__DIR__, "..", "..", "test", "fixtures", "research_contracts", "cygnss_historical.tle"))
     idx = findfirst(line -> startswith(line, "1 "), lines)
     tle = only(read_tles("baseline\n" * lines[idx] * "\n" * lines[idx + 1]))
     for (minutes, expected) in (

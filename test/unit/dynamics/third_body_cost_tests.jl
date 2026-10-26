@@ -41,16 +41,16 @@ CountingEphemeridesModel() = CountingEphemeridesModel(SimpleEphemeridesModel(), 
 
 EM.ephemerides_requires_spice(::CountingEphemeridesModel) = false
 EM.ephemerides_cache_key(::CountingEphemeridesModel) = (:counting,)
-EM.ephemerides_time_seconds(initial_time, model::CountingEphemeridesModel) =
-    EM.ephemerides_time_seconds(initial_time, model.inner)
+EM.ephemerides_epoch_seconds(model::CountingEphemeridesModel, initial_time) =
+    EM.ephemerides_epoch_seconds(model.inner, initial_time)
 
-function EM.planet_frame_lpi(planet, et::Float64, model::CountingEphemeridesModel)
+function EM.ephemerides_frame_lpi(model::CountingEphemeridesModel, planet, et::Float64)
     Base.Threads.atomic_add!(model.calls, 1)
-    return EM.planet_frame_lpi(planet, et, model.inner)
+    return EM.ephemerides_frame_lpi(model.inner, planet, et)
 end
 
-EM.ephemerides_sun_direction_ii(planet, et::Float64, model::CountingEphemeridesModel) =
-    EM.ephemerides_sun_direction_ii(planet, et, model.inner)
+EM.ephemerides_sun_ii(model::CountingEphemeridesModel, planet, et::Float64) =
+    EM.ephemerides_sun_ii(model.inner, planet, et)
 
 # A four-coefficient degree-2 field, written to a temporary file because the
 # harmonics model only has a file-backed constructor. The values are a J2-only
@@ -161,7 +161,7 @@ end
             p = SM.ODEParams(n_sats=n_sats, args=args)
 
             et = 1.2345e6
-            reference = EM.planet_frame_lpi(planet, et, SimpleEphemeridesModel())
+            reference = EM.ephemerides_frame_lpi(SimpleEphemeridesModel(), planet, et)
             baseline_calls = ephemerides.calls[]
 
             # One derivative evaluation: every spacecraft asks for the frame at
@@ -177,7 +177,7 @@ end
             # The next evaluation is a different time, so it costs exactly one
             # more lookup however many spacecraft consume it.
             et2 = et + 20.0
-            reference2 = EM.planet_frame_lpi(planet, et2, SimpleEphemeridesModel())
+            reference2 = EM.ephemerides_frame_lpi(SimpleEphemeridesModel(), planet, et2)
             for _ in 1:n_sats
                 @test PE._harmonics_lpi_at!(harmonics, p, et2) == reference2
             end

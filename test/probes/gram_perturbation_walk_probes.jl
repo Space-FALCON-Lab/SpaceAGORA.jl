@@ -2,7 +2,7 @@
 #   julia --project=. test/probes/gram_perturbation_walk_probes.jl
 #
 # Checks the instance discipline the SPACEAGORA_GRAM_DENSITY_PERTURBATION modes
-# rely on (src/simulation/callbacks/density_callbacks/gram_density_perturbation.jl):
+# rely on (src/orchestration/simulation/callbacks/density_callbacks/gram_density_perturbation.jl):
 #
 #  1. A walk instance built with _gram_walk_clone reproduces the same r sequence
 #     whether or not the MEAN instance is queried between its samples -- i.e.

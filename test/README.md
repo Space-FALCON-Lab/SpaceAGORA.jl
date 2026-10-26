@@ -1,32 +1,50 @@
 # Test Layout
 
-Current layout (flat, CI-oriented — a prior purpose-oriented restructure was
-reverted to keep this repo mergeable with its upstream):
+Test folders follow their execution and dependency boundaries. Shared drivers
+select the suites; helpers supply reusable setup and scenarios.
 
 - `test/runtests.jl`
   Default package test entrypoint. Delegates to `test/integration/runtests.jl`,
-  which raw-includes the numbered `test/suites/01..09_*.jl` legacy suites into
+  which raw-includes the numbered `test/suites/` legacy suites into
   its own shared scope (mock models, builder helpers) — this is still the
   canonical default-entrypoint path, not yet split up.
   The harness loads the package (`using SpaceAGORA`) and binds
   `SimulationModel`, `SimulationEngine`, `TelemetryVerification`, the parallel
   modules and a handful of frame helpers as aliases into it, so there is one
   copy of every module in the process. It does not include `src/`; the one
-  exception is `src/mission/operations/maneuver_plans.jl`, which is not part
+  exception is `src/orchestration/mission/operations/maneuver_plans.jl`, which is not part
   of the package. Suites 01 and 03 deliberately raw-include source files into
   throwaway sandbox modules to test standalone loading — keep those.
+  Reference-system sandboxes use `test/helpers/reference_system_sandbox.jl`:
+  it raw-loads the canonical Geodesy and OrbitalGeometry numeric sources before
+  the frame leaf, without importing SpaceAGORA or RuntimeServices. This preserves
+  includer-local `args` and the cold missing-lock probe while keeping dependency
+  orchestration out of the internal `reference_system.jl` leaf.
 - `test/unit/`
   A smaller, standalone (`using SpaceAGORA`, no shared-scope dependency) set of
-  domain tests, runnable on their own via `test/unit/runtests.jl`. The default
+  domain tests, runnable on their own via
+  `julia --project=test test/unit/runtests.jl`. The default
   `test/runtests.jl` chain also runs the whole tree once, as a subprocess
   dispatched from `test/suites/09_probe_drivers.jl` with the coverage flag
   forwarded, so their line data reaches the coverage gate.
 - `test/integration/`
-  Current home of the legacy end-to-end harness (mock models, builder helpers,
-  `test/suites/` includes) plus example, persistence, CLI, and telemetry-facing
-  tests.
+  The shared integration harness (mock models, builder helpers and `test/suites/`
+  includes), plus the `examples/` regression entrypoint. Domain folders are added
+  when they contain tests, rather than reserved in advance.
 - `test/smoke/`
-  Environment and startup smokes such as clean-depot, threaded, and no-GRAM checks.
+  Environment and startup smokes such as clean-depot, threaded, and no-GRAM checks,
+  plus the workflow entry points that check installation and surrogate contracts
+  (`installation_contract.jl`, `optional_packages_tests.jl`, `contributor_environment_tests.jl`,
+  `gram_dependency_integration_tests.jl`, the surrogate preset, workflow and CLI
+  tests). `runtests.jl` lists its files explicitly; the entry points are run by
+  the workflows that name them.
+- `test/optional/`
+  The companion suites: `hypr/`, `edg/` and `visualizer/`, each driven by its
+  installation job in `julia-ci.yml`.
+- `test/fixtures/`
+  Tracked fixtures such as the Earth regression CSV read by suite 04. (The
+  `contributor-kit` job tests the starters of `templates/starters/`, generated
+  from the commit under test, through the reusable contributor workflow.)
 - `test/grid_atmosphere/`
   A standalone native-free grid-adapter suite with normal package imports.
   Synthetic fixtures cover scalar/batch queries, strict domain checks, buffered
@@ -65,20 +83,40 @@ reverted to keep this repo mergeable with its upstream):
   `SPACEAGORA_REQUIRE_NATIVE_GRAM_PROBES=1` and fails unless construction and
   density-service probes both finish and the child exits successfully.
 - `test/helpers/`
-  Shared native-probe reporting and parent verification live here.
+  Shared companion loaders, native-probe reporting, reference-system sandboxes
+  and reusable scenarios live here. See [the helper guide](helpers/README.md).
 
 Recommended commands:
 
 ```bash
-julia --project=. test/runtests.jl
+julia --startup-file=no test/setup.jl
+julia --startup-file=no examples/setup.jl
+julia --project=test test/runtests.jl
 julia --project=. test/smoke/runtests.jl
-julia --project=. test/contracts/pr_runtests.jl
-julia --project=. test/contracts/nightly_runtests.jl
-julia --project=. test/contracts/runtests.jl
+julia --project=test test/contracts/pr_runtests.jl
+julia --project=test test/contracts/nightly_runtests.jl
+julia --project=test test/contracts/runtests.jl
 julia --project=. test/stress/runtests.jl
 julia --project=. test/coverage/runtests.jl
 julia --startup-file=no --threads=4 --project=. test/grid_atmosphere/runtests.jl
 ```
+
+The test environment (`test/Project.toml`) holds the test tools, Aqua among
+them, and every package the harness imports, with SpaceAGORA from this checkout;
+the root project does not include Aqua. Suites 01 and 03 load the package source
+into sandbox modules, so the test environment declares all of SpaceAGORA's own
+dependencies too, and `test/setup.jl` refuses one that misses any. The tests
+also start example and CLI children, which run in the examples environment
+(`examples/Project.toml`, prepared by `examples/setup.jl`), as do the example
+smoke runs of `test/smoke/runtests.jl`.
+
+`test/setup.jl` generates the ignored `test/Manifest.toml` from the root
+manifest on every run, so the tests use the package versions the root project
+pins. Run it again after the root manifest changes. `Pkg.test()` from the root
+project uses the same test project. The harness requires Aqua and stops when it
+would test another checkout's SpaceAGORA. The EDG and HYPR providers stay
+separate environments: `SPACEAGORA_EDG_TEST_ENV` and `SPACEAGORA_HYPR_TEST_ENV`
+name prepared ones (`scripts/setup_edg.jl`, `scripts/setup_hypr.jl`).
 
 The grid suite constructs no native model and needs no GRAM data, shared library
 or SPICE kernels. `EXPECTED_GRAMSUITE_ROOT` can pin the resolved wrapper directory

@@ -1,5 +1,5 @@
 module ControlReadoutTests
-using Test, StaticArrays, SpaceAGORA
+using Test, StaticArrays, ComponentArrays, SpaceAGORA
 const SM = SpaceAGORA.SimulationModel
 const SE = SpaceAGORA.SimulationEngine
 const CH = SM.ControlHooks
@@ -50,44 +50,101 @@ function probe(id::Symbol, force, torque, wheel_torque, mass_rate, calls; sat_id
     return ReadoutProbe{id,typeof(force),typeof(torque),typeof(wheel_torque)}(
         force, torque, wheel_torque, mass_rate, sat_idx, calls)
 end
-function CH.calcControlForceTorque(m::ReadoutProbe{ID}, u::AbstractVector,
-        p::SM.ODEParams, i::Int64, t::Float64) where {ID}
-    push!(m.calls, (ID, :force, i))
+# `mass_rate` is the propellant the probe reports using, positive.
+function CH.control_wrench(m::ReadoutProbe{ID}, x::SM.StateSample,
+        p::SM.ODEParams, t::Float64) where {ID}
+    push!(m.calls, (ID, :force, x.spacecraft_index))
     return m.force, m.torque
 end
-function CH.calcControlMassFlowRate(m::ReadoutProbe{ID}, u::AbstractVector,
-        p::SM.ODEParams, i::Int64, t::Float64) where {ID}
-    push!(m.calls, (ID, :mass, i))
+function CH.control_propellant_rate(m::ReadoutProbe{ID}, x::SM.StateSample,
+        p::SM.ODEParams, t::Float64) where {ID}
+    push!(m.calls, (ID, :mass, x.spacecraft_index))
     return m.mass_rate
 end
-function CH.calcReactionWheelTorque(m::ReadoutProbe{ID}, u::AbstractVector,
-        p::SM.ODEParams, i::Int64, t::Float64) where {ID}
-    push!(m.calls, (ID, :wheel, i))
+function CH.control_wheel_torque(m::ReadoutProbe{ID}, x::SM.StateSample,
+        p::SM.ODEParams, t::Float64) where {ID}
+    push!(m.calls, (ID, :wheel, x.spacecraft_index))
     return m.wheel_torque
 end
 
 # ControlModel accepts arbitrary extension types. Only the force hook is
-# implemented here, so generic mass-flow and reaction-wheel fallbacks matter.
+# implemented here, so the propellant and wheel defaults matter.
 struct GlobalForceOnly
     calls::Vector{Tuple{Symbol,Symbol,Int}}
 end
-function CH.calcControlForceTorque(m::GlobalForceOnly, u::AbstractVector, p::SM.ODEParams,
-        i::Int64, t::Float64)
-    push!(m.calls, (:global, :force, i))
-    return SVector(0.0, 0.0, Float64(i)), ZERO3
+function CH.control_wrench(m::GlobalForceOnly, x::SM.StateSample, p::SM.ODEParams, t::Float64)
+    push!(m.calls, (:global, :force, x.spacecraft_index))
+    return SVector(0.0, 0.0, Float64(x.spacecraft_index)), ZERO3
 end
+
+# One spacecraft's state view, of the type the dynamics pass: the bridges build
+# the hooks' state sample from it.
+readout_state(p) = SE.build_initial_conditions(p.args).sc[1]
 
 function readout(p, i; force=ZERO3, torque=ZERO3, wheel=ZERO3)
     f, tq, rw = MVector{3,Float64}(force), MVector{3,Float64}(torque), MVector{3,Float64}(wheel)
-    rate = SE._accumulate_control_effectors!(f, tq, rw, Float64[], p, i, 2.0, false)
+    rate = SE._accumulate_control_effectors!(f, tq, rw, readout_state(p), p, i, 2.0, false)
     return SVector{3,Float64}(f), SVector{3,Float64}(tq), SVector{3,Float64}(rw), rate
 end
 
 function held_managers(n)
     return ntuple(n) do i
-        SM.MagneticMomentumManagerModel(sat_idx=i,
+        SM.MagneticMomentumManagerModel(spacecraft_index=i,
             held_torque_body=SVector(i / 1024.0, i / 512.0, -i / 256.0))
     end
+end
+
+include(joinpath(@__DIR__, "..", "..", "..", "templates", "control_hook_template.jl"))
+
+@testset "control template dispatches through the engine parameter boundary" begin
+    force, torque = SVector(1.0, 2.0, 3.0), SVector(0.1, 0.2, 0.3)
+    model = ExampleControlHookTemplate.ExampleControlHook(force_ii=force, torque_body=torque, isp_s=250.0)
+    p = readout_params((model,); n_sats=1)
+    x = SE._control_state_sample(readout_state(p), p, 1)
+    rate = SpaceAGORA.propellant_mass_rate(sqrt(14.0), 250.0)
+    @test SpaceAGORA.control_wrench(model, x, p, 0.0) == (force, torque)
+    @test SpaceAGORA.control_propellant_rate(model, x, p, 0.0) == rate > 0
+    @test SpaceAGORA.held_command(model, 1) == (force_ii=force, torque_body=torque)
+    # The engine subtracts the propellant used from the mass derivative.
+    @test readout(p, 1) == (force, torque, ZERO3, -rate)
+    # The tick holds the law's command (none in the template) for the readouts after it.
+    u = SE.build_initial_conditions(p.args)
+    @test SpaceAGORA.update_control!(model, u, p, 1.0, 1) === nothing
+    @test SpaceAGORA.held_command_time(model, 1) == 1.0
+    @test readout(p, 1) == (ZERO3, ZERO3, ZERO3, 0.0)
+end
+
+# Hook methods typed on the effector alone, as the template's could be: the
+# defaults are untyped, so a method typed on the effector is more specific and
+# nothing is ambiguous.
+struct LooseHooks <: SM.AbstractControlEffectorModel end
+SpaceAGORA.control_wrench(::LooseHooks, x, p, t) = (SVector(1.0, 0.0, 0.0), ZERO3)
+SpaceAGORA.control_propellant_rate(::LooseHooks, x, p, t) = 0.25
+SpaceAGORA.control_wheel_torque(::LooseHooks, x, p, t) = SVector(0.0, 0.0, 0.5)
+
+@testset "control hooks typed on the effector alone" begin
+    p = readout_params((LooseHooks(),); n_sats=1)
+    state = readout_state(p)
+    @test readout(p, 1) == (SVector(1.0, 0.0, 0.0), ZERO3, SVector(0.0, 0.0, 0.5), -0.25)
+    # Any effector, a control effector or not, uses no propellant and drives no
+    # wheels unless it implements those hooks.
+    x = SE._control_state_sample(state, p, 1)
+    for effector in (GlobalForceOnly(Tuple{Symbol,Symbol,Int}[]), SM.MagneticMomentumManagerModel(spacecraft_index=1), nothing)
+        @test SpaceAGORA.control_propellant_rate(effector, x, p, 0.0) === 0.0
+        @test SpaceAGORA.control_wheel_torque(effector, x, p, 0.0) === nothing
+    end
+    # No two methods of a control hook are ambiguous, the package's or the tests'.
+    for f in (SpaceAGORA.control_wrench, SpaceAGORA.control_propellant_rate, SpaceAGORA.control_wheel_torque,
+              SpaceAGORA.control_thruster_levels)
+        ms = collect(methods(f))
+        @test !any(Base.isambiguous(a, b) for a in ms, b in ms if a !== b)
+    end
+    # The public names show the generic docstrings, not a method's.
+    root_doc(name) = string(Docs.meta(SpaceAGORA)[Docs.Binding(SpaceAGORA, name)].docs[Union{}].text...)
+    @test startswith(root_doc(:control_wrench), "    control_wrench(model, x::StateSample, p, t::Float64)")
+    @test !occursin("control_wrench(model::BaseThrusterModel", root_doc(:control_wrench))
+    @test startswith(root_doc(:control_propellant_rate), "    control_propellant_rate(model, x::StateSample, p, t::Float64)")
+    @test startswith(root_doc(:control_thruster_levels), "    control_thruster_levels(effector, spacecraft_index::Int)")
 end
 
 @testset "control readout retains held torque ownership without updating control state" begin
@@ -109,9 +166,9 @@ end
     calls = Tuple{Symbol,Symbol,Int}[]
     # The sat_idx field is deliberately unrelated to the evaluated spacecraft:
     # field naming is not a contract permitting generic ownership filtering.
-    vector_model = probe(:vector, [1.0,2.0,3.0], SVector(4.0,5.0,6.0), nothing, -2.0, calls)
+    vector_model = probe(:vector, [1.0,2.0,3.0], SVector(4.0,5.0,6.0), nothing, 2.0, calls)
     static_model = probe(:static, SVector(-4.0,5.0,-6.0), [-2.0,4.0,5.0],
-        [3.0,-4.0,5.0], -3.0, calls; sat_idx=1)
+        [3.0,-4.0,5.0], 3.0, calls; sat_idx=1)
     p = readout_params((vector_model, GlobalForceOnly(calls), static_model); n_sats=2)
     for i in 1:2
         empty!(calls)
@@ -139,7 +196,8 @@ end
     end
     p = readout_params(effectors; n_sats=1)
     f, tq, rw, rate = readout(p, 1)
-    @test rate === 1.0
+    # ((0 - 1e16) - (-1e16)) - 1: the propellant rates are subtracted in order.
+    @test rate === -1.0
     @test f == SVector(7.0,0.0,0.0)
     @test tq == SVector(0.0,7.0,0.0)
     @test rw == SVector(0.0,0.0,7.0)
@@ -156,12 +214,15 @@ end
 
 # Warmed, allocation-only regression through the real type-erasing config
 # boundary. Keep buffers/state outside the measurement and observe a checksum.
-# The tuple is still obtained through an abstract ControlModel field, so this
-# entry retains one runtime dispatch boundary per spacecraft. ODEParams is a
-# large immutable aggregate; boxing it at that boundary can allocate even when
-# the homogeneous inner loop infers. Julia 1.12.1 measured 2,096 B/call for this
-# fixture after warmup. A 4 KiB/call budget allows that measured residual while
-# catching a return to the original per-controller hook-result boxing. This is
+# The ControlModel is still obtained through an abstract field, so this entry
+# retains one runtime dispatch boundary per spacecraft. While ODEParams was an
+# immutable aggregate stored inline, that boundary copied it to the heap:
+# Julia 1.12.1 measured 2,096 B/call for this fixture after warmup. With
+# ODEParams mutable and the ControlModel passed whole, the same measurement is
+# 16 B/call (the boxed Float64 time argument). The 64 B/call budget catches a
+# return of either copy, or of the per-controller hook-result boxing. Coverage
+# instrumentation changes inlining and allocation, so a coverage run keeps the
+# earlier 4 KiB/call bound, which still catches the hook-result boxing. This is
 # an allocation regression bound, not a zero-allocation or wall-time claim.
 @noinline function readout_batch!(p, state, forces, torques, wheels, repetitions)
     checksum = 0.0
@@ -179,7 +240,7 @@ end
 
 @testset "warmed 32-manager control readout has bounded allocation" begin
     p = readout_params(held_managers(32))
-    state = Float64[]
+    state = readout_state(p)
     f, tq, rw = MVector{3,Float64}(ZERO3), MVector{3,Float64}(ZERO3), MVector{3,Float64}(ZERO3)
     checksum = Ref(0.0)
     repetitions = 32
@@ -187,6 +248,37 @@ end
     readout_allocated(p, state, f, tq, rw, repetitions, checksum)
     bytes = readout_allocated(p, state, f, tq, rw, repetitions, checksum)
     @test checksum[] == sum(1:32) / 1024.0
-    @test bytes <= 4096 * repetitions
+    budget = Base.JLOptions().code_coverage == 0 ? 64 : 4096
+    @test bytes <= budget * repetitions
+end
+# The time argument varies per call here, as it does in a solve, so a boxed
+# Float64 at the dispatch boundary cannot be served from a constant.
+@noinline function readout_batch_t!(p, state, forces, torques, wheels, repetitions)
+    checksum = 0.0
+    for k in 1:repetitions
+        fill!(forces, 0.0); fill!(torques, 0.0); fill!(wheels, 0.0)
+        i = mod1(k, p.n_sats)
+        rate = SE._accumulate_control_effectors!(forces, torques, wheels, state, p, i, 0.5 * k, false)
+        checksum += forces[1] + torques[1] + wheels[1] + rate
+    end
+    return checksum
+end
+function readout_allocated_t(p, state, forces, torques, wheels, repetitions, checksum)
+    return @allocated checksum[] = readout_batch_t!(p, state, forces, torques, wheels, repetitions)
+end
+@testset "empty control model returns before the dispatch boundary" begin
+    # A constellation without controllers must not pay the per-spacecraft
+    # runtime dispatch: no boxed time argument, and the caller's accumulators
+    # stay where they are. Unlike the 32-manager bound above, this one is zero.
+    p = readout_params((); n_sats=4)
+    state = readout_state(p)
+    f, tq, rw = MVector{3,Float64}(ZERO3), MVector{3,Float64}(ZERO3), MVector{3,Float64}(ZERO3)
+    checksum = Ref(0.0)
+    repetitions = 64
+    readout_batch_t!(p, state, f, tq, rw, repetitions)
+    readout_allocated_t(p, state, f, tq, rw, repetitions, checksum)
+    bytes = readout_allocated_t(p, state, f, tq, rw, repetitions, checksum)
+    @test checksum[] == 0.0
+    @test bytes == 0 || Base.JLOptions().code_coverage != 0
 end
 end # module ControlReadoutTests

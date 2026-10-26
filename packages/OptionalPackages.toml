@@ -1,0 +1,24 @@
+# Gitlinks in this repository's index pin source revisions.
+# HYPRSource.toml supplies the immutable source to the standalone HYPR installer;
+# optional_packages.jl requires its revision and identity to match the gitlink.
+[hypr]
+name = "HYPR"
+path = "packages/robotics/HYPR.jl"
+url = "https://github.com/Space-FALCON-Lab/HYPR.jl.git"
+uuid = "342c8629-b435-4bda-9d24-004c735fb297"
+version = "0.5.0"
+
+[mujoco]
+name = "SpaceAGORAMuJoCo"
+path = "packages/robotics/SpaceAGORAMuJoCo.jl"
+url = "https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl.git"
+uuid = "a46e04e1-adb7-43c3-a03b-26575bf4fb67"
+version = "0.5.0"
+
+# A real published companion commit must be recorded as a gitlink before setup.
+[edg]
+name = "SpaceAGORAEDG"
+path = "packages/gnc/SpaceAGORAEDG.jl"
+url = "https://github.com/Space-FALCON-Lab/SpaceAGORAEDG.jl.git"
+uuid = "a782e8ee-96d7-4dd6-8231-bb64649e6ad4"
+version = "0.5.1"

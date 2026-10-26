@@ -10,14 +10,14 @@ installation checks and do not enforce the matrix testsets' acceptance limits.
 From a configured repository environment:
 
 ```sh
-julia --project=. scripts/j2_parity_debug.jl
-julia --project=. scripts/tb_matrix_debug.jl
+julia --project=examples scripts/dev/diagnostics/j2_parity_debug.jl
+julia --project=examples scripts/dev/diagnostics/tb_matrix_debug.jl
 ```
 
 The J2 utility prints per-axis RMSE in kilometres, the combined-axis norm, and the
 five worst J2 cases. The TB utility prints both comparison targets, missing pairs
 and exactly equal third-body on/off pairs. It writes
-`scripts/tb_matrix_rmse_m.csv` with the existing header, ordering, target labels,
+`output/diagnostics/tb_matrix_rmse_m.csv` with the existing header, ordering, target labels,
 full-precision metre values and empty values for incomplete axis triplets.
 Including either launcher only defines its functions; call
 `run_j2_parity_debug()` or `run_tb_matrix_debug()` explicitly after inclusion.
@@ -64,9 +64,9 @@ for these orbit comparison diagnostics.
 
 ## Definition loading and bounded regression check
 
-`scripts/scenario_matrix_debug_support.jl` loads the matrix in the isolated
+`scripts/dev/diagnostics/scenario_matrix_debug_support.jl` loads the matrix in the isolated
 `ScenarioMatrixDebugSupport` module with `SCENARIO_MATRIX_DEFINITIONS_ONLY=true`.
-`scripts/tb_matrix_debug_defs_only.jl` remains an idempotent compatibility include
+`scripts/dev/diagnostics/tb_matrix_debug_defs_only.jl` remains an idempotent compatibility include
 path for this module, not an independent source of matrix definitions. It no
 longer creates a generated source file. Access matrix helpers through the module.
 
@@ -89,7 +89,7 @@ establish trajectory equivalence, scientific acceptance or performance gains.
 
 ## Full-arc runs and export provenance
 
-`scripts/xval_fullarc.jl <target> <outdir> [variant]` compares every retained
+`scripts/xval/xval_fullarc.jl <target> <outdir> [variant]` compares every retained
 reference epoch. Each run must use a new output directory. `run_info.json`
 starts as `running` and becomes `complete` only after all selected cases finish
 and their inputs, source identity and environment controls have been checked.

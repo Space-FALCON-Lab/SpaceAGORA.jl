@@ -27,3 +27,35 @@ end
     end
     AE.refresh_multibody_parallel_mode!()
 end
+
+@testset "multibody callers share the neutral policy owner and per-solve cache" begin
+    @test AE.refresh_multibody_parallel_mode! === PP.refresh_multibody_parallel_mode!
+    @test AE._multibody_thread_decision === PP._multibody_thread_decision
+    @test AE._MULTIBODY_MODE_CACHE === PP._MULTIBODY_MODE_CACHE
+    @test SpaceAGORA.SimulationModel.DynamicEffectors.PerturbationEffectors._multibody_thread_decision === PP._multibody_thread_decision
+    previous = PP._MULTIBODY_MODE_CACHE[]
+    try
+        withenv("SPACEAGORA_MULTIBODY_PARALLEL" => "off") do
+            @test PP.refresh_multibody_parallel_mode!() == :off
+            @test AE._multibody_thread_decision(8) == (use_threads=false, allotment=1, mode=:off)
+            withenv("SPACEAGORA_MULTIBODY_PARALLEL" => "auto",
+                    "SPACEAGORA_MULTIBODY_THREAD_THRESHOLD" => "4") do
+                # The environment change must wait for the next solve refresh,
+                # regardless of which historical namespace the caller uses.
+                @test PP._multibody_thread_decision(8).mode == :off
+                @test AE.refresh_multibody_parallel_mode!() == :auto
+                @test PP._multibody_thread_decision(2) == (use_threads=false, allotment=1, mode=:auto)
+                @test AE._multibody_thread_decision(2; heavy_work=false) == (use_threads=false, allotment=1, mode=:auto)
+            end
+        end
+        withenv("SPACEAGORA_MULTIBODY_PARALLEL" => "on",
+                "SPACEAGORA_MULTIBODY_MAX_THREADS" => "1") do
+            PP.refresh_multibody_parallel_mode!()
+            @test AE._multibody_thread_decision(1) == (use_threads=false, allotment=1, mode=:on)
+            # The explicit cap must still win over forced-on mode.
+            @test AE._multibody_thread_decision(8) == (use_threads=false, allotment=1, mode=:on)
+        end
+    finally
+        PP._MULTIBODY_MODE_CACHE[] = previous
+    end
+end

@@ -8,18 +8,17 @@ struct BodyRateDamperModel
     gain::Float64
 end
 
-function SimulationModel.calcControlForceTorque(
+function SimulationModel.control_wrench(
     model::BodyRateDamperModel,
-    u,
+    x::StateSample,
     p::ODEParams,
-    i::Int64,
     t::Float64
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    torque = -model.gain * SVector{3, Float64}(u.ω)
+    torque = -model.gain * x.ω_body
     return SVector{3, Float64}(0.0, 0.0, 0.0), torque
 end
 
-function SimulationModel.calcControlEffect!(
+function SimulationModel.update_control!(
     model::BodyRateDamperModel,
     u,
     p::ODEParams,

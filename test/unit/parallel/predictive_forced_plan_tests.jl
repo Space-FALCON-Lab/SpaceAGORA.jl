@@ -164,3 +164,24 @@ end
         FPCamp.reset_campaign_corrections!()
     end
 end
+
+@testset "a single consumer on one thread runs the sample as the serial route does" begin
+    probe(_) = (ADAPTIVE = ENV["SPACEAGORA_PARALLEL_POLICY_ADAPTIVE"],
+                CALIB = ENV["SPACEAGORA_RHS_CALIBRATE"],
+                DENSITY = ENV["SPACEAGORA_DENSITY_CALLBACK_PARALLEL"])
+    tuning = FPPP.OuterRouteTuning(memory_aware = false)
+    r7 = ("SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1", "SPACEAGORA_RHS_CALIBRATE" => "auto",
+          "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto")
+    run(plan, budget) = withenv(r7..., "SPACEAGORA_INNER_THREAD_BUDGET" => budget) do
+        only(FPCamp._predictive_dispatch(probe, [1], plan, tuning; fail_fast = true).samples).value
+    end
+    serial = FPCamp._predictive_plan(:none, 1, 0, 1, true, nothing, 0.0)
+    @test run(serial, "1") == (ADAPTIVE = "0", CALIB = "off", DENSITY = "off")
+    # A serial plan that may use several threads keeps the R7 machinery.
+    Threads.nthreads() > 1 && @test run(serial, "2").ADAPTIVE == "1"
+    # The caller's environment is restored afterwards.
+    withenv(r7...) do
+        FPCamp._predictive_dispatch(probe, [1], serial, tuning; fail_fast = true)
+        @test ENV["SPACEAGORA_PARALLEL_POLICY_ADAPTIVE"] == "1"
+    end
+end

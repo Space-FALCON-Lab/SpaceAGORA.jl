@@ -1,4 +1,4 @@
-catalog_revision = "odyssey-p20-1.0.0+mars-global-upper-p20-1.0.0+mars-global-near-surface-p20-1.0.0+mars-global-near-surface-p20-1.1.0"
+catalog_revision = "odyssey-p20-1.0.0+mars-global-upper-p20-1.0.0+mars-global-near-surface-p20-1.0.0+mars-global-near-surface-p20-1.1.0+mars-global-near-surface-p20-1.2.0+mars-global-descent-p20-1.0.0"
 schema_version = 1
 
 [[presets]]
@@ -615,3 +615,217 @@ version = "1.1.0"
     provisional_surface_layer_models = "served and flagged in each surface-layer result's status"
     stored_domain_is_uniform_accuracy_claim = false
     winds = "not provided; getDensity returns a zero wind vector"
+
+[[presets]]
+artifact_name = "mars_global_near_surface_p20_frozen_v1_1_2_0"
+description = "Mars global near-surface atmosphere with winds (density, temperature, pressure; stored east, north and vertical winds), 5 m above the surface to 81 km areoid height, frozen at the Odyssey P20 instant"
+id = "mars_global_near_surface_p20_frozen_v1"
+kind = "gram_near_surface_scalars"
+planet = "mars"
+release_enabled = true
+version = "1.2.0"
+
+    [presets.atmosphere]
+    api_units = ["m", "rad", "rad"]
+    epoch_utc = "2001-11-07T11:51:04.794789Z"
+    equatorial_radius_m = 3.39619e6
+    fields = ["density_kgm3", "temperature_K", "pressure_Pa", "wind_ew_ms", "wind_ns_ms", "wind_up_ms"]
+    height = "ellipsoidal"
+    latitude = "geodetic"
+    longitude = "east_positive_periodic"
+    mode = "frozen_mean_snapshot"
+    polar_radius_m = 3.3762e6
+    pressure_available = true
+    query_elapsed_time_applied = false
+    speed_of_sound = "reported, with the unclipped winds and the clipping flags, by GRAMSuite.near_surface_wind_state"
+    surface_layer_model_status = "reported by GRAMSuite.near_surface_state for results below the first table level: qualified or provisional"
+    wind_boolean_suppresses_stored_components = false
+    wind_clipping = "east and north winds clipped at plus or minus 0.7 times the speed of sound, as native Mars-GRAM clips them; the vertical wind is not clipped"
+    wind_convention = "stored_nominal_local_ENU"
+    wind_returned = "stored_components"
+    winds_available = true
+
+    [presets.distribution]
+    archive_sha256 = "fb2be94b84f6690d53ef7bb48048b2c01dafd2930a01ae9ec76e732d5ba4b342"
+    git_tree_sha1 = "31b3ac96ca736c821dc2d63426082ab2d9dea3f2"
+    status = "public_versioned_snapshot"
+    urls = ["https://github.com/Space-FALCON-Lab/GRAMSuite.jl/releases/download/surrogate-mars-global-near-surface-p20-1.2.0/mars_global_near_surface_p20_frozen_v1-1.2.0.tar.gz"]
+
+    [presets.domain]
+    longitude_period_deg = 360.0
+    minimum_clearance_m = 5.0
+    outside = "error"
+    planetocentric_latitude_max_deg = 85.0
+    support_map = "support/support_map.json and support/support_map_cells.csv in the artifact"
+    surface_height_refused_at_or_above_m = 9000.0
+    top_areoid_height_m = 81000.0
+    unavailable_winds = "a query whose needed stored wind value is unavailable, or whose speed of sound is not determined, is refused"
+
+    [presets.generation_provenance]
+    base_changes = "The wind layer added: stored east, north and vertical winds and the speed of sound that limits them (payload format spaceagora_mars_near_surface_v2). Every 1.1.0 array, table level, surface-layer model and terrain value is identical."
+    base_payload_sha256 = "5abb86083c0d9e824bf7a2f31203426834bb9c1f98bbafa332693cf0cc05a6e9"
+    base_release = "1.1.0"
+    builder_1_1_0_filename = "generator/v1_1/build_payload_v1_1.jl"
+    builder_1_1_0_original_sha256 = "a18483fb40b49097d5253fb8a9bd31c01954995ed1a7cec2d4aeb7fc40453b95"
+    builder_1_1_0_sha256 = "a87efbcf6f403dacd440e32e60387e7fda0c60fbdfc05004abf9012c99cf820f"
+    builder_1_2_0_filename = "generator/v1_2/build_payload_v1_2.jl"
+    builder_1_2_0_original_sha256 = "69cfe7be0a2a79eeb3737423921292ff819ea3e023a5beaafb305234ca4f5c76"
+    builder_1_2_0_sha256 = "69cfe7be0a2a79eeb3737423921292ff819ea3e023a5beaafb305234ca4f5c76"
+    builder_filename = "generator/build_payload.jl"
+    builder_sha256 = "53d0d36977329ad46a0ca06f5dac6c6a65ea271f6f948a3b45cd2f38ab717347"
+    distribution_changes = "Metadata only: the status line was updated and this distribution entry added. Every array, every surface-layer model, the wind layer and every other metadata entry is identical to the validated payload."
+    evaluator_changes_since_1_1_0 = "The wind layer module (mars_near_surface_winds.jl) and near_surface_wind_state were added, and density_state returns a version 2 payload's stored winds. The scalar module accepts version 2 payloads and keeps their wind arrays out of the metadata; scalar evaluation is unchanged."
+    evaluator_changes_since_validation = "none: the product and engine validations used these evaluator files (GRAMSuite 0160a48869e98055de2c2ab66f14ce3c64b513a0)"
+    generation_inputs = "generation_inputs.json"
+    native_library_bytes = 4114304
+    native_library_sha256 = "19c5715b1d18c9b4f8afa315fb77466091cb240e7954bc84e8e4ab540e76e3f4"
+    native_model_input_data_included = true
+    native_model_input_data_note = "Terrain component only: Mars-GRAM's MOLA surface height and areoid radius at its 0.5-degree terrain lattice nodes (346 x 720 values each), which equal the MOLA terrain input distributed with GRAM at those nodes. Credit NASA MOLA (see README.md). No other GRAM input data is included."
+    native_model_version_identity = "MarsGRAM 2021b, GRAMLib 2023b, GRAM Suite 2.0 (native getter); pinned library and input hashes in generation_inputs.json"
+    native_software_included = false
+    numerical_release_limits = "Validated before release against native Mars-GRAM under the Space-FALCON Lab release limits; see README.md"
+    original_generation_julia = "1.12.3"
+    packaging_adds_scientific_validation = false
+    payload = "mars_near_surface.jls"
+    payload_bytes = 50186364
+    payload_created_at_utc = "2026-10-05T17:26:48.633"
+    payload_format = "spaceagora_mars_near_surface_v2"
+    payload_modified_for_distribution = true
+    payload_sha256 = "1bb74ca6eb5b2495350e68f1d38653b1a82e0c43ab54ce1fa8fd3781dfdea632"
+    preset_id = "mars_global_near_surface_p20_frozen_v1"
+    publisher = "Space-FALCON Lab"
+    recipe = "recipe.toml"
+    runtime_evaluator = "GRAMSuite.jl src/mars_near_surface_scalars.jl and src/mars_near_surface_winds.jl, used through GRAMNearSurfaceAtmosphereModel (src/near_surface_atmosphere.jl)"
+    runtime_evaluator_note = "GRAMSuite main from 0160a48869e98055de2c2ab66f14ce3c64b513a0 (the merge of PR 13) carries these files; b6675517b2f7080044d7bd40ba5502dc463710f2 has them identical"
+    runtime_evaluator_revision = "0160a48869e98055de2c2ab66f14ce3c64b513a0"
+    runtime_evaluator_sha256 = "6aafc4cadcf83298b430e3f1beb9f1d31b6b41f33a81d3799f0da5856793c558"
+    runtime_interface_sha256 = "3b641c2563a278d25565b82cdb6c7035e3cd2bb068db84ed2f1483d55dc37f7f"
+    runtime_wind_evaluator_sha256 = "37f1e27326a0d89e02ac1b83104166ef98a75c039d8155890be301939e8919aa"
+    schema = "spaceagora_public_near_surface_provenance_v1"
+    serialization = "Julia.Serialization"
+    support_map = "support/support_map.json"
+    validated_evaluator_sha256 = "6aafc4cadcf83298b430e3f1beb9f1d31b6b41f33a81d3799f0da5856793c558"
+    validated_payload_sha256 = "2f4bbfb32cced7b47a15c4977d8de3bc7a0ff495f0c89aab7371a1fa54a50e92"
+    validated_wind_evaluator_sha256 = "37f1e27326a0d89e02ac1b83104166ef98a75c039d8155890be301939e8919aa"
+    version = "1.2.0"
+
+        [presets.generation_provenance.engine_validation_revisions]
+        bitwise_equivalent = "SpaceAGORA 3c6d42c894a812180cf34536515aa9c3626cd303 with GRAMSuite b6675517b2f7080044d7bd40ba5502dc463710f2: the engine validation's native-free stages reproduce its records byte for byte"
+        validated = "SpaceAGORA 4de2936b84b7aec03890a04f407d878e6d9bf049 with GRAMSuite 0160a48869e98055de2c2ab66f14ce3c64b513a0"
+
+    [presets.payload]
+    bytes = 50186364
+    file = "mars_near_surface.jls"
+    format = "spaceagora_mars_near_surface_v2"
+    sha256 = "1bb74ca6eb5b2495350e68f1d38653b1a82e0c43ab54ce1fa8fd3781dfdea632"
+
+    [presets.required_metadata]
+    elapsed_time_s = 0.0
+    epoch_utc = "2001-11-07T11:51:04.794789Z"
+    format = "spaceagora_mars_near_surface_v2"
+    levels_km = [-5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0, 40.0, 45.0, 50.0, 55.0, 60.0, 65.0, 70.0, 75.0, 80.03231545290365, 85.03231545290365]
+    planet = "mars"
+    status = "released: preset mars_global_near_surface_p20_frozen_v1 1.2.0 (release validation passed 2026-10-12)"
+
+        [presets.required_metadata.distribution]
+        preset_id = "mars_global_near_surface_p20_frozen_v1"
+        publisher = "Space-FALCON Lab"
+        validated_payload_sha256 = "2f4bbfb32cced7b47a15c4977d8de3bc7a0ff495f0c89aab7371a1fa54a50e92"
+        version = "1.2.0"
+
+        [presets.required_metadata.generation_config]
+        equatorial_radius_km = 3396.19
+        is_planetocentric = false
+        mars_dust_mode = "native-default"
+        mars_map_year = 2
+        mars_min_max = 1
+        mars_mola_heights = false
+        perturbation_action = false
+        perturbation_scales = [0.0, 0.0, 0.0, 0.0]
+        polar_radius_km = 3376.2
+        seed = 1001
+        start_time_frame = 0
+        start_time_scale = 1
+
+        [presets.required_metadata.lattice]
+        lat0_deg = -85.5
+        nlat = 115
+        nlon = 240
+        step_deg = 1.5
+
+        [presets.required_metadata.support]
+        min_clearance_km = 0.005
+        phic_max_deg = 85.0
+        top_areoid_km = 81.0
+        zs_refuse_km = 9.0
+
+        [presets.required_metadata.wind_rules]
+        clip_fraction = 0.7
+        composition_switch_km = 80.0
+        switch_band_km = 1.0e-9
+
+    [presets.support]
+    algorithm_changes_inherit_reference_accuracy = false
+    application_accuracy_requirements = "unset; choose for the intended study"
+    changed_date_selects_new_atmosphere = false
+    evidence = "Prospective validation against native Mars-GRAM at the frozen instant under the Space-FALCON Lab release limits. Scalars: 5 m to 75 km in release 1.0.0 and above 75 km to 81 km in release 1.1.0, carried over because the scalars are unchanged bit for bit. Winds (1.2.0): the representation at fresh hold-out points; the product at fresh points in 23 families, on 48 fixed descent paths and in 24 propagated descents; and 23 ballistic entries in SpaceAGORA's engine against native Mars-GRAM in the same loop. At the exact east-wind jumps (78.75 and 82.5 degrees north) and exact first-level contours, native can resolve a query to the opposite side; the product returns its own side, the validation accepted whichever complete side matched native, and where only the opposite side matched, the values returned at the query's own coordinates were not validated. Separately, where native extrapolates between the two sides of a first-level contour, temperature and winds are consistent with that extrapolation and the speed of sound, pressure and density are not validated; within 1e-9 km of the 80 km composition switch the clip limit and horizontal winds were reported, not gated"
+    provisional_surface_layer_models = "served and flagged in each surface-layer result's status"
+    stored_domain_is_uniform_accuracy_claim = false
+    winds = "stored east, north and vertical winds; the horizontal components clipped at 0.7 times the speed of sound, as native Mars-GRAM clips them; refused where a needed stored wind value is unavailable"
+
+[[presets]]
+description = "Mars global descent atmosphere: the near-surface preset 1.2.0 below 80 km above the ellipsoid and the global upper preset 1.0.0 at and above it, frozen at the Odyssey P20 instant"
+id = "mars_global_descent_p20_frozen_v1"
+kind = "composite_by_height"
+planet = "mars"
+release_enabled = true
+version = "1.0.0"
+
+    [presets.atmosphere]
+    api_units = ["m", "rad", "rad"]
+    epoch_utc = "2001-11-07T11:51:04.794789Z"
+    equatorial_radius_m = 3396190.0
+    fields = ["density_kgm3", "temperature_K", "wind_ew_ms", "wind_ns_ms", "wind_up_ms"]
+    handover_discontinuity = "density, temperature and winds change abruptly at the handover; nothing is blended"
+    height = "ellipsoidal"
+    latitude = "geodetic"
+    longitude = "east_positive_periodic"
+    mode = "frozen_mean_snapshot"
+    polar_radius_m = 3376200.0
+    query_elapsed_time_applied = false
+    wind_boolean_suppresses_stored_components = false
+    wind_convention = "stored_nominal_local_ENU"
+    wind_returned = "stored_components"
+    winds_available = true
+
+    [[presets.components]]
+    id = "mars_global_near_surface_p20_frozen_v1"
+    role = "lower"
+    version = "1.2.0"
+
+    [[presets.components]]
+    id = "mars_global_upper_p20_frozen_v1"
+    role = "upper"
+    version = "1.0.0"
+
+    [presets.domain]
+    at_or_above_handover = "the upper component's domain: up to 365 km above the ellipsoid, all latitudes"
+    below_handover = "the lower component's domain: planetocentric latitudes within 85 degrees, surface below 9 km, at least 5 m above the surface, where its stored winds are available"
+    height_top_m = 365000.0
+    longitude_period_deg = 360.0
+    outside = "error"
+
+    [presets.handover]
+    height_m = 80000.0
+    reference = "ellipsoidal"
+    rule = "lower_below_upper_at_or_above"
+
+    [presets.support]
+    algorithm_changes_inherit_reference_accuracy = false
+    application_accuracy_requirements = "unset; choose for the intended study"
+    changed_date_selects_new_atmosphere = false
+    component_validation = "each component's own validation applies on its side of the handover; see its entry"
+    evidence = "The composition, near-surface 1.2.0 below 80 km above the ellipsoid and upper 1.0.0 at and above it, was validated against native Mars-GRAM at the frozen instant under the Space-FALCON Lab release limits: on 48 fixed descent paths (flight-path angles -10, -15 and -20 degrees) and in 24 propagated descents (-12 and -20 degrees) in a reference integrator, and in 23 ballistic entries (-12 and -20 degrees) in SpaceAGORA's engine with native Mars-GRAM in the same engine loop. Every descent started 125 km above the ellipsoid at 5.5 km/s relative to the planet, with a ballistic coefficient of 100 kg/m^2, and ended 100 m above the terrain. Both validations used these components' data and this handover"
+    not_established = "passes that skim or recross the handover, as in aerobraking; other entry speeds, ballistic coefficients and vehicles, and lifting or guided entries; real-world landing accuracy; the engine's use of the near-surface speed of sound; other epochs"
+    stored_domain_is_uniform_accuracy_claim = false
+    validated_use = "ballistic descents within the envelope stated in evidence"

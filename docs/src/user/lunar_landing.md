@@ -44,7 +44,7 @@ window over the whole descent corridor, the LROC NAC digital terrain model
 where one exists (Apollo 11 does), and an imagery quadtree along the descent
 corridor for the viewer. Its sources, options, registration corrections,
 resolution measurements and Python requirements are documented in the
-repository's `docs/reference/lunar_imagery_sources.md`. Downloading is a
+repository's `docs/src/user/lunar_imagery_sources.md`. Downloading is a
 separate step from running the simulation:
 
 ```
@@ -101,7 +101,12 @@ slew limit, runs a rate-limited attitude loop whose torques are bounded by the
 RCS authority, applies the thrust along the vehicle's actual engine axis, and
 drains propellant through both. The two effectors share an
 `SM.ApolloDescentState` (phase, time-to-go, thrust, commanded attitude, radar
-altitude, site-frame state, touchdown record). Run the simulation with
+altitude, site-frame state, touchdown record). Build both from the same state
+with the same `spacecraft_indices`: the control flies only the commands its
+guidance writes there, and `run_simulation` refuses the run, before it starts,
+when a spacecraft has one model without the other on that state. A guidance model of
+another type in the configuration may write the state, so the check then skips
+spacecraft without Apollo guidance; likewise for control. Run the simulation with
 `isolate_state=false` when you want to read that state afterwards; the demo
 also saves thrust, throttle, time-to-go, radar altitude, phase and attitude
 error as result columns.
@@ -140,6 +145,14 @@ writes `sc1_thruster_level_1..17` and the viewer draws a plume on each firing
 thruster: the engine burns throughout the descent and the jets puff at the
 phase handovers. The layout is what the allocation sees; the thrusters on the
 link are display geometry and the control effector applies the forces.
+
+With `actuation=:mounted` the mounted thrusters apply the forces instead, and
+the descent engine can carry gimbals (`ThrusterGimbal`). They hold their
+angles unless `ApolloDescentControlConfig(engine_trim=true)`: then every
+control cycle commands them to the angles that put the engine's thrust line
+through the centre of mass (the body origin), within the gimbals' own angle
+and rate limits, as the LM's gimbal drive trimmed the descent engine. Trim
+matters when the engine is mounted off the axis through the centre of mass.
 
 ## Plume-surface interaction
 
@@ -183,12 +196,12 @@ the export options and the bundle contract.
 ## Running the demo
 
 ```
-julia --project=. scripts/dev/viewer_demos/apollo11_landing.jl --output-dir output/apollo11-landing
+julia --project=examples scripts/dev/viewer_demos/apollo11_landing.jl --output-dir output/apollo11-landing
 ```
 
 The demo needs the site bundle (or `SPACEAGORA_TERRAIN_SITE`), the tracked
-lunar module display model in `data/models/`, the LP165P gravity coefficients
-in `data/Gravity_harmonics_data/` and the SPICE starter assets
+lunar module display model in `data/scene/models/`, the LP165P gravity coefficients
+in `data/planets/gravity/` and the SPICE starter assets
 (`SPACEAGORA_SPICE_PATH`) for the lunar orientation; it needs no atmosphere and
 no native GRAM. `--duration-s` is only a cap: the touchdown event ends the run.
 An existing nonempty output directory is refused. The run prints the PDI state,

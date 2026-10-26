@@ -97,37 +97,18 @@ end
     @test blocked_comps.J_obs > 1.0
 end
 
-@testset "RPO HyPR retimer boundary speeds and acceleration limit" begin
+@testset "RPO HyPR reference builder, fuel proxy and acceleration demand" begin
     a_max = 0.00625
     cfg = _hm_manuscript_cfg(safe_distance_m=1.0)
     geom = _hm_far_geometry()
     path = [0.0 10.0 20.0 30.0; -100.0 -40.0 40.0 100.0; 0.0 0.0 0.0 0.0]
-    ref = HM_GH.rpo_retimed_reference(path, geom, cfg; safe_distance_m=1.0)
-    @test ref.speed_mps[1] == 0.0
-    @test ref.speed_mps[end] == 0.0
-    @test ref.v_rtn[:, 1] == zeros(3)
-    @test ref.v_rtn[:, end] == zeros(3)
-    @test ref.r_rtn[:, 1] ≈ path[:, 1] atol = 1.0e-9
-    @test ref.r_rtn[:, end] == path[:, end]
-    @test ref.t_s[2] - ref.t_s[1] ≈ cfg.retime_dt_s
-    @test maximum(abs.(ref.profile.a_seg)) <= a_max * (1.0 + 1.0e-9)
-    @test all(ref.profile.v[2:(end - 1)] .<= ref.profile.v_point[2:(end - 1)] .+ 1.0e-12)
-    # Speed changes between fixed steps stay within the limit.
-    dv = diff(ref.speed_mps) ./ diff(ref.t_s)
-    @test maximum(abs.(dv)) <= a_max * (1.0 + 1.0e-6)
-    # The discrete reference itself: second differences of the positions stay
-    # near the tangential limit (the path is almost straight here).
+    # The same reference HYPR's retimer builds, assembled from the services it uses.
+    samples, params, clearances = HM_GH.rpo_sample_path_with_params(path, cfg, geom; safe_distance_m=1.0,
+        base_ds_m=HM_GH.rpo_retime_sampling_ds_m(cfg, 1.0), curve_type=cfg.curve_type)
+    profile = HM_GH.rpo_retime_profile(HM_GH.RPORetimeCurve(path, cfg.curve_type), samples, params, clearances,
+        geom, cfg; safe_distance_m=1.0)
+    ref = HM_GH.rpo_retimed_reference_from_profile(profile, cfg.retime_dt_s)
     dt = cfg.retime_dt_s
-    acc = [norm(ref.r_rtn[:, k + 1] - 2.0 .* ref.r_rtn[:, k] + ref.r_rtn[:, k - 1]) / dt^2 for k in 2:(size(ref.r_rtn, 2) - 1)]
-    @test maximum(acc) <= 1.05 * a_max
-    # The velocity reference is the speed along the curve.
-    @test maximum(abs.([norm(ref.v_rtn[:, k]) for k in eachindex(ref.speed_mps)] .- ref.speed_mps)) < 1.0e-12
-
-    # A nonzero initial speed is honoured and the reference still ends at rest.
-    moving = HM_SM.rpo_pso_config(cfg; retime_initial_speed_mps=0.05)
-    ref_moving = HM_GH.rpo_retimed_reference(path, geom, moving; safe_distance_m=1.0)
-    @test ref_moving.speed_mps[1] ≈ 0.05
-    @test ref_moving.speed_mps[end] == 0.0
 
     # The reference builder returns the same profile and rests at the goal.
     t_ref, r_ref, v_ref = HM_SM.rpo_reference_from_path(path, geom, cfg; safe_distance_m=1.0)
@@ -144,53 +125,9 @@ end
     demand = HM_GH.rpo_reference_accel_demand(ref, cfg.mean_motion_radps)
     @test maximum(demand.tangential_mps2) <= a_max * (1.0 + 1.0e-9)
     @test size(demand.u_rtn) == size(ref.r_rtn)
-
-    # Pointwise limits: near a station point the manuscript's d_avail = c - d_safe slows the reference.
-    near = _hm_far_geometry((15.0, 0.0, 6.0); keepout=1.0)
-    ref_near = HM_GH.rpo_retimed_reference(path, near, cfg; safe_distance_m=1.0)
-    @test maximum(ref_near.speed_mps) <= maximum(ref.speed_mps)
-    @test ref_near.t_s[end] > ref.t_s[end]
 end
 
-@testset "RPO HyPR manuscript exploration score and coefficients" begin
-    s = HM_GH.rpo_manuscript_exploration_score(200.0, 100.0, 100)
-    @test s.detour_score == 1.0
-    @test s.search_effort_score ≈ 1.0 - exp(-1.0)
-    @test s.eta ≈ (2.0 + (1.0 - exp(-1.0))) / 3.0
-    @test HM_GH.rpo_manuscript_exploration_score(100.0, 100.0, 0).eta == 0.0
-    @test HM_GH.rpo_manuscript_exploration_score(500.0, 100.0, 0).detour_score == 1.0
-
-    base = HM_SM.rpo_pso_config(HM_SM.RPOPSOConfig(
-        hypr_mode=:manuscript,
-        adaptive_n_waypoints_min=3, adaptive_n_waypoints_max=8,
-        adaptive_n_particles_min=60, adaptive_n_particles_max=160,
-        adaptive_n_iters_min=10, adaptive_n_iters_max=60,
-        adaptive_w_inertia_min=0.4, adaptive_w_inertia_max=0.75,
-        adaptive_c1_min=1.2, adaptive_c1_max=1.8,
-        adaptive_c2_min=1.2, adaptive_c2_max=2.2,
-    ))
-    start = SVector(0.0, 0.0, 0.0)
-    goal = SVector(0.0, 100.0, 0.0)
-    warm(length_m, iterations) = (path_found=true, path_length_m=length_m, iterations=iterations)
-    easy, easy_diag = HM_GH.rpo_manuscript_adaptive_pso_config(base, start, goal, warm(100.0, 0))
-    hard, hard_diag = HM_GH.rpo_manuscript_adaptive_pso_config(base, start, goal, warm(250.0, 10_000))
-    @test easy_diag.eta == 0.0
-    @test hard_diag.eta ≈ 1.0
-    @test (easy.w_inertia, easy.c1, easy.c2) == (0.4, 1.8, 1.2)
-    @test hard.w_inertia ≈ 0.75
-    @test hard.c1 ≈ 1.2          # cognitive attraction falls with eta
-    @test hard.c2 ≈ 2.2          # social attraction rises with eta
-    @test hard_diag.coefficient_direction === :c1_down_c2_up
-    @test (easy.n_waypoints, easy.n_particles, easy.n_iters) == (3, 60, 10)
-    @test (hard.n_waypoints, hard.n_particles, hard.n_iters) == (8, 160, 60)
-    mid, mid_diag = HM_GH.rpo_manuscript_adaptive_pso_config(base, start, goal, warm(125.0, 0))
-    @test mid_diag.detour_score ≈ 0.25
-    @test mid_diag.eta ≈ 0.5 / 3.0
-    @test mid.n_particles == round(Int, (1 - mid_diag.eta) * 60 + mid_diag.eta * 160)
-    # No warm-start path counts as the largest detour.
-    _, failed = HM_GH.rpo_manuscript_adaptive_pso_config(base, start, goal, (path_found=false, path_length_m=0.0, iterations=50))
-    @test failed.detour_score == 1.0
-
+@testset "RPO HyPR manuscript coefficients" begin
     @test_throws ArgumentError HM_SM.rpo_pso_config(HM_SM.RPOPSOConfig(); hypr_mode=:paper)
     @test_throws ArgumentError HM_SM.rpo_pso_config(HM_SM.RPOPSOConfig(); mean_motion_radps=-1.0)
     @test HM_SM.RPOPSOConfig().hypr_mode === :legacy
@@ -212,117 +149,10 @@ end
     @test_throws ArgumentError HM_SM.rpo_pso_config(configured; cull_noise_abs_m=-0.1)
     @test configured.hypr_mode === :manuscript
     @test configured.mean_motion_radps == 0.001
-    @test HM_GH.rpo_fuel_proxy_dt_s(configured) == 0.5
+    @test configured.fuel_proxy_dt_s == 0.5
     @test configured.retime_accel_limit_enable === true
     @test configured.retime_initial_speed_mps == 0.01
     @test configured.adaptive_search_effort_scale == 50.0
-end
-
-@testset "RPO HyPR manuscript search box and culling" begin
-    # B is the station's bounding box widened on each axis (Sec. III.C).
-    points = [-2.0 3.0 0.5; -10.0 4.0 1.0; 1.0 -1.0 6.0]
-    geom = HM_SM.RPOReferenceGeometry(HM_SM.RPOStationGeometry(points; keepout_radius_m=0.5))
-    cfg = _hm_manuscript_cfg(station_box_margin_m=(1.0, 2.0, 3.0))
-    lo, hi = HM_GH.rpo_pso_station_bounds(geom, cfg)
-    @test lo == SVector(-3.0, -12.0, -4.0)
-    @test hi == SVector(4.0, 6.0, 9.0)
-    lo2, hi2 = HM_GH.rpo_pso_station_bounds(geom, cfg; margin_scale=2.0)
-    @test lo2 == SVector(-4.0, -14.0, -7.0)
-    @test hi2 == SVector(5.0, 8.0, 12.0)
-
-    # Culling (Sec. III.D): the worst particles move to q* + d_bez, perturbed by
-    # σ_resp times the index taper in `:manuscript` mode.
-    start, goal = SVector(0.0, 0.0, 0.0), SVector(0.0, 30.0, 0.0)
-    nw, np = 2, 4
-    gbest = [5.0, 10.0, 0.0, 5.0, 20.0, 0.0]
-    lo_rep = fill(-100.0, 3 * nw)
-    hi_rep = fill(100.0, 3 * nw)
-    function culled(cull_cfg)
-        positions = repeat(gbest, 1, np) .+ reshape(collect(1.0:(3 * nw * np)), 3 * nw, np)
-        velocities = zeros(3 * nw, np)
-        pbest = copy(positions)
-        pbest_cost = [1.0, 4.0, 2.0, 3.0]
-        n = HM_GH.rpo_pso_cull_swarm!(positions, velocities, pbest, pbest_cost, lo_rep, hi_rep, gbest,
-            start, goal, nw, cull_cfg, 12, MersenneTwister(5))
-        return n, positions, pbest_cost
-    end
-    # Targets: q* + 0.6 (q_line - q*) + 0.4 (q_loc - q*), with q_loc the
-    # projection of q* on the chord of its neighbours.
-    targets = zeros(3 * nw)
-    for (j, q_line) in ((1, SVector(0.0, 10.0, 0.0)), (2, SVector(0.0, 20.0, 0.0)))
-        q_star = SVector{3}(gbest[(3j - 2):(3j)])
-        prev = j == 1 ? start : SVector{3}(gbest[1:3])
-        next = j == nw ? goal : SVector{3}(gbest[4:6])
-        q_loc = HM_GH.rpo_pso_project_to_segment(q_star, prev, next)
-        targets[(3j - 2):(3j)] .= q_star + 0.6 * (q_line - q_star) + 0.4 * (q_loc - q_star)
-    end
-    exact = _hm_manuscript_cfg(n_particles=np, cull_fraction_max=0.5, cull_start_iter=10, cull_noise_abs_m=0.0)
-    n, positions, costs = culled(exact)
-    @test n == 2
-    @test positions[:, 2] ≈ targets atol = 1.0e-12     # the two worst (costs 4 and 3)
-    @test positions[:, 4] ≈ targets atol = 1.0e-12
-    @test positions[:, 1] != targets                    # the best are kept
-    @test isinf(costs[2]) && isinf(costs[4])
-    noisy = HM_SM.rpo_pso_config(exact; cull_noise_abs_m=0.3)
-    _, positions, _ = culled(noisy)
-    @test 0.0 < maximum(abs.(positions[:, 2] .- targets)) < 6 * 0.3
-    # Before the start iteration nothing is culled.
-    @test culled(HM_SM.rpo_pso_config(exact; cull_start_iter=20))[1] == 0
-end
-
-@testset "RPO HyPR manuscript planner" begin
-    rng = MersenneTwister(3)
-    points = zeros(3, 1500)
-    for j in 1:size(points, 2)
-        d = randn(rng, 3)
-        points[:, j] .= 8.0 .* d ./ norm(d)
-    end
-    geom = HM_SM.RPOReferenceGeometry(HM_SM.RPOStationGeometry(points; keepout_radius_m=1.0);
-        chaser=HM_SM.RPOCubeSatGeometry(dims_m=(0.1, 0.1, 0.3)))
-    cfg = _hm_manuscript_cfg(
-        w_obs=1.0e6,
-        w_fuel=1.0,
-        obstacle_sigmoid_tol_m=0.5,
-        adaptive_sampling_max_ds_m=3.0,
-        adaptive_sampling_far_clearance_m=10.0,
-        rrt_warmstart_enable=true,
-        rrt_warmstart_iters=1000,
-        rrt_warmstart_step_size_m=2.0,
-        rrt_warmstart_collision_sample_ds_m=0.5,
-        rrt_warmstart_shortcut_iters=40,
-        rrt_warmstart_box_margin_m=10.0,
-        search_margin_m=25.0,
-        station_box_margin_m=(20.0, 40.0, 20.0),
-        adaptive_n_waypoints_min=3, adaptive_n_waypoints_max=5,
-        adaptive_n_particles_min=8, adaptive_n_particles_max=16,
-        adaptive_n_iters_min=3, adaptive_n_iters_max=6,
-        schedule_transition_fraction=0.5,
-        early_stopping_enable=false,
-    )
-    start = SVector(0.0, -40.0, 0.0)
-    goal = SVector(0.0, 40.0, 0.0)
-    plan = HM_SM.rpo_pso_plan_path(start, goal, geom, cfg; safe_distance_m=1.0, rng=MersenneTwister(741))
-    @test plan.warmstart.attempted
-    @test plan.warmstart.path_found
-    @test plan.warmstart.iterations > 0          # the straight segment is blocked
-    @test plan.warmstart.path_length_m >= norm(goal - start)
-    @test plan.adaptive.mode === :manuscript
-    @test 0.0 <= plan.adaptive.eta <= 1.0
-    @test plan.config.n_waypoints == plan.adaptive.n_waypoints
-    @test plan.config.n_particles == plan.adaptive.n_particles
-    @test length(plan.cost_history) == plan.config.n_iters
-    @test issorted(plan.cost_history; rev=true)
-    @test plan.components.violation_count == 0
-    @test plan.cost ≈ cfg.w_obs * plan.components.J_obs + cfg.w_fuel * plan.components.J_fuel rtol = 1.0e-12
-    @test plan.path[:, 1] == collect(start)
-    @test plan.path[:, end] == collect(goal)
-    # The swarm searched the station's box with the prescribed margins.
-    box_lo, box_hi = HM_GH.rpo_pso_station_bounds(geom, plan.config)
-    @test plan.initial_bounds.lo == collect(box_lo)
-    @test plan.initial_bounds.hi == collect(box_hi)
-    again = HM_SM.rpo_pso_plan_path(start, goal, geom, cfg; safe_distance_m=1.0, rng=MersenneTwister(741))
-    @test again.path == plan.path
-    @test again.cost == plan.cost
 end
 
 @testset "RPO MPC command log default" begin

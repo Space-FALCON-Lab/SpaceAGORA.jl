@@ -34,7 +34,7 @@ const SE = SpaceAGORA.SimulationEngine
 const PPol = SpaceAGORA.SimulationModel.ParallelPolicy
 
 const HARMONICS_FILE = joinpath(
-    dirname(dirname(dirname(@__DIR__))), "data", "Gravity_harmonics_data", "EarthGGM05C.csv"
+    dirname(dirname(dirname(@__DIR__))), "data", "planets", "gravity", "EarthGGM05C.csv"
 )
 
 function guard_spacecraft(planet, id::Int)

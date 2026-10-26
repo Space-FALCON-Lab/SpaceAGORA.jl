@@ -1,5 +1,6 @@
 # examples/AGORA_Odyssey_Energy_Depletion_Control_Test.jl configuration, propagated for two orbits.
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
+using SpaceAGORAVisualizer
 using SpaceAGORA, StaticArrays
 import SpaceAGORA.TelemetryVerification: make_example_config, make_three_body_spacecraft
 const SM = SpaceAGORA.SimulationModel

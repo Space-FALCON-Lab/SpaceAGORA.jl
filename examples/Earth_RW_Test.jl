@@ -9,15 +9,14 @@ struct QuaternionPDControlModel
     kw::Float64
 end
 
-function SimulationModel.calcControlForceTorque(
+function SimulationModel.control_wrench(
     model::QuaternionPDControlModel,
-    u,
+    x::StateSample,
     p::ODEParams,
-    i::Int64,
     t::Float64
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    q = SVector{4, Float64}(u.q)
-    w = SVector{3, Float64}(u.ω)
+    q = x.q_ib
+    w = x.ω_body
 
     q_vec = q[1:3]
     if q[4] < 0.0
@@ -28,7 +27,7 @@ function SimulationModel.calcControlForceTorque(
     return SVector{3, Float64}(0.0, 0.0, 0.0), torque
 end
 
-function SimulationModel.calcControlEffect!(
+function SimulationModel.update_control!(
     model::QuaternionPDControlModel,
     u,
     p::ODEParams,

@@ -1479,14 +1479,11 @@ end
 
 @testset "Airspeed sign contract" begin
     # Drag/heat models must use v_spacecraft MINUS v_atmosphere. The flipped
-    # form (`vel_pp + wind_pp`) was copy-pasted across six files; pin all of them.
+    # form (`vel_pp + wind_pp`) was once copy-pasted across several files; pin
+    # the ones that remain.
     files = [
-        joinpath(_COV_REPO_ROOT, "src", "dynamics", "coupled", "aerodynamic_wrench_models.jl"),
-        joinpath(_COV_REPO_ROOT, "src", "simulation", "callbacks", "thermal_callbacks.jl"),
-        joinpath(_COV_REPO_ROOT, "src", "gnc", "guidance", "aerobraking", "t_edg", "trajectory_predictor.jl"),
-        joinpath(_COV_REPO_ROOT, "src", "gnc", "guidance", "aerobraking", "t_edg", "eom_predictor.jl"),
-        joinpath(_COV_REPO_ROOT, "src", "gnc", "control", "aerobraking", "constraint_tracking.jl"),
-        joinpath(_COV_REPO_ROOT, "src", "gnc", "control", "aerobraking", "control_commands.jl"),
+        joinpath(_COV_REPO_ROOT, "src", "models", "dynamics", "effectors", "aerodynamic_wrench_models.jl"),
+        joinpath(_COV_REPO_ROOT, "src", "orchestration", "simulation", "callbacks", "thermal_callbacks.jl"),
     ]
     for file in files
         live = [line for line in eachline(file) if !startswith(strip(line), "#")]
@@ -2280,6 +2277,7 @@ end
     q_id = SVector(0.0, 0.0, 0.0, 1.0)          # identity: body == inertial
     w0 = SVector(0.0, 0.0, 0.0)
     mock_u(q) = (sc = [(pos = r0, vel = v0, q = q, ω = w0)],)
+    x1 = SimulationModel.StateSample(r0, v0, 1.0; q_ib=q_id, ω_body=w0, spacecraft_index=1)
     B0 = SVector(0.0, 0.0, 3.0e-5)              # +z inertial field, 30 uT
     bfun = (t, r) -> B0
     tau_const = SVector(1.0e-6, 0.0, 0.0)       # constant commanded torque
@@ -2291,10 +2289,10 @@ end
 
     # 1) first tick initializes the accumulator (no advance) and holds a command
     m = mk()
-    CH.calcControlEffect!(m, mock_u(q_id), nothing, 0.0, 1)
+    CH.update_control!(m, mock_u(q_id), nothing, 0.0, 1)
     @test m.h_wheels == SVector(0.02, 0.0, 0.0)
     @test m.initialized
-    f, tq = CH.calcControlForceTorque(m, nothing, nothing, 1, 0.0)
+    f, tq = CH.control_wrench(m, x1, nothing, 0.0)
     @test f == SVector(0.0, 0.0, 0.0)
     # unloading: tau_rod = -mu * H_perp; H = (0.02,0,0) fully perp to +z field
     @test isapprox(tq, SVector(-0.01 * 0.02, 0.0, 0.0); rtol=1e-12)
@@ -2302,23 +2300,23 @@ end
 
     # 2) ZOH: held command unchanged until the next tick
     tq_held = m.held_torque_body
-    @test CH.calcControlForceTorque(m, nothing, nothing, 1, 0.37)[2] == tq_held
+    @test CH.control_wrench(m, x1, nothing, 0.37)[2] == tq_held
 
     # 3) accumulator advance: dH = -tau_cmd * dt at the tick
-    CH.calcControlEffect!(m, mock_u(q_id), nothing, 1.0, 1)
+    CH.update_control!(m, mock_u(q_id), nothing, 1.0, 1)
     @test isapprox(m.h_wheels, SVector(0.02, 0.0, 0.0) - tau_const * 1.0; rtol=1e-12)
 
     # 4) field-parallel momentum is untouched by the law (tau ⟂ H_parallel)
     mpar = mk(h_wheels_0=SVector(0.0, 0.0, 0.05))     # H along +z == B direction
-    CH.calcControlEffect!(mpar, mock_u(q_id), nothing, 0.0, 1)
+    CH.update_control!(mpar, mock_u(q_id), nothing, 0.0, 1)
     @test norm(mpar.held_torque_body) < 1e-15
 
     # 5) dipole cap: |m| clamped, torque scales down accordingly
     mcap = mk(m_max_am2=1.0)
-    CH.calcControlEffect!(mcap, mock_u(q_id), nothing, 0.0, 1)
+    CH.update_control!(mcap, mock_u(q_id), nothing, 0.0, 1)
     @test isapprox(norm(mcap.held_dipole_am2), 1.0; rtol=1e-12)
     muncap = mk()
-    CH.calcControlEffect!(muncap, mock_u(q_id), nothing, 0.0, 1)
+    CH.update_control!(muncap, mock_u(q_id), nothing, 0.0, 1)
     @test norm(muncap.held_dipole_am2) > 1.0   # confirms the cap actually bound
 
     # 6) body-frame consistency: rotated attitude gives the same PHYSICAL torque
@@ -2329,18 +2327,18 @@ end
     PE = SimulationModel.DynamicEffectors.PerturbationEffectors
     R = PE.rot(q_z90)
     mrot = mk(h_wheels_0=SVector{3, Float64}(R * SVector(0.02, 0.0, 0.0)))
-    CH.calcControlEffect!(mrot, mock_u(q_z90), nothing, 0.0, 1)
+    CH.update_control!(mrot, mock_u(q_z90), nothing, 0.0, 1)
     m0 = mk()
-    CH.calcControlEffect!(m0, mock_u(q_id), nothing, 0.0, 1)
+    CH.update_control!(m0, mock_u(q_id), nothing, 0.0, 1)
     @test isapprox(R' * mrot.held_torque_body, m0.held_torque_body; atol=1e-18)
 
     # 7) other-sat and degenerate-field guards; no propellant
-    moff = mk(sat_idx=2)
-    CH.calcControlEffect!(moff, mock_u(q_id), nothing, 0.0, 1)
+    moff = mk(spacecraft_index=2)
+    CH.update_control!(moff, mock_u(q_id), nothing, 0.0, 1)
     @test !moff.initialized
-    @test CH.calcControlForceTorque(moff, nothing, nothing, 1, 0.0)[2] == SVector(0.0, 0.0, 0.0)
+    @test CH.control_wrench(moff, x1, nothing, 0.0)[2] == SVector(0.0, 0.0, 0.0)
     mzero = mk(b_field_ii=(t, r) -> SVector(0.0, 0.0, 0.0))
-    CH.calcControlEffect!(mzero, mock_u(q_id), nothing, 0.0, 1)
+    CH.update_control!(mzero, mock_u(q_id), nothing, 0.0, 1)
     @test mzero.held_torque_body == SVector(0.0, 0.0, 0.0)
 
     # 8) discrete boundedness of the law itself: constant secular disturbance,
@@ -2355,7 +2353,7 @@ end
               commanded_torque=(t, r, v, q, w) -> -tau_d - hold)
     drift = SVector(0.0, 0.0, 0.0)
     for k in 0:2000
-        CH.calcControlEffect!(mgr2, mock_u(q_id), nothing, Float64(k), 1)
+        CH.update_control!(mgr2, mock_u(q_id), nothing, Float64(k), 1)
         hold = mgr2.held_torque_body
         drift = drift + tau_d * 1.0          # unmanaged accumulator, same ticks
     end

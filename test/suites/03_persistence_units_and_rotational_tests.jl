@@ -227,10 +227,13 @@ end
             @test isfile(checkpoint_manifest_path)
             @test isfile(joinpath("output", "simulation_results.csv"))
 
+            # The resumed run's results hold the whole run, from its start: the
+            # rows kept beside the checkpoint come first.
             df_resume = CSV.read(joinpath("output", "simulation_results.csv"), DataFrame)
             @test nrow(df_resume) >= 2
             @test issorted(df_resume.time)
-            @test Float64(df_resume.time[1]) > 0.0
+            @test Float64(df_resume.time[1]) == 0.0
+            @test df_resume.time == df_full.time
             @test Float64(df_resume.time[end]) > Float64(df_resume.time[1])
             @test abs(Float64(df_resume.time[end]) - Float64(df_full.time[end])) < 1e-8
 
@@ -380,6 +383,8 @@ end
             end
             df_resume = CSV.read(joinpath("output", "simulation_results.csv"), DataFrame)
             @test nrow(df_resume) >= 2
+            # The backbone's rows before the checkpoint come back too.
+            @test df_resume.time == df_full.time
 
             p_full = SVector{3, Float64}(Float64(df_full.sc1_pos_1[end]), Float64(df_full.sc1_pos_2[end]), Float64(df_full.sc1_pos_3[end]))
             v_full = SVector{3, Float64}(Float64(df_full.sc1_vel_1[end]), Float64(df_full.sc1_vel_2[end]), Float64(df_full.sc1_vel_3[end]))
@@ -612,8 +617,8 @@ end
         return join(no_line, "\n")
     end
 
-    run_src = strip_comments(read(joinpath(REPO_ROOT, "src", "simulation", "engine", "execution.jl"), String))
-    legacy_elements_path = joinpath(REPO_ROOT, "src", "simulation", "execution", "simulation_elements.jl")
+    run_src = strip_comments(read(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine", "execution.jl"), String))
+    legacy_elements_path = joinpath(REPO_ROOT, "src", "orchestration", "simulation", "execution", "simulation_elements.jl")
 
     # Canonical engine path should stay SI-native.
     @test !occursin("cnf.DU", run_src)
@@ -991,7 +996,7 @@ end
         using LinearAlgebra
         using StaticArrays
         args = :legacy_topography_args
-        include(joinpath(Main.REPO_ROOT, "src", "core", "interfaces", "reference_system.jl"))
+        include(joinpath(Main.REPO_ROOT, "test", "helpers", "reference_system_sandbox.jl"))
     end))
     topo_sandbox = getfield(Main, topo_module_name)
     lla_topo = topo_sandbox.rtolatlong(rp_topo, planet_topo, true)
@@ -1237,16 +1242,16 @@ end
 
 """A control effector representing an idealized reaction wheel: the commanded body
 torque is entirely wheel-attributable (reacts against stored wheel momentum), so
-`calcControlForceTorque` and `calcReactionWheelTorque` return the same torque."""
+`control_wrench` and `control_wheel_torque` return the same torque."""
 struct TestReactionWheelEffector
     torque_body::SVector{3, Float64}
 end
 
-function SimulationModel.calcControlForceTorque(m::TestReactionWheelEffector, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)
+function SimulationModel.control_wrench(m::TestReactionWheelEffector, x::SimulationModel.StateSample, p::ODEParams, t::Float64)
     return SVector{3, Float64}(0.0, 0.0, 0.0), m.torque_body
 end
 
-function SimulationModel.calcReactionWheelTorque(m::TestReactionWheelEffector, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)
+function SimulationModel.control_wheel_torque(m::TestReactionWheelEffector, x::SimulationModel.StateSample, p::ODEParams, t::Float64)
     return m.torque_body
 end
 

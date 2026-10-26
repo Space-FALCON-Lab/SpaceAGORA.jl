@@ -3,7 +3,7 @@ using SpaceAGORA
 
 # Default GC heap-size-hint for process-pool workers and the
 # parallelization_performance harness's per-point worker. See
-# docs/architecture/heap_contention.md for the diagnostic this is derived
+# benchmarks/studies/heap_contention/FINDINGS.md for the diagnostic this is derived
 # from and the peak-RSS verification. Pure-function tests only: no worker is
 # actually spawned here (that is process_pool_probes.jl's job).
 
@@ -14,7 +14,7 @@ const PWH = SpaceAGORA.ParallelProcess
     # pool_size::Int, and Sys.total_memory() returns UInt64. Note this reads
     # whatever memory limit is visible to this process: under this study's
     # own systemd-run --user --scope -p MemoryMax=16G wrapper (required for
-    # every Julia invocation here, see docs/architecture/heap_contention.md),
+    # every Julia invocation here, see benchmarks/studies/heap_contention/FINDINGS.md),
     # Julia's cgroup-aware Sys.total_memory() reports the 16 GiB scope limit,
     # not the host's physical total -- which is itself a demonstration that
     # the formula tracks whatever memory budget the process actually has.

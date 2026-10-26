@@ -6,7 +6,14 @@
         @test _solver_policy_mode() == :auto_stiff
     end
     withenv("SPACEAGORA_SOLVER_MODE" => "symplectic") do
-        @test _solver_policy_mode() == :symplectic
+        err = try
+            _solver_policy_mode()
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError
+        @test occursin(":gravity_backbone_split", err.msg)
     end
     withenv("SPACEAGORA_SOLVER_MODE" => "gravity_backbone_split") do
         @test _solver_policy_mode() == :gravity_backbone_split
@@ -258,7 +265,7 @@
         @test isapprox(du_flat_rhs.sc[i].heat_loads, du_serial_rhs.sc[i].heat_loads; atol=1e-12, rtol=1e-12)
     end
 
-    harmonics_file_flat = joinpath(REPO_ROOT, "data/Gravity_harmonics_data", "EarthGGM05C.csv")
+    harmonics_file_flat = joinpath(REPO_ROOT, "data/planets/gravity", "EarthGGM05C.csv")
     harmonics_flat_model = GravitationalHarmonicsModel(8, 8, harmonics_file_flat, EARTH)
     args_harmonics_flat = build_config_multi(
         spacecraft=[
@@ -329,19 +336,6 @@
     end
     withenv("SPACEAGORA_SOLVER_MAXITERS" => "not-an-int") do
         @test_throws ArgumentError _solver_maxiters()
-    end
-
-    withenv("SPACEAGORA_SYMPLECTIC_DT_S" => nothing) do
-        @test _symplectic_fixed_dt_s(args_eff_single) == args_eff_single.integration_tolerances.dt_max_orbit
-    end
-    withenv("SPACEAGORA_SYMPLECTIC_DT_S" => "4.0") do
-        @test _symplectic_fixed_dt_s(args_eff_single) == 4.0
-    end
-    withenv("SPACEAGORA_SYMPLECTIC_DT_S" => "bad") do
-        @test_throws ArgumentError _symplectic_fixed_dt_s(args_eff_single)
-    end
-    withenv("SPACEAGORA_SYMPLECTIC_DT_S" => "0.0") do
-        @test_throws ArgumentError _symplectic_fixed_dt_s(args_eff_single)
     end
 
     withenv("SPACEAGORA_GRAVITY_BACKBONE_DT_S" => nothing) do
@@ -446,13 +440,17 @@
     sc_alloc_probe = u_alloc_probe.sc[1]
     gravity_alloc_model = InverseSquaredGravityModel()
     j2_alloc_model = InverseSquaredJ2GravityModel()
+    # The gravity force kernels allocate nothing, given the sample and environment.
+    sample_alloc_probe = SimulationEngine.build_state_sample(sc_alloc_probe, solver_args.dynamics_model.spacecraft[1], false, 1)
+    gravity_env, j2_env = (SimulationEngine.sample_environment(SimulationModel.environment_requirements(model),
+        model, sc_alloc_probe, p_alloc_probe, 1, 0.0) for model in (gravity_alloc_model, j2_alloc_model))
     for _ in 1:1000
-        calcForceTorque(gravity_alloc_model, sc_alloc_probe, p_alloc_probe, 1)
-        calcForceTorque(j2_alloc_model, sc_alloc_probe, p_alloc_probe, 1)
+        SimulationModel.wrench(gravity_alloc_model, sample_alloc_probe, gravity_env, 0.0)
+        SimulationModel.wrench(j2_alloc_model, sample_alloc_probe, j2_env, 0.0)
         SimulationEngine._extract_sample_pos_vel(sc_alloc_probe)
     end
-    @test (@allocated calcForceTorque(gravity_alloc_model, sc_alloc_probe, p_alloc_probe, 1)) == 0
-    @test (@allocated calcForceTorque(j2_alloc_model, sc_alloc_probe, p_alloc_probe, 1)) == 0
+    @test (@allocated SimulationModel.wrench(gravity_alloc_model, sample_alloc_probe, gravity_env, 0.0)) == 0
+    @test (@allocated SimulationModel.wrench(j2_alloc_model, sample_alloc_probe, j2_env, 0.0)) == 0
     @test (@allocated SimulationEngine._extract_sample_pos_vel(sc_alloc_probe)) == 0
 
     split_prob_simple = SplitODEProblem(
@@ -581,18 +579,6 @@
         @test_throws ArgumentError _multirate_fast_solver_spec()
     end
 
-    args_symplectic = build_config(
-        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
-        density_model=NoAtmosphereModel(),
-        orientation_sim=false,
-        mission_time=120.0,
-        EI_km=120.0,
-        dynamic_effectors=(InverseSquaredGravityModel(),),
-        keplerian=true,
-        ephemerides_model=SimpleEphemeridesModel()
-    )
-    @test _symplectic_conservative_eligible(args_symplectic) == true
-    @test _symplectic_conservative_eligible(args_eff_single) == false
     @test SimulationModel.gravity_backbone_structure(ConstantGravityModel()) == :position_only_static_gravity
     @test SimulationModel.gravity_backbone_structure(InverseSquaredGravityModel()) == :position_only_static_gravity
     @test SimulationModel.gravity_backbone_structure(InverseSquaredJ2GravityModel()) == :position_only_static_gravity
@@ -602,29 +588,6 @@
     @test SimulationModel.gravity_backbone_kick_structure(NBodyGravityModel(body_names=("moon",), primary_body_name="Earth")) == :velocity_kick_explicit
     @test _gravity_backbone_kick_structure_validated(SolarRadiationPressureModel(1.2, 12.0)) == :velocity_kick_explicit
     @test_throws ArgumentError _gravity_backbone_kick_structure_validated(InvalidBackboneKickStructureModel())
-
-    kepler_second_order! = function (ddu, du, u, p, t)
-        r = norm(u)
-        @. ddu = -p.μ * u / r^3
-    end
-    r0_sym = [EARTH.Rp_e + 500e3, 0.0, 0.0]
-    v0_sym = [0.0, sqrt(EARTH.μ / r0_sym[1]), 0.0]
-    prob_symplectic = SecondOrderODEProblem(kepler_second_order!, v0_sym, r0_sym, (0.0, 120.0), (μ=EARTH.μ,))
-
-    withenv(
-        "SPACEAGORA_SOLVER_MODE" => "symplectic",
-        "SPACEAGORA_SYMPLECTIC_DT_S" => "2.0",
-        "SPACEAGORA_SOLVER_MAXITERS" => nothing
-    ) do
-        sol, meta = _solve_with_solver_policy(prob_symplectic, args_symplectic, 1e-8, 1e-8)
-        @test string(sol.retcode) == "Success"
-        @test meta.solver == "KahanLi8(Symplectic)"
-        @test meta.initial_solver == "KahanLi8"
-        @test meta.fallback_used == false
-    end
-    withenv("SPACEAGORA_SOLVER_MODE" => "symplectic", "SPACEAGORA_SOLVER_MAXITERS" => nothing) do
-        @test_throws ArgumentError _solve_with_solver_policy(prob_simple, args_symplectic, 1e-8, 1e-8)
-    end
 
     args_backbone = build_config(
         spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
@@ -804,9 +767,9 @@
     _initialize_spice_rhs_memo_mode!(p_backbone_kicks)
     _reset_spice_rhs_memo!(p_backbone_kicks)
     _reset_spice_runtime_counters!(p_backbone_kicks)
-    p_backbone_kicks.shared_buffers.et_start[] = SimulationModel.ephemerides_time_seconds(
-        args_backbone_kicks.initial_time,
+    p_backbone_kicks.shared_buffers.et_start[] = SimulationModel.ephemerides_epoch_seconds(
         args_backbone_kicks.environment_model.ephemerides_model,
+        args_backbone_kicks.initial_time,
     )
     _initialize_nbody_ephemeris_cache!(p_backbone_kicks, p_backbone_kicks.shared_buffers.et_start[], args_backbone_kicks.mission_configuration.mission_time)
     _initialize_srp_sun_ephemeris_cache!(p_backbone_kicks, p_backbone_kicks.shared_buffers.et_start[], args_backbone_kicks.mission_configuration.mission_time)
@@ -941,7 +904,8 @@
     @test SimulationEngine._nbody_ephemeris_reuse_key("earth", ["moon", "sun"], 0.0, 10.0, 1.0) isa SimulationEngine.NBodyEphemerisReuseKey
     @test SimulationEngine._planet_frame_ephemeris_reuse_key(EARTH, SpiceEphemeridesModel(), 0.0, 10.0, 1.0) isa SimulationEngine.PlanetFrameEphemerisReuseKey
     @test _wrench_method_available(WrenchOnlyForceModel(SVector{3, Float64}(1.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)))
-    @test !_wrench_method_available(ConstantForceModel(SVector{3, Float64}(1.0, 0.0, 0.0)))
+    @test _wrench_method_available(ConstantForceModel(SVector{3, Float64}(1.0, 0.0, 0.0)))
+    @test !_wrench_method_available(NoWrenchForceModel())
     @test SimulationModel.solver_partition(AerodynamicCoefficientConstant()) == :implicit
     @test SimulationModel.solver_partition(AerodynamicCoefficientfM()) == :implicit
     @test SimulationModel.solver_partition(AerodynamicCoefficientNoBallisticFlight()) == :implicit
@@ -964,7 +928,7 @@
         orientation_state=(q0_wrench, ω0_wrench)
     )
     sc_wrench.inertia_tensor = SMatrix{3, 3, Float64}(2.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 4.0)
-    legacy_force = SVector{3, Float64}(1.0, 2.0, 3.0)
+    constant_force = SVector{3, Float64}(1.0, 2.0, 3.0)
     typed_force = SVector{3, Float64}(4.0, 5.0, 6.0)
     typed_torque = SVector{3, Float64}(0.2, -0.1, 0.3)
     args_wrench_mix = build_config(
@@ -974,7 +938,7 @@
         mission_time=30.0,
         EI_km=120.0,
         dynamic_effectors=(
-            ConstantForceModel(legacy_force),
+            ConstantForceModel(constant_force),
             WrenchOnlyForceModel(typed_force, typed_torque),
         ),
         keplerian=true
@@ -984,7 +948,7 @@
     du0_wrench_mix .= 0.0
     p_wrench_mix = ODEParams(n_sats=1, args=args_wrench_mix)
     spacecraft_dynamics!(du0_wrench_mix, u0_wrench_mix, p_wrench_mix, 0.0)
-    expected_force_mix = legacy_force + typed_force
+    expected_force_mix = constant_force + typed_force
     @test isapprox(SVector{3, Float64}(du0_wrench_mix.sc[1].vel), expected_force_mix / u0_wrench_mix.sc[1].mass; atol=1e-12, rtol=1e-10)
     @test isapprox(
         SVector{3, Float64}(du0_wrench_mix.sc[1].ω),
@@ -1324,7 +1288,7 @@
         @test cache.positions_j2000_m[1, 1] == raw_moon_j2000_km * 1.0e3
     end
 
-    et_start_nbody = SimulationModel.ephemerides_time_seconds(args_nbody.initial_time, args_nbody.environment_model.ephemerides_model)
+    et_start_nbody = SimulationModel.ephemerides_epoch_seconds(args_nbody.environment_model.ephemerides_model, args_nbody.initial_time)
     _clear_ephemeris_reuse_cache!()
     withenv(
         "SPACEAGORA_NBODY_EPHEMERIS_CACHE_DT_S" => "10.0",
@@ -1405,28 +1369,28 @@
     srp_model = args_nbody_srp.dynamics_model.dynamic_effectors[3]
     x_a = Float64[7000e3, 0.0, 0.0, 0.0, 0.0, 0.0, 200.0]
     x_b = Float64[6999e3, 10.0, 0.0, 0.0, 0.0, 0.0, 200.0]
-    SimulationModel.calcForceTorque(nbody_model, x_a, p_nbody_srp, 1)
+    dynamics_force_torque(nbody_model, x_a, p_nbody_srp, 1)
     @test p_nbody_srp.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls[] == 2
-    SimulationModel.calcForceTorque(nbody_model, x_b, p_nbody_srp, 1)
+    dynamics_force_torque(nbody_model, x_b, p_nbody_srp, 1)
     @test p_nbody_srp.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls[] == 2
-    SimulationModel.calcForceTorque(srp_model, x_a, p_nbody_srp, 1)
+    dynamics_force_torque(srp_model, x_a, p_nbody_srp, 1)
     @test p_nbody_srp.shared_buffers.spice_runtime_counters.srp_spkpos_runtime_calls[] == 0
     p_nbody_srp.shared_buffers.current_time[] = 124.0
-    SimulationModel.calcForceTorque(srp_model, x_a, p_nbody_srp, 1)
+    dynamics_force_torque(srp_model, x_a, p_nbody_srp, 1)
     @test p_nbody_srp.shared_buffers.spice_runtime_counters.srp_spkpos_runtime_calls[] == 1
     p_nbody_srp.shared_buffers.spice_rhs_memo_enabled[] = false
     _reset_spice_runtime_counters!(p_nbody_srp)
     _reset_spice_rhs_memo!(p_nbody_srp)
     p_nbody_srp.shared_buffers.current_time[] = 223.0
-    SimulationModel.calcForceTorque(nbody_model, x_a, p_nbody_srp, 1)
+    dynamics_force_torque(nbody_model, x_a, p_nbody_srp, 1)
     @test p_nbody_srp.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls[] == 2
-    SimulationModel.calcForceTorque(nbody_model, x_b, p_nbody_srp, 1)
+    dynamics_force_torque(nbody_model, x_b, p_nbody_srp, 1)
     @test p_nbody_srp.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls[] == 4
-    SimulationModel.calcForceTorque(srp_model, x_a, p_nbody_srp, 1)
+    dynamics_force_torque(srp_model, x_a, p_nbody_srp, 1)
     @test p_nbody_srp.shared_buffers.spice_runtime_counters.srp_spkpos_runtime_calls[] == 1
 
     dyn = SimulationModel.DynamicEffectors
-    harmonics_file = joinpath(REPO_ROOT, "data/Gravity_harmonics_data", "EarthGGM05C.csv")
+    harmonics_file = joinpath(REPO_ROOT, "data/planets/gravity", "EarthGGM05C.csv")
     @test_throws ArgumentError GravitationalHarmonicsModel(-1, 0, harmonics_file, EARTH)
     @test_throws ArgumentError GravitationalHarmonicsModel(10_000, 0, harmonics_file, EARTH)
 
@@ -1533,12 +1497,12 @@
             # Earth frame is GMST-aligned, not identity, at the epoch).
             et_compare = p_harmonics_compare.shared_buffers.et_start[] +
                          p_harmonics_compare.shared_buffers.current_time[]
-            l_pi_compare = SimulationModel.planet_frame_lpi(
-                EARTH, et_compare, args_harmonics_compare.environment_model.ephemerides_model)
+            l_pi_compare = SimulationModel.ephemerides_frame_lpi(
+                args_harmonics_compare.environment_model.ephemerides_model, EARTH, et_compare)
             for pos_pp in sample_positions_pp
                 pos_ii = l_pi_compare' * pos_pp
                 state = ComponentVector(pos=collect(pos_ii), vel=[0.0, 0.0, 0.0], mass=200.0)
-                force_ii, torque_pp = calcForceTorque(model_full, state, p_harmonics_compare, 1)
+                force_ii, torque_pp = dynamics_force_torque(model_full, state, p_harmonics_compare, 1)
                 acc_pp = (l_pi_compare * force_ii) / state.mass
                 ref_total_pp = SVector{3, Float64}(
                     SatelliteToolboxGravityModels.GravityModels.gravitational_acceleration(
@@ -1595,7 +1559,7 @@
     srp_interp_catmull = dyn._srp_sun_position_from_cache_j2000_m(srp_cache, 7.5)
     @test srp_interp_catmull isa SVector{3, Float64}
 
-    force_zero_srp, torque_zero_srp = calcForceTorque(SolarRadiationPressureModel(1.2, 0.0), x_a, p_nbody_srp, 1)
+    force_zero_srp, torque_zero_srp = dynamics_force_torque(SolarRadiationPressureModel(1.2, 0.0), x_a, p_nbody_srp, 1)
     @test force_zero_srp == SVector{3, Float64}(0.0, 0.0, 0.0)
     @test torque_zero_srp == SVector{3, Float64}(0.0, 0.0, 0.0)
 
@@ -1606,7 +1570,7 @@
     p_srp.shared_buffers.et_start[] = 0.0
     p_srp.shared_buffers.current_time[] = 5.0
     x_zero_dist = Float64[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 200.0]
-    force_zero_dist, torque_zero_dist = calcForceTorque(SolarRadiationPressureModel(1.2, 12.0), x_zero_dist, p_srp, 1)
+    force_zero_dist, torque_zero_dist = dynamics_force_torque(SolarRadiationPressureModel(1.2, 12.0), x_zero_dist, p_srp, 1)
     @test force_zero_dist == SVector{3, Float64}(0.0, 0.0, 0.0)
     @test torque_zero_dist == SVector{3, Float64}(0.0, 0.0, 0.0)
 
@@ -1658,8 +1622,8 @@
         p_srp.shared_buffers.current_time[] = 5.0
         x_srp_regression = Float64[7_000_000.0, 100.0, 50.0, 0.0, 0.0, 0.0, 200.0]
 
-        force_on, _ = calcForceTorque(SolarRadiationPressureModel(1.2, 12.0), x_srp_regression, p_srp, 1)
-        force_off, _ = calcForceTorque(SolarRadiationPressureModel(1.2, 0.0), x_srp_regression, p_srp, 1)
+        force_on, _ = dynamics_force_torque(SolarRadiationPressureModel(1.2, 12.0), x_srp_regression, p_srp, 1)
+        force_off, _ = dynamics_force_torque(SolarRadiationPressureModel(1.2, 0.0), x_srp_regression, p_srp, 1)
         expected_force_mag = 4.56e-6 * 1.2 * 12.0
         @test norm(force_on) > 0.0
         @test force_off == SVector{3, Float64}(0.0, 0.0, 0.0)
@@ -1715,7 +1679,7 @@
             SVector{3, Float64}[sun_dayside, sun_dayside]
         )
         x_dayside = Float64[8.0e6, 0.0, 0.0, 0.0, 0.0, 0.0, 200.0]
-        force_total, _ = calcForceTorque(
+        force_total, _ = dynamics_force_torque(
             SolarRadiationPressureModel(1.2, 12.0; direct=true, albedo=true, ir=true, planet_albedo=0.3, planet_ir_flux_w_m2=237.0),
             x_dayside,
             p_srp,
@@ -1725,7 +1689,7 @@
         @test isapprox(force_total, expected_total_force; atol=1e-12, rtol=1e-12)
 
         x_nightside = Float64[-8.0e6, 0.0, 0.0, 0.0, 0.0, 0.0, 200.0]
-        force_ir_only, _ = calcForceTorque(
+        force_ir_only, _ = dynamics_force_torque(
             SolarRadiationPressureModel(1.2, 12.0; direct=false, albedo=false, ir=true, planet_ir_flux_w_m2=237.0),
             x_nightside,
             p_srp,
@@ -2277,9 +2241,12 @@ end
     p = ODEParams(n_sats=1, args=args)
     _initialize_heat_rate_buffers!(p)
     spacecraft_dynamics!(du0, u0, p, 0.0)
-    drag_force, drag_torque = SimulationModel.calcForceTorque(AerodynamicCoefficientfM(), u0.sc[1], p, 1)
+    # The atmosphere sample at this state, written to the stage buffers.
+    atmosphere = SimulationEngine.sample_atmosphere(u0.sc[1], p, 1, 0.0; write_buffers=true)
+    drag_force, drag_torque = dynamics_force_torque(AerodynamicCoefficientfM(), u0.sc[1], p, 1)
 
-    @test p.shared_buffers.densities[1] > 0.0
+    @test atmosphere.rho_kg_m3 > 0.0
+    @test p.shared_buffers.densities[1] == atmosphere.rho_kg_m3
     @test isfinite(p.shared_buffers.temperatures[1])
     @test all(isfinite, p.shared_buffers.winds[1])
     @test norm(drag_force) > 0.0
@@ -2566,7 +2533,7 @@ end
 end
 
 @testset "AGORA Earth Regression (Golden)" begin
-    golden_path = joinpath(REPO_ROOT, "test", "golden", "agora_earth_regression.csv")
+    golden_path = joinpath(REPO_ROOT, "test", "fixtures", "agora_earth_regression.csv")
     if !isfile(golden_path)
         @test_skip "Golden regression fixture is not present in this checkout"
         return

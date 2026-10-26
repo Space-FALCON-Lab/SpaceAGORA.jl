@@ -49,14 +49,14 @@ const SE_ANCHOR = SpaceAGORA.SimulationEngine
     @test_throws ArgumentError get_state_anchor_callback(StateAnchor[])
 
     # Capture the anchor report lines (redirect_stdout needs a file, not an IOBuffer).
-    function run_captured(anchors)
+    function run_captured(anchors; config=cfg)
         withenv("SPACEAGORA_RHS_CALIBRATE" => "off") do
             mktempdir() do tmp
                 cd(tmp) do
                     log_path = joinpath(tmp, "anchor_log.txt")
                     sol = open(log_path, "w") do f
                         redirect_stdout(f) do
-                            run_simulation(cfg; return_solution=true, extra_callbacks=(get_state_anchor_callback(anchors),))
+                            run_simulation(config; return_solution=true, extra_callbacks=(get_state_anchor_callback(anchors),))
                         end
                     end
                     return sol, read(log_path, String)
@@ -89,10 +89,19 @@ const SE_ANCHOR = SpaceAGORA.SimulationEngine
     # The gravity-backbone split keeps a second-order state whose symplectic
     # stepper ends the solve at the next tstop after an in-place edit, so the
     # callback refuses that solver mode at initialisation instead of
-    # truncating the run silently.
-    @test_throws ArgumentError withenv("SPACEAGORA_SOLVER_MODE" => "gravity_backbone_split") do
-        run_captured([anchor])
+    # truncating the run silently. The run is in vacuum: the backbone refuses a
+    # density model before any callback starts.
+    vacuum_cfg = SimulationModel.SimConfig._with_configuration(cfg;
+        environment_model=EnvironmentModel(planet=planet, EI=120.0, density_model=NoAtmosphereModel(), thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet), topography=false, wind=false))
+    backbone_err = try
+        withenv("SPACEAGORA_SOLVER_MODE" => "gravity_backbone_split") do
+            run_captured([anchor]; config=vacuum_cfg)
+        end
+        nothing
+    catch err
+        err
     end
+    @test backbone_err isa ArgumentError && occursin("cannot be re-anchored", backbone_err.msg)
 
     # Several anchors at one instant are all applied in that instant's single
     # callback invocation, and the ones after it still fire.

@@ -91,7 +91,7 @@ function light_work_params(args)
     SE._initialize_harmonics_workspace_buffers!(p)
     SE._initialize_save_cache_buffers!(p)
     p.shared_buffers.et_start[] =
-        SimulationModel.ephemerides_time_seconds(args.initial_time, args.environment_model.ephemerides_model)
+        SimulationModel.ephemerides_epoch_seconds(args.environment_model.ephemerides_model, args.initial_time)
     return p
 end
 

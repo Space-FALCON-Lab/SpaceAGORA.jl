@@ -2,14 +2,14 @@
 # Collector-settings grid driver. Runs collector_grid.jl once per
 # (gcthreads, heap-size-hint) combination, at a single thread count, for one
 # case, sequentially -- one Julia process at a time, each under a hard
-# memory cap (see docs/architecture/heap_contention.md).
+# memory cap (see benchmarks/studies/heap_contention/FINDINGS.md).
 #
 # Usage:
 #   benchmarks/studies/heap_contention/collector_grid.sh <case> <threads> <out.csv>
 #
 # This workstation has 12 physical cores and 24 threads; this driver caps
 # --threads at 8. The 16+-thread regime is out of reach on this box
-# regardless of the flag -- see docs/architecture/heap_contention.md for the
+# regardless of the flag -- see benchmarks/studies/heap_contention/FINDINGS.md for the
 # TRX50 command that measures it.
 set -euo pipefail
 

@@ -322,8 +322,9 @@ function _column_or_zeros(df, name::Symbol)
     return name in propertynames(df) ? Float64.(df[!, name]) : zeros(Float64, nrow(df))
 end
 
-function _rpo_batch_case_metrics(case, demo, csv_path::AbstractString, planner_runtime_s::Real, simulation_runtime_s::Real)
-    df, actual_rtn, ref_rtn, tracking_error = _rpo_postprocess(csv_path, demo)
+# The planner plans inside the run, so one runtime covers planning and simulation.
+function _rpo_batch_case_metrics(case, demo, plan, csv_path::AbstractString, run_runtime_s::Real)
+    df, actual_rtn, ref_rtn, tracking_error = _rpo_postprocess(csv_path, plan)
     t = Float64.(df.time)
     mass = Float64.(df.sc1_mass)
     force_norm = sqrt.(
@@ -366,10 +367,8 @@ function _rpo_batch_case_metrics(case, demo, csv_path::AbstractString, planner_r
         goal_y=case.goal_rtn[2],
         goal_z=case.goal_rtn[3],
         success=success ? 1 : 0,
-        planner_runtime_s=Float64(planner_runtime_s),
-        simulation_runtime_s=Float64(simulation_runtime_s),
-        total_runtime_s=Float64(planner_runtime_s + simulation_runtime_s),
-        planned_duration_s=demo.initial_plan.t_ref_s[end],
+        total_runtime_s=Float64(run_runtime_s),
+        planned_duration_s=plan.t_ref_s[end],
         fuel_used_kg=fuel_used,
         fuel_used_pct=_rpo_fuel_used_pct(fuel_used, propellant_mass_kg),
         propellant_mass_kg=propellant_mass_kg,
@@ -382,10 +381,9 @@ function _rpo_batch_case_metrics(case, demo, csv_path::AbstractString, planner_r
         tracking_max_m=maximum(tracking_error),
         goal_error_final_m=final_goal_error,
         min_clearance_m=minimum(clearances),
-        pso_final_cost=demo.plan_result.cost,
-        pso_initial_cost=isempty(demo.plan_result.cost_history) ? demo.plan_result.cost : first(demo.plan_result.cost_history),
-        pso_iterations=length(demo.plan_result.cost_history),
-        pso_refinement_improved=demo.plan_result.refinement_improved ? 1 : 0,
+        pso_final_cost=plan.cost,
+        pso_initial_cost=isempty(plan.cost_history) ? plan.cost : first(plan.cost_history),
+        pso_iterations=length(plan.cost_history),
         csv_path=abspath(csv_path),
     )
 end
@@ -482,7 +480,7 @@ function _write_rpo_planner_comparison_reproducibility_csv(
     _rpo_repro_push!(rows, "run", "julia_version", VERSION)
     _rpo_repro_push!(rows, "run", "julia_num_threads", Threads.nthreads())
     _rpo_repro_push!(rows, "run", "smoke_mode", _rpo_batch_smoke_mode(); source="SPACEAGORA_EXAMPLE_SMOKE")
-    _rpo_repro_push!(rows, "run", "planners", join(string.(cfg.planners), ";"))
+    _rpo_repro_push!(rows, "run", "planners", join(string.(normalize_rpo_comparison_planner_type.(cfg.planners)), ";"))
     _rpo_repro_push!(rows, "run", "runtime_limit_s", runtime_limit_s; units="s")
     _rpo_repro_push!(rows, "run", "failed_path_plots", write_failed_path_outputs; source="SPACEAGORA_RPO_COMPARISON_FAILED_PATH_PLOTS")
 
@@ -608,6 +606,7 @@ function _write_rpo_planner_comparison_reproducibility_csv(
     _rpo_repro_push!(rows, "osqp", "eps_abs", 1.0e-4; source="init_rpo_lqmpc")
     _rpo_repro_push!(rows, "osqp", "eps_rel", 1.0e-4; source="init_rpo_lqmpc")
     _rpo_repro_push!(rows, "osqp", "max_iter", 1000; source="init_rpo_lqmpc")
+    _rpo_repro_push!(rows, "osqp", "adaptive_rho_interval", 25; source="init_rpo_lqmpc")
 
     _rpo_repro_push!(rows, "geometry", "station_asset", "gateway")
     _rpo_repro_push!(rows, "geometry", "point_cloud_resolution", n_station_points; units="points")
@@ -857,9 +856,7 @@ function run_rpo_cubesat_mpc_batch(;
         label = _rpo_batch_case_label(case.case_id)
         case_dir = joinpath(results_directory, "case_$label")
         println("RPO batch case $label seed=$(case.seed)")
-        print("  planning case $label ... ")
-        flush(stdout)
-        planner_runtime = @elapsed demo = build_rpo_cubesat_mpc_demo(
+        demo = build_rpo_cubesat_mpc_demo(
             mission_time=mission_time,
             results_directory=case_dir,
             seed=case.seed,
@@ -874,13 +871,18 @@ function run_rpo_cubesat_mpc_batch(;
             data_rate_s=_rpo_batch_smoke_mode() ? 10.0 : 2.0,
             verbose=false,
         )
-        @printf("done in %.2f s\n", planner_runtime)
-        simulation_runtime = @elapsed run_simulation(demo.args; save_fields=_rpo_batch_save_fields(demo.args; case_label=label))
+        # The planner plans inside the run: one runtime covers planning and simulation.
+        print("  planning and running case $label ... ")
+        flush(stdout)
+        run_runtime = @elapsed solution = run_simulation(demo.args; return_solution=true,
+            extra_callbacks=(demo.stop_callback,), save_fields=_rpo_batch_save_fields(demo.args; case_label=label))
+        @printf("done in %.2f s\n", run_runtime)
+        plan = rpo_installed_plan(solution)
         csv_path = joinpath(case_dir, "simulation_results.csv")
         isfile(csv_path) || error("Missing simulation results for RPO batch case $label at $csv_path")
-        row = _rpo_batch_case_metrics(case, demo, csv_path, planner_runtime, simulation_runtime)
+        row = _rpo_batch_case_metrics(case, demo, plan, csv_path, run_runtime)
         push!(rows, row)
-        df_case, actual_rtn, ref_rtn, tracking_error = _rpo_postprocess(csv_path, demo)
+        df_case, actual_rtn, ref_rtn, tracking_error = _rpo_postprocess(csv_path, plan)
         push!(case_traces, (
             case_id=case.case_id,
             time_s=Float64.(df_case.time),
@@ -891,7 +893,7 @@ function run_rpo_cubesat_mpc_batch(;
             goal_rtn=case.goal_rtn,
         ))
         if save_case_plots
-            _save_rpo_single_case_plots(csv_path, demo)
+            _save_rpo_single_case_plots(csv_path, demo, plan)
         end
         @printf("  success=%d fuel=%.6f kg max_tracking=%.3f m runtime=%.2f s\n", row.success, row.fuel_used_kg, row.tracking_max_m, row.total_runtime_s)
     end
@@ -1167,7 +1169,9 @@ end
 
 function _rpo_planner_comparison_cli_usage()
     return "Usage: julia --project=examples/rpo_planner_env examples/Earth_RPO_CubeSat_MPC_PlannerComparison.jl [--runs N]\n" *
-        "   or: julia --project=examples/rpo_planner_env examples/Earth_RPO_CubeSat_MPC_Batch.jl comparison [--runs N]"
+        "   or: julia --project=examples/rpo_planner_env examples/Earth_RPO_CubeSat_MPC_Batch.jl comparison [--runs N]\n" *
+        "Setup: julia --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl\n" *
+        "       julia --startup-file=no examples/setup.jl"
 end
 
 function _parse_rpo_positive_int_cli(value::AbstractString, option::AbstractString)

@@ -264,7 +264,7 @@ else
                     ephemerides_model=SM.SimpleEphemeridesModel())
                 args = SM.SimConfig._with_configuration(original; environment_model=env)
                 p = SM.ODEParams(n_sats=4, args=args)
-                p.shared_buffers.et_start[] = SM.ephemerides_time_seconds(args.initial_time, env.ephemerides_model)
+                p.shared_buffers.et_start[] = SM.ephemerides_epoch_seconds(env.ephemerides_model, args.initial_time)
                 p.shared_buffers.callback_env_config[] = CB._snapshot_callback_env_config()
                 u = SpaceAGORA.SimulationEngine.build_initial_conditions(args)
                 cb = CB.get_density_callback(4, args.dynamics_model.dynamic_effectors, args)

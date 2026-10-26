@@ -153,7 +153,20 @@ frame fixed to the spacecraft bus, in which the inertia tensor is given.
 | `q` | 4 | Attitude quaternion rotating inertial coordinates into bus coordinates, stored **scalar-last** as `[x, y, z, w]`; `[0, 0, 0, 1]` is "bus axes aligned with inertial axes". Kept on the unit sphere by a projection after every step. | – | inertial to bus | `orientation_sim = true` |
 | `ω` | 3 | Angular velocity of the bus. Its rate comes from the bus-frame torques and the inertia tensor (Euler's rotational equation). | rad/s | bus | `orientation_sim = true` |
 | `h_wheels` | number of wheels | Angular momentum stored in each reaction wheel. Changes only when a control effector commands wheel torque. | N·m·s | wheel axes | `orientation_sim = true` and the root link is built as `SM.Link(; J_rw=...)` with a 3-by-`N` wheel-axis mapping, `N > 0`; the current constructor takes the wheel count from the columns of `J_rw` |
-| `arm_r`, `arm_q`, `arm_v`, `arm_ω` | 3×n, 4×n, 3×n, 3×n | Position, attitude quaternion (scalar-last), velocity and angular velocity of each of the `n` links of a robot arm coupled to a cloth model. The rotation convention of the arm quaternions is documented with the robot-arm subsystem and was not verified here. | m, –, m/s, rad/s | inertial for `arm_r` and `arm_v`; link-related for `arm_q` and `arm_ω` | a coupled cloth robot-arm plan is configured (the robot-arm demo); not in ordinary runs |
+| `joint_q`, `joint_qd` | `nq`, `nv` | Joint coordinates and rates of an articulated spacecraft, one entry per hinge or slide and four (quaternion) or three (rate) per ball joint, in the order of the spacecraft's non-fixed `joints`. A hinge/slide coordinate is an angle/displacement from the configured geometry; a ball coordinate is a scalar-last quaternion and its rate is the parent-frame angular velocity. | rad or m; rad/s or m/s | parent link frame | `orientation_sim = true` and at least one joint is not `:fixed` ([Joint types](articulated_compliant.md#Joint-types-and-articulated-spacecraft)) |
+| `arm_r`, `arm_q`, `arm_v`, `arm_ω` | 3×n, 4×n, 3×n, 3×n | Position, attitude quaternion (scalar-last), velocity and angular velocity of each of the `n` links of a robot arm coupled to a compliant multibody model. The rotation convention of the arm quaternions is documented with the robot-arm subsystem and was not verified here. | m, –, m/s, rad/s | inertial for `arm_r` and `arm_v`; link-related for `arm_q` and `arm_ω` | a coupled compliant robot-arm plan is configured (the robot-arm demo); not in ordinary runs |
+| `interlink_dv`, `interlink_delta_sma` | 3, 1 | The Δv the selected interlinks' forces gave since the run started (its rate is their acceleration) and their contribution to the osculating semimajor axis (its rate is `2a²(v·F)/(μ m)`). Zero for links that apply no force. Named `laser_dv` and `laser_delta_sma` before 0.6.0. | m/s, m | inertial for `interlink_dv` | the run has an interlink model ([Interlinks](interlinks.md)) |
+| `att_r`, `att_q`, `att_v`, `att_ω` | 3×N, 4×N, 3×N, 3×N | State of the `N` bodies of the spacecraft's compliant attachments, concatenated in attachment order. `att_r` and `att_v` are the body position and velocity **relative to the spacecraft's translational state** (`pos`, `vel`: the bus center of mass for a rigid spacecraft, the root composite center of mass for an articulated one), expressed in **inertial axes**: the inertial position of a body is `pos + att_r`. `att_q` is the absolute scalar-last body-to-inertial attitude and `att_ω` the absolute body-frame angular velocity. Attachment bodies are not links: they are not in `heat_loads` or `mass`. The robot-arm fields `arm_*` above keep absolute positions; unifying the two conventions is a known follow-up. | m, –, m/s, rad/s | inertial axes for `att_r`, `att_v`; body frame for `att_ω` | `orientation_sim = true` and `attachments` is not empty ([Compliant attachments](articulated_compliant.md#Compliant-attachments)); every spacecraft of a run must carry the same attachment body count |
+
+For an articulated spacecraft `pos` and `vel` are the position and velocity of the
+**root composite centre of mass** (the root link, the links merged into it through `:fixed`
+joints, and the propellant), not of the whole spacecraft; `mass` is still the total mass
+(dry plus propellant), and `q`, `ω` are the root attitude and body rate. The
+`sc1_system_com_*` columns give the whole-spacecraft centre of mass.
+
+Attachment bodies carry their own masses and are not part of the spacecraft `mass`: the
+system total is the spacecraft mass plus the attachment masses, and the saved
+`sc1_system_com_*` columns include the attachment bodies whenever a spacecraft has any.
 
 Two things are worth knowing about how the state is advanced:
 
@@ -193,21 +206,20 @@ from `pos` and `vel` through the orbital energy, as the effector page does.
 - **Two spacecraft.** Pass two spacecraft to `DynamicsModel`; the state gains
   `u.sc[2]` with the same fields and the results gain `sc2_*` columns.
 - **Start from a Cartesian state.** Position and velocity are positional
-  arguments; the quaternion and the angular velocity are keyword arguments
-  that must be `SVector`s, scalar-last for `q`:
+  arguments; the quaternion and the angular velocity are keyword arguments,
+  each any vector or tuple of 4 or 3 numbers, scalar-last for `q`:
 
   ```julia
-  using StaticArrays: SVector
   ic = SM.CartesianInitialCondition(
       [6_778_137.0, 0.0, 0.0],          # inertial position, m
       [0.0, 7668.6, 0.0];               # inertial velocity, m/s
-      q = SVector(0.0, 0.0, 0.0, 1.0),  # identity attitude, [x, y, z, w]
-      ang_vel = SVector(0.0, 0.0, 0.0)) # bus angular velocity, rad/s
+      q = [0.0, 0.0, 0.0, 1.0],         # identity attitude, [x, y, z, w]
+      ang_vel = [0.0, 0.0, 0.0])        # bus angular velocity, rad/s
   ```
 
   It sets `pos`, `vel`, `q` and `ω` directly. Both keywords have those
-  defaults, so `SM.CartesianInitialCondition(pos, vel)` alone is valid; a
-  plain `Vector` for `q` is rejected with a type error.
+  defaults, so `SM.CartesianInitialCondition(pos, vel)` alone is valid; a `q`
+  without 4 numbers or an `ang_vel` without 3 is refused.
 - **Propellant.** Give the spacecraft `prop_mass` and a thruster control
   effector; `mass` then decreases during burns and the `sc1_mass` column shows
   it.

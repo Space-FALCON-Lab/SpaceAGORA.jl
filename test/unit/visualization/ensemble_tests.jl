@@ -1,3 +1,4 @@
+Base.include(@__MODULE__, joinpath(@__DIR__, "..", "..", "helpers", "load_visualizer.jl"))
 using Test
 using SpaceAGORA
 using StaticArrays
@@ -5,6 +6,7 @@ using Arrow
 using DataFrames
 using JSON
 using Base64
+using TOML
 
 import SpaceAGORA.TelemetryVerification: make_example_config, make_three_body_spacecraft
 
@@ -93,6 +95,96 @@ end
         @test back[1].scalar == 250.5 && isnan(back[2].scalar) && !back[2].success
         @test SV.default_sample_scalar(DataFrame(time=[0.0])) |> isnan
         @test SV.default_sample_scalar(DataFrame(time=[0.0, 1.0], sc1_periapsis_altitude=[1.0e5, 2.5e5])) == 250.0
+    end
+
+    @testset "ensemble positions follow the viewer's precision rule" begin
+        one = build_visualization_scene(_sample_args(1); rotation_max_samples=4)
+        # The same scene with three spacecraft per sample.
+        sc1 = only(one.spacecraft)
+        rest = [getfield(sc1, f) for f in fieldnames(SV.SpacecraftGeometry)[3:end]]
+        three = SV.VisualizationScene((f === :spacecraft ?
+            [SV.SpacecraftGeometry(k, "$(sc1.name) $(k)", rest...) for k in 1:3] : getfield(one, f)
+            for f in fieldnames(SV.VisualizationScene))...)
+        function table(per_sample, i, time)
+            df = DataFrame(time=time)
+            for k in 1:per_sample, c in 1:3
+                df[!, "sc$(k)_pos_$(c)"] = [7.0e6 + 1.0e3 * (i + k + c) + r for r in eachindex(time)]
+            end
+            return df
+        end
+        dir = mktempdir()
+        # `n` samples of `scene`, sample `i` saved at `times(i)`.
+        function frames(scene, n; times=i -> collect(0.0:10.0:90.0), kw...)
+            samples = [EnsembleSample(i, string(i), true, Float64(i), "sample $(i)", dir) for i in 1:n]
+            tables = [table(length(scene.spacecraft), i, times(i)) for i in 1:n]
+            return first(SV.build_ensemble_frames(samples, fill(scene, n), tables; kw...))
+        end
+        decode(b64, T) = collect(reinterpret(T, base64decode(b64)))
+        function only_positions_differ(f64, f32)
+            @test f64["pos_dtype"] == "f64" && f32["pos_dtype"] == "f32"
+            @test all(k -> k in ("pos_dtype", "pos_km") || isequal(f64[k], f32[k]), union(keys(f64), keys(f32)))
+            @test isequal(Float32.(decode(f64["pos_km"], Float64)), decode(f32["pos_km"], Float32))
+        end
+        # The budget (MB) for `k` frames of `S` spacecraft's positions only, at
+        # 24 bytes each, and just below it.
+        holds(k, S) = k * (S * 24 + 8) / 1.0e6 + 1.0e-12
+        below(k, S) = holds(k, S) - 1.0e-9
+
+        # 22 samples of three, 66 spacecraft in all. The default budget holds the
+        # ten rows either way: Float64.
+        only_positions_differ(frames(three, 22), frames(three, 22; position_precision=:f32))
+        # Float64 within the budget for ten Float64 frames, and Float32 just
+        # below it, where Float64 would thin the axis.
+        @test frames(three, 22; data_budget_mb=holds(10, 66))["count"] == 10
+        only_positions_differ(frames(three, 22; data_budget_mb=holds(10, 66)),
+            frames(three, 22; data_budget_mb=holds(10, 66), position_precision=:f32))
+        thin = frames(three, 22; data_budget_mb=below(10, 66))
+        @test thin["sats"] == 66 && thin["pos_dtype"] == "f32" && thin["count"] == 10
+        forced = frames(three, 22; data_budget_mb=below(10, 66), position_precision=:f64)
+        @test forced["pos_dtype"] == "f64" && forced["count"] < 10
+        # The rule counts every sample's spacecraft: 21 samples of three are 63,
+        # Float64 even where it costs frames.
+        kept = frames(three, 21; data_budget_mb=below(10, 63))
+        @test kept["sats"] == 63 && kept["pos_dtype"] == "f64" && kept["count"] < 10
+        # The boundary, at a budget where Float64 costs frames: 64 keep Float64,
+        # 65 get Float32.
+        @test frames(one, 64; data_budget_mb=below(10, 64))["pos_dtype"] == "f64"
+        @test frames(one, 65; data_budget_mb=below(10, 65))["pos_dtype"] == "f32"
+        # Below two frames, both precisions keep the floor's two, over the budget:
+        # Float32 above 64, Float64 at 64 or fewer.
+        tiny = frames(three, 22; data_budget_mb=1.0e-4)
+        @test tiny["pos_dtype"] == "f32" && tiny["count"] == 2
+        @test frames(three, 21; data_budget_mb=1.0e-4)["pos_dtype"] == "f64"
+
+        # Rounding can end the thinner Float64 axis with an extra point, so that
+        # it has the full axis's length at a wider spacing: Float32 there.
+        T = 786.2641453844527
+        c = T / 22.5
+        times(i) = i == 1 ? [0.0, T] : collect(c .* (0:5))
+        ends = [T, 5c]
+        cadences = [SV._table_cadence([0.0, T]), SV._table_cadence(times(2))]
+        f64_axis = SV.ensemble_time_axis(ends, cadences; max_frames=23)
+        f32_axis = SV.ensemble_time_axis(ends, cadences; max_frames=45)
+        @test length(f64_axis) == length(f32_axis) == 24 && f64_axis != f32_axis
+        spaced = frames(three, 22; times=times, data_budget_mb=holds(23, 66))
+        @test spaced["pos_dtype"] == "f32" && spaced["count"] == 24
+
+        # Tables given as functions that read them: the same frames.
+        lazy_tables = [table(3, i, collect(0.0:10.0:90.0)) for i in 1:22]
+        lazy_samples = [EnsembleSample(i, string(i), true, Float64(i), "sample $(i)", dir) for i in 1:22]
+        eager = first(SV.build_ensemble_frames(lazy_samples, fill(three, 22), lazy_tables; data_budget_mb=below(10, 66)))
+        read_count = Ref(0)
+        readers = [() -> (read_count[] += 1; t) for t in lazy_tables]
+        lazy = first(SV.build_ensemble_frames(lazy_samples, fill(three, 22), readers; data_budget_mb=below(10, 66)))
+        @test isequal(lazy, eager) && read_count[] == 44                     # an outline pass, then the rows
+
+        # The keyword is checked before any results are read.
+        for bad in (:f16, "f64", nothing)
+            err = try frames(one, 1; position_precision=bad); nothing catch e; e end
+            @test err isa ArgumentError && occursin(repr(bad), err.msg)
+        end
+        err = try export_ensemble_visualization(mktempdir(); position_precision="auto"); nothing catch e; e end
+        @test err isa ArgumentError && occursin("position_precision", err.msg)
     end
 
     @testset "Monte Carlo campaign writes samples, manifest and page" begin
@@ -211,9 +303,16 @@ end
                 df = DataFrame(Arrow.Table(joinpath(sample_dirs[seed], "simulation_results.feather")))
                 @test nrow(df) >= 2
                 @test issorted(df.time)
-                @test df.time[1] ≈ 2.0
+                # It resumed at 2 s rather than starting again, and its results hold
+                # the whole run: its first run's rows, then its own.
+                @test TOML.parsefile(joinpath(sample_dirs[seed], "simulation_results.manifest.toml"))["resumed_from_s"] == 2.0
+                @test df.time[1] == 0.0
+                @test isequal(df[df.time .< 2.0, :], first_tables[seed][first_tables[seed].time .< 2.0, :])
                 @test df.time[end] ≈ 4.0
-                @test isapprox(position(df, 1), first_positions[seed]; rtol=0.0, atol=1e-6)
+                # The row at the resume time continues this member's own first run.
+                at_resume = findfirst(t -> isapprox(t, 2.0), df.time)
+                @test at_resume !== nothing
+                @test isapprox(position(df, at_resume), first_positions[seed]; rtol=0.0, atol=1e-6)
             end
             # Campaign wrapping must leave builder-owned settings and the typed
             # solver untouched in both the first run and the continuation.

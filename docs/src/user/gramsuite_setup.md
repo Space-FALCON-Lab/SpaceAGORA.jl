@@ -42,9 +42,27 @@ binary GRAM data. Before running it, make sure the machine has enough free disk
 space for both the final files and Git LFS temporary downloads; 15-20 GB free is
 a practical minimum.
 
+If an existing wrapper checkout contains local work, preserve it and use a
+separate checkout for preparation; do not reset it to follow this guide.
+
 ```text
-git submodule update --init --recursive --remote
+git submodule update --init --recursive -- data/GRAMSuite.jl
 ```
+
+These commands use the exact submodule commit recorded by SpaceAGORA. Avoid
+`--remote`, which selects a branch tip instead of that reviewed commit.
+
+Verify the recorded commit and the wrapper's actual commit:
+
+```text
+git rev-parse HEAD:data/GRAMSuite.jl
+git -C data/GRAMSuite.jl rev-parse HEAD
+git -C data/GRAMSuite.jl status --short
+```
+
+The two commit identifiers must agree for the public wrapper route. The
+preparation helper below additionally checks the source bytes and the public
+pin in `.github/gramsuite-revisions`; matching a folder name is insufficient.
 
 This should populate the vendored Julia wrapper path:
 
@@ -62,7 +80,7 @@ downloading LFS objects immediately, skip LFS smudging during the submodule
 checkout:
 
 ```text
-GIT_LFS_SKIP_SMUDGE=1 git submodule update --init --recursive --remote
+GIT_LFS_SKIP_SMUDGE=1 git submodule update --init --recursive -- data/GRAMSuite.jl
 ```
 
 Later, after freeing enough disk space, fetch the LFS-backed GRAM files from
@@ -72,6 +90,64 @@ inside the submodule:
 cd data/GRAMSuite.jl
 git lfs pull
 ```
+
+## Prepare package-loading dependencies offline
+
+Use this bounded step when the pinned Julia wrapper source and SpaceAGORA's
+existing package depot are already available. A source-only wrapper can be
+missing its own dependency metadata even when SpaceAGORA imports successfully.
+That matters when a loading helper prepends the wrapper to Julia's search path.
+
+From the SpaceAGORA repository root, with Python 3.11 or later and Git available:
+
+```sh
+python3.11 scripts/prepare_gram_loading_environment.py \
+  --gram-source "$PWD/data/GRAMSuite.jl" \
+  --output "$HOME/spaceagora-gram-loading-prepared"
+```
+
+The output directory must be new and outside both checkouts. The helper verifies
+`Project.toml` and every file under `src/` against the configured exact GRAM
+commit using local Git objects. For an already retained source-only snapshot,
+pass its path as `--gram-source` and add `--gram-object-repo` pointing to a local
+GRAM repository that contains that commit. Missing objects are an unmet
+prerequisite; this offline helper does not fetch them. `--mode dev` selects the
+separately configured development pin and requires its own verified source and
+local objects. Public-wrapper results do not validate the development wrapper.
+
+The prepared directory contains the unchanged wrapper project, a source link,
+a dependency manifest and `preparation.json` with source and metadata hashes.
+The manifest retains exact versions, UUIDs, tree hashes and complete stanzas
+from SpaceAGORA's committed root manifest. Its closure includes required
+transitive dependencies and list-form weakdependencies whose stanzas Julia
+needs to identify extension triggers. Dictionary-form weakdependencies already
+carry UUIDs and remain unchanged. The root's `project_hash` is omitted because
+it describes SpaceAGORA's project, not the wrapper's.
+
+The helper rejects locally changed root project/manifest/pin metadata, modified
+or extra wrapper source files, ambiguous or missing dependency entries and path
+dependencies. It does not resolve, instantiate or install packages, create new
+versions, import Julia packages, copy licensed assets or modify either checkout.
+The source link remains dependent on the original source location and bytes;
+keep that source unchanged while using the preparation and retain its receipt.
+
+Run the separate loading diagnostic against this explicitly prepared input:
+
+```sh
+JULIA_PKG_PRECOMPILE_AUTO=0 JULIA_PKG_OFFLINE=true \
+  julia --startup-file=no --compiled-modules=existing \
+  test/smoke/gram_package_readiness.jl \
+  --gram-project "$HOME/spaceagora-gram-loading-prepared" \
+  --output "$HOME/spaceagora-gram-loading-report"
+```
+
+The report directory must also be new. Missing installed dependencies remain
+unmet acceptance; the preparation helper supplies metadata, not package files.
+See [Real-package loading readiness](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/blob/f3fde6c2251434be57cb9122f60b249ea5b5bbc4/docs/quality/gram_package_readiness.md)
+for the six import/failure cases and runtime limits. A passing loading report
+covers the observed package and extension identities only. It does not qualify
+production helper behavior, workers, native GRAM libraries/data or simulation
+results. Continue below separately for licensed native setup.
 
 ## Expected target location
 
@@ -183,7 +259,7 @@ check.
 Use the built-in asset report:
 
 ```text
-julia --project=. src/cli/main.jl assets check
+julia --project=. src/interfaces/cli/main.jl assets check
 ```
 
 For a GRAM-ready machine, the report should show these as available:
@@ -201,7 +277,7 @@ Once the folder copy and native-library setup are complete, try the basic
 GRAM-backed example:
 
 ```text
-julia --project=. examples/AGORA_Basic_GRAMEarth.jl
+julia --project=examples examples/AGORA_Basic_GRAMEarth.jl
 ```
 
 That example is the smallest SpaceAGORA path that exercises:
@@ -215,6 +291,94 @@ If you want a larger mission example after that, move on to:
 
 - `examples/AGORA_Vex.jl`
 - `examples/AGORA_Odyssey.jl`
+
+## GRAM-backed atmosphere
+
+When GRAMSuite assets are available, the GRAM-backed constructor is provided by
+the `SpaceAGORAGRAMSuiteExt` extension and activated by importing `GRAMSuite`.
+See [GRAMSuite Setup](gramsuite_setup.md) for the full setup walkthrough.
+
+The basic usage once assets are in place:
+
+```julia
+setup_gram_example!()   # from examples/common.jl — loads GRAMSuite extension
+density_model = GRAMAtmosphereModel(planet_name="earth")
+```
+
+`GRAMAtmosphereModel` is not exported from the root `SpaceAGORA` module. It is
+available after `GRAMSuite` is loaded and is accessed through
+`SpaceAGORA.SimulationModel.GRAMAtmosphereModel` (or via `setup_gram_example!`
+in the examples).
+
+### Opt-in density perturbations
+
+Native GRAM uses mean density by default. Set
+`SPACEAGORA_GRAM_DENSITY_PERTURBATION=step` to advance a separate density walk
+at accepted solver steps and hold its factor between steps, or `pass` to
+sample a drag-free predicted atmospheric pass and interpolate its factor.
+Both modes apply the factor to spacecraft density on the scalar and distributed
+service paths. Temperature and wind retain their existing behavior.
+`naive_rhs` is a diagnostic negative control and is unsuitable for trajectory
+results; the distributed RHS density service declines this mode.
+
+Consecutive checkpoint segments within one run retain the same perturbation
+walk, pass counters and diagnostic history. Resuming a saved checkpoint is
+unsupported because it does not contain the native random state. Multirate
+splitting is also unsupported and is rejected before its first subsolve,
+because its overlapping intervals would revisit earlier walk times. Use a
+supported solver mode or set the perturbation mode to `off`.
+
+`SPACEAGORA_GRAM_DENSITY_PERTURBATION_PASS_RESEED=1` derives each pass's initial
+random stream from the seed and pass index. The realized density history still
+depends on the sampled states: accepted steps in `step` mode and the predicted
+trajectory in `pass` mode. In pass mode the last factor is held if the real pass
+outlasts its prediction. These modeling choices and their numerical accuracy
+need evidence for the intended scenario; lifecycle and interface tests do not
+validate a dispersed campaign.
+
+### GRAM epoch alignment
+
+A GRAM model carries its own epoch: the `initial_time` keyword of
+`GRAMAtmosphereModel` (the GRAMSuite default when omitted). The simulation
+carries another in `SimulationConfiguration.initial_time`. Before every run,
+`run_simulation` passes the density model through
+[`with_density_model_epoch`](@ref) so the two agree. This happens before the
+configuration is copied for state isolation, and the caller's configuration is
+left unchanged.
+
+For a keyword-built `GRAMAtmosphereModel` the rule is:
+
+- An unchanged epoch returns the same model object. Epochs are compared on
+  their integer year, month, day, hour and minute and on the seconds as
+  `Float32`, with no time tolerance.
+- A changed epoch rebuilds a fresh native model from the recorded constructor
+  keywords with only `initial_time` replaced; planet, paths, perturbation
+  options and every other recorded keyword are preserved. The rebuild runs
+  under the GRAM setup lock.
+- A `GRAMAtmosphereModel` wrapped around a raw GRAMSuite core, whose
+  constructor keywords are unknown, cannot be realigned and raises an
+  `ArgumentError` when the epochs differ. Construct it with the keyword
+  constructor at the run's `initial_time` instead.
+
+A `GRAMAtmosphereModelSurrogate` built over a GRAM base keeps its object, file
+and fallback setting for an unchanged epoch and rejects a changed one with an
+`ArgumentError`: its table was generated for one epoch, and rebuilding the
+native fallback would not re-epoch the table. Build and validate a surrogate
+for the epoch you intend to run. Surrogates over other base models, the grid
+model, `NRLMSISE00AtmosphereModel` and the analytic models are not touched by
+the hook.
+
+To avoid a rebuild, construct the model at the run's epoch:
+
+```julia
+density_model = GRAMAtmosphereModel(planet_name="earth", initial_time=args.initial_time)
+```
+
+The hook changes the construction epoch only. It does not convert between time
+systems, validate atmospheric coordinate or datum conventions, certify cached
+or surrogate data, or carry over a native random stream that was advanced or a
+handle that was edited by hand before the run. The existing native cache and
+environment policies apply to the rebuilt model as to any other.
 
 ## Troubleshooting
 

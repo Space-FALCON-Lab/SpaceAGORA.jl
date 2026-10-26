@@ -136,7 +136,8 @@ SM.ControlHooks.control_thruster_levels(::ViewerReportedThruster, i::Int) = i ==
 
     @testset "thruster and facet glyphs carry their link index" begin
         model = _three_link_model()
-        push!(model.root.thrusters, SM.Thruster(max_thrust=2.0, location=MVector{3, Float64}(0.5, 0.0, 0.0), direction=MVector{3, Float64}(-1.0, 0.0, 0.0)))
+        # The record holds the thrust direction (+x); the glyph carries the plume direction (-x).
+        push!(model.root.thrusters, SM.Thruster(max_thrust=2.0, location=MVector{3, Float64}(0.5, 0.0, 0.0), direction=MVector{3, Float64}(1.0, 0.0, 0.0)))
         push!(model.links[3].SRP_facets, SM.Facet(area=2.0, normal_vector=MVector{3, Float64}(1.0, 0.0, 0.0), name="panel_r"))
         geometry = spacecraft_geometry(model)
         @test length(geometry.thrusters) == 1
@@ -214,7 +215,7 @@ SM.ControlHooks.control_thruster_levels(::ViewerReportedThruster, i::Int) = i ==
         @test length(SV.rotation_sample_times(100.0, 0.0; max_samples=11)) == 11
     end
 
-    @testset "planet rotation table matches planet_frame_lpi" begin
+    @testset "planet rotation table matches ephemerides_frame_lpi" begin
         model = SM.SimpleEphemeridesModel()
         et_start = 4.5e8
         times = [0.0, 3600.0, 7200.0, 86_400.0 * 3]
@@ -224,7 +225,7 @@ SM.ControlHooks.control_thruster_levels(::ViewerReportedThruster, i::Int) = i ==
             for (k, t) in enumerate(times)
                 q = table[k]
                 @test norm(q) ≈ 1.0
-                dcm = SM.planet_frame_lpi(planet, et_start + t, model)
+                dcm = SM.ephemerides_frame_lpi(model, planet, et_start + t)
                 @test SM.rot(q) ≈ dcm atol=1e-12
                 # The table rotates an inertial position into the body-fixed frame
                 # exactly as the runtime latitude/longitude columns do.
@@ -293,7 +294,7 @@ SM.ControlHooks.control_thruster_levels(::ViewerReportedThruster, i::Int) = i ==
         scene = build_visualization_scene(args; rotation_max_samples=16)
         @test scene.schema == 1
         @test scene.epoch_utc == "2014-05-27T05:00:00.000Z"
-        @test scene.epoch_et_start_s ≈ SM.ephemerides_time_seconds(args.initial_time, args.environment_model.ephemerides_model)
+        @test scene.epoch_et_start_s ≈ SM.ephemerides_epoch_seconds(args.environment_model.ephemerides_model, args.initial_time)
         @test scene.planet.name == "Earth"
         @test scene.planet.rotation_t_s[1] == 0.0
         @test scene.planet.rotation_t_s[end] == 600.0

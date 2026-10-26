@@ -50,3 +50,22 @@ plotting-equivalence acceptance remain separate from this source review.
 3. Telemetry verification reporting should resolve plotting from `scripts/plotting/`.
 4. Experimental scaffolds must remain outside the package load graph until they
    own real runtime behavior.
+
+## Simulation preparation and viewer payload phases
+
+The execution coordinator retains the public `run_simulation` entrypoint and
+its checkpoint/solve/save/resume sequence. Ordered private helpers in
+`src/orchestration/simulation/engine/setup.jl` own model validation,
+runtime/cache initialization, ephemerides preparation and execution-policy
+preparation. The policy phase still calibrates before starting in-run width
+identification and resets density histories after all pre-solve probes.
+Callback creation, resume restoration and output handling retain their existing
+positions in `execution.jl`; the helpers introduce no new lifecycle framework.
+
+`build_viewer_frames` retains its public signature in the scene module.
+Private helpers in `viewer_payload.jl` discover available frame blocks, select
+rows and precision under the byte budget, and pack the selected blocks.
+The layout carries existing counts and offsets; selection preserves mission
+boundary rows and the Float32/Float64 policy. Packing retains existing units,
+field names, optional-block rules and byte encodings. These are responsibility
+boundaries within existing modules, not new public namespaces.

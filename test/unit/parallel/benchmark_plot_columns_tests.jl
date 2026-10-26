@@ -65,7 +65,7 @@ function load_definition(path::String, wanted::Symbol)
     error("Required plotting definition $wanted not found in $path")
 end
 
-include(joinpath(RUNTIME, "reporting", "RuntimeReports.jl"))
+include(joinpath(RUNTIME, "reporting", "runtime_reports.jl"))
 using .RuntimeReports: ProfileSpec, summarize_per_orbit_results, summarize_entry_duration_results,
     summarize_density_backend_breakdown
 using .RuntimeReports: _parse_bool_env

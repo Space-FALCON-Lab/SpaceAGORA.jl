@@ -44,7 +44,7 @@ function load_definition(file::String, wanted::Symbol)
     end
     error("Required wrapper definition $wanted not found in $file")
 end
-include(joinpath(RUNTIME, "reporting", "RuntimeReports.jl"))
+include(joinpath(RUNTIME, "reporting", "runtime_reports.jl"))
 using .RuntimeReports: ProfileSpec, summarize_per_orbit_results, summarize_entry_duration_results,
     summarize_density_backend_breakdown
 

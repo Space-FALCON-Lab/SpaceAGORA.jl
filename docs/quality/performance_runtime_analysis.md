@@ -96,7 +96,7 @@ Headline speedup claims should use only rows whose matching serial baseline comp
 
 ## Reporting ownership and isolated tests
 
-`benchmarks/studies/performance_runtime_analysis/reporting/RuntimeReports.jl`
+`benchmarks/studies/performance_runtime_analysis/reporting/runtime_reports.jl`
 is the importable owner of the profile record, result summaries, text formatting,
 trajectory comparison and rollout decisions. Loading it requires CSV/DataFrames
 and standard libraries, but does not load SpaceAGORA, GRAMSuite, SPICE or Plots,

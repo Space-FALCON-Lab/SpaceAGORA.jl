@@ -237,7 +237,7 @@ if !isdefined(@__MODULE__, :run_simulation)
 end
 
 
-include(joinpath(@__DIR__, "reporting", "RuntimeReports.jl"))
+include(joinpath(@__DIR__, "reporting", "runtime_reports.jl"))
 using .RuntimeReports
 using .RuntimeReports: _parse_positive_int_env, _parse_nonnegative_int_env, _parse_nonnegative_float_env, _parse_bool_env,
     _perf_smoke_mode, _perf_case_name_filter, _exclude_entry_scenarios, _split_rollout_enabled,

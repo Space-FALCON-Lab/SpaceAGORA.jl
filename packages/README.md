@@ -41,7 +41,7 @@ Use `mujoco` or `edg` in place of `hypr` for the other companions.
 - `check` confirms that the checkout is at the pinned revision, comes from the
   declared repository, has the declared name, UUID and version, and has no local
   changes. It does not run the package or its tests.
-- `setup` does `checkout` and `check`, then runs the companion's own installer
+- `setup` does `checkout` and `check`, then runs the appropriate installer
   with this SpaceAGORA checkout: `scripts/setup_hypr.jl` for HYPR, the
   companion's `scripts/setup_env.jl` for MuJoCo and EDG. The environment
   directory must be outside the SpaceAGORA checkout. Installing can download

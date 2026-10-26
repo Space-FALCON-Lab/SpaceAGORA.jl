@@ -7,8 +7,8 @@ The supported model route loads `SpaceAGORA` as a Julia package, imports
 prepared package sources, in fresh Julia processes. It is opt-in: no CI job and
 no test suite runs it. It complements the synthetic
 [loading-policy tests](gram_loading_contract.md) and changes no loader. The
-runtime benchmark, which includes its own copies of the model types, is outside
-what it checks.
+maintained runtime benchmark uses these canonical package types; full benchmark
+startup and native-worker execution remain outside what this check qualifies.
 
 ## Running it
 
@@ -101,7 +101,8 @@ atmosphere, starts no worker and runs no simulation.
 The report always marks native and worker readiness as unverified. It does not
 qualify GRAM binaries or data, library architecture, kernel order, model
 construction, copying or serialization, reset and release, scientific outputs,
-installation on a clean machine, or the runtime benchmark's own types. A pass
+installation on a clean machine, performance, or full runtime benchmark and
+native-worker execution. A pass
 covers the Julia version and the package sources it observed; repeat it for each
 other combination you want to qualify.
 

@@ -538,8 +538,9 @@ The companions are separate repositories with their own tests and
 documentation. You install one with the shared
 [optional-package commands](../src/user/installation_environment.md#optional-package-commands)
 (`scripts/optional_packages.jl`), which check out and verify the pinned
-submodule and then hand installation to the companion's own installer in a
-separate environment; each companion's standalone installer also still works.
+submodule and then prepare a separate environment with the appropriate
+installer: core's `scripts/setup_hypr.jl` for HYPR, or the companion's
+`scripts/setup_env.jl` for EDG and MuJoCo. These installers also work directly.
 You then load the companion explicitly, for example `using SpaceAGORA, HYPR`.
 Each one follows the [optional adapter standard](../src/reference/adapter_contract.md),
 with its own domain protocol and state ownership:
@@ -577,7 +578,7 @@ in the third column are relative to the directory in the first column.
 | `src/foundation/core/` | Abstract types and shared model contracts, reference frames, geodesy, orbital geometry and quaternions | frames: `interfaces/reference_system.jl`; shared geometry: `numerics/geodesy.jl` and `numerics/orbital_geometry.jl`; canonical quaternions: `numerics/quaternion_utils.jl`; the robotics and compliant orientation policy: `numerics/orientation_quaternion_utils.jl`; run buffers and composition belong to simulation orchestration |
 | `src/foundation/assets/` | Manifest lookup and availability checks, RPO station assets and the Odyssey surrogate | manifest records and local checks: `asset_catalog.jl` (the module `SpaceAGORA.AssetCatalog`, which returns plain field records so that command front ends keep their own types, downloads nothing, and does not interpret atmosphere or geometry schemas); CLI report types and presentation stay in the CLI; see [Assets & Modes](../src/assets.md) |
 | `ext/` | Package extensions for GRAMSuite, SpaceAGORAVisualizer, SpaceAGORAEDG, PlotlyJS (RPO figures), PythonCall (cyclic interlink matching) and Test (conformance test helpers) | each extension loads when its package is loaded beside SpaceAGORA; see [GRAMSuite Setup](../src/user/gramsuite_setup.md) and the [optional adapter standard](../src/reference/adapter_contract.md) |
-| `packages/robotics/` | Pinned submodules for HYPR and SpaceAGORAMuJoCo, each an independently maintained repository | `scripts/optional_packages.jl` selects and verifies the source, then hands over to the companion's installer; see [Optional package commands](../src/user/installation_environment.md#optional-package-commands) |
+| `packages/robotics/` | Pinned submodules for HYPR and SpaceAGORAMuJoCo, each an independently maintained repository | `scripts/optional_packages.jl` selects and verifies the source, then uses core's `scripts/setup_hypr.jl` for HYPR or the companion's `scripts/setup_env.jl` for MuJoCo; see [Optional package commands](../src/user/installation_environment.md#optional-package-commands) |
 | `packages/gnc/` | Optional guidance packages: the experimental SpaceAGORAEDG | the companion owns the numerical kernels; core keeps model types, lifecycle and physics through [EDGServices](../src/reference/edg_adapter_boundary.md) |
 | `packages/HYPRSource.toml` | The fixed source pin for HYPR | the standalone installer uses this revision, and the optional-package helper checks it against the HYPR gitlink. Core services are defined in `src/models/gnc/companions/hypr/services.jl`. Install and load with the [RPO planner guide](../src/user/rpo_planner_pilot.md#installing-optional-hypr) |
 | `examples/` | Runnable scenarios; `common.jl` is the shared bootstrap | scenario entry points; development viewer demos live in `scripts/dev/viewer_demos/`; see the [Examples Catalog](../src/user/examples_catalog.md) |
@@ -695,6 +696,10 @@ Some code looks duplicated on purpose. Keep it that way:
   prepend or append order, installation and retry behaviour, aliases and
   native ownership); they share only discovery and the conditional
   fallback-path insertion in `RuntimeServices._prepare_gramsuite_load_path!`.
+  The maintained runtime benchmark now uses the canonical package model and
+  GRAM extension. Its loader precedence is preserved; the separately accepted
+  numerical baseline and differences from historical results are documented in
+  the [migration evidence](../quality/runtime_benchmark_loading_migration.md).
   Read the [GRAM loading contract](../quality/gram_loading_contract.md) before
   changing a loader policy.
 - Other subsystems that use helpers other than the canonical frame and

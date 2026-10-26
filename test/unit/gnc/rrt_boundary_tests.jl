@@ -43,6 +43,11 @@ end
             @test direct.cost === 12.0
             @test direct.components.policy === :standalone_length
             @test direct.iterations == 0 && direct.path_found
+            @test direct.raw_path === direct.path === only(direct.history)
+            @test direct.raw_components === direct.components
+            @test direct.objective == direct.raw_cost == only(direct.cost_history) == 12.0
+            @test direct.adaptive == (enabled=false,)
+            @test !direct.refinement_improved
             @test refinements[] == 0
             @test rand(rng) == rand(expected_rng)
             @test !hasproperty(direct, :config)
@@ -68,6 +73,10 @@ end
         @test !failed.path_found
         @test failed.path == hcat(start, goal) # Legacy diagnostic only.
         @test failed.iterations == settings.n_iters
+        @test failed.raw_path == hcat(start, goal)
+        @test failed.raw_cost == failed.raw_components.total == 12.0
+        @test failed.objective == failed.components.total
+        @test !failed.refinement_improved
         @test_throws ErrorException planner(start, goal, nothing; common..., rng=MersenneTwister(741),
             edge_is_safe=(a,b)->error("constraint callback failed"))
         # No hidden global stream: the caller names the random stream.

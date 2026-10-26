@@ -7,16 +7,22 @@ const SE = SpaceAGORA.SimulationEngine
 const SM = SpaceAGORA.SimulationModel
 
 # Stand-ins for the shapes the gate has to tell apart. The real coupling
-# effectors (RPOMPCControlModel, the RPO guidance models) carry chaser_idx and
-# target_idx and read both satellites' states inside the RHS; a per-satellite
+# effectors (RPOMPCControlModel, PlannerGuidance) carry chaser_index and
+# target_index and read both satellites' states inside the RHS; a per-satellite
 # effector carries at most one satellite index and reads only that satellite.
 struct _CouplingEffectorStub
-    chaser_idx::Int
-    target_idx::Int
+    chaser_index::Int
+    target_index::Int
 end
 
 struct _SingleSatEffectorStub
+    chaser_index::Int
+end
+
+# A contributor model with only the older field names, which the gate does not read.
+struct _OlderNamesCouplingEffectorStub
     chaser_idx::Int
+    target_idx::Int
 end
 
 struct _PlainEffectorStub end
@@ -28,6 +34,7 @@ struct _PlainEffectorStub end
     # Same satellite named twice is not coupling: the derivative still depends
     # on that one block only.
     @test !SE._effector_couples_satellites(_CouplingEffectorStub(3, 3))
+    @test !SE._effector_couples_satellites(_OlderNamesCouplingEffectorStub(1, 2))
 
     # One index alone names the satellite the effector acts on, not a second one.
     @test !SE._effector_couples_satellites(_SingleSatEffectorStub(1))
@@ -35,10 +42,11 @@ struct _PlainEffectorStub end
     @test !SE._effector_couples_satellites(SM.InverseSquaredJ2GravityModel())
 
     # The real coupling effectors must be recognised, so the gate cannot rot
-    # away from the types it exists to catch. Both default to chaser 1 /
-    # target 2 and read both satellites' states inside the RHS.
+    # away from the types it exists to catch. Both name chaser 1 and target 2 and
+    # read both satellites' states inside the RHS.
     @test SE._effector_couples_satellites(SM.RPOMPCControlModel())
-    @test SE._effector_couples_satellites(SM.RPOGuidanceModel())
+    rpo = make_rpo_configuration(planner=DirectRPOPlanner(), mission_time_s=0.2)
+    @test SE._effector_couples_satellites(only(rpo.guidance_model.guidance_effectors))
 end
 
 @testset "coupling detection scans every effector surface" begin

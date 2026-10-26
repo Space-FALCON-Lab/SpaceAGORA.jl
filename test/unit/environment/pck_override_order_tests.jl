@@ -6,6 +6,7 @@ using Test
 module PCKOrderFixture
     const _SPICE_BODY_LOCK = ReentrantLock()
     const _FURNISHED_KERNELS = Set{String}()
+    const _SPICE_KERNEL_POOL_GENERATION = Ref{UInt}(0)
     const _PCK_OVERRIDE_PATHS = Ref{Union{Nothing, Vector{String}}}(nothing)
     const _PCK_APPLIED_KERNEL_COUNT = Ref(-1)
     const loaded = String[]
@@ -35,9 +36,8 @@ module PCKOrderFixture
         end
     end
     unload(path) = SPICE.unload(path)
-    source = Meta.parse(read(joinpath(@__DIR__, "..", "..", "..", "src",
-                                     "environment", "ephemerides", "planets.jl"), String))
-    wanted = Set([:_furnsh_once, :_furnsh_required, :_furnsh_first_existing_if_available,
+    source = Meta.parse(read(joinpath(@__DIR__, "..", "..", "..", "src", "models", "environment", "ephemerides", "planets.jl"), String))
+    wanted = Set([:_reset_furnished_kernels!, :_furnsh_once, :_furnsh_required, :_furnsh_first_existing_if_available,
                   :_furnsh_first_existing, :_check_pck_override_policy!, :_furnsh_pck_overrides, :Earth, :Moon, :Mars, :Venus, :Titan])
     found = Set{Symbol}()
     for expr in source.args[3].args
@@ -58,14 +58,57 @@ module PCKOrderFixture
     end
     found == wanted || error("constructor fixture missed production functions: $(setdiff(wanted, found))")
     function reset!()
-        empty!(_FURNISHED_KERNELS)
-        _PCK_OVERRIDE_PATHS[] = nothing
-        _PCK_APPLIED_KERNEL_COUNT[] = -1
-        for cache in (_EARTH_CACHE, _MOON_CACHE, _MARS_CACHE, _VENUS_CACHE, _TITAN_CACHE)
-            empty!(cache)
-        end
+        _reset_furnished_kernels!()
         empty!(loaded)
         empty!(calls)
+    end
+end
+
+@testset "kernel pool generations follow changes and explicit reset" begin
+    mktempdir() do dir
+        PCKOrderFixture.reset!()
+        first_kernel = joinpath(dir, "first.tpc")
+        next_kernel = joinpath(dir, "next.tpc")
+        override = joinpath(dir, "override.tpc")
+        foreach(touch, (first_kernel, next_kernel, override))
+        generation = PCKOrderFixture._SPICE_KERNEL_POOL_GENERATION[]
+
+        PCKOrderFixture._furnsh_once(first_kernel)
+        @test PCKOrderFixture._SPICE_KERNEL_POOL_GENERATION[] == generation + 1
+        PCKOrderFixture._furnsh_once(first_kernel)
+        @test PCKOrderFixture._SPICE_KERNEL_POOL_GENERATION[] == generation + 1
+        @test PCKOrderFixture.loaded == [first_kernel]
+
+        withenv("SPACEAGORA_SPICE_PCK_OVERRIDES" => override) do
+            PCKOrderFixture._furnsh_pck_overrides(dir)
+            @test PCKOrderFixture._SPICE_KERNEL_POOL_GENERATION[] == generation + 2
+            PCKOrderFixture._furnsh_pck_overrides(dir)
+            @test PCKOrderFixture._SPICE_KERNEL_POOL_GENERATION[] == generation + 2
+
+            PCKOrderFixture._furnsh_once(next_kernel)
+            @test PCKOrderFixture._SPICE_KERNEL_POOL_GENERATION[] == generation + 3
+            # Reapplying the override changes the pool twice: unload, then load.
+            PCKOrderFixture._furnsh_pck_overrides(dir)
+            @test PCKOrderFixture._SPICE_KERNEL_POOL_GENERATION[] == generation + 5
+            @test PCKOrderFixture.loaded == [first_kernel, next_kernel, override]
+            @test length(PCKOrderFixture._FURNISHED_KERNELS) == 3
+        end
+
+        caches = (PCKOrderFixture._EARTH_CACHE, PCKOrderFixture._MOON_CACHE,
+                  PCKOrderFixture._MARS_CACHE, PCKOrderFixture._VENUS_CACHE,
+                  PCKOrderFixture._TITAN_CACHE)
+        for cache in caches
+            cache[("", dir)] = :cached_planet
+        end
+        PCKOrderFixture._reset_furnished_kernels!()
+        @test PCKOrderFixture._SPICE_KERNEL_POOL_GENERATION[] == generation + 6
+        @test isempty(PCKOrderFixture._FURNISHED_KERNELS)
+        @test PCKOrderFixture._PCK_OVERRIDE_PATHS[] === nothing
+        @test PCKOrderFixture._PCK_APPLIED_KERNEL_COUNT[] == -1
+        @test all(isempty, caches)
+        # An explicit reset also invalidates readers when the path set was empty.
+        PCKOrderFixture._reset_furnished_kernels!()
+        @test PCKOrderFixture._SPICE_KERNEL_POOL_GENERATION[] == generation + 7
     end
 end
 

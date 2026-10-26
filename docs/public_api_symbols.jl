@@ -2,9 +2,92 @@ module PublicAPISymbols
 
 using Base.Docs
 
-export PUBLIC_API_SECTIONS, public_api_specs, render_public_api_markdown, undocumented_public_api_specs
+export PUBLIC_API_SECTIONS, public_api_specs, render_public_api_markdown, undocumented_public_api_specs,
+    KNOWN_PLACEHOLDER_DOCS, stale_placeholder_entries
 
 const PUBLIC_API_SECTIONS = [
+    (title = "Interlinks", items = [
+        (owner = :SpaceAGORA, symbol = :AbstractInterlink, rendered = "SpaceAGORA.AbstractInterlink"),
+        (owner = :SpaceAGORA, symbol = :LinkContext, rendered = "SpaceAGORA.LinkContext"),
+        (owner = :SpaceAGORA, symbol = :LaserMomentumLink, rendered = "SpaceAGORA.LaserMomentumLink"),
+        (owner = :SpaceAGORA, symbol = :link_range_m, rendered = "SpaceAGORA.link_range_m"),
+        (owner = :SpaceAGORA, symbol = :link_available, rendered = "SpaceAGORA.link_available"),
+        (owner = :SpaceAGORA, symbol = :link_force, rendered = "SpaceAGORA.link_force"),
+        (owner = :SpaceAGORA, symbol = :interlink_wrench, rendered = "SpaceAGORA.interlink_wrench"),
+        (owner = :SpaceAGORA, symbol = :link_applies_torque, rendered = "SpaceAGORA.link_applies_torque"),
+        (owner = :SpaceAGORA, symbol = :InterlinkModel, rendered = "SpaceAGORA.InterlinkModel"),
+        (owner = :SpaceAGORA, symbol = :InterLinkGraph, rendered = "SpaceAGORA.InterLinkGraph"),
+        (owner = :SpaceAGORA, symbol = :InterLinkKey, rendered = "SpaceAGORA.InterLinkKey"),
+        (owner = :SpaceAGORA, symbol = :InterLinkHistory, rendered = "SpaceAGORA.InterLinkHistory"),
+        (owner = :SpaceAGORA, symbol = :register_link!, rendered = "SpaceAGORA.register_link!"),
+        (owner = :SpaceAGORA, symbol = :register_links!, rendered = "SpaceAGORA.register_links!"),
+        (owner = :SpaceAGORA, symbol = :all_pairs, rendered = "SpaceAGORA.all_pairs"),
+        (owner = :SpaceAGORA, symbol = :same_plane_pairs, rendered = "SpaceAGORA.same_plane_pairs"),
+        (owner = :SpaceAGORA, symbol = :ring_pairs, rendered = "SpaceAGORA.ring_pairs"),
+        (owner = :SpaceAGORA, symbol = :grid_pairs, rendered = "SpaceAGORA.grid_pairs"),
+        (owner = :SpaceAGORA, symbol = :GroundStation, rendered = "SpaceAGORA.GroundStation"),
+        (owner = :SpaceAGORA, symbol = :add_ground_station!, rendered = "SpaceAGORA.add_ground_station!"),
+        (owner = :SpaceAGORA, symbol = :station_pairs, rendered = "SpaceAGORA.station_pairs"),
+        (owner = :SpaceAGORA, symbol = :PowerBeamLink, rendered = "SpaceAGORA.PowerBeamLink"),
+        (owner = :SpaceAGORA, symbol = :link_received_power_w, rendered = "SpaceAGORA.link_received_power_w"),
+        (owner = :SpaceAGORA, symbol = :beam_spot_radius_m, rendered = "SpaceAGORA.beam_spot_radius_m"),
+        (owner = :SpaceAGORA, symbol = :beam_capture_fraction, rendered = "SpaceAGORA.beam_capture_fraction"),
+        (owner = :SpaceAGORA, symbol = :LaserBeamLink, rendered = "SpaceAGORA.LaserBeamLink"),
+        (owner = :SpaceAGORA, symbol = :AbstractLaserBeam, rendered = "SpaceAGORA.AbstractLaserBeam"),
+        (owner = :SpaceAGORA, symbol = :GaussianBeam, rendered = "SpaceAGORA.GaussianBeam"),
+        (owner = :SpaceAGORA, symbol = :TerminalPointing, rendered = "SpaceAGORA.TerminalPointing"),
+        (owner = :SpaceAGORA, symbol = :beam_force_factor, rendered = "SpaceAGORA.beam_force_factor"),
+        (owner = :SpaceAGORA, symbol = :DataLink, rendered = "SpaceAGORA.DataLink"),
+        (owner = :SpaceAGORA, symbol = :AbstractDataBudget, rendered = "SpaceAGORA.AbstractDataBudget"),
+        (owner = :SpaceAGORA, symbol = :FixedRateBudget, rendered = "SpaceAGORA.FixedRateBudget"),
+        (owner = :SpaceAGORA, symbol = :ShannonBudget, rendered = "SpaceAGORA.ShannonBudget"),
+        (owner = :SpaceAGORA, symbol = :link_data_rate_bps, rendered = "SpaceAGORA.link_data_rate_bps"),
+        (owner = :SpaceAGORA, symbol = :budget_rate_bps, rendered = "SpaceAGORA.budget_rate_bps"),
+        (owner = :SpaceAGORA, symbol = :contact_windows, rendered = "SpaceAGORA.contact_windows"),
+        (owner = :SpaceAGORA, symbol = :contact_time_s, rendered = "SpaceAGORA.contact_time_s"),
+        (owner = :SpaceAGORA, symbol = :link_schedule, rendered = "SpaceAGORA.link_schedule"),
+        (owner = :SpaceAGORA, symbol = :link_directed, rendered = "SpaceAGORA.link_directed"),
+        (owner = :SpaceAGORA, symbol = :link_terminal_levels, rendered = "SpaceAGORA.link_terminal_levels"),
+        (owner = :SpaceAGORA, symbol = :link_terminal, rendered = "SpaceAGORA.link_terminal"),
+        (owner = :SpaceAGORA, symbol = :terminal_supports, rendered = "SpaceAGORA.terminal_supports"),
+        (owner = :SpaceAGORA, symbol = :terminal_shed_tier, rendered = "SpaceAGORA.terminal_shed_tier"),
+        (owner = :SpaceAGORA, symbol = :terminal_count, rendered = "SpaceAGORA.terminal_count"),
+        (owner = :SpaceAGORA, symbol = :mounted_link_terminals, rendered = "SpaceAGORA.mounted_link_terminals"),
+        (owner = :SpaceAGORA, symbol = :terminal_number, rendered = "SpaceAGORA.terminal_number"),
+        (owner = :SpaceAGORA, symbol = :terminal_pose, rendered = "SpaceAGORA.terminal_pose"),
+        (owner = :SpaceAGORA, symbol = :update_availability!, rendered = "SpaceAGORA.update_availability!"),
+        (owner = :SpaceAGORA, symbol = :interlink_force_on_spacecraft, rendered = "SpaceAGORA.interlink_force_on_spacecraft"),
+        (owner = :SpaceAGORA, symbol = :SchedulingPolicyModel, rendered = "SpaceAGORA.SchedulingPolicyModel"),
+        (owner = :SpaceAGORA, symbol = :AbstractSchedulingPolicy, rendered = "SpaceAGORA.AbstractSchedulingPolicy"),
+        (owner = :SpaceAGORA, symbol = :SemimajorAxisRatePolicy, rendered = "SpaceAGORA.SemimajorAxisRatePolicy"),
+        (owner = :SpaceAGORA, symbol = :EccentricityRatePolicy, rendered = "SpaceAGORA.EccentricityRatePolicy"),
+        (owner = :SpaceAGORA, symbol = :PowerDeliveryPolicy, rendered = "SpaceAGORA.PowerDeliveryPolicy"),
+        (owner = :SpaceAGORA, symbol = :DataThroughputPolicy, rendered = "SpaceAGORA.DataThroughputPolicy"),
+        (owner = :SpaceAGORA, symbol = :EnergyBalancingPolicy, rendered = "SpaceAGORA.EnergyBalancingPolicy"),
+        (owner = :SpaceAGORA, symbol = :WeightedPolicy, rendered = "SpaceAGORA.WeightedPolicy"),
+        (owner = :SpaceAGORA, symbol = :PolicyTerm, rendered = "SpaceAGORA.PolicyTerm"),
+        (owner = :SpaceAGORA, symbol = :state_of_charge, rendered = "SpaceAGORA.state_of_charge"),
+        (owner = :SpaceAGORA, symbol = :DataBacklogPolicy, rendered = "SpaceAGORA.DataBacklogPolicy"),
+        (owner = :SpaceAGORA, symbol = :stored_bits, rendered = "SpaceAGORA.stored_bits"),
+        (owner = :SpaceAGORA, symbol = :store_room_bits, rendered = "SpaceAGORA.store_room_bits"),
+        (owner = :SpaceAGORA, symbol = :candidate_score, rendered = "SpaceAGORA.candidate_score"),
+        (owner = :SpaceAGORA, symbol = :LinkCandidate, rendered = "SpaceAGORA.LinkCandidate"),
+        (owner = :SpaceAGORA, symbol = :SchedulingContext, rendered = "SpaceAGORA.SchedulingContext"),
+        (owner = :SpaceAGORA, symbol = :score_candidates!, rendered = "SpaceAGORA.score_candidates!"),
+        (owner = :SpaceAGORA, symbol = :select_interlinks!, rendered = "SpaceAGORA.select_interlinks!"),
+        (owner = :SpaceAGORA, symbol = :schedule_interlinks!, rendered = "SpaceAGORA.schedule_interlinks!"),
+        (owner = :SpaceAGORA, symbol = :interlink_scheduler_callback, rendered = "SpaceAGORA.interlink_scheduler_callback"),
+        (owner = :SpaceAGORA, symbol = :ConstellationInterLinkModel, rendered = "SpaceAGORA.ConstellationInterLinkModel"),
+        (owner = :SpaceAGORA, symbol = :InterLinkParameters, rendered = "SpaceAGORA.InterLinkParameters"),
+        (owner = :SpaceAGORA, symbol = :register_allowed_link!, rendered = "SpaceAGORA.register_allowed_link!"),
+        (owner = :SpaceAGORA, symbol = :force_on_endpoint, rendered = "SpaceAGORA.force_on_endpoint"),
+        (owner = :SpaceAGORA, symbol = :laser_force_on_spacecraft, rendered = "SpaceAGORA.laser_force_on_spacecraft"),
+        (owner = :SpaceAGORA, symbol = :DataStore, rendered = "SpaceAGORA.DataStore"),
+        (owner = :SpaceAGORA, symbol = :AbstractDataSource, rendered = "SpaceAGORA.AbstractDataSource"),
+        (owner = :SpaceAGORA, symbol = :DataSource, rendered = "SpaceAGORA.DataSource"),
+        (owner = :SpaceAGORA, symbol = :add_data!, rendered = "SpaceAGORA.add_data!"),
+        (owner = :SpaceAGORA, symbol = :data_production_bps, rendered = "SpaceAGORA.data_production_bps"),
+    ]),
     (title = "RPO planner pilot", items = [
         (owner = :SpaceAGORA, symbol = :hypr_available, rendered = "SpaceAGORA.hypr_available"),
         (owner = :SpaceAGORA, symbol = :HYPRUnavailableError, rendered = "SpaceAGORA.HYPRUnavailableError"),
@@ -26,12 +109,104 @@ const PUBLIC_API_SECTIONS = [
         (owner = :SpaceAGORA, symbol = :rpo_reference_is_current, rendered = "SpaceAGORA.rpo_reference_is_current"),
         (owner = :SpaceAGORA, symbol = :DirectRPOPlanner, rendered = "SpaceAGORA.DirectRPOPlanner"),
         (owner = :SpaceAGORA, symbol = :HYPRRPOPlanner, rendered = "SpaceAGORA.HYPRRPOPlanner"),
+        (owner = :SpaceAGORA, symbol = :RetainedPathRPOPlanner, rendered = "SpaceAGORA.RetainedPathRPOPlanner"),
         (owner = :SpaceAGORA, symbol = :RPOPSOConfig, rendered = "SpaceAGORA.RPOPSOConfig"),
         (owner = :SpaceAGORA, symbol = :rpo_pso_config, rendered = "SpaceAGORA.rpo_pso_config"),
         (owner = :SpaceAGORA, symbol = :RPOPlanningEvent, rendered = "SpaceAGORA.RPOPlanningEvent"),
         (owner = :SpaceAGORA, symbol = :RPOPlanningError, rendered = "SpaceAGORA.RPOPlanningError"),
         (owner = :SpaceAGORA, symbol = :make_rpo_configuration, rendered = "SpaceAGORA.make_rpo_configuration"),
         (owner = :SpaceAGORA, symbol = :rpo_run_report, rendered = "SpaceAGORA.rpo_run_report"),
+        (owner = :SpaceAGORA, symbol = :AbstractRPOGeometryProvider, rendered = "SpaceAGORA.AbstractRPOGeometryProvider"),
+        (owner = :SpaceAGORA, symbol = :rpo_geometry_revision, rendered = "SpaceAGORA.rpo_geometry_revision"),
+        (owner = :SpaceAGORA, symbol = :rpo_geometry_snapshot, rendered = "SpaceAGORA.rpo_geometry_snapshot"),
+        (owner = :SpaceAGORA, symbol = :RPOReplanningSpheres, rendered = "SpaceAGORA.RPOReplanningSpheres"),
+        (owner = :SpaceAGORA, symbol = :HYPRComparisonPlanner, rendered = "SpaceAGORA.HYPRComparisonPlanner"),
+        (owner = :SpaceAGORA, symbol = :UnrefinedPSOPlanner, rendered = "SpaceAGORA.UnrefinedPSOPlanner"),
+        (owner = :SpaceAGORA, symbol = :RRTConnectPlanner, rendered = "SpaceAGORA.RRTConnectPlanner"),
+        (owner = :SpaceAGORA, symbol = :RRTConnectBezierPlanner, rendered = "SpaceAGORA.RRTConnectBezierPlanner"),
+        (owner = :SpaceAGORA, symbol = :RRTStarPlanner, rendered = "SpaceAGORA.RRTStarPlanner"),
+        (owner = :SpaceAGORA, symbol = :CHOMPPlanner, rendered = "SpaceAGORA.CHOMPPlanner"),
+        (owner = :SpaceAGORA, symbol = :STOMPPlanner, rendered = "SpaceAGORA.STOMPPlanner"),
+    ]),
+    (title = "GNC algorithm contract", items = [
+        (owner = :SpaceAGORA, symbol = :AbstractGNCAlgorithm, rendered = "SpaceAGORA.AbstractGNCAlgorithm"),
+        (owner = :SpaceAGORA, symbol = :AbstractAlgorithmFamily, rendered = "SpaceAGORA.AbstractAlgorithmFamily"),
+        (owner = :SpaceAGORA, symbol = :AbstractAlgorithmRequest, rendered = "SpaceAGORA.AbstractAlgorithmRequest"),
+        (owner = :SpaceAGORA, symbol = :AbstractAlgorithmResult, rendered = "SpaceAGORA.AbstractAlgorithmResult"),
+        (owner = :SpaceAGORA, symbol = :AbstractValidationResult, rendered = "SpaceAGORA.AbstractValidationResult"),
+        (owner = :SpaceAGORA, symbol = :GNCAlgorithmError, rendered = "SpaceAGORA.GNCAlgorithmError"),
+        (owner = :SpaceAGORA, symbol = :AlgorithmResult, rendered = "SpaceAGORA.AlgorithmResult"),
+        (owner = :SpaceAGORA, symbol = :ValidationResult, rendered = "SpaceAGORA.ValidationResult"),
+        (owner = :SpaceAGORA, symbol = :RPOReferenceFamily, rendered = "SpaceAGORA.RPOReferenceFamily"),
+        (owner = :SpaceAGORA, symbol = :algorithm_family, rendered = "SpaceAGORA.algorithm_family"),
+        (owner = :SpaceAGORA, symbol = :default_capabilities, rendered = "SpaceAGORA.default_capabilities"),
+        (owner = :SpaceAGORA, symbol = :algorithm_capabilities, rendered = "SpaceAGORA.algorithm_capabilities"),
+        (owner = :SpaceAGORA, symbol = :require_algorithm_support, rendered = "SpaceAGORA.require_algorithm_support"),
+        (owner = :SpaceAGORA, symbol = :initialize_algorithm, rendered = "SpaceAGORA.initialize_algorithm"),
+        (owner = :SpaceAGORA, symbol = :propose!, rendered = "SpaceAGORA.propose!"),
+        (owner = :SpaceAGORA, symbol = :propose_revision!, rendered = "SpaceAGORA.propose_revision!"),
+        (owner = :SpaceAGORA, symbol = :consumes_rng, rendered = "SpaceAGORA.consumes_rng"),
+        (owner = :SpaceAGORA, symbol = :validate_capabilities, rendered = "SpaceAGORA.validate_capabilities"),
+        (owner = :SpaceAGORA, symbol = :validate_proposal, rendered = "SpaceAGORA.validate_proposal"),
+        (owner = :SpaceAGORA, symbol = :install!, rendered = "SpaceAGORA.install!"),
+        (owner = :SpaceAGORA, symbol = :is_current, rendered = "SpaceAGORA.is_current"),
+        (owner = :SpaceAGORA, symbol = :on_rejection, rendered = "SpaceAGORA.on_rejection"),
+        (owner = :SpaceAGORA, symbol = :fallback_product, rendered = "SpaceAGORA.fallback_product"),
+        (owner = :SpaceAGORA, symbol = :family_contract_version, rendered = "SpaceAGORA.family_contract_version"),
+        (owner = :SpaceAGORA, symbol = :family_request, rendered = "SpaceAGORA.family_request"),
+        (owner = :SpaceAGORA, symbol = :family_link, rendered = "SpaceAGORA.family_link"),
+        (owner = :SpaceAGORA, symbol = :preflight_family, rendered = "SpaceAGORA.preflight_family"),
+        (owner = :SpaceAGORA, symbol = :AlgorithmGuidance, rendered = "SpaceAGORA.AlgorithmGuidance"),
+        (owner = :SpaceAGORA, symbol = :AlgorithmEvent, rendered = "SpaceAGORA.AlgorithmEvent"),
+        (owner = :SpaceAGORA, symbol = :AlgorithmGuidanceError, rendered = "SpaceAGORA.AlgorithmGuidanceError"),
+        (owner = :SpaceAGORA, symbol = :algorithm_run_report, rendered = "SpaceAGORA.algorithm_run_report"),
+        (owner = :SpaceAGORA, symbol = :gnc_stream_words, rendered = "SpaceAGORA.gnc_stream_words"),
+        (owner = :SpaceAGORA, symbol = :AlgorithmRuntime, rendered = "SpaceAGORA.AlgorithmRuntime"),
+        (owner = :SpaceAGORA, symbol = :run_algorithm_request!, rendered = "SpaceAGORA.run_algorithm_request!"),
+        (owner = :SpaceAGORA, symbol = :algorithm_runtime, rendered = "SpaceAGORA.algorithm_runtime"),
+        (owner = :SpaceAGORA, symbol = :bound_algorithm, rendered = "SpaceAGORA.bound_algorithm"),
+        (owner = :SpaceAGORA, symbol = :bound_family, rendered = "SpaceAGORA.bound_family"),
+        (owner = :SpaceAGORA, symbol = :bound_link, rendered = "SpaceAGORA.bound_link"),
+        (owner = :SpaceAGORA, symbol = :build_algorithm_request, rendered = "SpaceAGORA.build_algorithm_request"),
+        (owner = :SpaceAGORA, symbol = :trusted_queries, rendered = "SpaceAGORA.trusted_queries"),
+        (owner = :SpaceAGORA, symbol = :fail_algorithm_request!, rendered = "SpaceAGORA.fail_algorithm_request!"),
+        (owner = :SpaceAGORA, symbol = :algorithm_result_type, rendered = "SpaceAGORA.algorithm_result_type"),
+        (owner = :SpaceAGORA, symbol = :is_revision_request, rendered = "SpaceAGORA.is_revision_request"),
+        (owner = :SpaceAGORA, symbol = :proposed_product, rendered = "SpaceAGORA.proposed_product"),
+        (owner = :SpaceAGORA, symbol = :installed_record, rendered = "SpaceAGORA.installed_record"),
+        (owner = :SpaceAGORA, symbol = :rejected_record, rendered = "SpaceAGORA.rejected_record"),
+    ]),
+    (title = "GNC runtime", items = [
+        (owner = :SpaceAGORA, symbol = :tick_schedule, rendered = "SpaceAGORA.tick_schedule"),
+        (owner = :SpaceAGORA, symbol = :gnc_callbacks, rendered = "SpaceAGORA.gnc_callbacks"),
+        (owner = :SpaceAGORA, symbol = :register_tstops!, rendered = "SpaceAGORA.register_tstops!"),
+        (owner = :SpaceAGORA, symbol = :gnc_clock_started!, rendered = "SpaceAGORA.gnc_clock_started!"),
+        (owner = :SpaceAGORA, symbol = :gnc_period_s, rendered = "SpaceAGORA.gnc_period_s"),
+        (owner = :SpaceAGORA, symbol = :Produces, rendered = "SpaceAGORA.Produces"),
+        (owner = :SpaceAGORA, symbol = :Consumes, rendered = "SpaceAGORA.Consumes"),
+        (owner = :SpaceAGORA, symbol = :gnc_links, rendered = "SpaceAGORA.gnc_links"),
+        (owner = :SpaceAGORA, symbol = :link_cardinality, rendered = "SpaceAGORA.link_cardinality"),
+        (owner = :SpaceAGORA, symbol = :check_link, rendered = "SpaceAGORA.check_link"),
+        (owner = :SpaceAGORA, symbol = :link_initialize!, rendered = "SpaceAGORA.link_initialize!"),
+        (owner = :SpaceAGORA, symbol = :SpacecraftScope, rendered = "SpaceAGORA.SpacecraftScope"),
+        (owner = :SpaceAGORA, symbol = :AllSpacecraft, rendered = "SpaceAGORA.AllSpacecraft"),
+        (owner = :SpaceAGORA, symbol = :BoundSpacecraft, rendered = "SpaceAGORA.BoundSpacecraft"),
+        (owner = :SpaceAGORA, symbol = :CoupledSpacecraft, rendered = "SpaceAGORA.CoupledSpacecraft"),
+        (owner = :SpaceAGORA, symbol = :spacecraft_scope, rendered = "SpaceAGORA.spacecraft_scope"),
+        (owner = :SpaceAGORA, symbol = :skip_inactive, rendered = "SpaceAGORA.skip_inactive"),
+        (owner = :SpaceAGORA, symbol = :release_command!, rendered = "SpaceAGORA.release_command!"),
+        (owner = :SpaceAGORA, symbol = :held_command, rendered = "SpaceAGORA.held_command"),
+        (owner = :SpaceAGORA, symbol = :held_command_time, rendered = "SpaceAGORA.held_command_time"),
+        (owner = :SpaceAGORA, symbol = :preflight_guidance, rendered = "SpaceAGORA.preflight_guidance"),
+        (owner = :SpaceAGORA, symbol = :preflight_control, rendered = "SpaceAGORA.preflight_control"),
+        (owner = :SpaceAGORA, symbol = :initialize_navigation!, rendered = "SpaceAGORA.initialize_navigation!"),
+        (owner = :SpaceAGORA, symbol = :initialize_guidance!, rendered = "SpaceAGORA.initialize_guidance!"),
+        (owner = :SpaceAGORA, symbol = :initialize_control!, rendered = "SpaceAGORA.initialize_control!"),
+        (owner = :SpaceAGORA, symbol = :checkpoint_state, rendered = "SpaceAGORA.checkpoint_state"),
+        (owner = :SpaceAGORA, symbol = :restore_checkpoint_state!, rendered = "SpaceAGORA.restore_checkpoint_state!"),
+        (owner = :SpaceAGORA, symbol = :requires_atmosphere_events, rendered = "SpaceAGORA.requires_atmosphere_events"),
+        (owner = :SpaceAGORA, symbol = :atmosphere_transition!, rendered = "SpaceAGORA.atmosphere_transition!"),
+        (owner = :SpaceAGORA, symbol = :before_reference_control!, rendered = "SpaceAGORA.before_reference_control!"),
     ]),
     (
         title = "Simulation Setup",
@@ -56,11 +231,26 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :SaveField, rendered = "SpaceAGORA.SaveField"),
             (owner = :SpaceAGORA, symbol = :default_save_fields, rendered = "SpaceAGORA.default_save_fields"),
             (owner = :SpaceAGORA, symbol = :MaxwellianHeat, rendered = "SpaceAGORA.MaxwellianHeat"),
+            (owner = :SpaceAGORA, symbol = :AerodynamicCoefficientfM, rendered = "SpaceAGORA.AerodynamicCoefficientfM"),
             (owner = :SpaceAGORA, symbol = :InverseSquaredGravityModel, rendered = "SpaceAGORA.InverseSquaredGravityModel"),
             (owner = :SpaceAGORA, symbol = :InverseSquaredJ2GravityModel, rendered = "SpaceAGORA.InverseSquaredJ2GravityModel"),
             (owner = :SpaceAGORA, symbol = :NBodyGravityModel, rendered = "SpaceAGORA.NBodyGravityModel"),
+            (owner = :SpaceAGORA, symbol = :GravitationalHarmonicsModel, rendered = "SpaceAGORA.GravitationalHarmonicsModel"),
             (owner = :SpaceAGORA, symbol = :make_example_config, rendered = "SpaceAGORA.make_example_config"),
             (owner = :SpaceAGORA, symbol = :make_three_body_spacecraft, rendered = "SpaceAGORA.make_three_body_spacecraft")
+        ]
+    ),
+    (
+        title = "Constellations",
+        items = [
+            (owner = :SpaceAGORA, symbol = :OrbitalPlane, rendered = "SpaceAGORA.OrbitalPlane"),
+            (owner = :SpaceAGORA, symbol = :build_constellation, rendered = "SpaceAGORA.build_constellation"),
+            (owner = :SpaceAGORA, symbol = :walker_planes, rendered = "SpaceAGORA.walker_planes"),
+            (owner = :SpaceAGORA, symbol = :walker_constellation, rendered = "SpaceAGORA.walker_constellation"),
+            (owner = :SpaceAGORA, symbol = :ConstellationSlot, rendered = "SpaceAGORA.ConstellationSlot"),
+            (owner = :SpaceAGORA, symbol = :scoped, rendered = "SpaceAGORA.scoped"),
+            (owner = :SpaceAGORA, symbol = :ScopedEffector, rendered = "SpaceAGORA.ScopedEffector"),
+            (owner = :SpaceAGORA, symbol = :SpacecraftSelection, rendered = "SpaceAGORA.SpacecraftSelection"),
         ]
     ),
     (
@@ -68,6 +258,17 @@ const PUBLIC_API_SECTIONS = [
         items = [
             (owner = :SpaceAGORA, symbol = :run_simulation, rendered = "SpaceAGORA.run_simulation"),
             (owner = :SpaceAGORA, symbol = :SimulationResults, rendered = "SpaceAGORA.SimulationResults"),
+            (owner = :SpaceAGORA, symbol = :run_table, rendered = "SpaceAGORA.run_table"),
+            (owner = :SpaceAGORA, symbol = :long_table, rendered = "SpaceAGORA.long_table"),
+            (owner = :SpaceAGORA, symbol = :MissionPlan, rendered = "SpaceAGORA.MissionPlan"),
+            (owner = :SpaceAGORA, symbol = :MissionPhase, rendered = "SpaceAGORA.MissionPhase"),
+            (owner = :SpaceAGORA, symbol = :MissionSegment, rendered = "SpaceAGORA.MissionSegment"),
+            (owner = :SpaceAGORA, symbol = :MissionDeadline, rendered = "SpaceAGORA.MissionDeadline"),
+            (owner = :SpaceAGORA, symbol = :MissionDuration, rendered = "SpaceAGORA.MissionDuration"),
+            (owner = :SpaceAGORA, symbol = :MissionCondition, rendered = "SpaceAGORA.MissionCondition"),
+            (owner = :SpaceAGORA, symbol = :MissionEvent, rendered = "SpaceAGORA.MissionEvent"),
+            (owner = :SpaceAGORA, symbol = :MissionRun, rendered = "SpaceAGORA.MissionRun"),
+            (owner = :SpaceAGORA, symbol = :run_mission, rendered = "SpaceAGORA.run_mission"),
             (owner = :SpaceAGORA, symbol = :StateAnchor, rendered = "SpaceAGORA.StateAnchor"),
             (owner = :SpaceAGORA, symbol = :get_state_anchor_callback, rendered = "SpaceAGORA.get_state_anchor_callback"),
             (owner = :SpaceAGORA, symbol = :prewarm_nbody_ephemeris_cache, rendered = "SpaceAGORA.prewarm_nbody_ephemeris_cache"),
@@ -76,7 +277,20 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SimulationCampaigns, symbol = :MonteCarloSampleResult, rendered = "SpaceAGORA.MonteCarloSampleResult"),
             (owner = :SimulationCampaigns, symbol = :MonteCarloResult, rendered = "SpaceAGORA.MonteCarloResult"),
             (owner = :SimulationCampaigns, symbol = :run_monte_carlo, rendered = "SpaceAGORA.run_monte_carlo"),
-            (owner = :SimulationCampaigns, symbol = :run_constellation_ensemble, rendered = "SpaceAGORA.run_constellation_ensemble")
+            (owner = :SimulationCampaigns, symbol = :run_constellation_ensemble, rendered = "SpaceAGORA.run_constellation_ensemble"),
+            (owner = :SimulationCampaigns, symbol = :ConstellationEnsembleResult, rendered = "SpaceAGORA.ConstellationEnsembleResult"),
+            (owner = :SimulationCampaigns, symbol = :read_constellation_results, rendered = "SpaceAGORA.read_constellation_results")
+        ]
+    ),
+    (
+        title = "Optional Adapter Services",
+        items = [
+            (owner = :SpaceAGORA, symbol = :visualizer_available, rendered = "SpaceAGORA.visualizer_available"),
+            (owner = :SpaceAGORA, symbol = :VisualizerUnavailableError, rendered = "SpaceAGORA.VisualizerUnavailableError"),
+            (owner = :SpaceAGORA, symbol = :PlotlyJSUnavailableError, rendered = "SpaceAGORA.PlotlyJSUnavailableError"),
+            (owner = :SpaceAGORA, symbol = :export_viewer_payload, rendered = "SpaceAGORA.export_viewer_payload"),
+            (owner = :SpaceAGORA, symbol = :ExternalPropagationServices, rendered = "SpaceAGORA.ExternalPropagationServices"),
+            (owner = :SpaceAGORA, symbol = :EDGServices, rendered = "SpaceAGORA.EDGServices")
         ]
     ),
     (
@@ -182,6 +396,7 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :AbstractThermalModel, rendered = "SpaceAGORA.AbstractThermalModel"),
             (owner = :SpaceAGORA, symbol = :AbstractThrusterModel, rendered = "SpaceAGORA.AbstractThrusterModel"),
             (owner = :SpaceAGORA, symbol = :AbstractGuidanceModel, rendered = "SpaceAGORA.AbstractGuidanceModel"),
+            (owner = :SpaceAGORA, symbol = :AbstractNavigationModel, rendered = "SpaceAGORA.AbstractNavigationModel"),
             (owner = :SpaceAGORA, symbol = :StateSample, rendered = "SpaceAGORA.StateSample"),
             (owner = :SpaceAGORA, symbol = :PlanetFrameSample, rendered = "SpaceAGORA.PlanetFrameSample"),
             (owner = :SpaceAGORA, symbol = :AtmosphereSample, rendered = "SpaceAGORA.AtmosphereSample"),
@@ -194,9 +409,9 @@ const PUBLIC_API_SECTIONS = [
     (
         title = "Model Extension Hooks",
         items = [
-            (owner = :SpaceAGORA, symbol = :calcForceTorque, rendered = "SpaceAGORA.calcForceTorque"),
             (owner = :SpaceAGORA, symbol = :wrench, rendered = "SpaceAGORA.wrench"),
             (owner = :SpaceAGORA, symbol = :environment_requirements, rendered = "SpaceAGORA.environment_requirements"),
+            (owner = :SpaceAGORA, symbol = :is_gravitational, rendered = "SpaceAGORA.is_gravitational"),
             (owner = :SpaceAGORA, symbol = :solver_partition, rendered = "SpaceAGORA.solver_partition"),
             (owner = :SpaceAGORA, symbol = :gravity_backbone_structure, rendered = "SpaceAGORA.gravity_backbone_structure"),
             (owner = :SpaceAGORA, symbol = :gravity_backbone_acceleration_ii, rendered = "SpaceAGORA.gravity_backbone_acceleration_ii"),
@@ -205,16 +420,110 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :getDensity, rendered = "SpaceAGORA.getDensity"),
             (owner = :SpaceAGORA, symbol = :getDensityBatch!, rendered = "SpaceAGORA.getDensityBatch!"),
             (owner = :SpaceAGORA, symbol = :with_density_model_epoch, rendered = "SpaceAGORA.with_density_model_epoch"),
-            (owner = :SpaceAGORA, symbol = :calcControlEffect!, rendered = "SpaceAGORA.calcControlEffect!"),
-            (owner = :SpaceAGORA, symbol = :calcControlForceTorque, rendered = "SpaceAGORA.calcControlForceTorque"),
-            (owner = :SpaceAGORA, symbol = :calcControlMassFlowRate, rendered = "SpaceAGORA.calcControlMassFlowRate"),
+            (owner = :SpaceAGORA, symbol = :ephemerides_frame_lpi, rendered = "SpaceAGORA.ephemerides_frame_lpi"),
+            (owner = :SpaceAGORA, symbol = :ephemerides_sun_ii, rendered = "SpaceAGORA.ephemerides_sun_ii"),
+            (owner = :SpaceAGORA, symbol = :ephemerides_epoch_seconds, rendered = "SpaceAGORA.ephemerides_epoch_seconds"),
+            (owner = :SpaceAGORA, symbol = :ephemerides_requires_spice, rendered = "SpaceAGORA.ephemerides_requires_spice"),
+            (owner = :SpaceAGORA, symbol = :ephemerides_cache_key, rendered = "SpaceAGORA.ephemerides_cache_key"),
+            (owner = :SpaceAGORA, symbol = :update_control!, rendered = "SpaceAGORA.update_control!"),
+            (owner = :SpaceAGORA, symbol = :control_wrench, rendered = "SpaceAGORA.control_wrench"),
+            (owner = :SpaceAGORA, symbol = :control_propellant_rate, rendered = "SpaceAGORA.control_propellant_rate"),
+            (owner = :SpaceAGORA, symbol = :control_wheel_torque, rendered = "SpaceAGORA.control_wheel_torque"),
             (owner = :SpaceAGORA, symbol = :control_thruster_levels, rendered = "SpaceAGORA.control_thruster_levels"),
+            (owner = :SpaceAGORA, symbol = :touchdown_spec, rendered = "SpaceAGORA.touchdown_spec"),
+            (owner = :SpaceAGORA, symbol = :update_guidance!, rendered = "SpaceAGORA.update_guidance!"),
+            (owner = :SpaceAGORA, symbol = :update_navigation!, rendered = "SpaceAGORA.update_navigation!"),
+            (owner = :SpaceAGORA, symbol = :getHeatRate, rendered = "SpaceAGORA.getHeatRate"),
             (owner = :SpaceAGORA, symbol = :bind_spacecraft, rendered = "SpaceAGORA.bind_spacecraft")
+        ]
+    ),
+    (
+        title = "Actuators",
+        items = [
+            (owner = :SpaceAGORA, symbol = :AbstractActuator, rendered = "SpaceAGORA.AbstractActuator"),
+            (owner = :SpaceAGORA, symbol = :Thruster, rendered = "SpaceAGORA.Thruster"),
+            (owner = :SpaceAGORA, symbol = :ReactionWheel, rendered = "SpaceAGORA.ReactionWheel"),
+            (owner = :SpaceAGORA, symbol = :Magnetorquer, rendered = "SpaceAGORA.Magnetorquer"),
+            (owner = :SpaceAGORA, symbol = :LaserTerminal, rendered = "SpaceAGORA.LaserTerminal"),
+        (owner = :SpaceAGORA, symbol = :PowerReceiver, rendered = "SpaceAGORA.PowerReceiver"),
+        (owner = :SpaceAGORA, symbol = :RadioTerminal, rendered = "SpaceAGORA.RadioTerminal"),
+            (owner = :SpaceAGORA, symbol = :PanelHinge, rendered = "SpaceAGORA.PanelHinge"),
+            (owner = :SpaceAGORA, symbol = :ThrusterGimbal, rendered = "SpaceAGORA.ThrusterGimbal"),
+            (owner = :SpaceAGORA, symbol = :thrust_direction, rendered = "SpaceAGORA.thrust_direction"),
+            (owner = :SpaceAGORA, symbol = :ControlMomentGyro, rendered = "SpaceAGORA.ControlMomentGyro"),
+            (owner = :SpaceAGORA, symbol = :cmg_momentum, rendered = "SpaceAGORA.cmg_momentum"),
+            (owner = :SpaceAGORA, symbol = :cmg_torque_axis, rendered = "SpaceAGORA.cmg_torque_axis"),
+            (owner = :SpaceAGORA, symbol = :cmg_angle_saturate, rendered = "SpaceAGORA.cmg_angle_saturate"),
+            (owner = :SpaceAGORA, symbol = :CMGInnerGimbal, rendered = "SpaceAGORA.CMGInnerGimbal"),
+            (owner = :SpaceAGORA, symbol = :cmg_torque_axes, rendered = "SpaceAGORA.cmg_torque_axes"),
+            (owner = :SpaceAGORA, symbol = :cmg_steering, rendered = "SpaceAGORA.cmg_steering"),
+            (owner = :SpaceAGORA, symbol = :ActuatorContext, rendered = "SpaceAGORA.ActuatorContext"),
+            (owner = :SpaceAGORA, symbol = :actuator_wrench, rendered = "SpaceAGORA.actuator_wrench"),
+            (owner = :SpaceAGORA, symbol = :actuator_limits, rendered = "SpaceAGORA.actuator_limits"),
+            (owner = :SpaceAGORA, symbol = :actuator_saturate, rendered = "SpaceAGORA.actuator_saturate"),
+            (owner = :SpaceAGORA, symbol = :actuator_consumption, rendered = "SpaceAGORA.actuator_consumption"),
+            (owner = :SpaceAGORA, symbol = :actuator_fraction, rendered = "SpaceAGORA.actuator_fraction"),
+            (owner = :SpaceAGORA, symbol = :actuator_unit_wrench, rendered = "SpaceAGORA.actuator_unit_wrench"),
+            (owner = :SpaceAGORA, symbol = :actuation_mode, rendered = "SpaceAGORA.actuation_mode"),
+            (owner = :SpaceAGORA, symbol = :actuator_levels, rendered = "SpaceAGORA.actuator_levels"),
+            (owner = :SpaceAGORA, symbol = :add_actuator!, rendered = "SpaceAGORA.add_actuator!"),
+            (owner = :SpaceAGORA, symbol = :mounted_actuators, rendered = "SpaceAGORA.mounted_actuators"),
+            (owner = :SpaceAGORA, symbol = :actuator_context, rendered = "SpaceAGORA.actuator_context"),
+            (owner = :SpaceAGORA, symbol = :allocation_matrix, rendered = "SpaceAGORA.allocation_matrix"),
+            (owner = :SpaceAGORA, symbol = :mounted_wrench, rendered = "SpaceAGORA.mounted_wrench"),
+            (owner = :SpaceAGORA, symbol = :allocate_actuators, rendered = "SpaceAGORA.allocate_actuators"),
+            (owner = :SpaceAGORA, symbol = :six_axis_thrusters, rendered = "SpaceAGORA.six_axis_thrusters"),
+            (owner = :SpaceAGORA, symbol = :propellant_mass_rate, rendered = "SpaceAGORA.propellant_mass_rate"),
+            (owner = :SpaceAGORA, symbol = :ActuatorRequirements, rendered = "SpaceAGORA.ActuatorRequirements"),
+            (owner = :SpaceAGORA, symbol = :actuator_requirements, rendered = "SpaceAGORA.actuator_requirements"),
+            (owner = :SpaceAGORA, symbol = :applied_actuator_levels, rendered = "SpaceAGORA.applied_actuator_levels"),
+            (owner = :SpaceAGORA, symbol = :mounted_power, rendered = "SpaceAGORA.mounted_power"),
+            (owner = :SpaceAGORA, symbol = :SolarArray, rendered = "SpaceAGORA.SolarArray"),
+            (owner = :SpaceAGORA, symbol = :Battery, rendered = "SpaceAGORA.Battery"),
+            (owner = :SpaceAGORA, symbol = :PowerLoad, rendered = "SpaceAGORA.PowerLoad"),
+            (owner = :SpaceAGORA, symbol = :add_power!, rendered = "SpaceAGORA.add_power!"),
+            (owner = :SpaceAGORA, symbol = :ActuatorFault, rendered = "SpaceAGORA.ActuatorFault"),
+            (owner = :SpaceAGORA, symbol = :add_fault!, rendered = "SpaceAGORA.add_fault!")
+        ]
+    ),
+    (
+        title = "Sensors",
+        items = [
+            (owner = :SpaceAGORA, symbol = :AbstractSensor, rendered = "SpaceAGORA.AbstractSensor"),
+            (owner = :SpaceAGORA, symbol = :RateGyro, rendered = "SpaceAGORA.RateGyro"),
+            (owner = :SpaceAGORA, symbol = :StarTracker, rendered = "SpaceAGORA.StarTracker"),
+            (owner = :SpaceAGORA, symbol = :Magnetometer, rendered = "SpaceAGORA.Magnetometer"),
+            (owner = :SpaceAGORA, symbol = :GNSSReceiver, rendered = "SpaceAGORA.GNSSReceiver"),
+            (owner = :SpaceAGORA, symbol = :SunSensor, rendered = "SpaceAGORA.SunSensor"),
+            (owner = :SpaceAGORA, symbol = :Accelerometer, rendered = "SpaceAGORA.Accelerometer"),
+            (owner = :SpaceAGORA, symbol = :SensorTruth, rendered = "SpaceAGORA.SensorTruth"),
+            (owner = :SpaceAGORA, symbol = :sensor_measure, rendered = "SpaceAGORA.sensor_measure"),
+            (owner = :SpaceAGORA, symbol = :sensor_dimension, rendered = "SpaceAGORA.sensor_dimension"),
+            (owner = :SpaceAGORA, symbol = :sensor_requirements, rendered = "SpaceAGORA.sensor_requirements"),
+            (owner = :SpaceAGORA, symbol = :sensor_period_s, rendered = "SpaceAGORA.sensor_period_s"),
+            (owner = :SpaceAGORA, symbol = :initialize_sensor!, rendered = "SpaceAGORA.initialize_sensor!"),
+            (owner = :SpaceAGORA, symbol = :sensor_needs_specific_force, rendered = "SpaceAGORA.sensor_needs_specific_force"),
+            (owner = :SpaceAGORA, symbol = :add_sensor!, rendered = "SpaceAGORA.add_sensor!"),
+            (owner = :SpaceAGORA, symbol = :mounted_sensors, rendered = "SpaceAGORA.mounted_sensors"),
+            (owner = :SpaceAGORA, symbol = :sensor_measurement, rendered = "SpaceAGORA.sensor_measurement"),
+            (owner = :SpaceAGORA, symbol = :sensor_measurement_time, rendered = "SpaceAGORA.sensor_measurement_time")
         ]
     ),
     (
         title = "Robotics and Planning",
         items = [
+            (owner = :SpaceAGORA, symbol = :RobotArmBasePose, rendered = "SpaceAGORA.RobotArmBasePose"),
+            (owner = :SpaceAGORA, symbol = :RobotArmLink, rendered = "SpaceAGORA.RobotArmLink"),
+            (owner = :SpaceAGORA, symbol = :RobotArmJoint, rendered = "SpaceAGORA.RobotArmJoint"),
+            (owner = :SpaceAGORA, symbol = :RobotArmModel, rendered = "SpaceAGORA.RobotArmModel"),
+            (owner = :SpaceAGORA, symbol = :RobotArmPose, rendered = "SpaceAGORA.RobotArmPose"),
+            (owner = :SpaceAGORA, symbol = :RobotArmState, rendered = "SpaceAGORA.RobotArmState"),
+            (owner = :SpaceAGORA, symbol = :default_robot_arm_model, rendered = "SpaceAGORA.default_robot_arm_model"),
+            (owner = :SpaceAGORA, symbol = :robot_arm_fk, rendered = "SpaceAGORA.robot_arm_fk"),
+            (owner = :SpaceAGORA, symbol = :robot_arm_fk_state, rendered = "SpaceAGORA.robot_arm_fk_state"),
+            (owner = :SpaceAGORA, symbol = :robot_arm_end_effector_pose, rendered = "SpaceAGORA.robot_arm_end_effector_pose"),
+            (owner = :SpaceAGORA, symbol = :robot_arm_ik, rendered = "SpaceAGORA.robot_arm_ik"),
+            (owner = :SpaceAGORA, symbol = :robot_arm_total_reach, rendered = "SpaceAGORA.robot_arm_total_reach"),
             (owner = :SpaceAGORA, symbol = :ClothArmBasePose, rendered = "SpaceAGORA.ClothArmBasePose"),
             (owner = :SpaceAGORA, symbol = :ClothArmLink, rendered = "SpaceAGORA.ClothArmLink"),
             (owner = :SpaceAGORA, symbol = :ClothArmJoint, rendered = "SpaceAGORA.ClothArmJoint"),
@@ -242,7 +551,7 @@ const PUBLIC_API_SECTIONS = [
         ]
     ),
     (
-        title = "Compliant Multibody and Cloth Coupling",
+        title = "Compliant Multibody Dynamics",
         items = [
             (owner = :SpaceAGORA, symbol = :CompliantBody, rendered = "SpaceAGORA.CompliantBody"),
             (owner = :SpaceAGORA, symbol = :CompliantJoint, rendered = "SpaceAGORA.CompliantJoint"),
@@ -253,6 +562,7 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :CompliantTopologyBuild, rendered = "SpaceAGORA.CompliantTopologyBuild"),
             (owner = :SpaceAGORA, symbol = :CompliantJointActuator, rendered = "SpaceAGORA.CompliantJointActuator"),
             (owner = :SpaceAGORA, symbol = :CompliantJointLoad, rendered = "SpaceAGORA.CompliantJointLoad"),
+            (owner = :SpaceAGORA, symbol = :CompliantAttachment, rendered = "SpaceAGORA.CompliantAttachment"),
             (owner = :SpaceAGORA, symbol = :rectangular_prism_inertia, rendered = "SpaceAGORA.rectangular_prism_inertia"),
             (owner = :SpaceAGORA, symbol = :thin_panel_inertia, rendered = "SpaceAGORA.thin_panel_inertia"),
             (owner = :SpaceAGORA, symbol = :build_compliant_topology, rendered = "SpaceAGORA.build_compliant_topology"),
@@ -264,6 +574,20 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :step_compliant_multibody_rk4, rendered = "SpaceAGORA.step_compliant_multibody_rk4"),
             (owner = :SpaceAGORA, symbol = :step_compliant_multibody_implicit_midpoint, rendered = "SpaceAGORA.step_compliant_multibody_implicit_midpoint"),
             (owner = :SpaceAGORA, symbol = :simulate_compliant_multibody, rendered = "SpaceAGORA.simulate_compliant_multibody"),
+            (owner = :SpaceAGORA, symbol = :CompliantMultibody, rendered = "SpaceAGORA.CompliantMultibody"),
+            (owner = :SpaceAGORA, symbol = :CompliantRobotArmDynamics, rendered = "SpaceAGORA.CompliantRobotArmDynamics"),
+            (owner = :SpaceAGORA, symbol = :CompliantRobotArmReferenceState, rendered = "SpaceAGORA.CompliantRobotArmReferenceState"),
+            (owner = :SpaceAGORA, symbol = :CompliantRobotArmSimulation, rendered = "SpaceAGORA.CompliantRobotArmSimulation"),
+            (owner = :SpaceAGORA, symbol = :compliant_robot_arm_reference_state, rendered = "SpaceAGORA.compliant_robot_arm_reference_state"),
+            (owner = :SpaceAGORA, symbol = :compliant_robot_arm_multibody, rendered = "SpaceAGORA.compliant_robot_arm_multibody"),
+            (owner = :SpaceAGORA, symbol = :compliant_robot_arm_initial_state, rendered = "SpaceAGORA.compliant_robot_arm_initial_state"),
+            (owner = :SpaceAGORA, symbol = :compliant_robot_arm_rest_quaternions, rendered = "SpaceAGORA.compliant_robot_arm_rest_quaternions"),
+            (owner = :SpaceAGORA, symbol = :compliant_robot_arm_end_effector, rendered = "SpaceAGORA.compliant_robot_arm_end_effector"),
+            (owner = :SpaceAGORA, symbol = :compliant_robot_arm_actuators, rendered = "SpaceAGORA.compliant_robot_arm_actuators"),
+            (owner = :SpaceAGORA, symbol = :coupled_compliant_robot_arm_state_shape, rendered = "SpaceAGORA.coupled_compliant_robot_arm_state_shape"),
+            (owner = :SpaceAGORA, symbol = :initialize_coupled_compliant_robot_arm_state!, rendered = "SpaceAGORA.initialize_coupled_compliant_robot_arm_state!"),
+            (owner = :SpaceAGORA, symbol = :assign_coupled_compliant_robot_arm_rhs!, rendered = "SpaceAGORA.assign_coupled_compliant_robot_arm_rhs!"),
+            (owner = :SpaceAGORA, symbol = :simulate_compliant_robot_arm_plan, rendered = "SpaceAGORA.simulate_compliant_robot_arm_plan"),
             (owner = :SpaceAGORA, symbol = :ClothRobotArmSimulation, rendered = "SpaceAGORA.ClothRobotArmSimulation"),
             (owner = :SpaceAGORA, symbol = :cloth_robot_arm_multibody, rendered = "SpaceAGORA.cloth_robot_arm_multibody"),
             (owner = :SpaceAGORA, symbol = :cloth_robot_arm_initial_state, rendered = "SpaceAGORA.cloth_robot_arm_initial_state"),
@@ -302,7 +626,99 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :station_cad_path, rendered = "SpaceAGORA.station_cad_path"),
             (owner = :SpaceAGORA, symbol = :load_rpo_station_pointcloud, rendered = "SpaceAGORA.load_rpo_station_pointcloud"),
             (owner = :SpaceAGORA, symbol = :load_rpo_station_cad_triangles, rendered = "SpaceAGORA.load_rpo_station_cad_triangles"),
-            (owner = :SpaceAGORA, symbol = :load_rpo_station_cad_pointcloud, rendered = "SpaceAGORA.load_rpo_station_cad_pointcloud")
+            (owner = :SpaceAGORA, symbol = :load_rpo_station_cad_pointcloud, rendered = "SpaceAGORA.load_rpo_station_cad_pointcloud"),
+            (owner = :SpaceAGORA, symbol = :RPOStationGeometry, rendered = "SpaceAGORA.RPOStationGeometry"),
+            (owner = :SpaceAGORA, symbol = :RPOCubeSatGeometry, rendered = "SpaceAGORA.RPOCubeSatGeometry")
+        ]
+    ),
+    (
+        title = "Aerobraking MPC and KS Dynamics",
+        items = [
+            (owner = :SpaceAGORA, symbol = :AerobrakingMPCMode, rendered = "SpaceAGORA.AerobrakingMPCMode"),
+            (owner = :SpaceAGORA, symbol = :TargetEnergyMode, rendered = "SpaceAGORA.TargetEnergyMode"),
+            (owner = :SpaceAGORA, symbol = :MaxEnergyDepletionMode, rendered = "SpaceAGORA.MaxEnergyDepletionMode"),
+            (owner = :SpaceAGORA, symbol = :AerobrakingMPCParams, rendered = "SpaceAGORA.AerobrakingMPCParams"),
+            (owner = :SpaceAGORA, symbol = :AerobrakingMPCConfig, rendered = "SpaceAGORA.AerobrakingMPCConfig"),
+            (owner = :SpaceAGORA, symbol = :AerobrakingMPCProblem, rendered = "SpaceAGORA.AerobrakingMPCProblem"),
+            (owner = :SpaceAGORA, symbol = :AerobrakingMPCSolution, rendered = "SpaceAGORA.AerobrakingMPCSolution"),
+            (owner = :SpaceAGORA, symbol = :AerobrakingMPCState, rendered = "SpaceAGORA.AerobrakingMPCState"),
+            (owner = :SpaceAGORA, symbol = :AerobrakingMPCConstraintSet, rendered = "SpaceAGORA.AerobrakingMPCConstraintSet"),
+            (owner = :SpaceAGORA, symbol = :AerobrakingMPCReferenceConfig, rendered = "SpaceAGORA.AerobrakingMPCReferenceConfig"),
+            (owner = :SpaceAGORA, symbol = :AerobrakingMPCControlModel, rendered = "SpaceAGORA.AerobrakingMPCControlModel"),
+            (owner = :SpaceAGORA, symbol = :AerobrakingMPCCampaignState, rendered = "SpaceAGORA.AerobrakingMPCCampaignState"),
+            (owner = :SpaceAGORA, symbol = :AerobrakingMPCCampaignControlModel, rendered = "SpaceAGORA.AerobrakingMPCCampaignControlModel"),
+            (owner = :SpaceAGORA, symbol = :mpc_constraints, rendered = "SpaceAGORA.mpc_constraints"),
+            (owner = :SpaceAGORA, symbol = :constraint_active, rendered = "SpaceAGORA.constraint_active"),
+            (owner = :SpaceAGORA, symbol = :constraint_names, rendered = "SpaceAGORA.constraint_names"),
+            (owner = :SpaceAGORA, symbol = :apply_constraints, rendered = "SpaceAGORA.apply_constraints"),
+            (owner = :SpaceAGORA, symbol = :mpc_params_from_spaceagora, rendered = "SpaceAGORA.mpc_params_from_spaceagora"),
+            (owner = :SpaceAGORA, symbol = :mpc_config_from_spaceagora, rendered = "SpaceAGORA.mpc_config_from_spaceagora"),
+            (owner = :SpaceAGORA, symbol = :spacecraft_mass_kg, rendered = "SpaceAGORA.spacecraft_mass_kg"),
+            (owner = :SpaceAGORA, symbol = :density_function_from_spaceagora, rendered = "SpaceAGORA.density_function_from_spaceagora"),
+            (owner = :SpaceAGORA, symbol = :build_reference_drag_pass, rendered = "SpaceAGORA.build_reference_drag_pass"),
+            (owner = :SpaceAGORA, symbol = :build_mpc_problem, rendered = "SpaceAGORA.build_mpc_problem"),
+            (owner = :SpaceAGORA, symbol = :solve_mpc_qp, rendered = "SpaceAGORA.solve_mpc_qp"),
+            (owner = :SpaceAGORA, symbol = :alpha_from_commanded_area, rendered = "SpaceAGORA.alpha_from_commanded_area"),
+            (owner = :SpaceAGORA, symbol = :commanded_area_from_alpha, rendered = "SpaceAGORA.commanded_area_from_alpha"),
+            (owner = :SpaceAGORA, symbol = :interpolate_mpc_history, rendered = "SpaceAGORA.interpolate_mpc_history"),
+            (owner = :SpaceAGORA, symbol = :evaluate_cartesian_mpc_outputs, rendered = "SpaceAGORA.evaluate_cartesian_mpc_outputs"),
+            (owner = :SpaceAGORA, symbol = :evaluate_ks_mpc_outputs, rendered = "SpaceAGORA.evaluate_ks_mpc_outputs"),
+            (owner = :SpaceAGORA, symbol = :cumulative_mpc_heat_load, rendered = "SpaceAGORA.cumulative_mpc_heat_load"),
+            (owner = :SpaceAGORA, symbol = :propagate_ks_mpc_plan, rendered = "SpaceAGORA.propagate_ks_mpc_plan"),
+            (owner = :SpaceAGORA, symbol = :mpc_control_save_fields, rendered = "SpaceAGORA.mpc_control_save_fields"),
+            (owner = :SpaceAGORA, symbol = :mpc_campaign_save_fields, rendered = "SpaceAGORA.mpc_campaign_save_fields"),
+            (owner = :SpaceAGORA, symbol = :AerodynamicCommandedAreaDragModel, rendered = "SpaceAGORA.AerodynamicCommandedAreaDragModel"),
+            (owner = :SpaceAGORA, symbol = :PolynomialFitAtmosphereModel, rendered = "SpaceAGORA.PolynomialFitAtmosphereModel"),
+            (owner = :SpaceAGORA, symbol = :density_altitude_derivative, rendered = "SpaceAGORA.density_altitude_derivative"),
+            (owner = :SpaceAGORA, symbol = :orbital_elements_to_cartesian, rendered = "SpaceAGORA.orbital_elements_to_cartesian"),
+            (owner = :SpaceAGORA, symbol = :KSPropagationParams, rendered = "SpaceAGORA.KSPropagationParams"),
+            (owner = :SpaceAGORA, symbol = :cartesian_to_ks_state, rendered = "SpaceAGORA.cartesian_to_ks_state"),
+            (owner = :SpaceAGORA, symbol = :ks_state_to_cartesian, rendered = "SpaceAGORA.ks_state_to_cartesian"),
+            (owner = :SpaceAGORA, symbol = :nonlinear_ks_rhs, rendered = "SpaceAGORA.nonlinear_ks_rhs"),
+            (owner = :SpaceAGORA, symbol = :ks_rk4_step, rendered = "SpaceAGORA.ks_rk4_step"),
+            (owner = :SpaceAGORA, symbol = :evaluate_ks_dynamics_and_jacobians, rendered = "SpaceAGORA.evaluate_ks_dynamics_and_jacobians"),
+            (owner = :SpaceAGORA, symbol = :ks_first_order_tangent_map, rendered = "SpaceAGORA.ks_first_order_tangent_map")
+        ]
+    ),
+    (
+        title = "Burn-plan family",
+        items = [
+            (owner = :SpaceAGORA, symbol = :BurnPlanFamily, rendered = "SpaceAGORA.BurnPlanFamily"),
+            (owner = :SpaceAGORA, symbol = :BaseThrusterModel, rendered = "SpaceAGORA.BaseThrusterModel"),
+            (owner = :SpaceAGORA, symbol = :PropulsiveBurnPlan, rendered = "SpaceAGORA.PropulsiveBurnPlan"),
+            (owner = :SpaceAGORA, symbol = :AbstractBurnPlanner, rendered = "SpaceAGORA.AbstractBurnPlanner"),
+            (owner = :SpaceAGORA, symbol = :BurnPlanRequest, rendered = "SpaceAGORA.BurnPlanRequest"),
+            (owner = :SpaceAGORA, symbol = :BurnPlanSlot, rendered = "SpaceAGORA.BurnPlanSlot"),
+            (owner = :SpaceAGORA, symbol = :ApoapsisBurnPlanner, rendered = "SpaceAGORA.ApoapsisBurnPlanner"),
+            (owner = :SpaceAGORA, symbol = :validate_burn_plan, rendered = "SpaceAGORA.validate_burn_plan"),
+            (owner = :SpaceAGORA, symbol = :burn_plan_is_current, rendered = "SpaceAGORA.burn_plan_is_current"),
+            (owner = :SpaceAGORA, symbol = :burn_plan_sizing, rendered = "SpaceAGORA.burn_plan_sizing"),
+            (owner = :SpaceAGORA, symbol = :burn_plan_rejections, rendered = "SpaceAGORA.burn_plan_rejections")
+        ]
+    ),
+    (
+        title = "Joint-reference family",
+        items = [
+            (owner = :SpaceAGORA, symbol = :JointReferenceFamily, rendered = "SpaceAGORA.JointReferenceFamily"),
+            (owner = :SpaceAGORA, symbol = :AbstractJointReferencePlanner, rendered = "SpaceAGORA.AbstractJointReferencePlanner"),
+            (owner = :SpaceAGORA, symbol = :JointReferenceRequest, rendered = "SpaceAGORA.JointReferenceRequest"),
+            (owner = :SpaceAGORA, symbol = :JointReferenceSettings, rendered = "SpaceAGORA.JointReferenceSettings"),
+            (owner = :SpaceAGORA, symbol = :RobotArmPlanBuffer, rendered = "SpaceAGORA.RobotArmPlanBuffer"),
+            (owner = :SpaceAGORA, symbol = :QuinticJointPlanner, rendered = "SpaceAGORA.QuinticJointPlanner"),
+            (owner = :SpaceAGORA, symbol = :validate_joint_reference, rendered = "SpaceAGORA.validate_joint_reference"),
+            (owner = :SpaceAGORA, symbol = :joint_reference_is_current, rendered = "SpaceAGORA.joint_reference_is_current")
+        ]
+    ),
+    (
+        title = "EDG guidance family",
+        items = [
+            (owner = :SpaceAGORA, symbol = :EDGGuidanceFamily, rendered = "SpaceAGORA.EDGGuidanceFamily"),
+            (owner = :SpaceAGORA, symbol = :EDGGuidanceCapabilities, rendered = "SpaceAGORA.EDGGuidanceCapabilities"),
+            (owner = :SpaceAGORA, symbol = :EDGGuidanceAlgorithm, rendered = "SpaceAGORA.EDGGuidanceAlgorithm"),
+            (owner = :SpaceAGORA, symbol = :EDGGuidanceSettings, rendered = "SpaceAGORA.EDGGuidanceSettings"),
+            (owner = :SpaceAGORA, symbol = :EDGGuidanceRequest, rendered = "SpaceAGORA.EDGGuidanceRequest"),
+            (owner = :SpaceAGORA, symbol = :EDGGuidanceDecision, rendered = "SpaceAGORA.EDGGuidanceDecision"),
+            (owner = :SpaceAGORA, symbol = :validate_edg_guidance_decision, rendered = "SpaceAGORA.validate_edg_guidance_decision")
         ]
     ),
     (
@@ -345,6 +761,7 @@ const PUBLIC_API_SECTIONS = [
         title = "Process Workers",
         items = [
             (owner = :ParallelProcess, symbol = :ProcessPool, rendered = "SpaceAGORA.ProcessPool"),
+            (owner = :ParallelProcess, symbol = :PROCESS_WARMUP, rendered = "SpaceAGORA.PROCESS_WARMUP"),
             (owner = :ParallelProcess, symbol = :campaign_process_pool, rendered = "SpaceAGORA.campaign_process_pool"),
             (owner = :ParallelProcess, symbol = :ensure_process_workers!, rendered = "SpaceAGORA.ensure_process_workers!"),
             (owner = :ParallelProcess, symbol = :shutdown_process_pool!, rendered = "SpaceAGORA.shutdown_process_pool!"),
@@ -370,6 +787,42 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :render_asset_report, rendered = "SpaceAGORA.render_asset_report"),
             (owner = :SpaceAGORA, symbol = :run_cli, rendered = "SpaceAGORA.run_cli")
         ]
+    ),
+    # The Conformance module's own exports; they are not exported from the root.
+    (
+        title = "Contributor conformance",
+        items = [
+            (owner = :SpaceAGORA, symbol = :Conformance, rendered = "SpaceAGORA.Conformance"),
+            (owner = :Conformance, symbol = :ConformanceCheck, rendered = "SpaceAGORA.Conformance.ConformanceCheck"),
+            (owner = :Conformance, symbol = :ConformanceReport, rendered = "SpaceAGORA.Conformance.ConformanceReport"),
+            (owner = :Conformance, symbol = :passed, rendered = "SpaceAGORA.Conformance.passed"),
+            (owner = :Conformance, symbol = :ConformanceFixture, rendered = "SpaceAGORA.Conformance.ConformanceFixture"),
+            (owner = :Conformance, symbol = :conformance_fixture, rendered = "SpaceAGORA.Conformance.conformance_fixture"),
+            (owner = :Conformance, symbol = :check_force_torque_model, rendered = "SpaceAGORA.Conformance.check_force_torque_model"),
+            (owner = :Conformance, symbol = :check_service_facade, rendered = "SpaceAGORA.Conformance.check_service_facade"),
+            (owner = :Conformance, symbol = :check_sensor, rendered = "SpaceAGORA.Conformance.check_sensor"),
+            (owner = :Conformance, symbol = :check_guidance_model, rendered = "SpaceAGORA.Conformance.check_guidance_model"),
+            (owner = :Conformance, symbol = :check_navigation_model, rendered = "SpaceAGORA.Conformance.check_navigation_model"),
+            (owner = :Conformance, symbol = :check_control_model, rendered = "SpaceAGORA.Conformance.check_control_model"),
+            (owner = :Conformance, symbol = :check_algorithm, rendered = "SpaceAGORA.Conformance.check_algorithm"),
+            (owner = :Conformance, symbol = :check_algorithm_family, rendered = "SpaceAGORA.Conformance.check_algorithm_family"),
+            (owner = :Conformance, symbol = :rpo_conformance_requests, rendered = "SpaceAGORA.Conformance.rpo_conformance_requests"),
+            (owner = :Conformance, symbol = :rpo_trusted_queries, rendered = "SpaceAGORA.Conformance.rpo_trusted_queries"),
+            (owner = :Conformance, symbol = :rpo_conformance_simulation, rendered = "SpaceAGORA.Conformance.rpo_conformance_simulation"),
+            (owner = :Conformance, symbol = :burn_plan_conformance_requests, rendered = "SpaceAGORA.Conformance.burn_plan_conformance_requests"),
+            (owner = :Conformance, symbol = :burn_plan_conformance_simulation, rendered = "SpaceAGORA.Conformance.burn_plan_conformance_simulation"),
+            (owner = :Conformance, symbol = :joint_reference_conformance_requests, rendered = "SpaceAGORA.Conformance.joint_reference_conformance_requests"),
+            (owner = :Conformance, symbol = :joint_reference_conformance_simulation, rendered = "SpaceAGORA.Conformance.joint_reference_conformance_simulation"),
+            (owner = :Conformance, symbol = :test_report, rendered = "SpaceAGORA.Conformance.test_report"),
+            (owner = :Conformance, symbol = :test_force_torque_model, rendered = "SpaceAGORA.Conformance.test_force_torque_model"),
+            (owner = :Conformance, symbol = :test_service_facade, rendered = "SpaceAGORA.Conformance.test_service_facade"),
+            (owner = :Conformance, symbol = :test_sensor, rendered = "SpaceAGORA.Conformance.test_sensor"),
+            (owner = :Conformance, symbol = :test_guidance_model, rendered = "SpaceAGORA.Conformance.test_guidance_model"),
+            (owner = :Conformance, symbol = :test_navigation_model, rendered = "SpaceAGORA.Conformance.test_navigation_model"),
+            (owner = :Conformance, symbol = :test_control_model, rendered = "SpaceAGORA.Conformance.test_control_model"),
+            (owner = :Conformance, symbol = :test_algorithm, rendered = "SpaceAGORA.Conformance.test_algorithm"),
+            (owner = :Conformance, symbol = :test_algorithm_family, rendered = "SpaceAGORA.Conformance.test_algorithm_family")
+        ]
     )
 ]
 
@@ -388,6 +841,8 @@ const PUBLIC_API_SECTIONS = [
         return getproperty(spaceagora, :TelemetryVerification)
     elseif owner === :SpaceAGORACLI
         return getproperty(spaceagora, :SpaceAGORACLI)
+    elseif owner === :Conformance
+        return getproperty(spaceagora, :Conformance)
     end
     error("Unsupported public API owner: $(owner)")
 end
@@ -414,31 +869,83 @@ function render_public_api_markdown(spaceagora::Module;
     io = IOBuffer()
     println(io, "# $(title)")
     println(io)
-    println(io, "This page documents the stable exported interface available from `SpaceAGORA`.")
+    println(io, "This page documents the supported public interface available from `SpaceAGORA`.")
     println(io)
     for section in sections
         println(io, "## $(section.title)")
         println(io)
+        # Julia stores a module alias's docstring in the target module. An alias
+        # of an internal module therefore cannot use Documenter's @docs lookup,
+        # which intentionally excludes those implementation modules.
+        module_aliases = filter(section.items) do item
+            owner = _owner_module(spaceagora, item.owner)
+            value = getproperty(owner, item.symbol)
+            value isa Module && parentmodule(value) !== owner
+        end
         println(io, "```@docs")
         for item in section.items
-            println(io, item.rendered)
+            item in module_aliases || println(io, item.rendered)
         end
         println(io, "```")
         println(io)
+        for item in module_aliases
+            binding = Docs.Binding(_owner_module(spaceagora, item.owner), item.symbol)
+            doc = Docs.doc(binding)
+            doc === nothing && error("Undocumented module alias: $(item.rendered)")
+            println(io, "### `$(item.rendered)`")
+            println(io)
+            show(io, MIME"text/markdown"(), doc)
+            println(io)
+        end
     end
     return String(take!(io))
 end
+
+# Public names, as (owner module, symbol), whose rendered documentation is still
+# the "No documentation found" placeholder. Each is listed so that any new gap
+# fails the build. The build also fails when a listed name no longer renders the
+# placeholder, so documenting one requires removing it here.
+const KNOWN_PLACEHOLDER_DOCS = Set([
+    (:SpaceAGORA, :thin_panel_inertia),
+    (:SpaceAGORA, :ApoapsisTargetPeriapsisRaiseGuidanceModel),
+    (:SpaceAGORA, :station_geometry_path),
+    (:SpaceAGORA, :station_cad_path),
+    (:SpaceAGORA, :load_rpo_station_pointcloud),
+    (:SpaceAGORA, :load_rpo_station_cad_triangles),
+    (:SpaceAGORA, :load_rpo_station_cad_pointcloud),
+])
+
+_spec_key(spec) = (nameof(spec.owner_module), spec.symbol)
+
+_is_placeholder_doc(doc) = doc === nothing || occursin("No documentation found", string(doc))
 
 function undocumented_public_api_specs(spaceagora::Module)
     missing = NamedTuple[]
     for spec in public_api_specs(spaceagora)
         binding = Docs.Binding(spec.owner_module, spec.symbol)
-        doc = Docs.doc(binding)
-        if doc === nothing
+        # `Docs.doc` returns a placeholder rather than `nothing` for an
+        # undocumented name, and a re-export written as `@doc (@doc inner) name`
+        # copies that placeholder into a real docstring, which `hasdoc` then
+        # counts. Check the text as well.
+        placeholder = _is_placeholder_doc(Docs.doc(binding))
+        if !Docs.hasdoc(binding.mod, binding.var) ||
+                (placeholder && !(_spec_key(spec) in KNOWN_PLACEHOLDER_DOCS))
             push!(missing, spec)
         end
     end
     return missing
+end
+
+"""
+Entries of `KNOWN_PLACEHOLDER_DOCS` that no longer render the placeholder or are
+no longer public names; each must be removed from the list.
+"""
+function stale_placeholder_entries(spaceagora::Module)
+    placeholders = Set(
+        _spec_key(spec) for spec in public_api_specs(spaceagora)
+        if _is_placeholder_doc(Docs.doc(Docs.Binding(spec.owner_module, spec.symbol)))
+    )
+    return sort!(collect(setdiff(KNOWN_PLACEHOLDER_DOCS, placeholders)))
 end
 
 end # module PublicAPISymbols

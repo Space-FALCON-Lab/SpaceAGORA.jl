@@ -42,7 +42,7 @@ end
         @test getfield(unchanged, name) === getfield(args, name)
     end
     @test SC._with_configuration(args; solver_config=nothing).solver_config === nothing
-    @test_throws MethodError SC._with_configuration(args; solver_confg=nothing)
+    @test_throws ArgumentError SC._with_configuration(args; solver_confg=nothing)
 
     # Both parameterized model types must be inferred anew by the constructor.
     env = args.environment_model
@@ -76,12 +76,14 @@ end
             results=true, verbose=true, results_directory="custom-results",
             generate_plots=true, generate_filenames=true, normalize=true, save_csv=true,
             checkpoint_enabled=true, checkpoint_interval_s=17.0,
-            checkpoint_directory="custom-checkpoints", resume_from_checkpoint=true))
+            checkpoint_directory="custom-checkpoints", resume_from_checkpoint=true,
+            articulated_live_pose_loads=true))
     withenv("SPACEAGORA_EXAMPLE_SMOKE" => "0") do
         @test TV._example_smoke_args(args) === args
     end
     for keep_results in (false, true)
         withenv("SPACEAGORA_EXAMPLE_SMOKE" => "1",
+                "SPACEAGORA_CLI_OUTPUT_DIR" => nothing,
                 "SPACEAGORA_EXAMPLE_SMOKE_RESULTS" => (keep_results ? "1" : "0"),
                 "SPACEAGORA_EXAMPLE_SMOKE_MISSION_TIME" => "2.0") do
             smoke = TV._example_smoke_args(args)
@@ -105,16 +107,57 @@ end
             @test ss.generate_filenames
             @test !ss.normalize
             @test ss.save_csv == keep_results
-            # Preserve smoke's existing restart defaults, not the full-run state.
+            # The smoke copy turns checkpoints off and keeps every other setting,
+            # physics settings included.
             @test !ss.checkpoint_enabled
-            @test ss.checkpoint_interval_s == 300.0
-            @test ss.checkpoint_directory == ""
+            @test ss.checkpoint_interval_s == 17.0
+            @test ss.checkpoint_directory == "custom-checkpoints"
             @test !ss.resume_from_checkpoint
+            @test ss.articulated_live_pose_loads
         end
     end
     @test args.simulation_settings.checkpoint_enabled
     @test args.simulation_settings.results_directory == "custom-results"
     @test args.mission_configuration.number_of_orbits == 7
+end
+
+@testset "Smoke output directories honor the CLI while preserving run isolation" begin
+    args = copy_probe_config()
+    withenv("SPACEAGORA_EXAMPLE_SMOKE" => "1",
+            "SPACEAGORA_EXAMPLE_SMOKE_RESULTS" => "1",
+            "SPACEAGORA_EXAMPLE_SMOKE_MISSION_TIME" => "2.0") do
+        mktempdir() do parent_dir
+            for run_name in ("first run", "second run")
+                run_dir = mkpath(joinpath(parent_dir, run_name))
+                cd(run_dir) do
+                    absolute_output = joinpath(parent_dir, "absolute results")
+                    for (override, expected) in (
+                        (nothing, joinpath(pwd(), "output")),
+                        ("", joinpath(pwd(), "output")),
+                        (" \t ", joinpath(pwd(), "output")),
+                        (absolute_output, absolute_output),
+                        (joinpath("relative results", "nested output"),
+                            joinpath(pwd(), "relative results", "nested output")),
+                        ("  relative results  ", joinpath(pwd(), "relative results")),
+                    )
+                        withenv("SPACEAGORA_CLI_OUTPUT_DIR" => override) do
+                            smoke = TV._example_smoke_args(args)
+                            @test smoke.simulation_settings.results_directory == expected
+                            @test smoke.mission_configuration.mission_time == 2.0
+                            @test smoke.simulation_settings.results
+                            @test smoke.simulation_settings.save_csv
+                            @test !isdir(expected) # Configuration alone must not create output.
+                            withenv("SPACEAGORA_EXAMPLE_SMOKE" => "0") do
+                                @test TV._example_smoke_args(args) === args
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    @test args.simulation_settings.results_directory == "custom-results"
+    @test args.mission_configuration.mission_time == 600.0
 end
 
 @testset "Smoke solver choice survives a conflicting environment" begin

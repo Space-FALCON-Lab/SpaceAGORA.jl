@@ -19,7 +19,7 @@ const EPOCH_LSK = joinpath(EPOCH_SPICE_PATH, "lsk", "naif0012.tls")
 const EPOCH_SPICE_READY = isfile(EPOCH_LSK)
 
 # A model that carries the SPICE model's name but is not the package type: the
-# engine's flexible resolver has no `ephemerides_time_seconds` method for it and
+# engine's flexible resolver has no `ephemerides_epoch_seconds` method for it and
 # takes its own SPICE branch, which must agree with the package method.
 module DuckTypes
 struct SpiceEphemeridesModel end
@@ -50,7 +50,7 @@ const EPOCH_CASES = (
         @test EPH._initial_time_utc_string(_it(1969, 7, 20, 20, 5, 59.9996)) == "1969-07-20T20:06:00.000"
         @test EPH._initial_time_utc_string(_it(1999, 12, 31, 23, 59, 59.9999)) == "2000-01-01T00:00:00.000"
         # The simple model's clock reads the same DateTime.
-        @test SM_EPOCH.ephemerides_time_seconds(_it(2000, 1, 1, 12, 0, 5.0), SM_EPOCH.SimpleEphemeridesModel()) == 5.0
+        @test SM_EPOCH.ephemerides_epoch_seconds(SM_EPOCH.SimpleEphemeridesModel(), _it(2000, 1, 1, 12, 0, 5.0)) == 5.0
     end
 
     if EPOCH_SPICE_READY
@@ -61,7 +61,7 @@ const EPOCH_CASES = (
                 requested = lock(SpaceAGORA.RuntimeServices.SPICE_LOCK) do
                     str2et(utc)
                 end
-                @test isapprox(SM_EPOCH.ephemerides_time_seconds(it, spice), requested; atol=1e-6, rtol=0.0)
+                @test isapprox(SM_EPOCH.ephemerides_epoch_seconds(spice, it), requested; atol=1e-6, rtol=0.0)
                 @test isapprox(SpaceAGORA.SimulationEngine._ephemerides_time_seconds_flexible(it, DuckTypes.SpiceEphemeridesModel()),
                                requested; atol=1e-6, rtol=0.0)
             end

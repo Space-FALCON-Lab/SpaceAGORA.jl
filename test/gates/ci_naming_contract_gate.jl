@@ -1,23 +1,23 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
 const CANONICAL_DIRS = [
-    joinpath(REPO_ROOT, "src", "simulation", "engine"),
-    joinpath(REPO_ROOT, "src", "simulation", "callbacks"),
-    joinpath(REPO_ROOT, "src", "parallel", "routing"),
+    joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine"),
+    joinpath(REPO_ROOT, "src", "orchestration", "simulation", "callbacks"),
+    joinpath(REPO_ROOT, "src", "orchestration", "parallel", "routing"),
     joinpath(REPO_ROOT, "benchmarks", "studies"),
     joinpath(REPO_ROOT, "benchmarks", "scripts")
 ]
 
 const FILE_RE = r"^[a-z0-9]+(_[a-z0-9]+)*\.jl$"
 const MODULE_NAMING_TARGETS = [
-    joinpath(REPO_ROOT, "src", "core", "state", "reference_system_config.jl"),
-    joinpath(REPO_ROOT, "src", "vehicle", "spacecraft", "model.jl"),
+    joinpath(REPO_ROOT, "src", "foundation", "core", "state", "reference_system_config.jl"),
+    joinpath(REPO_ROOT, "src", "models", "vehicle", "spacecraft", "model.jl"),
 ]
 
 violations = String[]
 
 for dir in CANONICAL_DIRS
-    isdir(dir) || continue
+    isdir(dir) || error("Missing naming scan root: $(relpath(dir, REPO_ROOT))")
     for (root, _, files) in walkdir(dir)
         for file in files
             endswith(file, ".jl") || continue

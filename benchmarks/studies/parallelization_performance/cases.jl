@@ -23,9 +23,7 @@ using SpaceAGORA.SimulationModel: GRAMAtmosphereModel, GRAMAtmosphereModelSurrog
 function ppc_ensure_gramsuite_loaded!()
     isdefined(SpaceAGORA, :GRAMSuite) && return nothing
     vendored_gramsuite = joinpath(PPC_REPO_ROOT, "data", "GRAMSuite.jl")
-    if Base.find_package("GRAMSuite") === nothing && isdir(vendored_gramsuite)
-        pushfirst!(LOAD_PATH, vendored_gramsuite)
-    end
+    SpaceAGORA.RuntimeServices._prepare_gramsuite_load_path!(vendored_gramsuite; prepend=true)
     @eval import GRAMSuite
     return nothing
 end
@@ -81,7 +79,7 @@ the command line.
 Which of the two ways of reading one shared native `GRAMAtmosphereModel` a run
 uses is not part of `SimulationConfiguration` -- it is read from `SPACEAGORA_*`
 env when the density callback is assembled
-(`src/simulation/callbacks/density_callbacks/vacuum_predicted_gram.jl` for the
+(`src/orchestration/simulation/callbacks/density_callbacks/vacuum_predicted_gram.jl` for the
 look-ahead cache, `.../density_callbacks/config.jl` for the freeze-per-accepted-
 step switch). So the case builder cannot express it and the phase definition
 cannot either; the case name has to.
@@ -233,7 +231,7 @@ const PPC_L50_ISO_MISSION_S = [
     (4096, 5800),
 ]
 
-const PPC_EARTH_HARMONICS_FILE = joinpath(PPC_REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+const PPC_EARTH_HARMONICS_FILE = joinpath(PPC_REPO_ROOT, "data", "planets", "gravity", "EarthGGM05C.csv")
 
 # Internal (non-exported) home of `_lvlh_cascade_torque`, reached the same way
 # the CYGNSS closed-loop-twin driver reaches it
@@ -402,6 +400,11 @@ function ppc_harmonics_model(planet, degree::Int)
     return InverseSquaredJ2GravityModel()
 end
 
+# Mission-time multiplier for configs built while it is set; 1.0 except around a
+# short warm-up (SPACEAGORA_PPB_WARMUP_SPAN, see ppc_run_sample_batch). x * 1.0 is
+# exact, so every other config is bit-for-bit what it was.
+const _PPC_MISSION_SCALE = Ref(1.0)
+
 function ppc_build_config(;
     planet,
     spacecraft,
@@ -427,10 +430,10 @@ function ppc_build_config(;
     # analysis/verification/telemetry_verification/ reads it, and the solver runs
     # on save_everystep with no saveat, so varying it changes literally nothing
     # about the work performed. The real mechanism is
-    # get_data_saving_callback (src/simulation/callbacks/event_callbacks.jl),
+    # get_data_saving_callback (src/orchestration/simulation/callbacks/event_callbacks.jl),
     # which builds `SavingCallback(...; saveat=data_rate)` -- but it is only
     # installed when `simulation_settings.results` is true
-    # (src/simulation/callbacks/density_callbacks/assembly.jl), and this harness
+    # (src/orchestration/simulation/callbacks/density_callbacks/assembly.jl), and this harness
     # hardcoded results=false, so every benchmark case to date has done no
     # trajectory output at all. Setting results=true both installs that callback
     # and (via `needs_full_solution` in simulation/engine/execution.jl) turns on
@@ -449,7 +452,7 @@ function ppc_build_config(;
             mission_type=MissionTime,
             keplerian=true,
             number_of_orbits=1,
-            mission_time=mission_time_s,
+            mission_time=mission_time_s * _PPC_MISSION_SCALE[],
             orientation_sim=orientation_sim,
             num_steps_to_save=num_steps_to_save,
             data_rate=data_rate
@@ -829,7 +832,7 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
         gnc_b_field = (t, r_ii) -> PE.get_magnetic_field_dipole(r_ii, gnc_l_pi)
         gnc_mgr = MagneticMomentumManagerModel[
             MagneticMomentumManagerModel(
-                sat_idx=i, mu_gain=7.0e-4, m_max_am2=1.8,
+                spacecraft_index=i, mu_gain=7.0e-4, m_max_am2=1.8,
                 h_wheels_0=SVector{3, Float64}(0.0, 0.0, 0.0),
                 commanded_torque=gnc_torque, b_field_ii=gnc_b_field
             )
@@ -912,7 +915,7 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
         b_field_ii = (t, r_ii) -> PE.get_magnetic_field_dipole(r_ii, l_pi_fixed)
         mgr_models = MagneticMomentumManagerModel[
             MagneticMomentumManagerModel(
-                sat_idx=i, mu_gain=7.0e-4, m_max_am2=1.8,
+                spacecraft_index=i, mu_gain=7.0e-4, m_max_am2=1.8,
                 h_wheels_0=SVector{3, Float64}(0.0, 0.0, 0.0),
                 commanded_torque=commanded_torque, b_field_ii=b_field_ii
             )
@@ -967,7 +970,7 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
     #                instance serialised by its own instance_lock.
     #   gram_live_nbody  adds Sun/Moon NBodyGravityModel on top, i.e. a *second*
     #                serialised native library (CSPICE under SPICE_LOCK). §8.4 of
-    #                docs/architecture/parallelization_measurement_and_allocation_findings.md
+    #                benchmarks/studies/parallelization_performance/FINDINGS.md
     #                measured this configuration as the one that does produce real
     #                thread scaling where the smaller GRAM cases were flat.
     elseif startswith(case_name, "atmo256_")
@@ -1028,10 +1031,10 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
     #
     # SATELLITE COUNT IS IN THE CASE NAME, and the ladder is deliberately run at a
     # smaller N than the other axes, because the actuator rung is quadratic in N.
-    # get_control_callbacks (src/simulation/callbacks/control_callbacks.jl) builds
+    # get_control_callbacks (src/orchestration/simulation/callbacks/control_callbacks.jl) builds
     # one PeriodicCallback per control effector and each one loops over *all*
     # num_sats, so N per-satellite MagneticMomentumManagerModels cost N^2
-    # calcControlEffect! calls per tick -- of which N are the intended ones and
+    # update_control! calls per tick -- of which N are the intended ones and
     # N(N-1) are calls with a sat_idx the model does not own. That is invisible at
     # the 8 satellites multi_8sat_magnetorquer_attitude uses (64 calls) and
     # dominant at 256 (65,536): measured post-warm-up, e6 at N=256 takes 33.4 s for
@@ -1052,7 +1055,14 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
         # At N>=128 a 1 h mission puts the model-count rungs at roughly 3-47 s;
         # at N<128 a 600 s mission puts the actuator rung at ~35 s. Each
         # sub-ladder is internally single-variable, which is what the axis needs.
-        stack_time = stack_n >= 128 ?
+        #
+        # `stack<N>_e6_actuated_saved` is the coupled comparison case
+        # (benchmarks/studies/coupled_local_comparison): e6 with trajectory output
+        # on, flown for the same mission at every N so a spacecraft-count sweep
+        # varies only N. Its smoke duration, 120 s, is the duration of the
+        # 32-spacecraft coupled experiment it reproduces.
+        stack_saved = endswith(case_name, "_saved")
+        stack_time = (stack_n >= 128 && !stack_saved) ?
             ppc_mission_time(cfg.profile; test=10.0, smoke=300.0, full=3600.0) :
             ppc_mission_time(cfg.profile; test=10.0, smoke=120.0, full=600.0)
         stack_harmonics = ppc_harmonics_model(planet, 20)
@@ -1060,7 +1070,7 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
         stack_nbody = NBodyGravityModel(
             body_names=("Sun", "Moon"), primary_body_name="Earth", planet=planet
         )
-        stack_rung = match(r"^stack[0-9]+_(e[0-9]+_[a-z0-9]+)$", case_name)
+        stack_rung = match(r"^stack[0-9]+_(e[0-9]+_[a-z0-9]+)(?:_saved)?$", case_name)
         stack_rung === nothing &&
             throw(ArgumentError("Unknown effector-ladder case '$case_name'."))
         stack_rung = stack_rung.captures[1]
@@ -1097,7 +1107,7 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
             stack_b_field = (t, r_ii) -> PE.get_magnetic_field_dipole(r_ii, stack_l_pi)
             stack_mgr = MagneticMomentumManagerModel[
                 MagneticMomentumManagerModel(
-                    sat_idx=i, mu_gain=7.0e-4, m_max_am2=1.8,
+                    spacecraft_index=i, mu_gain=7.0e-4, m_max_am2=1.8,
                     h_wheels_0=SVector{3, Float64}(0.0, 0.0, 0.0),
                     commanded_torque=stack_torque, b_field_ii=stack_b_field
                 )
@@ -1112,9 +1122,13 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
                 density_model=stack_density,
                 control_effectors=Tuple(stack_mgr),
                 control_rates=fill(1.0, stack_n),
-                dt_max_orbit=10.0
+                dt_max_orbit=10.0,
+                # ASSUMED: ppc_build_config's default 10 s data_rate; the
+                # reproduced experiment's saving cadence is not recorded.
+                results=stack_saved
             )
         end
+        stack_saved && throw(ArgumentError("'_saved' is defined only for the e6_actuated rung: '$case_name'."))
         return ppc_build_config(
             planet=planet,
             spacecraft=stack_spacecraft,
@@ -1448,7 +1462,15 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
                 raan_deg=30.0,
                 nu_deg=180.0 + randn(rng) * 4.0
             )],
-            mission_time_s=ppc_mission_time(cfg.profile; test=10.0, smoke=600.0, full=21600.0),
+            # One drag pass per sample rather than montecarlo_heavy_aerobraking's
+            # two: each sample starts near apoapsis of a ~13,100 s orbit, so its
+            # first periapsis falls near 6,500 s (later by up to ~950 s for a
+            # sample 2 sigma low in true anomaly and high in apoapsis), and 9,000 s
+            # leaves the whole first pass inside the arc with margin. The second
+            # pass only doubled the serial baseline (about 24 s per sample at
+            # 21,600 s against 11-12 s here on TRX50) without changing what the
+            # campaign tests. See sec7_main_rerun_preregistration_2026-10-10.md.
+            mission_time_s=ppc_mission_time(cfg.profile; test=10.0, smoke=600.0, full=9000.0),
             orientation_sim=false,
             dynamic_effectors=(InverseSquaredGravityModel(), AerodynamicCoefficientfM()),
             density_model=ppc_gram_atmosphere_model("mars", 1000 + mc_index),
@@ -1755,6 +1777,11 @@ function ppc_case_catalog()::Dict{String, PPCCaseSpec}
         add!("stack$(n)_e4_nbody", "effector_ladder", "$(n) spacecraft, harmonics + SRP + third-body + aero (4 effectors)")
         add!("stack$(n)_e5_6dof", "effector_ladder", "$(n) spacecraft, same 4 effectors with attitude propagation on", orientation=true)
         add!("stack$(n)_e6_actuated", "effector_ladder", "$(n) spacecraft, 6-DOF plus LVLH controller and per-satellite magnetorquer actuators", orientation=true)
+    end
+    # Coupled comparison case (benchmarks/studies/coupled_local_comparison): e6
+    # with trajectory output and an N-independent mission length.
+    for n in (32, 64, 128, 256)
+        add!("stack$(n)_e6_actuated_saved", "coupled_comparison", "$(n) spacecraft, e6_actuated with saved trajectories, 120 s smoke mission at every N", orientation=true)
     end
 
     # Interacting vs. independent propagation at matched work (B12).

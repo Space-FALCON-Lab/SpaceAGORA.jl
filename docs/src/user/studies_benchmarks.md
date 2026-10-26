@@ -6,10 +6,10 @@ example run.
 This page is for users generating verification reports, runtime measurements,
 GRAM comparison outputs, or paper-study artifacts.
 
-Shortest successful command:
+Inspect the benchmark command without starting a workload:
 
 ```text
-julia --project=. src/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/perf_smoke
+julia --project=. src/interfaces/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/perf_smoke --print-only
 ```
 
 What to read next:
@@ -21,30 +21,33 @@ What to read next:
 
 ## Start here
 
-If you only need to check that the benchmark path works, run:
+After checking the prerequisites below, run a reduced benchmark workload:
 
 ```text
-julia --project=. src/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/perf_smoke
+julia --project=. src/interfaces/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/perf_smoke
 ```
 
-All benchmark and study launchers, through the CLI or run directly with
-`--project=.`, need the `data/GRAMSuite.jl` submodule
-([GRAMSuite Setup](gramsuite_setup.md)); the GRAM-backed benchmark cases also
-need the native GRAM library built. Without the submodule the command stops
-with "Package GRAMSuite not found in current path". The CLI runs its child
-under the repository project, so nothing else is needed beyond
-`Pkg.instantiate()`.
+Benchmark `smoke` profiles execute workloads, including simulations. Executing
+the `runtime-analysis` or `smart-parallel-ladder` launcher needs the
+`data/GRAMSuite.jl` submodule ([GRAMSuite Setup](gramsuite_setup.md)) because
+both import the vendored package before parsing study options. GRAM-backed
+cases also need the native GRAM library built. The CLI runs its child in the
+examples environment; prepare it with `julia --startup-file=no examples/setup.jl`
+before execution.
+
+Paper and mission studies use the separate repositories listed below. Their
+source pins, environments and data prerequisites belong to those projects.
 
 If you need telemetry verification outputs, run:
 
 ```text
-julia --project=. src/cli/main.jl telemetry quick --output-dir=output/telemetry_cli --enforce=1
+julia --project=. src/interfaces/cli/main.jl telemetry quick --output-dir=output/telemetry_cli --enforce=1
 ```
 
 If you need parallel-policy comparison outputs, run:
 
 ```text
-julia --project=. src/cli/main.jl benchmark smart-parallel-ladder smoke --output-dir=output/smart_ladder_smoke
+julia --project=. src/interfaces/cli/main.jl benchmark smart-parallel-ladder smoke --output-dir=output/smart_ladder_smoke
 ```
 
 Use `--print-only` on any CLI-backed study to inspect the resolved Julia command
@@ -57,7 +60,7 @@ before running it.
 Use this when the goal is orbit-event or time-aligned telemetry validation.
 
 ```text
-julia --project=. src/cli/main.jl telemetry quick --output-dir=output/telemetry_cli --enforce=1
+julia --project=. src/interfaces/cli/main.jl telemetry quick --output-dir=output/telemetry_cli --enforce=1
 ```
 
 The command writes:
@@ -75,7 +78,7 @@ Use this when the goal is timing, scaling, hardware metadata, or performance
 regression artifacts.
 
 ```text
-julia --project=. src/cli/main.jl benchmark runtime-analysis quick --output-dir=output/performance
+julia --project=. src/interfaces/cli/main.jl benchmark runtime-analysis quick --output-dir=output/performance
 ```
 
 Use `smoke` first on a new machine. Use `full` only when you need full study
@@ -87,52 +90,71 @@ Use this when the goal is comparing serial, threaded, process, and adaptive
 parallel-policy rungs.
 
 ```text
-julia --project=. src/cli/main.jl benchmark smart-parallel-ladder smoke --output-dir=output/smart_ladder_cli
-```
-
-### Aerobraking perturbation Monte Carlo
-
-Use this when the goal is the aerobraking perturbation study rather than one
-mission example.
-
-```text
-julia --project=. benchmarks/studies/aerobraking_perturbation_mc/main.jl --smoke --output-dir output/aerobraking_perturbation_smoke
-```
-
-For the full option list:
-
-```text
-julia --project=. benchmarks/studies/aerobraking_perturbation_mc/main.jl --help
+julia --project=. src/interfaces/cli/main.jl benchmark smart-parallel-ladder smoke --output-dir=output/smart_ladder_cli
 ```
 
 ## Profiles
 
 | Profile | Use for |
 |---|---|
-| `smoke` | New-machine checks and command wiring |
+| `smoke` | Reduced workload after its prerequisites are ready |
 | `quick` | Development and regression artifacts |
 | `full` | Full study or paper-grade artifacts |
 
-## Direct study index
+## Research repositories
 
-Use the CLI when a workflow is exposed there. Use a direct study script when the
-study has its own option set, resume behavior, or output layout.
+Use these repositories for the research campaigns moved out of core. Each records
+its original source, pins its SpaceAGORA dependency and keeps its own environment,
+outputs and study tests. Follow that repository's setup instructions before
+running a script; core's examples environment does not prepare a research project.
 
-Run [GRAMSuite Setup](gramsuite_setup.md) before using GRAM-backed studies.
-
-| Area | Scripts |
+| Research project | What it contains |
 |---|---|
-| GRAM fidelity | `gram_full_vs_trajectory_density_compare.jl`, `gram_interpolation_vs_point_to_point_analysis.jl`, `gram_single_call_vs_point_to_point_analysis.jl`, `gram_offline_db_accuracy_study.jl`, `gram_planet_rho_altitude_sweep.jl`, `gram_real_sim_runtime_compare.jl`, `gram_real_sim_surrogate_matrix.jl`, `gram_real_sim_surrogate_decision_table.jl`, `gram_trajectory_lookahead_fidelity/main.jl` |
-| GRAM Mars fix and constellation scaling | `gram_mars_fix_and_constellation_scaling/{mars_150km_gram_scaling.jl, earth_standard_gram_scaling.jl, earth_surrogate_gram_scaling.jl, leo_constellation_size_scaling.jl, leo_ensemble_outer_backend_scaling.jl, leo_thread_scaling_by_mode.jl, mc_multisat_process_backend.jl, mc_multisat_thread_allocation.jl}` — see the directory's `README.md` for the Mars ephemeris-bypass fix background and `PARALLELIZATION_CURRENT_STATE.md` for current constellation-scaling findings |
-| Performance support | `performance_effector_reduction_microbench.jl`, `performance_split_imex_compare.jl`, `performance_static_vs_parallel.jl`, `performance_thread_scaling_1024.jl`, `performance_thread_scaling_64_aero_gram.jl`, `performance_hybrid_scaling_64_aero_gram.jl`, `performance_mc_thread_scaling.jl`, `performance_smart_parallel_ladder_cross_machine.jl` |
-| Parallelization paper benchmarks | `paper_parallelization_benchmarks.jl`, `parallelization_performance.jl` — each has a same-named subdirectory with its own `protocol.sh`, `cli.jl`, and `CASES.md` case catalog |
-| Tuning and validation | `telemetry_hybrid_tuner.jl`, `telemetry_odyssey_tuner.jl` |
+| Atmosphere studies (SpaceAGORAAtmosphereStudies) | GRAM fidelity comparisons, aerobraking perturbation Monte Carlo and historical entry-density investigations |
+| Parallelization studies (SpaceAGORAParallelizationStudies) | Paper protocols, constellation and Monte Carlo scaling investigations, cross-machine comparisons and paper-result tooling |
+| Mission reconstructions (SpaceAGORAMissionReconstructions) | CYGNSS reconstruction, telemetry fitting, mission-specific scenario sweeps and dispersed propagation investigations |
+| RPO studies (SpaceAGORARPOStudies) | The final iSpaRo HyPR reconstruction, its saved inputs and study-specific checks |
+
+A completed run is not by itself evidence of physical agreement or reproduction
+of a publication. Read each project's interpretation limits. Some studies need
+licensed native libraries, existing spacecraft assets or separately obtained
+telemetry. The study repositories are private. Lab members retain access; outside
+collaborators and students need an invitation. Dataset access and licensing
+requirements still apply independently.
 
 The former `SpaceAGORACalibration.jl/` campaign package and its `bin/` drivers
-have been retired. Use the tuning scripts listed above for telemetry parameter
-fitting, or [Verification Study](verification_study.md) to compare simulations
-with observations. Automatic performance tuning for parallel execution remains
-available.
+remain retired. Use the mission repository for historical telemetry fitting, or
+[Verification Study](verification_study.md) for the maintained core workflow that
+compares a simulation with observations. Automatic performance tuning for
+parallel execution remains available in core.
 
-For long studies, set an explicit output directory and keep the terminal log with
-the artifacts.
+## What stays in core
+
+The CLI entry points above remain here, together with small teaching examples,
+numerical regression fixtures and reusable verification and benchmark harnesses.
+Their implementations include `performance_runtime_analysis/`,
+`parallelization_performance/` and the smart parallel ladder under
+`benchmarks/studies/`. A folder named `studies` does not make every file a paper
+campaign: these retained tools support core development and its CLI.
+
+Core tests retain the generic planner, actuator, telemetry-parser and parallel
+execution assertions. Tests tied to a particular publication, saved paper input
+or mission record move with that research project. The replacement projects run
+their own checks; core does not silently fetch their studies to run its tests.
+
+Shared installation, calibration and verification commands remain in `scripts/`.
+Development probes live in `scripts/dev/`. Core's remote launcher still prepares
+and runs core jobs; the paper workload and its remote recipe belong to the
+parallelization repository.
+
+## Record a result
+
+Set an explicit output directory and retain the source revision, environment,
+configuration, host, logs and raw outputs together. Keep generated plots, profiler
+captures and result tables outside the source checkout. A historical result does
+not validate current code.
+
+The paper-routing analysis and archive helper now live beside their runner in the
+parallelization repository. Its `CASES.md` explains which tools consume raw
+per-repeat records and which consume aggregated successful runs. Use that
+project's archive destination rather than writing results back into core.

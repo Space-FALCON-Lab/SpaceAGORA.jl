@@ -1,11 +1,11 @@
-// Run: node test/unit/visualization/terrain_sampling_tests.mjs /path/to/fixtures.json
+// Run: node test/unit/visualization/terrain_sampling_tests.mjs /path/to/fixtures.json /path/to/companion/viewer
 // Fixtures are emitted by the actual-package Julia terrain export tests.
 import assert from 'node:assert/strict';
 import { readFile,writeFile,mkdtemp,rm } from 'node:fs/promises';
 import { dirname,resolve,join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath,pathToFileURL } from 'node:url';
-const repo=resolve(dirname(fileURLToPath(import.meta.url)),'../../..');
+const viewerDir=process.argv[3]; if(!viewerDir)throw new Error('pass the installed companion viewer directory');
 const fixture=process.argv[2]; if(!fixture)throw new Error('pass the Julia-generated fixtures.json path');
 const cases=JSON.parse(await readFile(fixture,'utf8'));
 assert.ok(Array.isArray(cases) && cases.length>0,'Julia terrain fixtures must be nonempty');
@@ -13,8 +13,8 @@ const combined=JSON.parse(await readFile(join(dirname(fixture),'combined-export.
 const dir=await mkdtemp(join(tmpdir(),'spaceagora-terrain-js-'));
 try {
  await writeFile(join(dir,'package.json'),'{"type":"module"}');
- for(const [name,path] of [['three.js','viewer/vendor/three.module.js'],['data.js','viewer/src/data.js'],['terrain.js','viewer/src/terrain.js'],['globe.js','viewer/src/globe.js']]) {
-  let text=await readFile(join(repo,path),'utf8');
+ for(const [name,path] of [['three.js','vendor/three.module.js'],['data.js','src/data.js'],['terrain.js','src/terrain.js'],['globe.js','src/globe.js']]) {
+  let text=await readFile(join(viewerDir,path),'utf8');
   const imports={'three':'./three.js','viewer/data.js':'./data.js','viewer/globe.js':'./globe.js'};
   text=text.replace(/(['"])(three|viewer\/data\.js|viewer\/globe\.js)\1/g,(_,q,s)=>q+imports[s]+q);
   await writeFile(join(dir,name),text);
@@ -67,10 +67,10 @@ try {
  for(const mutate of [p=>p.reference_radius_m=0,p=>p.reference_radius_m=Infinity,p=>p.grids[0].heights='',p=>p.grids[0].heights=[NaN],p=>p.grids[0].lon_max=p.grids[0].lon_min+360,p=>p.grids[0].lat_max=91,p=>p.grids[0].lat_min=true,p=>p.site.lon_deg=Infinity,p=>p.fallback_height_m='0']){const p=cloned();mutate(p);assert.throws(()=>createTerrain(p,planet));}
  const imageCase=cases.find(c=>c.name==='imagery');
  for(const mutate of [p=>p.tiles.nodes=[],p=>p.tiles.nodes.push({...p.tiles.nodes[0]}),p=>p.tiles.nodes[0].x=1,p=>p.tiles.nodes[0].level=21,p=>p.tiles.root.lon_max=Infinity,p=>p.tiles.max_level=1]){const p=structuredClone(imageCase.payload);mutate(p);assert.throws(()=>createTerrain(p,planet));}
- const source=await readFile(join(repo,'viewer/src/main.js'),'utf8');
+ const source=await readFile(join(viewerDir,'src/main.js'),'utf8');
  assert.ok(source.includes('if (terrain.hasHeights)'));
  assert.ok(source.includes('1000 * (r - terrain.referenceRadiusKm) - h'));
- const dust=await readFile(join(repo,'viewer/src/dust.js'),'utf8');
+ const dust=await readFile(join(viewerDir,'src/dust.js'),'utf8');
  assert.ok(dust.includes('referenceRadiusKm + h * DUST_M_TO_KM'));
   console.log('PASS singleton axes, malformed payload rejection, finite wrapping, imagery-free queries, main/dust reference-radius plumbing');
   // These blocks came through one actual export_visualization call, not a

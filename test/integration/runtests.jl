@@ -1,5 +1,12 @@
+# The test tools, Aqua among them, come from the test environment
+# (test/Project.toml): `julia --startup-file=no test/setup.jl`, then
+# `julia --project=test test/runtests.jl`, or `Pkg.test()` from the root project.
+Base.find_package("Aqua") === nothing &&
+    error("Run the tests from the test environment: `julia --startup-file=no test/setup.jl`, then `julia --project=test test/runtests.jl`, or `Pkg.test()` from the root project.")
+Base.include(@__MODULE__, joinpath(@__DIR__, "..", "helpers", "load_edg.jl"))
 Base.include(@__MODULE__, joinpath(@__DIR__, "..", "helpers", "load_hypr.jl"))
 using Test
+using Aqua
 using CSV
 using DataFrames
 using Dates
@@ -22,16 +29,6 @@ using SPICE
 using SpecialFunctions: loggamma
 using TOML
 
-const HAS_AQUA = let
-    try
-        @eval using Aqua
-        true
-    catch err
-        @info "Skipping Aqua-backed test checks" exception=(err, catch_backtrace())
-        false
-    end
-end
-
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
 # Load the package the way users and the CI example jobs do. Every module name
@@ -41,6 +38,8 @@ const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 # "module-replacement" bug class -- and each probe subprocess recompiled the
 # package from source.)
 using SpaceAGORA
+samefile(pkgdir(SpaceAGORA), REPO_ROOT) ||
+    error("The tests loaded SpaceAGORA from $(pkgdir(SpaceAGORA)), not from this checkout; rerun `julia --startup-file=no test/setup.jl`.")
 const SimulationModel = SpaceAGORA.SimulationModel
 using .SimulationModel
 const RuntimeServices = SpaceAGORA.RuntimeServices
@@ -56,7 +55,7 @@ const quat_mult = SimulationModel.quat_mult
 # to SimulationEngine.run_simulation); do not rebind exported names here.
 
 # Frame-transform helpers the suites call unqualified. They are defined in
-# src/core/interfaces/reference_system.jl, which SimulationEngine carries.
+# src/foundation/core/interfaces/reference_system.jl, which SimulationEngine carries.
 const rtolatlong = SimulationEngine.rtolatlong
 const orbitalelemtorv = SimulationEngine.orbitalelemtorv
 const rvtoorbitalelement = SimulationEngine.rvtoorbitalelement
@@ -66,7 +65,7 @@ const orbital_elements_to_lvlh_quaternion = SimulationEngine.orbital_elements_to
 
 # The firing-plan tables are not part of the package; suite 01 and
 # examples/AGORA_Odyssey.jl still consume them by path.
-include(joinpath(REPO_ROOT, "src", "mission", "operations", "maneuver_plans.jl"))
+include(joinpath(REPO_ROOT, "src", "orchestration", "mission", "operations", "maneuver_plans.jl"))
 
 # GRAM-backed behaviour comes from the SpaceAGORAGRAMSuiteExt package
 # extension, which Julia loads on its own once GRAMSuite is importable. The
@@ -98,11 +97,6 @@ if !isdefined(@__MODULE__, :make_example_config)
     const run_and_report = TelemetryVerification.run_and_report
 end
 
-include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "energy_depletion_gnc_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "mpc_campaign_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "dynamics", "ks_dynamics_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "energy_depletion_lifecycle_tests.jl"))
-
 if !isdefined(@__MODULE__, :_solver_policy_mode)
     const build_initial_conditions = SimulationEngine.build_initial_conditions
     const _build_solver_tolerances = SimulationEngine._build_solver_tolerances
@@ -128,8 +122,6 @@ if !isdefined(@__MODULE__, :_solver_policy_mode)
     const _rhs_execution_plan = SimulationEngine._rhs_execution_plan
     const _retcode_is_stiff_symptom = SimulationEngine._retcode_is_stiff_symptom
     const _split_imex_solver_spec = SimulationEngine._split_imex_solver_spec
-    const _symplectic_conservative_eligible = SimulationEngine._symplectic_conservative_eligible
-    const _symplectic_fixed_dt_s = SimulationEngine._symplectic_fixed_dt_s
     const _gravity_backbone_fixed_dt_s = SimulationEngine._gravity_backbone_fixed_dt_s
     const _gravity_backbone_eligible = SimulationEngine._gravity_backbone_eligible
     const _gravity_backbone_reject_reason = SimulationEngine._gravity_backbone_reject_reason
@@ -247,6 +239,10 @@ end
 struct InvalidPartitionForceModel <: SimulationModel.AbstractForceTorqueModel
 end
 
+# No force or torque hook at all.
+struct NoWrenchForceModel <: SimulationModel.AbstractForceTorqueModel
+end
+
 struct BackboneCustomGravityModel <: SimulationModel.AbstractForceTorqueModel
     accel::SVector{3, Float64}
 end
@@ -279,18 +275,17 @@ function SimulationModel.EnvironmentModels.getDensity(
     return model.rho, model.temp, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
-function SimulationModel.calcControlForceTorque(
+function SimulationModel.control_wrench(
     model::TimedTangentialThrusterModel,
-    u::AbstractVector{Float64},
+    x::SimulationModel.StateSample,
     p::ODEParams,
-    i::Int64,
     t::Float64
 )
     if t < model.start_time || t > model.stop_time
         return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
     end
 
-    v = SVector{3, Float64}(u.vel)
+    v = x.vel_ii
     vm = norm(v)
     if vm == 0.0 || !isfinite(vm)
         return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
@@ -300,7 +295,7 @@ function SimulationModel.calcControlForceTorque(
     return force, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
-function SimulationModel.calcControlEffect!(
+function SimulationModel.update_control!(
     model::TimedTangentialThrusterModel,
     u::ComponentVector,
     p::ODEParams,
@@ -310,7 +305,7 @@ function SimulationModel.calcControlEffect!(
     return nothing
 end
 
-function SimulationModel.calcGuidanceEffect!(
+function SimulationModel.update_guidance!(
     model::CountingGuidanceModel,
     u::ComponentVector,
     p::ODEParams,
@@ -321,7 +316,7 @@ function SimulationModel.calcGuidanceEffect!(
     return nothing
 end
 
-function SimulationModel.calcNavigationEffect!(
+function SimulationModel.update_navigation!(
     model::CountingNavigationModel,
     u::ComponentVector,
     p::ODEParams,
@@ -332,7 +327,7 @@ function SimulationModel.calcNavigationEffect!(
     return nothing
 end
 
-function SimulationModel.calcControlEffect!(
+function SimulationModel.update_control!(
     model::CountingControlModel,
     u::ComponentVector,
     p::ODEParams,
@@ -343,48 +338,63 @@ function SimulationModel.calcControlEffect!(
     return nothing
 end
 
-function SimulationModel.calcForceTorque(
+include(joinpath(@__DIR__, "..", "helpers", "dynamics_force_torque.jl"))
+
+function SimulationModel.wrench(
     model::ThrowingForceModel,
-    x::AbstractVector{Float64},
-    p::ODEParams,
-    i::Int64
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64
 )
     error("intentional derivative failure")
 end
 
-function SimulationModel.calcForceTorque(
+function SimulationModel.wrench(
     model::NaNForceModel,
-    x::AbstractVector{Float64},
-    p::ODEParams,
-    i::Int64
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64
 )
     return SVector{3, Float64}(NaN, NaN, NaN), SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
-function SimulationModel.calcForceTorque(
+function SimulationModel.wrench(
     model::NaNParamForceModel,
-    x::AbstractVector{Float64},
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64
+)
+    return SVector{3, Float64}(NaN, NaN, NaN), SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
+# The dynamics evaluate a model through wrench_caching!, which has the run's
+# parameters: this one also writes a NaN into them.
+function SimulationModel.wrench_caching!(
+    model::NaNParamForceModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64,
     p::ODEParams,
-    i::Int64
+    sat_idx::Int
 )
     p.shared_buffers.current_time[] = NaN
-    return SVector{3, Float64}(NaN, NaN, NaN), SVector{3, Float64}(0.0, 0.0, 0.0)
+    return SimulationModel.wrench(model, x, env, t)
 end
 
-function SimulationModel.calcForceTorque(
+function SimulationModel.wrench(
     model::ConstantTorqueModel,
-    x::AbstractVector{Float64},
-    p::ODEParams,
-    i::Int64
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64
 )
     return SVector{3, Float64}(0.0, 0.0, 0.0), model.torque
 end
 
-function SimulationModel.calcForceTorque(
+function SimulationModel.wrench(
     model::ConstantForceModel,
-    x::AbstractVector{Float64},
-    p::ODEParams,
-    i::Int64
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64
 )
     return model.force, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
@@ -440,11 +450,11 @@ function SimulationModel.gravity_backbone_kick_acceleration_ii(
     return SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
-function SimulationModel.calcForceTorque(
+function SimulationModel.wrench(
     model::InvalidPartitionForceModel,
-    x::AbstractVector{Float64},
-    p::ODEParams,
-    i::Int64
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64
 )
     return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
 end
@@ -871,6 +881,7 @@ module GuidanceSandbox
 using ..SimulationModel
 using ..SimulationModel.Geodesy: geodetic_altitude, ellipsoid_surface_radius, radius_for_geodetic_altitude
 using ..SimulationModel.AbstractTypes: AbstractGuidanceModel
+using ..SimulationModel.EphemeridesModels: ephemerides_frame_lpi
 using ComponentArrays
 using LinearAlgebra
 using StaticArrays
@@ -879,6 +890,7 @@ const GUIDANCE_SANDBOX = GuidanceSandbox
 
 
 const _ALL_SUITES = [
+    "00_energy_depletion_guidance_tests.jl",
     "01_contract_and_api_tests.jl",
     "02_callbacks_parallel_and_smoke_tests.jl",
     "03_persistence_units_and_rotational_tests.jl",

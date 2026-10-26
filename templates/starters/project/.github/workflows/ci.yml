@@ -1,0 +1,19 @@
+# Tests this project against its pinned SpaceAGORA commit with SpaceAGORA's
+# reusable workflow. The ref after @, spaceagora-rev and the rev in
+# SpaceAGORASource.toml are the same commit; change all three together.
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  spaceagora:
+    uses: Space-FALCON-Lab/SpaceAGORA.jl/.github/workflows/contributor-ci.yml@0000000000000000000000000000000000000000
+    with:
+      spaceagora-rev: "0000000000000000000000000000000000000000"
+      kind: project
+      manifest: committed
+      examples: scripts/run_case.jl

@@ -32,6 +32,10 @@ using SpaceAGORA, GRAMSuite
 include("interface_tests.jl")
 end
 
+module GridDiscoveryTests
+include("discovery_tests.jl")
+end
+
 module GridSchemaTests
 using SpaceAGORA, GRAMSuite
 include("schema_tests.jl")
@@ -40,7 +44,7 @@ end
 # Synthetic named presets exercise the resolver through the real package
 # extension, without downloading the public mission assets or loading native GRAM.
 module GridPresetTests
-include("../surrogate_presets_tests.jl")
+include("../smoke/surrogate_presets_tests.jl")
 end
 
 module GridPresetCLITests

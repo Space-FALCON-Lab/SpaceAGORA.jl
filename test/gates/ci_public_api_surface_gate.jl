@@ -5,9 +5,16 @@ const REPO_ROOT = dirname(dirname(dirname(@__FILE__)))
 include(joinpath(REPO_ROOT, "docs", "public_api_symbols.jl"))
 using .PublicAPISymbols
 
-documented = Set(spec.symbol for spec in public_api_specs(SpaceAGORA))
+specs = public_api_specs(SpaceAGORA)
+# The public Conformance module exports its own names; its section lists exactly those.
+documented = Set(spec.symbol for spec in specs if spec.owner !== :Conformance)
 exported = Set(Symbol.(names(SpaceAGORA)))
 delete!(exported, :SpaceAGORA)
+conformance_documented = Set(spec.symbol for spec in specs if spec.owner === :Conformance)
+conformance_exported = setdiff(Set(Symbol.(names(SpaceAGORA.Conformance))), (:Conformance,))
+conformance_documented == conformance_exported || error("docs/public_api_symbols.jl and the exports of SpaceAGORA.Conformance differ: " *
+    "undocumented $(sort!(collect(setdiff(conformance_exported, conformance_documented)))), " *
+    "not exported $(sort!(collect(setdiff(conformance_documented, conformance_exported))))")
 
 missing_from_docs = sort!(collect(setdiff(exported, documented)))
 missing_from_exports = sort!(collect(setdiff(documented, exported)))

@@ -1,0 +1,895 @@
+struct SaveField{F}
+    name::Symbol
+    getter::F
+    per_satellite::Bool
+    column_prefix::String
+end
+
+function SaveField(
+    name::Symbol,
+    getter::F;
+    per_satellite::Bool=false,
+    column_prefix::AbstractString=String(name)
+) where {F}
+    return SaveField{F}(name, getter, per_satellite, String(column_prefix))
+end
+
+@inline function _save_positions(num_sats::Int, u, t, integrator)
+    positions = Vector{SVector{3, Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        positions[i] = CallbackServices._state_position_ii(u, i)
+    end
+    return positions
+end
+
+@inline function _save_velocities(num_sats::Int, u, t, integrator)
+    velocities = Vector{SVector{3, Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        velocities[i] = CallbackServices._state_velocity_ii(u, i)
+    end
+    return velocities
+end
+
+# Initial SavingCallback values are created before the first solver RHS.
+# Register only built-in force arrays, then backfill them from that actual
+# evaluation. This adds no model queries and keeps custom getters unchanged.
+# NaN denotes an unavailable force if initialization aborts before any matching
+# RHS is evaluated; calibration leftovers must never masquerade as output.
+function _register_initial_force_output!(destination, field::Symbol, u, t, p)
+    cache = p.save_cache
+    if cache.initial_force_output_pending[] && Float64(t) == cache.initial_force_output_time[]
+        if cache.initial_force_output_state[] === nothing
+            cache.initial_force_output_state[] = copy(u)
+        end
+        push!(cache.initial_force_output_destinations, (field, destination))
+        if destination isa AbstractVector{<:SVector}
+            fill!(destination, SVector{3, Float64}(NaN, NaN, NaN))
+        else
+            fill!(destination, NaN)
+        end
+    end
+    return destination
+end
+
+function _copy_initial_force_output!(destination::AbstractVector{<:SVector}, source)
+    copyto!(destination, source)
+    return nothing
+end
+
+function _copy_initial_force_output!(destination::AbstractMatrix, source)
+    @inbounds for i in eachindex(source), k in 1:3
+        destination[k, i] = source[i][k]
+    end
+    return nothing
+end
+
+@inline function _publish_initial_force_outputs!(u, t, p)::Nothing
+    cache = p.save_cache
+    cache.initial_force_output_pending[] || return nothing
+    Float64(t) == cache.initial_force_output_time[] || return nothing
+    state = cache.initial_force_output_state[]
+    # An implicit solver may probe a perturbed state at the same time. Only
+    # the exact state saved during callback initialization can publish.
+    state === nothing || isequal(u, state) || return nothing
+    for (field, destination) in cache.initial_force_output_destinations
+        source = field === :drag ? cache.drag_cache :
+            field === :lift ? cache.lift_cache : cache.cross_cache
+        _copy_initial_force_output!(destination, source)
+    end
+    empty!(cache.initial_force_output_destinations)
+    cache.initial_force_output_state[] = nothing
+    cache.initial_force_output_pending[] = false
+    return nothing
+end
+
+@inline function _save_drag(num_sats::Int, u, t, integrator)
+    p = integrator.p
+    drag_cache = p.save_cache.drag_cache
+    drags = Vector{SVector{3, Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        drags[i] = i <= length(drag_cache) ? drag_cache[i] : SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    return _register_initial_force_output!(drags, :drag, u, t, p)
+end
+
+@inline function _save_lift(num_sats::Int, u, t, integrator)
+    p = integrator.p
+    lift_cache = p.save_cache.lift_cache
+    lifts = Vector{SVector{3, Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        lifts[i] = i <= length(lift_cache) ? lift_cache[i] : SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    return _register_initial_force_output!(lifts, :lift, u, t, p)
+end
+
+@inline function _save_cross(num_sats::Int, u, t, integrator)
+    p = integrator.p
+    cross_cache = p.save_cache.cross_cache
+    crosses = Vector{SVector{3, Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        crosses[i] = i <= length(cross_cache) ? cross_cache[i] : SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    return _register_initial_force_output!(crosses, :cross, u, t, p)
+end
+
+@inline function _save_wind(num_sats::Int, u, t, integrator)
+    p = integrator.p
+    shared_winds = p.shared_buffers.winds
+    winds = Vector{SVector{3, Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        winds[i] = i <= length(shared_winds) ? shared_winds[i] : SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    return winds
+end
+
+@inline function _save_periapsis_altitude(num_sats::Int, u, t, integrator)
+    planet = integrator.p.args.environment_model.planet
+    periapsis_altitudes = Vector{Float64}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        pos = CallbackServices._state_position_ii(u, i)
+        vel = CallbackServices._state_velocity_ii(u, i)
+        oe = rvtoorbitalelement(pos, vel, planet)
+        periapsis_altitudes[i] = oe[1] * (1.0 - oe[2]) - planet.Rp_e
+    end
+    return periapsis_altitudes
+end
+
+@inline function _save_altitude(num_sats::Int, u, t, integrator)
+    planet = integrator.p.args.environment_model.planet
+    et = integrator.p.shared_buffers.et_start[] + Float64(t)
+    ephemerides_model = integrator.p.args.environment_model.ephemerides_model
+    altitudes = Vector{Float64}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        pos = CallbackServices._state_position_ii(u, i)
+        vel = CallbackServices._state_velocity_ii(u, i)
+        rp, _ = r_intor_p!(pos, vel, planet, et, ephemerides_model)
+        altitudes[i] = rtolatlong(rp, planet, ephemerides_model)[1]
+    end
+    return altitudes
+end
+
+@inline function _save_latitude_deg(num_sats::Int, u, t, integrator)
+    planet = integrator.p.args.environment_model.planet
+    et = integrator.p.shared_buffers.et_start[] + Float64(t)
+    ephemerides_model = integrator.p.args.environment_model.ephemerides_model
+    latitudes_deg = Vector{Float64}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        pos = CallbackServices._state_position_ii(u, i)
+        vel = CallbackServices._state_velocity_ii(u, i)
+        rp, _ = r_intor_p!(pos, vel, planet, et, ephemerides_model)
+        latitudes_deg[i] = rad2deg(rtolatlong(rp, planet, ephemerides_model)[2])
+    end
+    return latitudes_deg
+end
+
+@inline function _save_longitude_deg(num_sats::Int, u, t, integrator)
+    planet = integrator.p.args.environment_model.planet
+    et = integrator.p.shared_buffers.et_start[] + Float64(t)
+    ephemerides_model = integrator.p.args.environment_model.ephemerides_model
+    longitudes_deg = Vector{Float64}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        pos = CallbackServices._state_position_ii(u, i)
+        vel = CallbackServices._state_velocity_ii(u, i)
+        rp, _ = r_intor_p!(pos, vel, planet, et, ephemerides_model)
+        longitudes_deg[i] = rad2deg(rtolatlong(rp, planet, ephemerides_model)[3])
+    end
+    return longitudes_deg
+end
+
+@inline function _save_heat_rate(num_sats::Int, u, t, integrator)
+    heat_rates = Vector{Float64}(undef, num_sats)
+    shared_heat_rates = integrator.p.shared_buffers.heat_rates
+    @inbounds for i in 1:num_sats
+        rates = if hasproperty(u, :sc)
+            _compute_stage_heat_rates!(integrator.p, u.sc[i], i, Float64(t); use_buffered_density=false)
+        elseif i <= length(shared_heat_rates)
+            shared_heat_rates[i]
+        else
+            Float64[]
+        end
+        heat_rates[i] = !isempty(rates) ? maximum(rates) : 0.0
+    end
+    return heat_rates
+end
+
+@inline function _save_heat_load(num_sats::Int, u, t, integrator)
+    heat_loads = Vector{Float64}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        loads = CallbackServices._state_heat_loads(u, integrator.p.args, i)
+        heat_loads[i] = isempty(loads) ? 0.0 : maximum(loads)
+    end
+    return heat_loads
+end
+
+@inline function _save_mass(num_sats::Int, u, t, integrator)
+    masses = Vector{Float64}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        masses[i] = CallbackServices._state_mass_kg(u, integrator.p.args, i)
+    end
+    return masses
+end
+
+@inline function _save_quaternion(num_sats::Int, u, t, integrator)
+    quaternions = Vector{SVector{4, Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        q = CallbackServices._state_quaternion(u, i)
+        q === nothing && throw(ArgumentError("Quaternion save field requires orientation state."))
+        quaternions[i] = q
+    end
+    return quaternions
+end
+
+# Non-root link poses for the visualization sidecar. These are not integrated
+# state on the standard path; control code rotates the `Link` objects in place,
+# so the snapshot has to read them at save time. Ragged across spacecraft
+# (7 floats per non-root link), so the output layer falls back to its generic
+# per-satellite column expansion: `sc{i}_link_pose_{1..7n}`.
+@inline function _save_link_poses(num_sats::Int, u, t, integrator)
+    spacecraft = integrator.p.args.dynamics_model.spacecraft
+    poses = Vector{Vector{Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        poses[i] = link_pose_vector(spacecraft[i])
+    end
+    return poses
+end
+
+# The exhaust direction of every thruster, in its link's frame, at the sample's
+# time, for the viewer's plumes and cones: a gimballed thruster's turned
+# direction. Thrusters in scene order (links in order, each link's thrusters in
+# order), three floats each: `sc{i}_thruster_direction_{1..3n}`. A sample inside
+# a step is saved after the callbacks at the step's end, so a gimbal that
+# ticked there still held its previous angle at the sample (control ticks are
+# solver stops: a step never contains one).
+@inline function _save_thruster_directions(num_sats::Int, u, t, integrator)
+    spacecraft = integrator.p.args.dynamics_model.spacecraft
+    step_end = Float64(integrator.t)
+    inside = Float64(t) < step_end
+    angle_at(g) = (inside && g.last_update_s == step_end) ? g.previous_angle_rad : g.angle_rad
+    out = Vector{Vector{Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        v = Float64[]
+        for link in spacecraft[i].links, thruster in link.thrusters
+            nominal = SVector{3, Float64}(thruster.direction)
+            d = thruster.gimballed ? _gimbal_rotation(thruster, link.gimbals, angle_at) * nominal : nominal
+            n = norm(d)
+            e = n > 0.0 ? -d / n : d
+            push!(v, e[1], e[2], e[3])
+        end
+        out[i] = v
+    end
+    return out
+end
+
+# Atmospheric density the RHS last evaluated for each satellite (kg/m^3), for
+# the viewer's pass colouring; zero outside the atmosphere or without one.
+@inline function _save_density(num_sats::Int, u, t, integrator)
+    densities = integrator.p.shared_buffers.densities
+    out = Vector{Float64}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        out[i] = i <= length(densities) ? Float64(densities[i]) : 0.0
+    end
+    return out
+end
+
+# Unit vector from the planet's center to the Sun in the inertial frame of the
+# saved positions, for the viewer's sun lighting. One direction per row, not
+# per satellite: every spacecraft of a run shares the central body.
+@inline function _save_sun_direction(u, t, integrator)
+    environment = integrator.p.args.environment_model
+    et = integrator.p.shared_buffers.et_start[] + Float64(t)
+    direction = ephemerides_sun_ii(environment.ephemerides_model, environment.planet, et)
+    return direction === nothing ? SVector{3, Float64}(NaN, NaN, NaN) : direction
+end
+
+# Compliant robot-arm chain: the integrated arm state (`arm_r`, `arm_q` per arm
+# link) relative to the spacecraft position, 7 floats per link.
+@inline function _save_arm_poses(num_sats::Int, u, t, integrator)
+    poses = Vector{Vector{Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        sc_view = hasproperty(u, :sc) ? u.sc[i] : nothing
+        r_ii = CallbackServices._state_position_ii(u, i)
+        poses[i] = sc_view === nothing ? Float64[] : arm_pose_vector(sc_view, r_ii)
+    end
+    return poses
+end
+
+# Thruster firing levels (0 to 1) for the viewer's plumes, in the order the
+# visualization scene lists the thrusters: the spacecraft's links in order,
+# each link's `thrusters` in order. Ragged across spacecraft (one value per
+# thruster), so the output layer expands them as `sc{i}_thruster_level_{k}`.
+@inline function _thruster_count(model)::Int
+    n = 0
+    for link in model.links
+        n += length(link.thrusters)
+    end
+    return n
+end
+
+# The firing levels an effector reports for spacecraft `i`: its own
+# `control_thruster_levels`, or, for an effector in `:mounted` actuation that
+# does not report them, the mounted thrusters' fractions at the levels it
+# holds, as the faults and the shedding leave them. A `:mounted` effector on a
+# spacecraft with faults always takes the mounted fractions, so the columns
+# and the plumes show what the faulted thrusters deliver. With a sample time
+# `t`, a reported level is the level at that time (see `_thruster_levels_at`).
+@inline function _effector_thruster_levels(effector, i::Int, spacecraft, t=nothing)
+    mounted = actuation_mode(effector) === :mounted
+    if !(mounted && has_faults(spacecraft))
+        reported = t === nothing ? control_thruster_levels(effector, i) : _thruster_levels_at(effector, i, t)
+        reported === nothing || return reported
+    end
+    mounted || return nothing
+    levels = actuator_levels(effector, i)
+    levels === nothing && return nothing
+    return mounted_thruster_fractions(spacecraft, shed_levels(spacecraft, faulted_levels(spacecraft, levels)))
+end
+
+@inline function _save_thruster_levels(num_sats::Int, counts::Vector{Int}, u, t, integrator)
+    effectors = integrator.p.args.control_model.control_effectors
+    spacecraft = integrator.p.args.dynamics_model.spacecraft
+    out = Vector{Vector{Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        levels = zeros(Float64, counts[i])
+        if counts[i] > 0
+            for j in _scope_members(integrator.p, :control, effectors, i)
+                effector = effectors[j]
+                reported = _effector_thruster_levels(effector, i, spacecraft[i], t)
+                reported === nothing && continue
+                for k in 1:min(counts[i], length(reported))
+                    value = Float64(reported[k])
+                    levels[k] = isfinite(value) ? clamp(value, 0.0, 1.0) : 0.0
+                end
+                break   # the first effector that drives this spacecraft's thrusters owns them
+            end
+        end
+        out[i] = levels
+    end
+    return out
+end
+
+"""
+    thruster_level_counts(args) -> Vector{Int}
+
+Number of thrusters per spacecraft, in the scene's order. Zero for a
+spacecraft whose links carry none or whose control effectors report no firing
+levels, so the `thruster_level` field covers only the vehicles that fly them.
+"""
+function thruster_level_counts(args::SimulationConfiguration)::Vector{Int}
+    spacecraft = args.dynamics_model.spacecraft
+    effectors = hasproperty(args, :control_model) && hasproperty(args.control_model, :control_effectors) ?
+        args.control_model.control_effectors : ()
+    counts = zeros(Int, length(spacecraft))
+    for i in eachindex(spacecraft)
+        n = _thruster_count(spacecraft[i])
+        n == 0 && continue
+        # A mounted effector may size its levels only at its first tick.
+        any(effector -> actuation_mode(effector) === :mounted ||
+            _effector_thruster_levels(effector, i, spacecraft[i]) !== nothing, effectors) || continue
+        counts[i] = n
+    end
+    return counts
+end
+
+"""
+    thruster_level_save_field(args) -> SaveField
+
+The `thruster_level` field: every thruster's firing level (0 to 1) per
+spacecraft, written to `sc{i}_thruster_level_{k}`.
+"""
+function thruster_level_save_field(args::SimulationConfiguration)
+    num_sats = length(args.dynamics_model.spacecraft)
+    counts = thruster_level_counts(args)
+    return SaveField(:thruster_level, (u, t, integrator) -> _save_thruster_levels(num_sats, counts, u, t, integrator); per_satellite=true, column_prefix="thruster_level")
+end
+
+@inline _thruster_level_field_enabled(args::SimulationConfiguration)::Bool =
+    args.simulation_settings.save_visualization_scene && any(>(0), thruster_level_counts(args))
+
+# Mounted actuation: the level every mounted actuator applies and the power the
+# mounted actuators draw, per spacecraft. A spacecraft's levels come from the
+# first control effector in `:mounted` actuation that holds levels for it, among
+# `members`, the effectors acting on it (`_scope_members`).
+@inline function _mounted_effector_levels(effectors, members, i::Int, n::Int)
+    for j in members
+        effector = effectors[j]
+        actuation_mode(effector) === :mounted || continue
+        levels = actuator_levels(effector, i)
+        (levels === nothing || length(levels) != n) && continue
+        return levels
+    end
+    return nothing
+end
+
+@inline _saved_wheel_momentum(u, i::Int) =
+    (hasproperty(u, :sc) && hasproperty(u.sc[i], :h_wheels)) ? u.sc[i].h_wheels : nothing
+@inline _saved_cmg_angles(u, i::Int) =
+    (hasproperty(u, :sc) && hasproperty(u.sc[i], :cmg_angles)) ? u.sc[i].cmg_angles : nothing
+
+# Terminal hardware an interlink drives: `applied` (spacecraft `i`'s applied
+# levels, or `nothing`) with each link-driven terminal at the level its active
+# link sets, zero while the battery sheds it.
+@inline function _with_link_driven_levels(applied, spacecraft, interlinks, i::Int, n::Int)
+    link_driven(interlinks, i) || return applied
+    linked = shed_link_driven_levels!(link_driven_levels!(zeros(Float64, n), interlinks, i), interlinks, i, spacecraft)
+    out = applied === nothing ? zeros(Float64, n) : copy(applied)
+    for (_, _, position) in interlinks.terminal_endpoints[i]
+        out[position] = linked[position]
+    end
+    return out
+end
+
+function _save_actuator_levels(num_sats::Int, counts::Vector{Int}, u, t, integrator)
+    effectors = integrator.p.args.control_model.control_effectors
+    interlinks = integrator.p.args.interlink_model
+    spacecraft = integrator.p.args.dynamics_model.spacecraft
+    out = Vector{Vector{Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        levels = counts[i] == 0 ? nothing : without_link_driven(_mounted_effector_levels(effectors,
+            _scope_members(integrator.p, :control, effectors, i), i, counts[i]), interlinks, i)
+        applied = levels === nothing ? nothing :
+            applied_actuator_levels(spacecraft[i], shed_levels(spacecraft[i], faulted_levels(spacecraft[i], levels));
+                wheel_momentum=_saved_wheel_momentum(u, i), cmg_angles=_saved_cmg_angles(u, i))
+        applied = counts[i] == 0 ? applied : _with_link_driven_levels(applied, spacecraft[i], interlinks, i, counts[i])
+        out[i] = applied === nothing ? zeros(Float64, counts[i]) : applied
+    end
+    return out
+end
+
+function _save_actuator_power(num_sats::Int, counts::Vector{Int}, u, t, integrator)
+    effectors = integrator.p.args.control_model.control_effectors
+    interlinks = integrator.p.args.interlink_model
+    spacecraft = integrator.p.args.dynamics_model.spacecraft
+    out = Vector{Float64}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        levels = counts[i] == 0 ? nothing : without_link_driven(_mounted_effector_levels(effectors,
+            _scope_members(integrator.p, :control, effectors, i), i, counts[i]), interlinks, i)
+        out[i] = levels === nothing ? 0.0 :
+            mounted_power(spacecraft[i], shed_levels(spacecraft[i], faulted_levels(spacecraft[i], levels)); wheel_momentum=_saved_wheel_momentum(u, i))
+        link_driven(interlinks, i) && (out[i] += last(link_terminal_power(interlinks, i, spacecraft[i])))
+    end
+    return out
+end
+
+# Per spacecraft, the data rate its active links carry out (`which === :sent`)
+# or in: with data stores, as the stores limit them.
+function _save_data_rates(u, t, integrator, which::Symbol)
+    p = integrator.p
+    context = LinkContext(time_s=Float64(t), planet=p.args.environment_model.planet)
+    if any(has_data_store, p.args.dynamics_model.spacecraft)
+        flows = _data_flows(p.args.interlink_model, p.args.dynamics_model.spacecraft, u; is_active=p.is_active, context,
+            planet_frame=_station_planet_frame(p, t))
+        return which === :sent ? flows.sent : flows.received
+    end
+    sent, received = data_link_rates_bps(p.args.interlink_model, p.args.dynamics_model.spacecraft, u;
+        is_active=p.is_active, context=context, planet_frame=_station_planet_frame(p, t))
+    return which === :sent ? sent : received
+end
+
+"""
+    interlink_save_fields(args) -> Vector{SaveField}
+
+The interlink columns, in a run with an interlink model: per spacecraft
+`interlink_dv`, the Δv the selected links' forces gave since the run started
+(m/s, inertial, three columns), and `interlink_delta_sma`, their integrated
+contribution to the osculating semimajor axis (m). Both are integrated states.
+`laser_dv` and `laser_delta_sma`, their names before SpaceAGORA 0.6.0, follow
+with the same values: deprecated aliases, removed in 1.0. A column cannot warn,
+so leave them out of an explicit `save_fields` list to stop writing them.
+Empty without an interlink model.
+"""
+function interlink_save_fields(args::SimulationConfiguration)
+    args.interlink_model === nothing && return SaveField[]
+    return SaveField[
+        SaveField(:interlink_dv,
+            (u, t, integrator) -> [SVector{3, Float64}(current.interlink_dv) for current in u.sc]; per_satellite=true),
+        SaveField(:interlink_delta_sma,
+            (u, t, integrator) -> [current.interlink_delta_sma for current in u.sc]; per_satellite=true),
+        SaveField(:laser_dv,
+            (u, t, integrator) -> [SVector{3, Float64}(current.interlink_dv) for current in u.sc]; per_satellite=true),
+        SaveField(:laser_delta_sma,
+            (u, t, integrator) -> [current.interlink_delta_sma for current in u.sc]; per_satellite=true),
+    ]
+end
+
+"""
+    data_save_fields(args) -> Vector{SaveField}
+
+The data columns, in a run with data links (`DataLink`): per spacecraft
+`data_rate_tx_bps` and `data_rate_rx_bps`, the rates its active links carry out
+and in (bits per second; with data stores, as the stores limit them), and
+`data_sent_bits` and `data_received_bits`, the bits sent and received since the
+run started. With ground stations, `gs{s}_received_bits` and `gs{s}_sent_bits`
+follow for each station `s`, its integrated counters. Empty otherwise.
+"""
+function data_save_fields(args::SimulationConfiguration)
+    has_data_links(args.interlink_model) || return SaveField[]
+    fields = SaveField[
+        SaveField(:data_rate_tx_bps, (u, t, integrator) -> _save_data_rates(u, t, integrator, :sent); per_satellite=true),
+        SaveField(:data_rate_rx_bps, (u, t, integrator) -> _save_data_rates(u, t, integrator, :received); per_satellite=true),
+        SaveField(:data_sent_bits, (u, t, integrator) -> [Float64(current.data_sent_bits) for current in u.sc]; per_satellite=true),
+        SaveField(:data_received_bits, (u, t, integrator) -> [Float64(current.data_received_bits) for current in u.sc];
+            per_satellite=true),
+    ]
+    has_station_counters(args.interlink_model) || return fields
+    for s in eachindex(args.interlink_model.ground_stations)
+        push!(fields, SaveField(Symbol("gs$(s)_received_bits"), (u, t, integrator) -> Float64(u.gs[s].received_bits)))
+        push!(fields, SaveField(Symbol("gs$(s)_sent_bits"), (u, t, integrator) -> Float64(u.gs[s].sent_bits)))
+    end
+    return fields
+end
+
+"""
+    cmg_save_fields(args) -> Vector{SaveField}
+
+The `cmg_angle` field when a spacecraft carries control moment gyros: per
+spacecraft the gimbal angle of each CMG, in mounting order, rad
+(`sc{i}_cmg_angle_{j}`), from the integrated state.
+"""
+function cmg_save_fields(args::SimulationConfiguration)
+    args.mission_configuration.orientation_sim || return SaveField[]
+    any(sc -> !isempty(sc.root.rw_assembly.cmgs), args.dynamics_model.spacecraft) || return SaveField[]
+    num_sats = length(args.dynamics_model.spacecraft)
+    getter = (u, t, integrator) -> [hasproperty(u.sc[i], :cmg_angles) ? Float64[x for x in u.sc[i].cmg_angles] : Float64[]
+                                    for i in 1:num_sats]
+    return SaveField[SaveField(:cmg_angle, getter; per_satellite=true, column_prefix="cmg_angle")]
+end
+
+"""
+    actuator_level_counts(args) -> Vector{Int}
+
+Number of mounted actuators per spacecraft, in mounting order, when a control
+effector of the run is in `:mounted` actuation or an interlink drives terminal
+hardware; all zeros otherwise. The `actuator_level` field has one column per
+mounted actuator.
+"""
+function actuator_level_counts(args::SimulationConfiguration)::Vector{Int}
+    spacecraft = args.dynamics_model.spacecraft
+    effectors = hasproperty(args, :control_model) && hasproperty(args.control_model, :control_effectors) ?
+        args.control_model.control_effectors : ()
+    interlinks = hasproperty(args, :interlink_model) ? args.interlink_model : nothing
+    linked = interlinks !== nothing && any(!isempty, interlinks.terminal_endpoints)
+    (linked || any(effector -> actuation_mode(effector) === :mounted, effectors)) || return zeros(Int, length(spacecraft))
+    return Int[mounted_actuator_count(model) for model in spacecraft]
+end
+
+"""
+    actuator_save_fields(args) -> Vector{SaveField}
+
+The fields of a run in `:mounted` actuation: `actuator_level`, the level each
+mounted actuator applies (its command within its limits, written to
+`sc{i}_actuator_level_{k}` in mounting order), and `actuator_power`, the
+electrical power the mounted actuators of each spacecraft draw (W, written to
+`sc{i}_actuator_power`). A terminal an interlink drives shows the level its
+link sets. Empty when no control effector is in `:mounted` actuation and no
+interlink drives terminal hardware, or when no spacecraft carries mounted
+actuators.
+"""
+function actuator_save_fields(args::SimulationConfiguration)
+    counts = actuator_level_counts(args)
+    any(>(0), counts) || return SaveField[]
+    num_sats = length(args.dynamics_model.spacecraft)
+    return SaveField[
+        SaveField(:actuator_level, (u, t, integrator) -> _save_actuator_levels(num_sats, counts, u, t, integrator);
+            per_satellite=true, column_prefix="actuator_level"),
+        SaveField(:actuator_power, (u, t, integrator) -> _save_actuator_power(num_sats, counts, u, t, integrator);
+            per_satellite=true),
+    ]
+end
+
+# Articulated spacecraft (any non-fixed Joint): joint coordinates and rates, every link's inertial
+# COM pose from the forward kinematics, and the system COM. Rigid spacecraft contribute empty vectors.
+@inline function _save_joint_state(name::Symbol, num_sats::Int, u, t, integrator)
+    out = Vector{Vector{Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        sc_view = hasproperty(u, :sc) ? u.sc[i] : nothing
+        out[i] = (sc_view !== nothing && hasproperty(sc_view, name)) ? Float64.(getproperty(sc_view, name)) : Float64[]
+    end
+    return out
+end
+
+@inline function _articulated_runtime_for(integrator, i::Int)
+    runtimes = integrator.p.shared_buffers.articulated_runtimes
+    return i <= length(runtimes) ? runtimes[i] : nothing
+end
+
+@inline function _save_articulated_link_poses(num_sats::Int, u, t, integrator)
+    out = Vector{Vector{Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        art = _articulated_runtime_for(integrator, i)
+        if art === nothing
+            out[i] = Float64[]
+            continue
+        end
+        sc_view = u.sc[i]
+        pos, quat = articulated_forward_kinematics(art.tree, sc_view.pos, sc_view.q, sc_view.joint_q)
+        lp, lq = articulated_link_poses(art.tree, pos, quat)
+        pose = Vector{Float64}(undef, 7 * length(lp))
+        for l in eachindex(lp)
+            pose[(7l - 6):(7l - 4)] .= lp[l]
+            pose[(7l - 3):(7l)] .= lq[l]
+        end
+        out[i] = pose
+    end
+    return out
+end
+
+@inline function _save_system_com(num_sats::Int, u, t, integrator)
+    out = Vector{Vector{Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        art = _articulated_runtime_for(integrator, i)
+        att = _attachment_runtime_for(integrator, i)
+        if art === nothing && att === nothing
+            out[i] = Float64[]
+            continue
+        end
+        sc_view = u.sc[i]
+        # Spacecraft part: the articulated system COM (root mass plus moving bodies), or the rigid position.
+        if art === nothing
+            total = Float64(sc_view.mass)
+            com = total * SVector{3, Float64}(sc_view.pos[1], sc_view.pos[2], sc_view.pos[3])
+        else
+            tree = art.tree
+            pos, _ = articulated_forward_kinematics(tree, sc_view.pos, sc_view.q, sc_view.joint_q)
+            root_mass = sc_view.mass - art.moving_mass
+            total = root_mass + art.moving_mass
+            com = root_mass * pos[1]
+            for b in 2:tree.nb
+                com += tree.mass[b] * pos[b]
+            end
+        end
+        # Attachment bodies carry their own masses and are part of the system.
+        if att !== nothing
+            for k in 1:att.n_att, (j, body) in pairs(att.attachments[k].model.bodies)
+                c = att.col0[k] + j
+                total += body.mass_kg
+                com += body.mass_kg * (SVector{3, Float64}(sc_view.pos[1], sc_view.pos[2], sc_view.pos[3]) +
+                    SVector{3, Float64}(sc_view.att_r[1, c], sc_view.att_r[2, c], sc_view.att_r[3, c]))
+            end
+        end
+        out[i] = Float64.(com / total)
+    end
+    return out
+end
+
+@inline function _attachment_runtime_for(integrator, i::Int)
+    runtimes = integrator.p.shared_buffers.attachment_runtimes
+    return i <= length(runtimes) ? runtimes[i] : nothing
+end
+
+# Compliant attachments: inertial position (pos + att_r, 3) and scalar-last quaternion (4) of every attachment body.
+@inline function _save_attachment_poses(num_sats::Int, u, t, integrator)
+    out = Vector{Vector{Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        if _attachment_runtime_for(integrator, i) === nothing
+            out[i] = Float64[]
+            continue
+        end
+        sc_view = u.sc[i]
+        n = size(sc_view.att_r, 2)
+        pose = Vector{Float64}(undef, 7n)
+        for c in 1:n
+            for k in 1:3
+                # `att_r` is relative to the spacecraft position; the saved pose is inertial.
+                pose[7c - 7 + k] = sc_view.pos[k] + sc_view.att_r[k, c]
+            end
+            for k in 1:4
+                pose[7c - 4 + k] = sc_view.att_q[k, c]
+            end
+        end
+        out[i] = pose
+    end
+    return out
+end
+
+"""
+    articulated_save_fields(args) -> Vector{SaveField}
+
+Fields for articulated spacecraft (any non-fixed `Joint`); empty when there are none. `joint_q`
+and `joint_qd` list the non-fixed joints in `spacecraft.joints` order (`sc{i}_joint_q_{k}`,
+`sc{i}_joint_qd_{k}`); `articulated_link_pose` holds, per link in `spacecraft.links` order,
+the inertial COM position (3) and attitude quaternion (4, scalar-last, body-to-inertial)
+from the forward kinematics, including links merged through `:fixed` joints; `system_com`
+is the inertial system center of mass (3).
+"""
+function articulated_save_fields(args::SimulationConfiguration)
+    any(sc -> articulated_has_moving_joints(sc), args.dynamics_model.spacecraft) || return SaveField[]
+    n = length(args.dynamics_model.spacecraft)
+    return SaveField[
+        SaveField(:joint_q, (u, t, integrator) -> _save_joint_state(:joint_q, n, u, t, integrator); per_satellite=true, column_prefix="joint_q"),
+        SaveField(:joint_qd, (u, t, integrator) -> _save_joint_state(:joint_qd, n, u, t, integrator); per_satellite=true, column_prefix="joint_qd"),
+        SaveField(:articulated_link_pose, (u, t, integrator) -> _save_articulated_link_poses(n, u, t, integrator); per_satellite=true, column_prefix="articulated_link_pose"),
+        SaveField(:system_com, (u, t, integrator) -> _save_system_com(n, u, t, integrator); per_satellite=true, column_prefix="system_com"),
+    ]
+end
+
+"""
+    attachment_save_fields(args) -> Vector{SaveField}
+
+Fields for spacecraft with compliant attachments; empty when there are none. `attachment_pose` holds,
+per attachment body in attachment order, the inertial position (3) and scalar-last attitude quaternion
+(4, body-to-inertial): `sc{i}_attachment_pose_{k}` with `k = 7(body - 1) + 1:7`. `system_com` (inertial
+system center of mass of spacecraft plus attachment bodies) is added here for rigid spacecraft; articulated
+spacecraft get it from `articulated_save_fields`, which includes the attachment bodies.
+"""
+function attachment_save_fields(args::SimulationConfiguration)
+    any(sc -> !isempty(sc.attachments), args.dynamics_model.spacecraft) || return SaveField[]
+    n = length(args.dynamics_model.spacecraft)
+    fields = SaveField[
+        SaveField(:attachment_pose, (u, t, integrator) -> _save_attachment_poses(n, u, t, integrator); per_satellite=true, column_prefix="attachment_pose"),
+    ]
+    if !any(sc -> articulated_has_moving_joints(sc), args.dynamics_model.spacecraft)
+        push!(fields, SaveField(:system_com, (u, t, integrator) -> _save_system_com(n, u, t, integrator); per_satellite=true, column_prefix="system_com"))
+    end
+    return fields
+end
+
+@inline function _arm_pose_field_enabled(args::SimulationConfiguration)::Bool
+    args.simulation_settings.save_visualization_scene || return false
+    return any(i -> robot_arm_plan_for(args, i) !== nothing, eachindex(args.dynamics_model.spacecraft))
+end
+
+# The Sun direction is available when the run's ephemerides backend can
+# actually resolve the Sun for this body at the start epoch: SPICE with the
+# planet's kernels furnished, or the simple model at Earth. The probe is the
+# resolution itself, so a SPICE-backed configuration whose kernels were never
+# loaded omits the columns instead of throwing at the first save.
+function _sun_direction_field_enabled(args::SimulationConfiguration)::Bool
+    args.simulation_settings.save_visualization_scene || return false
+    return try
+        environment = args.environment_model
+        et = ephemerides_epoch_seconds(environment.ephemerides_model, args.initial_time)
+        direction = ephemerides_sun_ii(environment.ephemerides_model, environment.planet, et)
+        direction !== nothing && all(isfinite, direction)
+    catch
+        false
+    end
+end
+
+@inline function _density_field_enabled(args::SimulationConfiguration)::Bool
+    args.simulation_settings.save_visualization_scene || return false
+    return !(args.environment_model.density_model isa NoAtmosphereModel)
+end
+
+@inline function _thruster_direction_field_enabled(args::SimulationConfiguration)::Bool
+    args.simulation_settings.save_visualization_scene || return false
+    return any(model -> any(link -> !isempty(link.gimbals), model.links), args.dynamics_model.spacecraft)
+end
+
+@inline function _link_pose_field_enabled(args::SimulationConfiguration)::Bool
+    args.simulation_settings.save_visualization_scene || return false
+    return any(model -> !isempty(link_pose_link_indices(model)), args.dynamics_model.spacecraft)
+end
+
+function default_save_fields(args::SimulationConfiguration)
+    num_sats = length(args.dynamics_model.spacecraft)
+    fields = SaveField[
+        SaveField(:position, (u, t, integrator) -> _save_positions(num_sats, u, t, integrator); per_satellite=true, column_prefix="pos"),
+        SaveField(:velocity, (u, t, integrator) -> _save_velocities(num_sats, u, t, integrator); per_satellite=true, column_prefix="vel"),
+        SaveField(:altitude, (u, t, integrator) -> _save_altitude(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:latitude_deg, (u, t, integrator) -> _save_latitude_deg(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:longitude_deg, (u, t, integrator) -> _save_longitude_deg(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:mass, (u, t, integrator) -> _save_mass(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:wind, (u, t, integrator) -> _save_wind(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:drag, (u, t, integrator) -> _save_drag(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:lift, (u, t, integrator) -> _save_lift(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:cross, (u, t, integrator) -> _save_cross(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:periapsis_altitude, (u, t, integrator) -> _save_periapsis_altitude(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:heat_rate, (u, t, integrator) -> _save_heat_rate(num_sats, u, t, integrator); per_satellite=true),
+        SaveField(:heat_load, (u, t, integrator) -> _save_heat_load(num_sats, u, t, integrator); per_satellite=true)
+    ]
+    if args.mission_configuration.orientation_sim
+        push!(fields, SaveField(:quaternion, (u, t, integrator) -> _save_quaternion(num_sats, u, t, integrator); per_satellite=true, column_prefix="q"))
+    end
+    append!(fields, interlink_save_fields(args))
+    append!(fields, data_save_fields(args))
+    append!(fields, data_storage_save_fields(args))
+    append!(fields, articulated_save_fields(args))
+    append!(fields, attachment_save_fields(args))
+    append!(fields, plume_save_fields(args))
+    append!(fields, actuator_save_fields(args))
+    append!(fields, power_save_fields(args))
+    append!(fields, fault_save_fields(args))
+    append!(fields, sensor_save_fields(args))
+    append!(fields, cmg_save_fields(args))
+    for field in visualization_save_fields(args)
+        push!(fields, field)
+    end
+    return fields
+end
+
+"""
+    density_save_field(args) -> SaveField
+
+The `density` field (kg/m^3 per satellite) the viewer colours passes by.
+"""
+function density_save_field(args::SimulationConfiguration)
+    num_sats = length(args.dynamics_model.spacecraft)
+    return SaveField(:density, (u, t, integrator) -> _save_density(num_sats, u, t, integrator); per_satellite=true, column_prefix="density")
+end
+
+"""
+    sun_direction_save_field(args) -> SaveField
+
+The `sun_dir` field: the unit vector from the planet's center to the Sun in
+the inertial frame of the saved positions, written as `sun_dir_1..3` (one
+direction per row, shared by every spacecraft). The viewer's sun lighting
+reads it; `_sun_direction_field_enabled` decides whether the run's ephemerides
+can supply it.
+"""
+function sun_direction_save_field(::SimulationConfiguration)
+    return SaveField(:sun_dir, _save_sun_direction; per_satellite=false, column_prefix="sun_dir")
+end
+
+"""
+    visualization_save_fields(args) -> Vector{SaveField}
+
+The extra fields the viewer wants when `save_visualization_scene` is on:
+`link_pose` for articulated spacecraft, `thruster_direction` when a spacecraft
+carries a thruster gimbal, and `density` when the run has an atmosphere. Empty
+when the flag is off. The engine appends any of these that
+an explicit `save_fields` list lacks.
+"""
+function visualization_save_fields(args::SimulationConfiguration)
+    fields = SaveField[]
+    _thruster_level_field_enabled(args) && push!(fields, thruster_level_save_field(args))
+    _sun_direction_field_enabled(args) && push!(fields, sun_direction_save_field(args))
+    _link_pose_field_enabled(args) && push!(fields, link_pose_save_field(args))
+    _thruster_direction_field_enabled(args) && push!(fields, thruster_direction_save_field(args))
+    _arm_pose_field_enabled(args) && push!(fields, arm_pose_save_field(args))
+    _density_field_enabled(args) && push!(fields, density_save_field(args))
+    return fields
+end
+
+"""
+    arm_pose_save_field(args) -> SaveField
+
+The `arm_pose` field: per spacecraft, every compliant robot-arm link's COM
+position relative to the spacecraft (inertial, metres) and inertial
+quaternion.
+"""
+function arm_pose_save_field(args::SimulationConfiguration)
+    num_sats = length(args.dynamics_model.spacecraft)
+    return SaveField(:arm_pose, (u, t, integrator) -> _save_arm_poses(num_sats, u, t, integrator); per_satellite=true, column_prefix="arm_pose")
+end
+
+"""
+    thruster_direction_save_field(args) -> SaveField
+
+The `thruster_direction` field: per spacecraft, every thruster's exhaust
+direction in its link's frame (three floats per thruster, in scene order),
+which a thruster gimbal turns during the run. The visualization adds it when a
+spacecraft carries a gimbal.
+"""
+function thruster_direction_save_field(args::SimulationConfiguration)
+    num_sats = length(args.dynamics_model.spacecraft)
+    return SaveField(:thruster_direction, (u, t, integrator) -> _save_thruster_directions(num_sats, u, t, integrator);
+        per_satellite=true, column_prefix="thruster_direction")
+end
+
+"""
+    link_pose_save_field(args) -> SaveField
+
+The `link_pose` field on its own, so a caller that passes explicit
+`save_fields` to `run_simulation` still gets it when the visualization flag
+is on (the engine appends it if absent).
+"""
+function link_pose_save_field(args::SimulationConfiguration)
+    num_sats = length(args.dynamics_model.spacecraft)
+    return SaveField(:link_pose, (u, t, integrator) -> _save_link_poses(num_sats, u, t, integrator); per_satellite=true, column_prefix="link_pose")
+end
+
+@inline function _resolve_save_fields(save_fields, args::SimulationConfiguration)
+    resolved = isnothing(save_fields) ? default_save_fields(args) : collect(save_fields)
+    names = Symbol[field.name for field in resolved]
+    length(unique(names)) == length(names) || throw(ArgumentError("save_fields names must be unique. Got $(names)."))
+    return resolved
+end
+
+function _save_snapshot(save_fields, u, t, integrator)::SaveData
+    # SaveData is a persistence/output boundary; keep runtime logic on typed state and buffers.
+    snapshot = SaveData()
+    for field in save_fields
+        snapshot[field.name] = field.getter(u, t, integrator)
+    end
+    return snapshot
+end

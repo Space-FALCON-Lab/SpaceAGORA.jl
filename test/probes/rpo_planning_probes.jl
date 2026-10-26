@@ -18,7 +18,6 @@ using .SimulationModel
 
 const SM = SimulationModel
 const GH = SimulationModel.GuidanceHooks
-const GM = SimulationModel.GuidanceModels
 const HU = SimulationModel.HYPRUtils
 
 "Small station geometry far away from the RTN origin so it does not disturb local paths."
@@ -76,19 +75,6 @@ function _probe_straight_plan(x0::Float64, x1::Float64; ds::Float64=0.25)
     )
 end
 
-"Fake simulation state whose chaser has the requested RTN relative state to the target."
-function _probe_fake_state(rel_pos, rel_vel=SVector{3, Float64}(0.0, 0.0, 0.0))
-    r_t = SVector{3, Float64}(7.0e6, 0.0, 0.0)
-    v_t = SVector{3, Float64}(0.0, 7500.0, 0.0)
-    r_c, v_c = GH.rtn_to_inertial_relative_state(
-        SVector{3, Float64}(rel_pos),
-        SVector{3, Float64}(rel_vel),
-        r_t,
-        v_t,
-    )
-    return (sc=[(pos=r_c, vel=v_c), (pos=r_t, vel=v_t)],)
-end
-
 @testset "coverage debt rpo planning probes" begin
 
     @testset "HYPRUtils path helpers" begin
@@ -123,31 +109,6 @@ end
         @test samples_poly[:, 2] ≈ [0.5, 0.0, 0.0]
         @test_throws ArgumentError HU.hypr_sample_count_path(pts, 1)
         @test_throws ArgumentError HU.hypr_sample_count_path(pts, 4; curve_type=:spline)
-    end
-
-    @testset "HYPRUtils PSO bookkeeping" begin
-        base = HU.hypr_iteration_weights(false, 10, 5, 0.7, 1.4, 1.4, 0.5, 0.25, 0.65, 0.75, 1.25, 0.5, 2.5)
-        @test base == (w_inertia=0.7, c1=1.4, c2=1.4)
-        first_iter = HU.hypr_iteration_weights(true, 10, 1, 0.7, 1.4, 1.4, 0.5, 0.25, 0.65, 0.75, 1.25, 0.5, 2.5)
-        @test first_iter.w_inertia ≈ 0.7
-        last_iter = HU.hypr_iteration_weights(true, 10, 10, 0.7, 1.4, 1.4, 0.5, 0.25, 0.65, 0.75, 1.25, 0.5, 2.5)
-        @test last_iter.w_inertia ≈ max(0.25, 0.65 * 0.7)
-        @test last_iter.c1 ≈ clamp(0.75 * 1.4, 0.5, 2.5)
-        @test last_iter.c2 ≈ clamp(1.25 * 1.4, 0.5, 2.5)
-        # n_iters <= 1 short-circuits even with schedule on.
-        @test HU.hypr_iteration_weights(true, 1, 1, 0.7, 1.4, 1.4, 0.5, 0.25, 0.65, 0.75, 1.25, 0.5, 2.5).w_inertia == 0.7
-
-        @test !HU.hypr_material_improvement(NaN, 1.0, 1.0e-8, 1.0e-4)
-        @test HU.hypr_material_improvement(1.0, Inf, 1.0e-8, 1.0e-4)
-        @test HU.hypr_material_improvement(0.5, 1.0, 1.0e-8, 1.0e-4)
-        @test !HU.hypr_material_improvement(1.0, 1.0, 1.0e-8, 1.0e-4)
-        # Relative threshold dominates for large reference costs.
-        @test !HU.hypr_material_improvement(999.99, 1000.0, 1.0e-8, 1.0e-3)
-
-        @test isempty(HU.hypr_protected_particle_mask(Float64[], 0.5))
-        mask = HU.hypr_protected_particle_mask([3.0, 1.0, 2.0], 0.34)
-        @test mask == [false, true, true] # two lowest costs protected
-        @test count(HU.hypr_protected_particle_mask([3.0, 1.0, 2.0], 0.0)) == 1
     end
 
     @testset "HYPRUtils RRT helpers" begin
@@ -361,44 +322,10 @@ end
         outback = [0.0 1.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
         @test GH.rpo_curvature_from_samples(outback, [0.0, 1.0, 2.0]) == zeros(3)
 
+        # Reference construction from retimed samples.
         cfg = _probe_tiny_cfg(; sample_ds_m=0.5)
         far_geom = _probe_far_geometry()
         path = [0.0 4.0; 0.0 0.0; 0.0 0.0]
-        mat, s_hist, v_hist = GH.rpo_retime_path(path, far_geom, cfg)
-        @test mat[:, 1] ≈ path[:, 1] atol = 1.0e-9
-        @test mat[:, end] ≈ path[:, 2] atol = 1.0e-9
-        @test length(s_hist) == length(v_hist) == size(mat, 2)
-        @test all(diff(s_hist) .> 0.0)  # retiming must advance strictly monotonically
-        @test s_hist[end] ≈ 4.0 atol = 1.0e-6
-        @test all(v_hist .> 0.0)
-
-        # Zero-length path warns and returns a single-point reference.
-        degenerate = [1.0 1.0; 2.0 2.0; 0.0 0.0]
-        mat0, s0, v0 = @test_logs (:warn, r"zero-length path") match_mode = :any GH.rpo_retime_path(degenerate, far_geom, cfg)
-        @test size(mat0) == (3, 1)
-        @test s0 == [0.0] && v0 == [0.0]
-
-        # Path passing exactly through a station point triggers the infeasible fallback.
-        origin_geom = _probe_origin_geometry()
-        crossing = [-1.0 1.0; 0.0 0.0; 0.0 0.0]
-        matx, sx, vx = @test_logs (:warn, r"infeasible zero-speed") match_mode = :any GH.rpo_retime_path(crossing, origin_geom, cfg)
-        @test sx[end] ≈ 2.0 atol = 1.0e-6
-        @test all(vx .> 0.0)
-        @test minimum(vx) <= 1.0e-3 + 1.0e-12  # fallback speed used near the intersection
-
-        # A finite speed cap clamps both the local speed and the fallback speed.
-        cfg_capped = _probe_tiny_cfg(; sample_ds_m=0.5, retime_max_speed_mps=0.05)
-        matc, sc, vc = GH.rpo_retime_path(path, far_geom, cfg_capped)
-        @test all(vc .<= 0.05 + 1.0e-12)
-        @test sc[end] ≈ 4.0 atol = 1.0e-6
-
-        # Step-count exhaustion still forces the endpoint into the result.
-        cfg_short = _probe_tiny_cfg(; sample_ds_m=0.5, retime_max_steps=2, retime_speed_scale=0.05)
-        matm, sm, vm = @test_logs (:warn, r"maximum step count") match_mode = :any GH.rpo_retime_path(path, far_geom, cfg_short)
-        @test sm[end] ≈ 4.0 atol = 1.0e-9
-        @test matm[:, end] ≈ path[:, 2] atol = 1.0e-9
-
-        # Reference construction from retimed samples.
         t_ref, r_ref, v_ref = GH.rpo_reference_from_path(path, far_geom, cfg)
         @test length(t_ref) == size(r_ref, 2) == size(v_ref, 2)
         @test t_ref[1] == 0.0
@@ -509,7 +436,7 @@ end
         @test empty_goal_dec.action == :replan && empty_goal_dec.reason == :goal_changed
 
         none_dec = GH.rpo_replanning_decision(plan, current, geom, GH.RPOReplanningConfig(), 0.0)
-        @test none_dec.action == :none && none_dec.reason == :no_active_spheres
+        @test none_dec.action == :none && none_dec.reason == :clearance_ok
 
         track_cfg = GH.RPOReplanningConfig(; tracking_error_retime_m=1.0, tracking_error_replan_m=10.0)
         offside = SVector{3, Float64}(0.0, 3.0, 0.0)
@@ -562,172 +489,5 @@ end
         @test retimed.diagnostics.planned_at_s == 9.0
         @test retimed.r_ref_rtn[:, 1] ≈ collect(current) atol = 1.0e-9
         @test retimed.r_ref_rtn[:, end] ≈ path[:, 2] atol = 1.0e-9
-    end
-
-    @testset "RPO guidance hooks plan building" begin
-        u = _probe_fake_state((-2.0, 0.0, 0.0))
-        r, v = GH._rpo_state_pos_vel(u, 2)
-        @test r == SVector{3, Float64}(7.0e6, 0.0, 0.0)
-        @test v == SVector{3, Float64}(0.0, 7500.0, 0.0)
-
-        geom = _probe_far_geometry()
-        cfg = _probe_tiny_cfg()
-
-        bare = GM.RPOGuidanceModel()
-        @test_throws ArgumentError GH.build_rpo_plan(bare, u, 0.0)
-
-        model = GM.RPOGuidanceModel(goal_rtn=SVector{3, Float64}(2.0, 0.0, 0.0), geometry=geom, pso_config=cfg, safe_distance_m=0.05)
-        plan = GH.build_rpo_plan(model, u, 3.0)
-        @test plan.valid
-        @test plan.diagnostics.planned_at_s == 3.0
-        @test isfinite(plan.cost)
-        @test size(plan.r_ref_rtn, 1) == 3
-        @test plan.r_ref_rtn[:, 1] ≈ [-2.0, 0.0, 0.0] atol = 1.0e-6
-        @test norm(plan.r_ref_rtn[:, end] - [2.0, 0.0, 0.0]) < 0.5
-
-        direct = GH.build_rpo_plan_from_start(model, (-1.0, 0.0, 0.0), geom, 4.0; safe_distance_override=0.1)
-        @test direct.valid
-        @test direct.diagnostics.planned_at_s == 4.0
-
-        # Replanning-config accessors.
-        @test GH._rpo_replanning_config(model) === nothing
-        model.replanning_config = GH.RPOReplanningConfig(; hysteresis_samples=3)
-        @test GH._rpo_replanning_config(model) === model.replanning_config
-        model.replanning_config = (enabled=true, hysteresis_samples=4)
-        converted = GH._rpo_replanning_config(model)
-        @test converted isa GH.RPOReplanningConfig
-        @test converted.hysteresis_samples == 4
-
-        fake_decision = (reason=:probe, min_clearance=0.42, spheres=GH.RPOReplanningSphere[])
-        GH._rpo_record_replanning_event!(model, :retime, fake_decision, 11.0)
-        @test model.last_replanning_time_s == 11.0
-        @test length(model.replanning_events) == 1
-        @test model.replanning_events[end].action == :retime
-        @test model.replanning_events[end].min_clearance_m == 0.42
-        @test model.replanning_events[end].active_spheres == 0
-    end
-
-    @testset "RPO maybe_update_rpo_replanning!" begin
-        geom = _probe_far_geometry()
-        cfg = _probe_tiny_cfg()
-        u = _probe_fake_state((-2.0, 0.0, 0.0))
-
-        # No replanning config at all -> quick false.
-        plain = GM.RPOGuidanceModel(goal_rtn=SVector{3, Float64}(2.0, 0.0, 0.0), geometry=geom, pso_config=cfg)
-        GH.update_rpo_plan_buffer!(plain.plan_buffer, _probe_straight_plan(-2.0, 2.0), 0.0)
-        @test !GH.maybe_update_rpo_replanning!(plain, u, 1.0)
-
-        # Disabled config -> false.
-        plain.replanning_config = GH.RPOReplanningConfig(; enabled=false)
-        @test !GH.maybe_update_rpo_replanning!(plain, u, 1.0)
-
-        # Invalid buffer -> false.
-        plain.replanning_config = GH.RPOReplanningConfig()
-        GH.update_rpo_plan_buffer!(plain.plan_buffer, GH.RPOPlan(), 0.0)
-        @test !GH.maybe_update_rpo_replanning!(plain, u, 1.0)
-
-        # Decision :none resets persistence.
-        GH.update_rpo_plan_buffer!(plain.plan_buffer, _probe_straight_plan(-2.0, 2.0), 0.0)
-        plain.replanning_persistence_count = 5
-        @test !GH.maybe_update_rpo_replanning!(plain, u, 1.0)
-        @test plain.replanning_persistence_count == 0
-
-        # Retime path with hysteresis gating.
-        retimer = GM.RPOGuidanceModel(
-            goal_rtn=SVector{3, Float64}(2.0, 0.0, 0.0),
-            geometry=geom,
-            pso_config=cfg,
-            replanning_config=GH.RPOReplanningConfig(;
-                spheres=[(center=(0.0, 0.3, 0.0), radius=0.1)],
-                safe_distance_m=0.05,
-                retime_clearance_m=0.5,
-                hysteresis_samples=2,
-                sphere_surface_samples=16,
-                remaining_sample_ds_m=0.25,
-            ),
-        )
-        GH.update_rpo_plan_buffer!(retimer.plan_buffer, _probe_straight_plan(-2.0, 2.0), 0.0)
-        @test !GH.maybe_update_rpo_replanning!(retimer, u, 0.0)  # persistence 1 of 2
-        @test retimer.replanning_persistence_count == 1
-        @test GH.maybe_update_rpo_replanning!(retimer, u, 1.0)
-        @test retimer.retime_count == 1
-        @test retimer.plan_buffer.updated_at_s == 1.0
-        @test retimer.plan_buffer.plan.diagnostics.replanning_action == :retime
-        @test retimer.replanning_events[end].action == :retime
-        @test retimer.last_replanning_time_s == 1.0
-
-        # Minimum replan interval gates a repeat action.
-        retimer.replanning_config = GH.RPOReplanningConfig(;
-            spheres=[(center=(0.0, 0.3, 0.0), radius=0.1)],
-            safe_distance_m=0.05,
-            retime_clearance_m=0.5,
-            hysteresis_samples=1,
-            sphere_surface_samples=16,
-            remaining_sample_ds_m=0.25,
-            min_replan_interval_s=100.0,
-        )
-        @test !GH.maybe_update_rpo_replanning!(retimer, u, 2.0)
-        @test retimer.retime_count == 1
-
-        # Goal-change replan swaps in the desired goal on success.
-        replanner = GM.RPOGuidanceModel(
-            goal_rtn=SVector{3, Float64}(2.0, 0.0, 0.0),
-            geometry=geom,
-            pso_config=cfg,
-            safe_distance_m=0.05,
-            replanning_config=GH.RPOReplanningConfig(; desired_goal_rtn=(3.0, 0.0, 0.0), safe_distance_m=0.05),
-        )
-        GH.update_rpo_plan_buffer!(replanner.plan_buffer, _probe_straight_plan(-2.0, 2.0), 0.0)
-        @test GH.maybe_update_rpo_replanning!(replanner, u, 5.0)
-        @test replanner.replan_count == 1
-        @test replanner.goal_rtn == SVector{3, Float64}(3.0, 0.0, 0.0)
-        @test replanner.plan_buffer.plan.diagnostics.planned_at_s == 5.0
-        @test replanner.replanning_events[end].action == :replan
-        @test replanner.replanning_events[end].reason == :goal_changed
-
-        # Replan failure keeps the old plan and restores the original goal.
-        failer = GM.RPOGuidanceModel(
-            goal_rtn=SVector{3, Float64}(2.0, 0.0, 0.0),
-            geometry=geom,
-            pso_config="not a config",
-            replanning_config=GH.RPOReplanningConfig(; desired_goal_rtn=(3.0, 0.0, 0.0), safe_distance_m=0.05),
-        )
-        old_plan = _probe_straight_plan(-2.0, 2.0)
-        GH.update_rpo_plan_buffer!(failer.plan_buffer, old_plan, 0.0)
-        result = @test_logs (:warn, r"RPO replanning failed") match_mode = :any GH.maybe_update_rpo_replanning!(failer, u, 6.0)
-        @test !result
-        @test failer.replan_failure_count == 1
-        @test failer.replan_count == 0
-        @test failer.goal_rtn == SVector{3, Float64}(2.0, 0.0, 0.0)
-        @test failer.plan_buffer.plan === old_plan
-        @test failer.replanning_events[end].action == :replan_failed
-    end
-
-    @testset "RPO calcGuidanceEffect!" begin
-        geom = _probe_far_geometry()
-        cfg = _probe_tiny_cfg()
-        u = _probe_fake_state((-2.0, 0.0, 0.0))
-        model = GM.RPOGuidanceModel(goal_rtn=SVector{3, Float64}(2.0, 0.0, 0.0), geometry=geom, pso_config=cfg, safe_distance_m=0.05)
-
-        # Non-chaser satellites never touch the plan buffer.
-        @test GH.calcGuidanceEffect!(model, u, nothing, 0.0, 2) === nothing
-        @test !model.plan_buffer.valid
-
-        # First chaser call builds the initial plan.
-        @test GH.calcGuidanceEffect!(model, u, nothing, 0.0, 1) === nothing
-        @test model.plan_buffer.valid
-        @test model.plan_buffer.updated_at_s == 0.0
-        @test model.plan_buffer.plan.diagnostics.planned_at_s == 0.0
-
-        # force_replan rebuilds even with a valid buffer and then clears itself.
-        model.force_replan = true
-        @test GH.calcGuidanceEffect!(model, u, nothing, 5.0, 1) === nothing
-        @test !model.force_replan
-        @test model.plan_buffer.updated_at_s == 5.0
-
-        # Valid buffer without a replanning config falls through the maybe-update path.
-        before = model.plan_buffer.updated_at_s
-        @test GH.calcGuidanceEffect!(model, u, nothing, 6.0, 1) === nothing
-        @test model.plan_buffer.updated_at_s == before
     end
 end

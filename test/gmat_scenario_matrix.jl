@@ -60,22 +60,22 @@ _gmat_reference_available() = isdir(_GMAT_REFERENCE_DIR)
 
 # Used for the Basilisk target and the STK Earth point-mass cases. The Basilisk
 # reference was generated with GGM03S, so it is a known model mismatch there.
-const _GMAT_HARMONICS_EARTH_FILE = "data/Gravity_harmonics_data/EarthGGM05C.csv"
+const _GMAT_HARMONICS_EARTH_FILE = "data/planets/gravity/EarthGGM05C.csv"
 # Comparison choices for STK J2/J50: published fields converted using the
 # IERS 2010 permanent-tide terms. Reduced residuals motivated these choices;
 # they do not establish the settings of the retained STK reference runs.
-# See data/Gravity_harmonics_data/README.md.
-const _STK_HARMONICS_EARTH_FILE = "data/Gravity_harmonics_data/EGM96_GMAT_L50_zerotide.csv"
-const _STK_HARMONICS_MOON_FILE = "data/Gravity_harmonics_data/LP165P_permtide.csv"
+# See data/planets/gravity/README.md.
+const _STK_HARMONICS_EARTH_FILE = "data/planets/gravity/EGM96_GMAT_L50_zerotide.csv"
+const _STK_HARMONICS_MOON_FILE = "data/planets/gravity/LP165P_permtide.csv"
 # Earth field selected by the :gmat comparison (GMAT R2025a EGM96.cof,
 # transcribed to degree/order 50). Its match to the retained references' actual
 # generation settings is unverified; an older generator selects JGM2 instead.
-const _GMAT_HARMONICS_EARTH_EGM96_FILE = "data/Gravity_harmonics_data/EGM96_GMAT_L50.csv"
+const _GMAT_HARMONICS_EARTH_EGM96_FILE = "data/planets/gravity/EGM96_GMAT_L50.csv"
 # Must match data/telemetry/gmat_matrix_parity_locked.py, which generated the
 # locked Mars references with Mars-50c (GMM2B.csv stays available as an asset).
-const _GMAT_HARMONICS_MARS_FILE = "data/Gravity_harmonics_data/Mars50c.csv"
-const _GMAT_HARMONICS_VENUS_FILE = "data/Gravity_harmonics_data/MGNP180U.csv"
-const _GMAT_HARMONICS_MOON_FILE = "data/Gravity_harmonics_data/LP165P.csv"
+const _GMAT_HARMONICS_MARS_FILE = "data/planets/gravity/Mars50c.csv"
+const _GMAT_HARMONICS_VENUS_FILE = "data/planets/gravity/MGNP180U.csv"
+const _GMAT_HARMONICS_MOON_FILE = "data/planets/gravity/LP165P.csv"
 const _GMAT_PLANETARY_KERNEL_CANDIDATES = (
     "spk/planets/de430.bsp",
 )
@@ -463,9 +463,9 @@ function _build_time_aligned_reference(
 
     if planet_fixed_x_col === nothing || planet_fixed_y_col === nothing || planet_fixed_z_col === nothing
         ephemerides_model = SM.SpiceEphemeridesModel()
-        et0 = SM.ephemerides_time_seconds(_default_matrix_initial_time(), ephemerides_model)
+        et0 = SM.ephemerides_epoch_seconds(ephemerides_model, _default_matrix_initial_time())
         for i in eachindex(t_rel)
-            lpi = SM.planet_frame_lpi(planet, et0 + t_rel[i], ephemerides_model)
+            lpi = SM.ephemerides_frame_lpi(ephemerides_model, planet, et0 + t_rel[i])
             r_pf = lpi * SVector{3, Float64}(x[i], y[i], z[i])
             planet_fixed_x[i] = r_pf[1]
             planet_fixed_y[i] = r_pf[2]
@@ -1017,11 +1017,11 @@ end
 # whatever degree the subsequent force model integrates with -- confirmed
 # by reconstructing it from row 0 of the J0/J2/J50 reference files
 # independently and getting identical values per (body, tool) regardless
-# of degree). GMAT's and STK's own conventions do not agree with each
-# other -- confirmed by swapping Mars's J0 μ, which cut the GMAT
-# comparison's error 16x but grew the STK comparison's error from ~5e-6 km
-# to ~2.2 km -- so each comparison target gets its own value here rather
-# than a single shared μ per body. See spaceagora_j0_gm_parity_investigation.md.
+# of degree). Each comparison target has its own selected value rather than
+# a single shared μ per body. Historical reconstruction evidence is in the
+# private spaceagora_j0_gm_parity_investigation.md record,
+# the private research archive,
+# October 14, 2026 cleanup snapshot, original path docs/.
 #
 # The :basilisk values were reconstructed from Basilisk_Examples_Full, called
 # "GMAT" by the historical investigation. The :gmat values below are the
@@ -1211,11 +1211,11 @@ function _scenario_planet_fixed_position_rmse(errors::DataFrame, scenario_name::
     end
 
     ephemerides_model = SM.SpiceEphemeridesModel()
-    et0 = SM.ephemerides_time_seconds(_default_matrix_initial_time(), ephemerides_model)
+    et0 = SM.ephemerides_epoch_seconds(ephemerides_model, _default_matrix_initial_time())
 
     pos_sq = Vector{Float64}(undef, n)
     for i in 1:n
-        lpi = SM.planet_frame_lpi(planet, et0 + t[i], ephemerides_model)
+        lpi = SM.ephemerides_frame_lpi(ephemerides_model, planet, et0 + t[i])
         r_sim_pf = lpi * SVector{3, Float64}(x_sim[i], y_sim[i], z_sim[i])
         r_tel_pf = SVector{3, Float64}(x_tel_pf[i], y_tel_pf[i], z_tel_pf[i])
         dr_pf = r_sim_pf - r_tel_pf

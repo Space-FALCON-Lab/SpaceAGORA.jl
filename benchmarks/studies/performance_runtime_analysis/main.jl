@@ -1,8 +1,8 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
 const DEFAULT_OUTPUT_DIR = joinpath(REPO_ROOT, "output", "performance")
 const SPICE_PATH = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
-const EARTH_HARMONICS_FILE = joinpath(REPO_ROOT, "data/Gravity_harmonics_data", "EarthGGM05C.csv")
-const EARTH_GRAM_SURROGATE_FILE = joinpath(REPO_ROOT, "data", "GRAM_surrogate", "earth_surrogate.jls")
+const EARTH_HARMONICS_FILE = joinpath(REPO_ROOT, "data/planets/gravity", "EarthGGM05C.csv")
+const EARTH_GRAM_SURROGATE_FILE = joinpath(REPO_ROOT, "data", "planets", "gram_surrogate", "earth_surrogate.jls")
 const PERF_BASELINE_SCENARIO = "single_j2"
 const _PERF_POLICY_ENV_NAMES = (
     "SPACEAGORA_OUTER_PARALLEL_ACTIVE",
@@ -16,7 +16,7 @@ const _PERF_POLICY_ENV_BASELINE = Dict{String, Union{Nothing, String}}(
 )
 const _PERF_THREADS_BACKEND_WARNING_EMITTED = Ref(false)
 
-include(joinpath(REPO_ROOT, "src", "parallel", "routing", "parallel_profiles.jl"))
+include(joinpath(REPO_ROOT, "src", "orchestration", "parallel", "routing", "parallel_profiles.jl"))
 using .ParallelProfiles
 
 using CSV
@@ -36,7 +36,7 @@ if myid() == 1
     using Plots
 end
 
-include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+include(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "composition", "simulation_model.jl"))
 using .SimulationModel
 const MissionType = SimulationModel.SimConfig.MissionType
 const MissionTime = SimulationModel.SimConfig.MissionTime
@@ -68,15 +68,13 @@ const GravitationalHarmonicsModel = SimulationModel.DynamicEffectors.Gravitation
 const NBodyGravityModel = SimulationModel.DynamicEffectors.NBodyGravityModel
 const SolarRadiationPressureModel = SimulationModel.DynamicEffectors.SolarRadiationPressureModel
 const AerodynamicCoefficientfM = SimulationModel.DynamicEffectors.AerodynamicCoefficientfM
-const BaseThrusterModel = SimulationModel.DynamicEffectors.BaseThrusterModel
+const BaseThrusterModel = SimulationModel.ThrusterModels.BaseThrusterModel
 const AerobrakingCampaignPropulsiveManeuverGuidanceModel =
     SimulationModel.GuidanceModels.AerobrakingCampaignPropulsiveManeuverGuidanceModel
 
 function _ensure_perf_gramsuite_loaded!()
     vendored_gramsuite = joinpath(REPO_ROOT, "data", "GRAMSuite.jl")
-    if Base.find_package("GRAMSuite") === nothing && isdir(vendored_gramsuite)
-        push!(LOAD_PATH, vendored_gramsuite)
-    end
+    RuntimeServices._prepare_gramsuite_load_path!(vendored_gramsuite; prepend=false)
     @eval import GRAMSuite
     return nothing
 end
@@ -232,7 +230,7 @@ end
 # run_simulation.jl expects quat_mult in the including scope.
 const quat_mult = SimulationModel.quat_mult
 if !isdefined(@__MODULE__, :SimulationEngine)
-    include(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+    include(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine", "simulation_engine.jl"))
 end
 if !isdefined(@__MODULE__, :run_simulation)
     const run_simulation = SimulationEngine.run_simulation

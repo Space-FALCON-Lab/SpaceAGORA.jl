@@ -122,7 +122,7 @@ end
             end
             # The shipped Mars text override retains the same rotation as a
             # direct CSPICE load, including after other bodies are constructed.
-            mars_override = normpath(joinpath(@__DIR__, "..", "..", "data", "spice_overrides", "mars_iau2009_pole.tpc"))
+            mars_override = normpath(joinpath(@__DIR__, "..", "..", "data", "planets", "spice_overrides", "mars_iau2009_pole.tpc"))
             clear_pool()
             SPICE.furnsh(joinpath(root, "pck/pck00011.tpc"))
             SPICE.furnsh(mars_override)

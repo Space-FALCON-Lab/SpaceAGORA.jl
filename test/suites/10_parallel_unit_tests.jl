@@ -11,7 +11,7 @@
         "contention_inputs_tests.jl",
         "cost_machine_calibration_tests.jl",
         "cost_robust_timing_tests.jl",
-        "cost_work_counts_tests.jl",
+        "flat_queue_predicates_tests.jl",
         "lock_width_cap_tests.jl",
         "mixed_dispatch_tests.jl",
         "native_lock_stats_tests.jl",

@@ -1,0 +1,6 @@
+cff-version: 1.2.0
+message: "If you use this package, please cite it as below."
+title: "StarterName"
+authors:
+  - family-names: "Your family name"
+    given-names: "Your given name"

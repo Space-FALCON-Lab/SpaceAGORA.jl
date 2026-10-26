@@ -24,7 +24,7 @@ struct GRAMAtmosphereModelSurrogate{M} <: AbstractDensityModel
     point_fallback_below_m::Union{Nothing, Float64}
 end
 _gram_not_loaded_error(name) = error("Unexpected extension fallback: $name")
-include(joinpath(dirname(pathof(SpaceAGORA)), "environment", "atmosphere", "density_epoch.jl"))
+include(joinpath(dirname(pathof(SpaceAGORA)), "models", "environment", "atmosphere", "density_epoch.jl"))
 const CONSTRUCTIONS = Ref(0)
 const FAIL_CONSTRUCTION = Ref(false)
 function _rebuild_gram_epoch_model(recipe::Dict{Symbol, Any})

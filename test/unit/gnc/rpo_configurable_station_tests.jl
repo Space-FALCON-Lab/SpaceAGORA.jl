@@ -52,6 +52,16 @@ function build_station_demo(; kwargs...)
     return RPOX.build_rpo_cubesat_mpc_demo(; settings...)
 end
 
+# The reference the planner installs at the run's first guidance tick: a run that
+# stops after its first step, read through the run report.
+function installed_plan(demo)
+    first_step = RPOX.DiscreteCallback((u, t, integrator) -> t > 0, RPOX.terminate!; save_positions=(false, false))
+    sol = run_simulation(demo.args; return_solution=true, extra_callbacks=(first_step,))
+    record = last(filter(x -> x.event === :installed, only(rpo_run_report(sol).planners).records))
+    return (reference=record.reference, path=record.diagnostics.path, cost=record.diagnostics.cost,
+        validation=record.validation)
+end
+
 if !isdir(RPO_STATION_SPICE)
     @info "SPICE kernels absent; skipping the configurable-station RPO tests" RPO_STATION_SPICE
 else
@@ -92,7 +102,7 @@ else
                 @test d.station.mass_kg == 500.0
                 @test d.station.ref_area_m2 == 8.0
                 @test d.station.safe_distance_m == 0.1
-                @test d.guidance.safe_distance_m == 0.1
+                @test d.guidance.constraints.clearance_m == 0.1
                 @test d.pso_config.sample_ds_m == 0.05
                 @test d.pso_config.cost_ref_distance_m == 20.0
                 @test d.pso_config.search_margin_m == SM.RPOPSOConfig().search_margin_m
@@ -100,16 +110,22 @@ else
             end
             # Same seeds through the new keywords give the same sampled cloud.
             @test d0.geometry.station.points_body == d1.geometry.station.points_body
-            # Identical seeds reproduce the plan at every supported thread count.
-            @test d0.plan_result.path == d1.plan_result.path
-            @test d0.plan_result.cost == d1.plan_result.cost
-            @test d0.initial_plan.t_ref_s == d1.initial_plan.t_ref_s
-            @test d0.initial_plan.r_ref_rtn == d1.initial_plan.r_ref_rtn
-            @test d0.initial_plan.v_ref_rtn == d1.initial_plan.v_ref_rtn
+            # The planner plans in the run, from the run's own stream: identical seeds
+            # reproduce the plan at every supported thread count.
+            p0, p1 = installed_plan(d0), installed_plan(d1)
+            @test p0.validation.accepted
+            @test p0.path == p1.path && p0.cost == p1.cost
+            @test p0.reference.t_ref_s == p1.reference.t_ref_s
+            @test p0.reference.r_ref_rtn_m == p1.reference.r_ref_rtn_m
+            @test p0.reference.v_ref_rtn_mps == p1.reference.v_ref_rtn_mps
+            # A requested speed cap is validated, and the planner keeps 1% below it.
             capped = build_station_demo(; reference_max_speed_mps=0.05)
             @test capped.pso_config.retime_max_speed_mps == 0.05
-            @test capped.plan_result.path == d0.plan_result.path
-            @test maximum(norm.(eachcol(capped.initial_plan.v_ref_rtn))) <= 0.05 + 1e-10
+            @test capped.guidance.constraints.max_speed_mps == 0.05
+            @test d0.guidance.constraints.max_speed_mps === nothing
+            pc = installed_plan(capped)
+            @test pc.path == p0.path
+            @test maximum(norm.(eachcol(pc.reference.v_ref_rtn_mps))) <= 0.99 * 0.05 + 1e-10
         end
 
         @testset "custom point cloud, dimensions and mass" begin
@@ -146,7 +162,7 @@ else
             @test dc.pso_config.sample_ds_m == 0.1
             @test dc.pso_config.cost_ref_distance_m == 12.0
             @test dc.pso_config.search_margin_m == 6.0
-            @test dc.guidance.safe_distance_m == 0.2
+            @test dc.guidance.constraints.clearance_m == 0.2
             @test dc.station.safe_distance_m == 0.2
             @test dc.station.cost_ref_distance_m == 12.0
             @test dc.station.search_margin_m == 6.0
@@ -160,10 +176,12 @@ else
             # Bounded planner: the plan runs from start to goal and both the
             # sampled path and the retimed reference clear the keep-out surface
             # of the custom cloud by the requested safe distance.
-            @test dc.initial_plan.r_ref_rtn[:, 1] ≈ start atol=1e-9
-            @test dc.initial_plan.r_ref_rtn[:, end] ≈ goal atol=1e-9
-            sampled = SM.GuidanceHooks.rpo_sample_path(dc.initial_plan.path_rtn, dc.pso_config.sample_ds_m; curve_type=dc.pso_config.curve_type)
-            for samples in (sampled, dc.initial_plan.r_ref_rtn)
+            pdc = installed_plan(dc)
+            @test pdc.validation.accepted
+            @test pdc.reference.r_ref_rtn_m[:, 1] ≈ start atol=1e-9
+            @test pdc.reference.r_ref_rtn_m[:, end] ≈ goal atol=1e-9
+            sampled = SM.GuidanceHooks.rpo_sample_path(pdc.path, dc.pso_config.sample_ds_m; curve_type=dc.pso_config.curve_type)
+            for samples in (sampled, pdc.reference.r_ref_rtn_m)
                 stats = SM.rpo_path_clearance_stats(samples, dc.geometry; safe_distance_m=0.2)
                 @test stats.violation_count == 0
                 @test stats.min_clearance >= 0.2
@@ -195,9 +213,13 @@ else
             start = SVector{3, Float64}(-8.0, -4.0, 2.0)
             goal = SVector{3, Float64}(-5.5, -2.5, 1.0)
             dt = build_station_demo(; mission_time=30.0, start_rtn=start, goal_rtn=goal, data_rate_s=1.0, record_control_commands=true)
-            # The controller log is filled on the simulated model itself, so run without the isolating copy.
-            run_simulation(dt.args; isolate_state=false)
-            log = dt.control.command_log
+            # The run plans, validates, flies and stops 20 s after the reference ends;
+            # its controller log is read from the run report.
+            sol = RPOX.run_rpo_case(dt)
+            plan = RPOX.rpo_installed_plan(sol)
+            @test plan.validation.accepted && plan.planner === :hypr && plan.time_s == 0.0
+            @test last(sol.t) ≈ max(30.0, plan.t_ref_s[end] + 20.0) atol=0.06
+            log = only(rpo_run_report(sol).commands).log
             @test log !== nothing
             n_updates = length(log.t_s)
             @test n_updates >= 250                                  # 0.1 s updates over at least 30 s
@@ -209,16 +231,16 @@ else
             @test log.mass_kg[end] <= log.mass_kg[1]
             csv = joinpath(dt.args.simulation_settings.results_directory, "simulation_results.csv")
             @test isfile(csv)
-            df, actual_rtn, ref_rtn, err = RPOX._rpo_postprocess(csv, dt)
+            df, actual_rtn, ref_rtn, err = RPOX._rpo_postprocess(csv, plan)
             @test nrow(df) >= 10
             @test all(isfinite, err)
-            @test df.time[end] >= dt.initial_plan.t_ref_s[end]
+            @test df.time[end] >= plan.t_ref_s[end]
             # Bounded tracking: the flown deviation from the reference stays
             # below the retime threshold of the shipped replanning example and
             # below the clearance the plan keeps from the keep-out surface, so
             # the chaser never crosses that surface, and it ends on the goal
             # within the planning safe distance.
-            planned = SM.rpo_path_clearance_stats(dt.initial_plan.r_ref_rtn, dt.geometry; safe_distance_m=0.0)
+            planned = SM.rpo_path_clearance_stats(plan.r_ref_rtn, dt.geometry; safe_distance_m=0.0)
             @test maximum(err) < RPO_RETIME_DEVIATION_M
             @test maximum(err) < planned.min_clearance
             @test SM.rpo_path_clearance_stats(actual_rtn, dt.geometry; safe_distance_m=0.0).violation_count == 0

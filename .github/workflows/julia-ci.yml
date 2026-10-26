@@ -37,26 +37,26 @@ jobs:
 
       - name: Pinned GRAMSuite retrieval regression
         run: python3 test/scripts/test_gramsuite_retrieval.py
+      - name: Offline GRAM loading preparation regression
+        run: python3 -B test/scripts/test_prepare_gram_loading_environment.py
+
+      - name: Offline remote-job transport regressions
+        run: python3 -B test/scripts/test_remote_jobs.py
 
       - name: Shard plan, matrix shape and verifier self-test
         run: python3 -B .github/scripts/test_ci_shards.py
 
+      - name: Extracted native study route controls
+        run: python3 -B scripts/ci/run_mission_native_smoke.py --self-test
+
       - name: Sparse GRAMSuite retrieval regression
         run: python3 -B .github/scripts/test_gramsuite_sparse.py
 
+      - name: Contributor test entrypoint regression
+        run: python3 -B test/scripts/test_contributor_entrypoint.py
+
       - name: Full-arc export provenance regression
         run: python3 -B test/scripts/test_xval_fullarc_export.py
-
-      - name: Perturbed-density analyzer regressions
-        shell: bash
-        run: |
-          set -euo pipefail
-          analysis_python_dir="$(mktemp -d "$RUNNER_TEMP/spaceagora-analysis-python.XXXXXX")"
-          trap 'rm -rf "$analysis_python_dir"' EXIT
-          python3 -m venv "$analysis_python_dir"
-          "$analysis_python_dir/bin/python" -m pip install numpy pandas pyarrow tomli
-          "$analysis_python_dir/bin/python" -m unittest discover -s test/scripts -p test_analyze_campaign.py -v
-          "$analysis_python_dir/bin/python" -m unittest discover -s test/scripts -p test_perturbed_modes_analyze.py -v
 
       - name: Plan shards
         id: plan
@@ -104,7 +104,8 @@ jobs:
       # Every environment a job instantiates. The grid suite's environment is
       # seeded with the root manifest so it resolves to the same package
       # versions and reuses their package images (unseeded, it resolved to the
-      # newest registry versions and recompiled ~400 packages per job).
+      # newest registry versions and recompiled ~400 packages per job); the
+      # docs, test and examples environments' setups seed themselves the same way.
       # SpaceAGORA's own image is dropped: it changes with every commit.
       - name: Build shared depot
         if: steps.has-depot.outputs.cache-hit != 'true'
@@ -112,6 +113,12 @@ jobs:
           cp Manifest.toml test/grid_atmosphere/Manifest.toml
           julia --startup-file=no test/grid_atmosphere/setup.jl
           julia --startup-file=no --project=test/grid_atmosphere -e 'using Pkg; Pkg.precompile()'
+          julia --startup-file=no docs/setup.jl
+          julia --startup-file=no --project=docs -e 'using Pkg; Pkg.precompile()'
+          julia --startup-file=no test/setup.jl
+          julia --startup-file=no --project=test -e 'using Pkg; Pkg.precompile()'
+          julia --startup-file=no examples/setup.jl
+          julia --startup-file=no --project=examples -e 'using Pkg; Pkg.precompile()'
           julia --startup-file=no --project=scripts/dev -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
           # GRAMSuite comes from a private repository and its compiled images carry
           # its source text; the shared cache is readable by fork pull requests, so
@@ -157,10 +164,18 @@ jobs:
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
+      # Aqua and the other test tools live in the test environment, not in the
+      # root project. The example and CLI children the tests start run in the
+      # examples environment.
+      - name: Prepare test and examples environments
+        run: |
+          julia --startup-file=no test/setup.jl
+          julia --startup-file=no examples/setup.jl
+
       - name: Run test suite shard
         run: |
           export SPACEAGORA_CI_STEP_START=$(date +%s)
-          julia --startup-file=no --project=. test/runtests.jl
+          julia --startup-file=no --project=test test/runtests.jl
 
       - name: Native-free GRAM grid adapter
         # Independent of the suite: runs even when the suite step failed.
@@ -176,7 +191,7 @@ jobs:
         # Independent of the suite: runs even when the suite step failed.
         if: matrix.depwarn && !cancelled() && steps.setup.outcome == 'success'
         run: |
-          julia --startup-file=no --compiled-modules=existing --depwarn=error --project=. examples/Earth_Thruster_Test.jl
+          julia --startup-file=no --compiled-modules=existing --depwarn=error --project=examples examples/Earth_Thruster_Test.jl
           touch "$SPACEAGORA_CI_SHARD_REPORT_DIR/depwarn.done"
 
       - name: Mark shard complete
@@ -193,7 +208,7 @@ jobs:
 
   tests:
     if: always()
-    needs: [plan, test-shards, optional-hypr-installation]
+    needs: [plan, test-shards, optional-hypr-installation, optional-mujoco-installation, optional-visualizer-installation, optional-edg-installation, optional-interlink-installation]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -219,7 +234,7 @@ jobs:
       - name: Enforce test shard success
         run: |
           echo "test-shards result=${{ needs.test-shards.result }}"
-          if [ "${{ needs.test-shards.result }}" != "success" ] || [ "${{ needs.optional-hypr-installation.result }}" != "success" ]; then
+          if [ "${{ needs.test-shards.result }}" != "success" ] || [ "${{ needs.optional-hypr-installation.result }}" != "success" ] || [ "${{ needs.optional-mujoco-installation.result }}" != "success" ] || [ "${{ needs.optional-visualizer-installation.result }}" != "success" ] || [ "${{ needs.optional-edg-installation.result }}" != "success" ] || [ "${{ needs.optional-interlink-installation.result }}" != "success" ]; then
             echo "Test shards failed or were cancelled."
             exit 1
           fi
@@ -257,10 +272,18 @@ jobs:
           gram: native
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
+      # Aqua and the other test tools live in the test environment, not in the
+      # root project. The example and CLI children the tests start run in the
+      # examples environment.
+      - name: Prepare test and examples environments
+        run: |
+          julia --startup-file=no test/setup.jl
+          julia --startup-file=no examples/setup.jl
+
       - name: Run test suite shard with coverage
         run: |
           export SPACEAGORA_CI_STEP_START=$(date +%s)
-          julia --startup-file=no --project=. --code-coverage=user test/runtests.jl
+          julia --startup-file=no --project=test --code-coverage=user test/runtests.jl
 
       - name: Cover grid adapter and named presets without native GRAM
         # Independent of the suite: runs even when the suite step failed.
@@ -282,12 +305,12 @@ jobs:
         if: always()
         run: |
           shard_no=$(printf '%02d' "${SHARD##*-}")
-          find src packages/SpaceAGORAHYPR/src -name '*.cov' -print0 | while IFS= read -r -d '' f; do
+          find src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' -print0 | while IFS= read -r -d '' f; do
             mv "$f" "$(printf '%s' "$f" | sed -E "s/\.([0-9]+)\.cov\$/.9${shard_no}\1.cov/")"
           done
-          echo "coverage files: $(find src packages/SpaceAGORAHYPR/src -name '*.cov' | wc -l)"
+          echo "coverage files: $(find src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' | wc -l)"
           mkdir -p "$SPACEAGORA_CI_SHARD_REPORT_DIR"
-          find src packages/SpaceAGORAHYPR/src -name '*.cov' -print0 | tar --null -czf "$SPACEAGORA_CI_SHARD_REPORT_DIR/coverage.tgz" -T -
+          find src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' -print0 | tar --null -czf "$SPACEAGORA_CI_SHARD_REPORT_DIR/coverage.tgz" -T -
         env:
           SHARD: ${{ matrix.shard }}
 
@@ -302,14 +325,12 @@ jobs:
 
   coverage-quality-gate:
     if: always()
-    needs: [plan, coverage-shards, optional-hypr-installation]
+    needs: [plan, coverage-shards, optional-hypr-installation, optional-visualizer-installation, optional-edg-installation, optional-interlink-installation]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      # Coverage debt (July 2026): first real gate run measured 82.84%
-      # overall; restore to 90.0 as the debt register in
-      # test/gates/ci_coverage_quality_gate.jl burns down.
-      SPACEAGORA_COVERAGE_MIN_OVERALL: "80.0"
+      # Match the verification contract and the gate's default overall floor.
+      SPACEAGORA_COVERAGE_MIN_OVERALL: "90.0"
       SPACEAGORA_COVERAGE_MIN_FILE: "80.0"
       # The gate keeps only .cov files within this many seconds of the newest
       # one. Every file here comes from this run's shards, and they are
@@ -324,6 +345,14 @@ jobs:
           # GRAM retrieval supplies its own scoped credential explicitly.
           persist-credentials: false
 
+      - name: Setup Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+
+      - name: Verify pinned EDG coverage source
+        run: julia --startup-file=no scripts/optional_packages.jl checkout edg
+
       - name: Download shard reports
         uses: actions/download-artifact@v8
         with:
@@ -336,15 +365,37 @@ jobs:
         run: python3 .github/scripts/ci_shard_verify.py tests shard-reports
 
       - name: Download optional installation coverage
+        if: always()
         uses: actions/download-artifact@v8
         with:
           name: hypr-installation-coverage
           path: hypr-installation-coverage
 
+      - name: Download visualizer installation coverage
+        if: always()
+        uses: actions/download-artifact@v8
+        with:
+          name: visualizer-installation-coverage
+          path: visualizer-installation-coverage
+
+      - name: Download EDG installation coverage
+        if: always()
+        uses: actions/download-artifact@v8
+        with:
+          name: edg-installation-coverage
+          path: edg-installation-coverage
+
+      - name: Download interlink backend coverage
+        if: always()
+        uses: actions/download-artifact@v8
+        with:
+          name: interlink-installation-coverage
+          path: interlink-installation-coverage
+
       - name: Enforce coverage shard success
         run: |
           echo "coverage-shards result=${{ needs.coverage-shards.result }}"
-          if [ "${{ needs.coverage-shards.result }}" != "success" ] || [ "${{ needs.optional-hypr-installation.result }}" != "success" ]; then
+          if [ "${{ needs.coverage-shards.result }}" != "success" ] || [ "${{ needs.optional-hypr-installation.result }}" != "success" ] || [ "${{ needs.optional-visualizer-installation.result }}" != "success" ] || [ "${{ needs.optional-edg-installation.result }}" != "success" ] || [ "${{ needs.optional-interlink-installation.result }}" != "success" ]; then
             echo "Coverage shards failed or were cancelled."
             exit 1
           fi
@@ -359,13 +410,10 @@ jobs:
             tar -xzmf "$archive"
           done
           tar -xzmf hypr-installation-coverage/coverage.tgz
-          echo "coverage files: $(find src packages/SpaceAGORAHYPR/src -name '*.cov' | wc -l)"
-
-      - name: Setup Julia
-        if: always()
-        uses: julia-actions/setup-julia@v2
-        with:
-          version: "1.12"
+          tar -xzmf visualizer-installation-coverage/coverage.tgz
+          tar -xzmf edg-installation-coverage/coverage.tgz
+          tar -xzmf interlink-installation-coverage/coverage.tgz
+          echo "coverage files: $(find src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' | wc -l)"
 
       - name: Coverage quality gate
         if: always()
@@ -399,11 +447,30 @@ jobs:
           gram: native
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
+      - name: Prepare examples environment
+        run: julia --startup-file=no examples/setup.jl
+
       - name: Prepare documented HYPR example environment
         run: julia --startup-file=no --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
 
       - name: Example suite smoke shard
         run: julia --startup-file=no --project=. .github/scripts/ci_example_shard.jl
+
+      # Qualify the private Mars RAAN study once when a read credential is available.
+      # Missing credentials explicitly skip native coverage; supplied credentials
+      # make fetch/setup/native failures fatal. Existing licensed inputs are linked.
+      # Dependabot pull requests run with Dependabot's own copy of the secret,
+      # which cannot read the private study, so they take the documented skip;
+      # the check still runs on main after every merge.
+      - name: Extracted pinned Mars RAAN native smoke
+        if: matrix.shard == 'examples-1'
+        env:
+          SPACEAGORA_RESEARCH_READ_TOKEN: ${{ github.event.pull_request.user.login != 'dependabot[bot]' && secrets.SPACEFALCON_REPO_READ_TOKEN || '' }}
+        run: >-
+          python3 -B scripts/ci/run_mission_native_smoke.py
+          --workspace "$GITHUB_WORKSPACE"
+          --scratch "$RUNNER_TEMP/mission-native-study"
+          --julia "$(command -v julia)"
 
       - name: Mark shard complete
         run: touch "$SPACEAGORA_CI_SHARD_REPORT_DIR/job.ok"
@@ -463,7 +530,9 @@ jobs:
       # rejects the whole workflow file when it is used there. Export the
       # clean depot path from a step instead.
       - name: Use a clean Julia depot
-        run: echo "JULIA_DEPOT_PATH=${RUNNER_TEMP}/julia-clean-depot" >> "$GITHUB_ENV"
+        # A trailing colon retains Julia's bundled stdlib caches while excluding
+        # the user depot. Without it, Julia needlessly recompiles REPL itself.
+        run: echo "JULIA_DEPOT_PATH=${RUNNER_TEMP}/julia-clean-depot:" >> "$GITHUB_ENV"
 
       - name: Checkout
         uses: actions/checkout@v7
@@ -473,7 +542,7 @@ jobs:
           # GRAM retrieval supplies its own scoped credential explicitly.
           persist-credentials: false
 
-      # No shared depot here: resolving and compiling from nothing is the point.
+      # No shared package depot: project dependencies still start from nothing.
       # Keep compilation outside setup so a timeout identifies the failing phase.
       - name: Setup (instantiate in clean depot)
         timeout-minutes: 10
@@ -579,26 +648,12 @@ jobs:
           # GRAM retrieval supplies its own scoped credential explicitly.
           persist-credentials: false
 
-      - name: Viewer JavaScript regressions
-        run: node test/unit/visualization/viewer_channels_models_tests.mjs
-      - name: Viewer external-host page builder tests
-        run: python3 -m unittest discover -s test/scripts -p 'test_build_cdn_page.py' -v
-
-      # Its Instantiate step is the README's `Pkg.instantiate()` command.
+      # Its Instantiate step is the README's
+      # `Pkg.instantiate(julia_version_strict=true)` command.
       - name: Setup (README instantiate command)
         uses: ./.github/actions/setup
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-
-      - name: Terrain exporter Julia-to-JavaScript regression
-        shell: bash
-        run: |
-          set -euo pipefail
-          terrain_fixture_dir="$(mktemp -d "$RUNNER_TEMP/spaceagora-terrain.XXXXXX")"
-          trap 'rm -rf "$terrain_fixture_dir"' EXIT
-          export SPACEAGORA_TERRAIN_TEST_FIXTURE_DIR="$terrain_fixture_dir"
-          julia --startup-file=no --depwarn=error --project=. test/unit/visualization/terrain_export_tests.jl
-          node test/unit/visualization/terrain_sampling_tests.mjs "$terrain_fixture_dir/fixtures.json"
 
       - name: Terrain producer tests
         shell: bash
@@ -616,15 +671,18 @@ jobs:
           julia --startup-file=no --project=scripts/dev -e 'using Pkg; Pkg.instantiate()'
           julia --startup-file=no --project=. scripts/dev/run.jl test_cygnss_environment.jl
 
-      - name: CYGNSS offline data-access checks
-        run: |
-          python3 -m venv /tmp/spaceagora-cygnss-tools
-          /tmp/spaceagora-cygnss-tools/bin/python -m pip install -r scripts/dev/requirements-cygnss.txt
-          /tmp/spaceagora-cygnss-tools/bin/python scripts/dev/viewer_demos/test_cygnss_fetch.py
-          /tmp/spaceagora-cygnss-tools/bin/python scripts/dev/viewer_demos/fetch_cygnss_l1_states.py --self-test
+      - name: README quickstart artifact checker regressions
+        run: python3 -B -m unittest discover -s test/scripts -p test_readme_quickstart.py -v
 
-      - name: README example command
-        run: julia --startup-file=no --compiled-modules=existing --project=. examples/Earth_Thruster_Test.jl
+      - name: Prepare examples environment (README command)
+        run: julia --startup-file=no examples/setup.jl
+
+      - name: README quickstart command and artifacts
+        run: python3 -B test/smoke/ci_readme_quickstart.py
+
+      # Preserve the full thruster burn exercised by the formerly mislabeled step.
+      - name: Earth thruster example
+        run: julia --startup-file=no --compiled-modules=existing --project=examples examples/Earth_Thruster_Test.jl
 
   example-regression:
     needs: depot
@@ -648,6 +706,9 @@ jobs:
         with:
           gram: native
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+
+      - name: Prepare examples environment
+        run: julia --startup-file=no examples/setup.jl
 
       - name: Example regression
         run: julia --startup-file=no --project=. test/integration/examples/runtests.jl
@@ -754,10 +815,15 @@ jobs:
           gramsuite-smoke: "false"
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
+      # Aqua and the other test tools live in the test environment, not in the
+      # root project.
+      - name: Prepare test environment
+        run: julia --startup-file=no test/setup.jl
+
       # The contract gates load SpaceAGORA; compiling it in Setup overlaps the
       # compile with the GRAMSuite retrieval instead of following it.
       - name: Contract suite
-        run: julia --startup-file=no --project=. test/contracts/pr_runtests.jl
+        run: julia --startup-file=no --project=test test/contracts/pr_runtests.jl
 
   rpo-public-pilot:
     needs: depot
@@ -782,11 +848,66 @@ jobs:
         env:
           JULIA_PKG_OFFLINE: "true"
         run: julia --startup-file=no --project=examples/rpo_planner_env examples/rpo_planner_env/smoke.jl
+      # The worked examples of docs/src/user/gnc_algorithm.md, in a project of their
+      # own; the HPC and extensibility docs gate keeps the page's code equal to them.
+      - name: Prepare separate GNC algorithm example project
+        env:
+          JULIA_PKG_PRECOMPILE_AUTO: "0"
+        run: julia --startup-file=no --project=examples/gnc_algorithm_env examples/gnc_algorithm_env/setup.jl
+      - name: GNC algorithm examples and their conformance checks without package downloads
+        env:
+          JULIA_PKG_OFFLINE: "true"
+          JULIA_NUM_THREADS: "2"
+        run: julia --startup-file=no --depwarn=error --project=examples/gnc_algorithm_env examples/gnc_algorithm_env/smoke.jl
+      # The complete scripts of the force and actuator walkthroughs
+      # (docs/src/user/custom_effector.md, custom_actuator.md), kept equal to their
+      # pages by the same gate.
+      - name: Prepare separate extension walkthrough project
+        env:
+          JULIA_PKG_PRECOMPILE_AUTO: "0"
+        run: julia --startup-file=no --project=examples/walkthrough_env examples/walkthrough_env/setup.jl
+      - name: Extension walkthrough scripts without package downloads
+        env:
+          JULIA_PKG_OFFLINE: "true"
+        run: julia --startup-file=no --depwarn=error --project=examples/walkthrough_env examples/walkthrough_env/smoke.jl
+
+  # The reusable contributor workflow on each starter, generated from this checkout
+  # as a contributor would generate it, with this checkout as the core. The three
+  # run side by side. It is not one of the required checks and no aggregate waits
+  # for it.
+  contributor-kit:
+    needs: depot
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - kind: project
+            manifest: committed
+            examples: scripts/run_case.jl
+          - kind: package
+            manifest: core
+            examples: examples/run_in_simulation.jl
+          - kind: companion
+            manifest: core
+            examples: ""
+    uses: ./.github/workflows/contributor-ci.yml
+    with:
+      spaceagora-rev: ${{ github.sha }}
+      kind: ${{ matrix.kind }}
+      manifest: ${{ matrix.manifest }}
+      examples: ${{ matrix.examples }}
+      load-orders: ${{ matrix.kind == 'companion' }}
+      starter: true
+      core-from-caller: true
 
   documentation-release-gate:
     needs: depot
     permissions:
       contents: read
+      # Documenter authenticates links to this repository's pull requests.
+      pull-requests: read
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -807,12 +928,16 @@ jobs:
           precompile: "false"
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
+      # Documenter lives in the docs environment, not in the root project.
+      - name: Prepare docs environment
+        run: julia --startup-file=no docs/setup.jl
+
       - name: Build docs
         env:
           # Authenticate GitHub link checks with the existing read-only job token.
           # Publishing remains the separate Documentation workflow's responsibility.
           GITHUB_TOKEN: ${{ github.token }}
-        run: julia --project=. docs/make.jl --no-deploy
+        run: julia --project=docs docs/make.jl --no-deploy
 
       - name: Public API surface gate
         run: julia --startup-file=no --project=. test/gates/ci_public_api_surface_gate.jl
@@ -865,44 +990,332 @@ jobs:
           gram: none
           gramsuite-smoke: "false"
           token: ${{ github.token }}
+      - name: Check optional package checkout and setup safeguards
+        run: julia --startup-file=no test/smoke/optional_packages_tests.jl
       - name: Prepare independent core and companion projects
         env:
           JULIA_PKG_PRECOMPILE_AUTO: "0"
-        run: julia --startup-file=no --project=. test/optional_hypr/setup.jl "$RUNNER_TEMP/hypr-installations"
+        run: julia --startup-file=no --project=. test/optional/hypr/setup.jl "$RUNNER_TEMP/hypr-installations"
       - name: Verify immutable installation inputs
-        run: julia --startup-file=no --project=. test/installation_contract.jl
+        run: julia --startup-file=no --project=. test/smoke/installation_contract.jl
       - name: Verify repeatable example setup without tracked changes
-        run: julia --startup-file=no --project=. test/optional_hypr/example_setup.jl
+        run: julia --startup-file=no --project=. test/optional/hypr/example_setup.jl
+      - name: Prepare examples environment
+        run: julia --startup-file=no examples/setup.jl
       - name: Example environment isolation
         env:
           JULIA_LOAD_PATH: "@:@stdlib"
-        run: julia --startup-file=no --project=. test/optional_hypr/example_routing.jl
+        run: julia --startup-file=no --project=. test/optional/hypr/example_routing.jl
       - name: Core without HYPR installed
         env:
           JULIA_LOAD_PATH: "@:@stdlib"
-        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/hypr-installations/core" test/optional_hypr/core.jl
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/hypr-installations/core" test/optional/hypr/core.jl
       - name: Precompile the complete optional stack
         env:
           JULIA_LOAD_PATH: "@:@stdlib"
-        run: julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" -e 'using Pkg; Pkg.precompile(["SpaceAGORA", "HYPR", "SpaceAGORAHYPR"]; strict=true)'
+        run: julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" -e 'using Pkg; Pkg.precompile(["SpaceAGORA", "HYPR"]; strict=true)'
       - name: Both companion load orders
         env:
           JULIA_LOAD_PATH: "@:@stdlib"
         run: |
-          julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/hypr-installations/hypr" test/optional_hypr/optional.jl core-first
-          julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/hypr-installations/hypr" test/optional_hypr/optional.jl hypr-first
+          julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/hypr-installations/hypr" test/optional/hypr/optional.jl core-first
+          julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/hypr-installations/hypr" test/optional/hypr/optional.jl hypr-first
+      # HYPR's own integration tests at the pinned revision, against this checkout.
+      # Some of them still reach private SpaceAGORA paths
+      # (docs/contributing/companion_boundaries.md), so a change to a path they use
+      # fails here before merge, as the EDG and MuJoCo jobs run their companions' tests.
+      - name: HYPR's integration tests at the pinned revision
+        env:
+          JULIA_LOAD_PATH: "@:@stdlib"
+        working-directory: packages/robotics/HYPR.jl
+        run: |
+          julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" test/integration.jl core-first
+          julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" test/integration.jl hypr-first
+          julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" test/rrt_callback_contract.jl
+          julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" test/extension_helpers.jl
+          julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" -e 'include("test/sampling_compatibility.jl"); include("test/custom_objective.jl")'
+          julia --startup-file=no --compiled-modules=strict --pkgimages=existing --project="$RUNNER_TEMP/hypr-installations/hypr" test/precompiled_loading.jl core-first
+          julia --startup-file=no --compiled-modules=strict --pkgimages=existing --project="$RUNNER_TEMP/hypr-installations/hypr" test/precompiled_loading.jl hypr-first
+          julia --startup-file=no --compiled-modules=strict --pkgimages=existing --project="$RUNNER_TEMP/hypr-installations/hypr" test/precompiled_conflicts.jl conflict-first
+          julia --startup-file=no --compiled-modules=strict --pkgimages=existing --project="$RUNNER_TEMP/hypr-installations/hypr" test/precompiled_conflicts.jl hypr-first
+          julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" test/incompatible_resolution.jl "$GITHUB_WORKSPACE"
+          julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" test/incompatible_contract.jl
+          julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" test/service_boundary.jl core-first
+          julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" test/service_boundary.jl hypr-first
       - name: Retain installation coverage
         if: always()
         run: |
-          find src packages/SpaceAGORAHYPR/src -name '*.cov' -print0 | while IFS= read -r -d '' f; do
+          find src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' -print0 | while IFS= read -r -d '' f; do
             mv "$f" "$(printf '%s' "$f" | sed -E 's/\.([0-9]+)\.cov$/.88\1.cov/')"
           done
           mkdir -p hypr-installation-coverage
-          find src packages/SpaceAGORAHYPR/src -name '*.cov' -print0 | tar --null -czf hypr-installation-coverage/coverage.tgz -T -
+          find src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' -print0 | tar --null -czf hypr-installation-coverage/coverage.tgz -T -
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: hypr-installation-coverage
           path: hypr-installation-coverage/coverage.tgz
+          retention-days: 3
+          if-no-files-found: error
+
+  # Qualify the independent companion against this core checkout on every PR.
+  # Keep the companion revision immutable; upgrades also require its standalone
+  # installation/native CI. The tests aggregate requires this job to pass.
+  # MuJoCo's public artifact may be cached; Pkg still verifies its declared hashes.
+  optional-mujoco-installation:
+    needs: depot
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SPACEAGORA_MUJOCO_REQUIRED: "1"
+      JULIA_LOAD_PATH: "@:@stdlib"
+      JULIA_NUM_THREADS: "4"
+      OPENBLAS_NUM_THREADS: "1"
+      JULIA_PKG_PRECOMPILE_AUTO: "0"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Read the pinned MuJoCo gitlink
+        id: mujoco-source
+        run: |
+          revision="$(git rev-parse HEAD:packages/robotics/SpaceAGORAMuJoCo.jl)"
+          [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+      - name: Checkout the pinned MuJoCo companion
+        uses: actions/checkout@v7
+        with:
+          repository: Space-FALCON-Lab/SpaceAGORAMuJoCo.jl
+          ref: ${{ steps.mujoco-source.outputs.revision }}
+          path: packages/robotics/SpaceAGORAMuJoCo.jl
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          gram: none
+          gramsuite-smoke: "false"
+          token: ${{ github.token }}
+      - name: Cache the MuJoCo artifact
+        uses: actions/cache@v4
+        with:
+          path: ~/.julia/artifacts/6a34a368d528ad0332f9da97de3d2f105977bac8
+          key: mujoco-artifact-${{ runner.os }}-${{ hashFiles('packages/robotics/SpaceAGORAMuJoCo.jl/Artifacts.toml') }}
+      - name: Verify companion identity and clean source
+        run: julia --startup-file=no scripts/optional_packages.jl check mujoco
+      - name: Check companion installation inputs
+        run: julia --startup-file=no packages/robotics/SpaceAGORAMuJoCo.jl/test/installation_plan_tests.jl
+      - name: Check exact core source acquisition
+        run: julia --startup-file=no packages/robotics/SpaceAGORAMuJoCo.jl/test/source_acquisition_tests.jl
+      - name: Build the current core plus pinned companion environment
+        env:
+          SPACEAGORA_CORE_PATH: ${{ github.workspace }}
+          SPACEAGORA_CORE_REV: ""
+        run: julia --startup-file=no scripts/optional_packages.jl setup mujoco "$RUNNER_TEMP/mujoco-env"
+      - name: Core-only import and compatibility isolation
+        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" packages/robotics/SpaceAGORAMuJoCo.jl/test/core_only.jl
+      - name: Reject incompatible core before defining adapter methods
+        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" packages/robotics/SpaceAGORAMuJoCo.jl/test/incompatible_core.jl
+      - name: Core-first adapter load and conformance
+        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" packages/robotics/SpaceAGORAMuJoCo.jl/test/load_order.jl core-first
+      - name: Companion-first adapter load and conformance
+        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" packages/robotics/SpaceAGORAMuJoCo.jl/test/load_order.jl companion-first
+      - name: Refuse a scene without the MuJoCo library
+        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" packages/robotics/SpaceAGORAMuJoCo.jl/test/missing_native.jl
+      - name: Mandatory native tests with four threads
+        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" -e '@assert Threads.nthreads() == 4; include("packages/robotics/SpaceAGORAMuJoCo.jl/test/runtests.jl")'
+      - name: Verify tracked installation inputs were not changed
+        run: |
+          git diff --exit-code
+          git -C packages/robotics/SpaceAGORAMuJoCo.jl diff --exit-code
+
+  # The renderer is independent of core installation. This job qualifies the
+  # exact source pin against this checkout, including both extension load orders.
+  optional-visualizer-installation:
+    needs: depot
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      JULIA_LOAD_PATH: "@:@stdlib"
+      JULIA_NUM_THREADS: "2"
+      JULIA_PKG_PRECOMPILE_AUTO: "0"
+      SPACEAGORA_VISUALIZER_PATH: ""
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          gram: none
+          gramsuite-smoke: "false"
+          token: ${{ github.token }}
+      - name: Check immutable visualizer installation inputs
+        run: julia --startup-file=no test/optional/visualizer/installation_plan_tests.jl
+      - name: Prepare independent core and pinned renderer projects
+        run: |
+          set -euo pipefail
+          julia --startup-file=no --project=. test/optional/visualizer/setup.jl "$RUNNER_TEMP/visualizer-installations"
+          printf 'SPACEAGORA_VISUALIZER_TEST_ENV=%s\n' "$RUNNER_TEMP/visualizer-installations/visualizer" >> "$GITHUB_ENV"
+      # The CLI child continues in the examples environment.
+      - name: Prepare examples environment
+        run: julia --startup-file=no examples/setup.jl
+      - name: Core installation without a renderer
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/visualizer-installations/core" test/optional/visualizer/core.jl
+      - name: Core-first renderer integration
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/visualizer-installations/visualizer" test/optional/visualizer/optional.jl core-first
+      - name: Renderer-first integration
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/visualizer-installations/visualizer" test/optional/visualizer/optional.jl visualizer-first
+      - name: Locate the installed pinned renderer
+        run: julia --startup-file=no --project="$RUNNER_TEMP/visualizer-installations/visualizer" -e 'using SpaceAGORAVisualizer; println("SPACEAGORA_VISUALIZER_CHECKOUT=", pkgdir(SpaceAGORAVisualizer)); println("SPACEAGORA_VISUALIZER_DIR=", SpaceAGORAVisualizer.viewer_directory())' >> "$GITHUB_ENV"
+      - name: Standalone companion contract tests
+        run: julia --startup-file=no --project="$RUNNER_TEMP/visualizer-installations/visualizer" -e 'using Pkg; Pkg.test("SpaceAGORAVisualizer")'
+      - name: Viewer JavaScript regressions
+        run: node "$SPACEAGORA_VISUALIZER_CHECKOUT/test/unit/visualization/viewer_channels_models_tests.mjs"
+      - name: Viewer interlink renderer regressions
+        run: node "$SPACEAGORA_VISUALIZER_CHECKOUT/test/unit/visualization/viewer_links_tests.mjs"
+      - name: Viewer external-host page builder tests
+        run: python3 -B -m unittest discover -s "$SPACEAGORA_VISUALIZER_CHECKOUT/test/scripts" -p 'test_*.py' -v
+      - name: Terrain exporter Julia-to-JavaScript regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          terrain_fixture_dir="$(mktemp -d "$RUNNER_TEMP/spaceagora-terrain.XXXXXX")"
+          trap 'rm -rf "$terrain_fixture_dir"' EXIT
+          export SPACEAGORA_TERRAIN_TEST_FIXTURE_DIR="$terrain_fixture_dir"
+          julia --startup-file=no --depwarn=error --project="$RUNNER_TEMP/visualizer-installations/visualizer" test/unit/visualization/terrain_export_tests.jl
+          node test/unit/visualization/terrain_sampling_tests.mjs "$terrain_fixture_dir/fixtures.json" "$SPACEAGORA_VISUALIZER_DIR"
+      - name: Verify core installation inputs were not changed
+        run: git diff --exit-code
+      - name: Retain visualizer integration coverage
+        if: always()
+        run: |
+          find src -name '*.cov' -print0 | while IFS= read -r -d '' f; do
+            mv "$f" "$(printf '%s' "$f" | sed -E 's/\.([0-9]+)\.cov$/.89\1.cov/')"
+          done
+          mkdir -p visualizer-installation-coverage
+          find src -name '*.cov' -print0 | tar --null -czf visualizer-installation-coverage/coverage.tgz -T -
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: visualizer-installation-coverage
+          path: visualizer-installation-coverage/coverage.tgz
+          retention-days: 3
+          if-no-files-found: error
+
+  # Absence is exercised only in the dedicated core-only environment. Existing
+  # runtime/native/coverage suites above continue to execute every EDG test.
+  optional-edg-installation:
+    needs: depot
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      JULIA_NUM_THREADS: "2"
+      JULIA_LOAD_PATH: "@:@stdlib"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          gram: none
+          gramsuite-smoke: "false"
+          edg: "false"
+          token: ${{ github.token }}
+      - name: Installer safeguards
+        run: julia --startup-file=no test/smoke/optional_packages_tests.jl
+      - name: Prepare core-only and EDG environments
+        env:
+          JULIA_PKG_PRECOMPILE_AUTO: "0"
+        run: julia --startup-file=no --project=@stdlib test/optional/edg/setup.jl "$RUNNER_TEMP/edg-installations"
+      # The CLI and example children continue in the examples environment.
+      - name: Prepare examples environment
+        run: julia --startup-file=no examples/setup.jl
+      - name: Core without the EDG provider
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/core" test/optional/edg/core.jl
+      - name: Both EDG load orders
+        run: |
+          julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional/edg/optional.jl core-first
+          julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional/edg/optional.jl edg-first
+      - name: EDG CLI environment and child process
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional/edg/cli.jl
+      - name: EDG example smoke child environment
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional/edg/example_smoke.jl
+      # With coverage: the EDG kernel tests run here, and the next step collects
+      # the companion's .cov files for the per-file coverage gate.
+      - name: Companion tests
+        run: julia --startup-file=no --project="$RUNNER_TEMP/edg-installations/edg" -e 'using Pkg; Pkg.test("SpaceAGORAEDG"; coverage=true)'
+      - name: Companion load orders and the refusal without the companion
+        run: |
+          julia --startup-file=no --project="$RUNNER_TEMP/edg-installations/edg" packages/gnc/SpaceAGORAEDG.jl/test/load_order.jl core-first
+          julia --startup-file=no --project="$RUNNER_TEMP/edg-installations/edg" packages/gnc/SpaceAGORAEDG.jl/test/load_order.jl edg-first
+      - name: Retain EDG integration coverage
+        if: always()
+        run: |
+          find src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' -print0 | while IFS= read -r -d '' f; do
+            mv "$f" "$(printf '%s' "$f" | sed -E 's/\.([0-9]+)\.cov$/.66\1.cov/')"
+          done
+          mkdir -p edg-installation-coverage
+          find src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' -print0 | tar --null -czf edg-installation-coverage/coverage.tgz -T -
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: edg-installation-coverage
+          path: edg-installation-coverage/coverage.tgz
+          retention-days: 3
+          if-no-files-found: error
+
+  # Tree matching remains Julia-only. This job explicitly installs the cyclic backend.
+  optional-interlink-installation:
+    needs: depot
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      JULIA_LOAD_PATH: "@:@stdlib"
+      JULIA_NUM_THREADS: "2"
+      JULIA_PKG_PRECOMPILE_AUTO: "0"
+      JULIA_CONDAPKG_BACKEND: "Null"
+      GKSwstype: "100"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          gram: none
+          gramsuite-smoke: "false"
+          edg: "false"
+          token: ${{ github.token }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      # The interlink tests build their case with examples/gve_sma_interlinks.jl,
+      # which continues in the examples environment through examples/common.jl.
+      - name: Prepare examples environment
+        run: julia --startup-file=no examples/setup.jl
+      - name: Install the explicit matching backend
+        run: |
+          python -m pip install 'networkx==3.4.2'
+          echo "JULIA_PYTHONCALL_EXE=$(command -v python)" >> "$GITHUB_ENV"
+          julia --startup-file=no --project=. test/integration/interlink_python_setup.jl "$RUNNER_TEMP/interlink-environment"
+      - name: Core without Python and both optional load orders
+        run: |
+          julia --startup-file=no --project=. -e 'using SpaceAGORA; @assert Base.get_extension(SpaceAGORA, :SpaceAGORAPythonCallExt) === nothing; include("test/unit/simulation/interlink_tests.jl")'
+          julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/interlink-environment" test/integration/interlink_python.jl core-first
+          julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/interlink-environment" test/integration/interlink_python.jl python-first
+      - name: Verify core installation inputs were not changed
+        run: git diff --exit-code
+      - name: Retain interlink coverage
+        if: always()
+        run: |
+          find src ext -name '*.cov' -print0 | while IFS= read -r -d '' f; do
+            mv "$f" "$(printf '%s' "$f" | sed -E 's/\.([0-9]+)\.cov$/.77\1.cov/')"
+          done
+          mkdir -p interlink-installation-coverage
+          find src ext -name '*.cov' -print0 | tar --null -czf interlink-installation-coverage/coverage.tgz -T -
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: interlink-installation-coverage
+          path: interlink-installation-coverage/coverage.tgz
           retention-days: 3
           if-no-files-found: error

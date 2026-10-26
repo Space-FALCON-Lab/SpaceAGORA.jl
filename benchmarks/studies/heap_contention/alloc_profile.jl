@@ -71,29 +71,29 @@ function hc_bucket(path::AbstractString)::String
     isempty(path) && return "unknown"
     # Split the engine/ directory apart: execution.jl and persistence.jl are
     # the two files this study is attributing allocation for, so they get
-    # their own buckets, separate from the rest of src/simulation/engine/
+    # their own buckets, separate from the rest of src/orchestration/simulation/engine/
     # (solver_policy.jl, dynamics_rhs.jl, rhs_calibration.jl, ...), which is
     # what the split is meant to contrast against.
-    if occursin("src/simulation/engine/execution.jl", path)
+    if occursin("src/orchestration/simulation/engine/execution.jl", path)
         return "engine/execution.jl"
-    elseif occursin("src/simulation/engine/persistence.jl", path)
+    elseif occursin("src/orchestration/simulation/engine/persistence.jl", path)
         return "engine/persistence.jl"
     end
-    idx = findfirst("src/simulation/engine/", path)
+    idx = findfirst("src/orchestration/simulation/engine/", path)
     idx !== nothing && return "engine/other (solver_policy, dynamics_rhs, rhs_calibration, ...)"
-    idx = findfirst("src/simulation/callbacks/", path)
+    idx = findfirst("src/orchestration/simulation/callbacks/", path)
     idx !== nothing && return "callbacks (SavedValues/SaveData/SavingCallback)"
-    idx = findfirst("src/io/", path)
+    idx = findfirst("src/interfaces/io/", path)
     idx !== nothing && return "io (results dataframe/CSV)"
-    idx = findfirst("src/dynamics/", path)
+    idx = findfirst("src/models/dynamics/", path)
     idx !== nothing && return "dynamics (RHS terms)"
-    idx = findfirst("src/environment/", path)
+    idx = findfirst("src/models/environment/", path)
     idx !== nothing && return "environment (gravity/atmosphere/ephemerides)"
-    idx = findfirst("src/vehicle/", path)
+    idx = findfirst("src/models/vehicle/", path)
     idx !== nothing && return "vehicle (spacecraft/structure)"
-    idx = findfirst("src/core/", path)
+    idx = findfirst("src/foundation/core/", path)
     idx !== nothing && return "core"
-    idx = findfirst("src/parallel/", path)
+    idx = findfirst("src/orchestration/parallel/", path)
     idx !== nothing && return "parallel (routing/policy)"
     occursin("SpaceAGORA.jl/src/", path) && return "src (other)"
     return "external (solver/OrdinaryDiffEq/DiffEqCallbacks/Base)"

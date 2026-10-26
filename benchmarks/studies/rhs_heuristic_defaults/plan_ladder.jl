@@ -2,12 +2,12 @@
 # heuristic picks.
 #
 # The pinned parallel routes run whatever `_rhs_execution_plan_uncached`
-# (src/simulation/engine/setup.jl) decides; the adaptive routes run whatever the
+# (src/orchestration/simulation/engine/setup.jl) decides; the adaptive routes run whatever the
 # calibration sweep measured. On the archived TRX50 P1 ladder those two answers
 # differ by up to 10x in the middle of the constellation-size range, so the
 # default is what needs fixing, not the sweep. This ladder measures the whole
 # candidate set the sweep would consider (`_rhs_plan_candidates`,
-# src/simulation/engine/rhs_calibration.jl) plus the heuristic's own plan, at
+# src/orchestration/simulation/engine/rhs_calibration.jl) plus the heuristic's own plan, at
 # one thread budget, in one process, back to back.
 #
 # How a plan is pinned: through the production calibration cache, not a private

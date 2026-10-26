@@ -10,4 +10,4 @@ if "%JULIA_PROJECT%"=="" (
   set "PROJECT_DIR=%JULIA_PROJECT%"
 )
 
-julia --project="%PROJECT_DIR%" "%REPO_ROOT%\src\cli\main.jl" %*
+julia --project="%PROJECT_DIR%" "%REPO_ROOT%\src\interfaces\cli\main.jl" %*

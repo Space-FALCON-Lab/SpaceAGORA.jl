@@ -288,6 +288,9 @@ end
         rng=MersenneTwister(43),
     )
     @test dispatch_plan.planner == :hypr
+    # The sampling planner has no default global stream; the quintic one draws nothing.
+    @test_throws ArgumentError SpaceAGORA.plan_robot_arm_motion(model, base, q0, target;
+        config=SpaceAGORA.RobotArmPlannerConfig(dt_s=0.1, duration_s=0.5, ik_tol_m=1.0e-3), planner=:hypr)
 end
 
 @testset "Closest surface target" begin

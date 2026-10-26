@@ -246,7 +246,7 @@ end
     # ---------------------------------------------------------------
     @testset "station geometry assets" begin
         demo_path = ASSETS.station_geometry_path(:demo)
-        @test endswith(demo_path, joinpath("demo", "station_pointcloud.csv"))
+        @test endswith(demo_path, joinpath("scene", "models", "station_pointcloud_demo.csv"))
         @test ASSETS.station_geometry_path(:gateway) == ASSETS.station_cad_path(:gateway)
         @test_throws ArgumentError ASSETS.station_geometry_path(:bogus)
         @test_throws ArgumentError ASSETS.station_cad_path(:bogus)
@@ -288,6 +288,9 @@ end
     # ---------------------------------------------------------------
     min_config = build_min_config()
     P1 = SM.ODEParams(n_sats=1, args=min_config)
+    # The state sample a control output hook receives for spacecraft `i`.
+    x_at(i) = SM.StateSample(SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0), 1.0;
+        spacecraft_index=i)
     P2 = SM.ODEParams(n_sats=2, args=min_config)
 
     arm = SM.default_cloth_arm_model()
@@ -427,24 +430,24 @@ end
             controller=SM.init_robot_arm_joint_mpc(plan; dt_s=0.05, horizon=4),
             control_dt_s=0.05,
         )
-        @test SM.calcControlEffect!(eff, (sc=[sc_goal],), P1, 100.0, 1) === nothing
+        @test SM.update_control!(eff, (sc=[sc_goal],), P1, 100.0, 1) === nothing
         @test length(eff.held.joint_torque_nm) == 3
         @test norm(eff.held.joint_torque_nm) < 1.0e-8
         @test eff.held.base_force_ii == SVector{3, Float64}(0.0, 0.0, 0.0)
 
         # Wrong satellite index leaves held untouched.
         eff.held = CH.RobotArmHeldActuation(joint_torque_nm=[9.0, 9.0, 9.0])
-        SM.calcControlEffect!(eff, (sc=[sc_goal],), P1, 0.0, 2)
+        SM.update_control!(eff, (sc=[sc_goal],), P1, 0.0, 2)
         @test eff.held.joint_torque_nm == [9.0, 9.0, 9.0]
 
         # No plan: early return.
         eff_no_plan = SM.RobotArmControlEffector()
-        @test SM.calcControlEffect!(eff_no_plan, (sc=[sc_goal],), P1, 0.0, 1) === nothing
+        @test SM.update_control!(eff_no_plan, (sc=[sc_goal],), P1, 0.0, 1) === nothing
         @test eff_no_plan.held.joint_torque_nm == Float64[]
 
         # No controller: zero torque held command of plan dimension.
         eff_no_ctrl = SM.RobotArmControlEffector(plan=plan)
-        SM.calcControlEffect!(eff_no_ctrl, (sc=[sc_goal],), P1, 0.0, 1)
+        SM.update_control!(eff_no_ctrl, (sc=[sc_goal],), P1, 0.0, 1)
         @test eff_no_ctrl.held.joint_torque_nm == zeros(3)
 
         # Measured state unavailable: falls back to the reference state (still equilibrium).
@@ -453,17 +456,20 @@ end
             controller=SM.init_robot_arm_joint_mpc(plan; dt_s=0.05, horizon=4),
             control_dt_s=0.05,
         )
-        SM.calcControlEffect!(eff_ref, (sc=[(pos=zeros(3),)],), P1, 100.0, 1)
+        SM.update_control!(eff_ref, (sc=[(pos=zeros(3),)],), P1, 100.0, 1)
         @test norm(eff_ref.held.joint_torque_nm) < 1.0e-8
 
         # Held wrench accessors.
-        f, τ = SM.calcControlForceTorque(eff, Float64[], P1, 1, 0.0)
+        f, τ = SM.control_wrench(eff, x_at(1), P1, 0.0)
         @test f == SVector{3, Float64}(0.0, 0.0, 0.0)
         @test τ == SVector{3, Float64}(0.0, 0.0, 0.0)
-        f2, τ2 = SM.calcControlForceTorque(eff, Float64[], P1, 2, 0.0)
+        f2, τ2 = SM.control_wrench(eff, x_at(2), P1, 0.0)
         @test f2 == SVector{3, Float64}(0.0, 0.0, 0.0)
         @test τ2 == SVector{3, Float64}(0.0, 0.0, 0.0)
-        @test SM.calcControlMassFlowRate(eff, Float64[], P1, 1, 0.0) == 0.0
+        # The arm uses no propellant: it has no rate method of its own, so the default gives zero.
+        rate_args = Tuple{typeof(eff), SM.StateSample, typeof(P1), Float64}
+        @test which(SM.control_propellant_rate, rate_args) === which(SM.control_propellant_rate, Tuple{Any, Any, Any, Any})
+        @test SM.control_propellant_rate(eff, x_at(1), P1, 0.0) === 0.0
     end
 
     # ---------------------------------------------------------------
@@ -487,12 +493,12 @@ end
 
         # Early-return guards.
         model = SM.RPOMPCControlModel()
-        @test SM.calcControlEffect!(model, u_rpo, P2, 0.0, 2) === nothing  # wrong sat
-        @test SM.calcControlEffect!(model, u_rpo, P2, 0.0, 1) === nothing  # invalid plan
+        @test SM.update_control!(model, u_rpo, P2, 0.0, 2) === nothing  # wrong sat
+        @test SM.update_control!(model, u_rpo, P2, 0.0, 1) === nothing  # invalid plan
         model.plan_buffer.valid = true
         model.plan_buffer.plan.valid = true
         model.plan_buffer.updated_at_s = 0.0
-        @test SM.calcControlEffect!(model, u_rpo, P2, 0.0, 1) === nothing  # no controller
+        @test SM.update_control!(model, u_rpo, P2, 0.0, 1) === nothing  # no controller
         @test model.held.force_ii == SVector{3, Float64}(0.0, 0.0, 0.0)
 
         # Full control path: hold-at-origin plan with a radial offset.
@@ -512,7 +518,7 @@ end
         model.plan_buffer.valid = true
         model.plan_buffer.updated_at_s = 0.0
 
-        @test SM.calcControlEffect!(model, u_rpo, P2, 0.0, 1) === nothing
+        @test SM.update_control!(model, u_rpo, P2, 0.0, 1) === nothing
         @test all(isfinite, model.held.force_ii)
         @test norm(model.held.force_ii) > 0.0
         @test all(>=(0.0), model.held.thruster_forces_n)
@@ -523,30 +529,30 @@ end
         # Default thrusters act through the COM: no thruster torque, no RW command.
         @test model.held.torque_body ≈ SVector{3, Float64}(0.0, 0.0, 0.0) atol=1e-12
 
-        f, τ = SM.calcControlForceTorque(model, Float64[], P2, 1, 0.0)
+        f, τ = SM.control_wrench(model, x_at(1), P2, 0.0)
         @test f == model.held.force_ii
         @test τ == model.held.torque_body
-        f0, τ0 = SM.calcControlForceTorque(model, Float64[], P2, 2, 0.0)
+        f0, τ0 = SM.control_wrench(model, x_at(2), P2, 0.0)
         @test f0 == SVector{3, Float64}(0.0, 0.0, 0.0)
         @test τ0 == SVector{3, Float64}(0.0, 0.0, 0.0)
 
-        # Mass flow: negative when thrusters fire, zero for the other satellite.
-        mdot = SM.calcControlMassFlowRate(model, Float64[], P2, 1, 0.0)
-        @test mdot < 0.0
-        expected_mdot = -sum(
+        # Propellant use: positive when thrusters fire, zero for the other satellite.
+        rate = SM.control_propellant_rate(model, x_at(1), P2, 0.0)
+        @test rate > 0.0
+        expected_rate = sum(
             model.held.thruster_forces_n[j] > 0.0 ?
                 model.held.thruster_forces_n[j] / (model.thrusters.isp_s[j] * 9.80665) : 0.0
             for j in 1:6
         )
-        @test mdot ≈ expected_mdot
-        @test SM.calcControlMassFlowRate(model, Float64[], P2, 2, 0.0) == 0.0
+        @test rate ≈ expected_rate
+        @test SM.control_propellant_rate(model, x_at(2), P2, 0.0) == 0.0
 
         idle = SM.RPOMPCControlModel()
-        @test SM.calcControlMassFlowRate(idle, Float64[], P2, 1, 0.0) == 0.0
+        @test SM.control_propellant_rate(idle, x_at(1), P2, 0.0) == 0.0
     end
 
     # ---------------------------------------------------------------
-    # cloth_robot_arm_dynamics.jl
+    # compliant_robot_arm_dynamics.jl
     # ---------------------------------------------------------------
     cloth_plan = SM.plan_robot_arm_motion(
         arm,

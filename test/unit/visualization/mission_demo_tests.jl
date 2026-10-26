@@ -1,3 +1,4 @@
+Base.include(@__MODULE__, joinpath(@__DIR__, "..", "..", "helpers", "load_visualizer.jl"))
 using Test, SpaceAGORA, Arrow, DataFrames, JSON
 module MissionDemoHelpersTest
 include(joinpath(@__DIR__, "..", "..", "..", "scripts", "dev", "viewer_demos", "common.jl"))
@@ -126,7 +127,7 @@ end
                 expected_et = MDH.et_of(expected_utc)
                 et_atol = 4 * eps(abs(expected_et))
                 @test resolved_et ≈ expected_et rtol=0 atol=et_atol
-                @test sm.ephemerides_time_seconds(initial_time, sm.SpiceEphemeridesModel()) ≈ expected_et rtol=0 atol=et_atol
+                @test sm.ephemerides_epoch_seconds(sm.SpiceEphemeridesModel(), initial_time) ≈ expected_et rtol=0 atol=et_atol
                 @test MDH.et_of(MDH.initial_time_of(resolved_et)) ≈ expected_et rtol=0 atol=et_atol
                 @test abs(requested_et - expected_et) > 5e-5
 

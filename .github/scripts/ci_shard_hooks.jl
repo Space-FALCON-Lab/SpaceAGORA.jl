@@ -292,6 +292,9 @@ function run_unit_shard()
 end
 
 function timed_include(item::String, f)
+    # Emit before entry: a timed-out child cannot write a completion report.
+    println("ci_shard_item_start ", item)
+    flush(stdout)
     t0 = time()
     failed = false
     try

@@ -11,19 +11,25 @@ on:
   # Julia CI runs them on every PR and on every push to main.
   pull_request:
     paths:
-      - "src/dynamics/**"
-      - "src/environment/**"
-      - "src/simulation/**"
-      - "src/core/**"
-      - "src/gnc/**"
-      - "src/vehicle/**"
-      - "src/mission/**"
-      - "src/parallel/**"
-      - "src/analysis/verification/**"
+      - "src/models/dynamics/**"
+      - "src/models/environment/**"
+      - "src/orchestration/simulation/**"
+      - "src/foundation/core/**"
+      - "src/models/gnc/**"
+      - "src/models/vehicle/**"
+      - "src/orchestration/mission/**"
+      - "src/orchestration/parallel/**"
+      - "src/interfaces/analysis/verification/**"
+      - "src/interfaces/analysis/planning/**"
       - "ext/**"
+      - "packages/gnc/SpaceAGORAEDG.jl"
+      - "packages/OptionalPackages.toml"
+      - "scripts/setup_edg.jl"
+      - "test/helpers/load_edg.jl"
+      - ".github/actions/setup/action.yml"
       - "data/GRAMSuite.jl"
       - "data/telemetry/**"
-      - "data/Gravity_harmonics_data/**"
+      - "data/planets/gravity/**"
       - "test/telemetry_benchmark_manifest.toml"
       - "test/stress/**"
       - "benchmarks/studies/telemetry_orbit_accuracy_study.jl"
@@ -68,8 +74,16 @@ jobs:
         if: github.event_name == 'pull_request'
         run: git fetch --no-tags --depth=1 origin ${{ github.base_ref }}
 
+      # Aqua and the other test tools live in the test environment, not in the
+      # root project. The example regression runs its children in the examples
+      # environment.
+      - name: Prepare test and examples environments
+        run: |
+          julia --startup-file=no test/setup.jl
+          julia --startup-file=no examples/setup.jl
+
       - name: Contract suite
-        run: julia --startup-file=no --project=. test/contracts/nightly_runtests.jl
+        run: julia --startup-file=no --project=test test/contracts/nightly_runtests.jl
 
       - name: AI review artifact gate (PR only)
         if: github.event_name == 'pull_request'

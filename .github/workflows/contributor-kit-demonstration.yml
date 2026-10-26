@@ -1,0 +1,40 @@
+name: Contributor Kit Demonstration
+
+# Runs the contributor kit's demonstration repository, SpaceAGORAKitDemo.jl (a
+# package built from the package starter), against this repository through the
+# reusable contributor workflow: every night against main, and in each release
+# pull request (a branch named release-*) against the release candidate, the
+# pull request's merge commit. The demonstration's own pin is moved to the commit
+# under test first (scripts/contributor_environment.jl repin), so the run asks
+# whether its code still works with this core. It is not a required check and no
+# pull request other than a release waits for it: a failure means the core broke
+# an interface the kit promises, or the demonstration needs a change, and is
+# resolved before the release is tagged.
+on:
+  schedule:
+    - cron: "30 7 * * *"
+  # A release pull request sets the version in Project.toml; other pull requests
+  # that touch it get a skipped job.
+  pull_request:
+    branches: [main]
+    paths:
+      - "Project.toml"
+  workflow_dispatch:
+
+concurrency:
+  group: contributor-kit-demonstration-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  demonstration:
+    if: github.event_name != 'pull_request' || startsWith(github.head_ref, 'release-')
+    uses: ./.github/workflows/contributor-ci.yml
+    with:
+      spaceagora-rev: ${{ github.sha }}
+      kind: package
+      repository: Space-FALCON-Lab/SpaceAGORAKitDemo.jl
+      examples: examples/run_in_simulation.jl
+      core-from-caller: true

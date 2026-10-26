@@ -1,0 +1,23 @@
+# Canonical aggregator: no behavior ownership.
+module SimulationCallbacks
+include(joinpath(@__DIR__, "registry.jl"))
+include(joinpath(@__DIR__, "save_fields.jl"))
+include(joinpath(@__DIR__, "power_callbacks.jl"))
+include(joinpath(@__DIR__, "data_callbacks.jl"))
+include(joinpath(@__DIR__, "cmg_callbacks.jl"))
+include(joinpath(@__DIR__, "fault_callbacks.jl"))
+include(joinpath(@__DIR__, "sensor_callbacks.jl"))
+include(joinpath(@__DIR__, "density_callbacks.jl"))
+include(joinpath(@__DIR__, "gram_track_cache.jl"))
+include(joinpath(@__DIR__, "thermal_callbacks.jl"))
+include(joinpath(@__DIR__, "event_callbacks.jl"))
+include(joinpath(@__DIR__, "edg_heat_observer.jl"))
+include(joinpath(@__DIR__, "gnc_scope.jl"))
+include(joinpath(@__DIR__, "periodic_tick_callbacks.jl"))
+include(joinpath(@__DIR__, "navigation_guidance_callbacks.jl"))
+include(joinpath(@__DIR__, "control_callbacks.jl"))
+include(joinpath(@__DIR__, "state_anchor_callbacks.jl"))
+include(joinpath(@__DIR__, "external_propagation_callbacks.jl"))
+include(joinpath(@__DIR__, "plume_callbacks.jl"))
+include(joinpath(@__DIR__, "interlink_scheduler.jl"))
+end # module SimulationCallbacks

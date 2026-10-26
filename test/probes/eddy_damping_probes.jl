@@ -16,6 +16,7 @@ const ODEParams = SimulationModel.ODEParams
 
 const EARTH = make_no_gram_planet(:earth)
 const PE = SimulationModel.DynamicEffectors.PerturbationEffectors
+include(joinpath(REPO_ROOT, "test", "helpers", "dynamics_force_torque.jl"))
 
 # ── builders ─────────────────────────────────────────────────────────────────
 function make_magnet_spacecraft(; q0, w0, m_dipole=1.0)
@@ -112,7 +113,7 @@ end
         p = ODEParams(n_sats=1, args=args_on)
         u = build_initial_conditions(args_on)
         p.shared_buffers.current_time[] = 0.0
-        f, τ = SimulationModel.calcForceTorque(model, u.sc[1], p, 1)
+        f, τ = dynamics_force_torque(model, u.sc[1], p, 1)
         @test f == SVector{3, Float64}(0.0, 0.0, 0.0)
         @test all(isfinite, τ) && norm(τ) > 0.0
         ω0 = SVector{3, Float64}(Float64.(getproperty(u.sc[1], :ω))...)
@@ -123,16 +124,15 @@ end
         p2 = ODEParams(n_sats=1, args=args_off)
         u2 = build_initial_conditions(args_off)
         p2.shared_buffers.current_time[] = 0.0
-        f2, τ2 = SimulationModel.calcForceTorque(model, u2.sc[1], p2, 1)
+        f2, τ2 = dynamics_force_torque(model, u2.sc[1], p2, 1)
         @test f2 == SVector{3, Float64}(0.0, 0.0, 0.0)
         @test τ2 == SVector{3, Float64}(0.0, 0.0, 0.0)
     end
 
     @testset "wrench path: the live engine route, both field sources, guards" begin
         # Real simulations reach this effector through wrench(model, StateSample,
-        # EnvironmentSample, t) — _wrench_method_available short-circuits
-        # calcForceTorque — so the translational no-op guard that matters is the
-        # one in wrench, pinned here directly and end-to-end below.
+        # EnvironmentSample, t), so the translational no-op guard that matters is
+        # the one in wrench, pinned here directly and end-to-end below.
         ES = parentmodule(PE.StateSample)
         earth = PE.Earth()
         l_pi = SMatrix{3, 3, Float64, 9}(I)
@@ -168,7 +168,7 @@ end
         p = ODEParams(n_sats=1, args=args)
         u = build_initial_conditions(args)
         p.shared_buffers.current_time[] = 0.0
-        f, τ = SimulationModel.calcForceTorque(model_igrf, u.sc[1], p, 1)
+        f, τ = dynamics_force_torque(model_igrf, u.sc[1], p, 1)
         @test f == SVector{3, Float64}(0.0, 0.0, 0.0)
         @test all(isfinite, τ) && norm(τ) > 0.0
         ω0 = SVector{3, Float64}(Float64.(getproperty(u.sc[1], :ω))...)

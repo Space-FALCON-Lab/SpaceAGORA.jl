@@ -1,0 +1,7 @@
+# The SpaceAGORA commit this project is tested against: the same commit as the
+# workflow call in .github/workflows/ci.yml. Change them together, and record the
+# commit with every result you keep.
+url = "https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git"
+rev = "0000000000000000000000000000000000000000"
+uuid = "afbfb69f-5c0b-4832-b760-43725dff8540"
+version = "0.0.0"

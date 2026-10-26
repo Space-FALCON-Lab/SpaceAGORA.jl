@@ -26,7 +26,7 @@
             kclear()
         end
         # kclear() wipes CSPICE's kernel pool but not the furnished-kernel /
-        # planet-instance caches in src/environment/ephemerides/planets.jl;
+        # planet-instance caches in src/models/environment/ephemerides/planets.jl;
         # without this, a subsequent Earth(...)/Mars(...) call with a
         # previously-seen key silently skips re-furnishing and returns a
         # planet built from kernels that no longer exist in the pool.
@@ -49,8 +49,8 @@
             results_directory=joinpath(REPO_ROOT, "output", "test_no_gram_earth")
         )
         @test_nowarn run_simulation(earth_args)
-        earth_et0 = ephemerides_time_seconds(earth_args.initial_time, earth_args.environment_model.ephemerides_model)
-        earth_lpi0 = planet_frame_lpi(earth_args.environment_model.planet, earth_et0, earth_args.environment_model.ephemerides_model)
+        earth_et0 = ephemerides_epoch_seconds(earth_args.environment_model.ephemerides_model, earth_args.initial_time)
+        earth_lpi0 = ephemerides_frame_lpi(earth_args.environment_model.ephemerides_model, earth_args.environment_model.planet, earth_et0)
         @test !all(iszero, earth_lpi0)
 
         mars_sc = make_spacecraft(ra_alt_m=250e3, rp_alt_m=150e3, i_deg=30.0, ω_deg=10.0, Ω_deg=20.0, ν_deg=160.0)
@@ -76,8 +76,8 @@
         withenv("SPACEAGORA_WARN_DENSITY_WITHOUT_AERO" => "0") do
             @test_nowarn run_simulation(mars_args)
         end
-        mars_et0 = ephemerides_time_seconds(mars_args.initial_time, mars_args.environment_model.ephemerides_model)
-        mars_lpi0 = planet_frame_lpi(mars_args.environment_model.planet, mars_et0, mars_args.environment_model.ephemerides_model)
+        mars_et0 = ephemerides_epoch_seconds(mars_args.environment_model.ephemerides_model, mars_args.initial_time)
+        mars_lpi0 = ephemerides_frame_lpi(mars_args.environment_model.ephemerides_model, mars_args.environment_model.planet, mars_et0)
         @test !all(iszero, mars_lpi0)
     end
 
@@ -86,7 +86,7 @@
             kclear()
         end
         # kclear() wipes CSPICE's kernel pool but not the furnished-kernel /
-        # planet-instance caches in src/environment/ephemerides/planets.jl;
+        # planet-instance caches in src/models/environment/ephemerides/planets.jl;
         # without this, a subsequent Earth(...)/Mars(...) call with a
         # previously-seen key silently skips re-furnishing and returns a
         # planet built from kernels that no longer exist in the pool.
@@ -94,11 +94,11 @@
 
         spice_path = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
         earth = @test_nowarn Earth("", spice_path)
-        et = ephemerides_time_seconds(
-            InitialTime(year=2024, month=1, day=1, hour=0, minute=0, second=0.0),
-            SpiceEphemeridesModel()
+        et = ephemerides_epoch_seconds(
+            SpiceEphemeridesModel(),
+            InitialTime(year=2024, month=1, day=1, hour=0, minute=0, second=0.0)
         )
-        l_pi = @test_nowarn planet_frame_lpi(earth, et, SpiceEphemeridesModel())
+        l_pi = @test_nowarn ephemerides_frame_lpi(SpiceEphemeridesModel(), earth, et)
         @test !all(iszero, l_pi)
     end
 

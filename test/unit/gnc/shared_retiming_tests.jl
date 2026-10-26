@@ -3,10 +3,10 @@ using Test, LinearAlgebra, StaticArrays, Logging
 module SharedRetimingOnly
     using LinearAlgebra, StaticArrays
     const ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
-    include(joinpath(ROOT, "src/gnc/shared/path_geometry.jl"))
-    include(joinpath(ROOT, "src/gnc/shared/rpo/path_geometry.jl"))
-    include(joinpath(ROOT, "src/gnc/shared/rpo/profile_evaluation.jl"))
-    include(joinpath(ROOT, "src/gnc/shared/rpo/path_retiming.jl"))
+    include(joinpath(ROOT, "src/models/gnc/planning/common/path_geometry.jl"))
+    include(joinpath(ROOT, "src/models/gnc/planning/rpo/path_geometry.jl"))
+    include(joinpath(ROOT, "src/models/gnc/planning/rpo/profile_evaluation.jl"))
+    include(joinpath(ROOT, "src/models/gnc/planning/rpo/path_retiming.jl"))
     # Constant-clearance fixture supplies the existing shared geometry queries.
     rpo_clearance_to_station(p, geometry) = (clearance=geometry.clearance, distance=geometry.clearance + geometry.station.keepout_radius_m + maximum(geometry.chaser.half_extents_body))
     rpo_clearance_distance_to_station(p, geometry) = geometry.clearance
@@ -82,10 +82,10 @@ end
 
 @testset "Shared retiming rejects definition-time HYPR coupling" begin
     R = SharedRetimingOnly
-    source = read(joinpath(R.ROOT,"src/gnc/shared/rpo/path_retiming.jl"),String)
+    source = read(joinpath(R.ROOT,"src/models/gnc/planning/rpo/path_retiming.jl"),String)
     target = Module(gensym(:SharedRetimeWitness))
     Core.eval(target, :(using LinearAlgebra, StaticArrays))
-    Base.include(target,joinpath(R.ROOT,"src/gnc/shared/rpo/path_geometry.jl"))
+    Base.include(target,joinpath(R.ROOT,"src/models/gnc/planning/rpo/path_geometry.jl"))
     Base.include_string(target,source)
     @test !isdefined(target,:RPOPSOConfig)
     rejected = try

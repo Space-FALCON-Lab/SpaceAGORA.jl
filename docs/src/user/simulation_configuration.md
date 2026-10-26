@@ -1,4 +1,4 @@
-# Building a Simulation Configuration
+# Configuring a Simulation
 
 Use this page when you want to assemble a `SimulationConfiguration` from
 scratch rather than relying on the `make_example_config` shortcut used in the
@@ -11,7 +11,7 @@ understand what each configuration field controls.
 Shortest successful command:
 
 ```text
-julia --project=. examples/AGORA_Basic_Quickstart.jl
+julia --project=examples examples/AGORA_Basic_Quickstart.jl
 ```
 
 What to read next:
@@ -21,6 +21,28 @@ What to read next:
 - [Adding a Force or Torque of Your Own](custom_effector.md)
 - [Stopping a Simulation on a Condition](stop_conditions.md)
 - [Extensibility](../extensibility.md)
+
+## The components at a glance
+
+![How a configuration nests: make_example_config or a MissionPlan builder produces a SimulationConfiguration. It holds InitialTime, MissionConfiguration, SimulationSettings and FilePaths; the EnvironmentModel with planet, atmosphere, ephemerides and thermal model; the guidance, navigation and control models; the DynamicsModel with its force and torque models and one SpacecraftModel per vehicle, each with an initial condition, links joined by joints and hardware mounted on the links; and the solver settings. run_simulation or run_mission turns it into results.](../assets/figures/configuration_anatomy.svg)
+
+The table lists the same components with the section that describes each.
+
+| Component | What it sets | Section |
+| --- | --- | --- |
+| `InitialTime` | the simulation epoch | [InitialTime](#InitialTime) |
+| `InitialCondition` | each spacecraft's starting orbit, from orbital elements, apsis radii or apsis altitudes | [InitialCondition](#InitialCondition) |
+| `MissionConfiguration` | when the run ends (a time or an orbit count) and the output cadence | [MissionConfiguration](#MissionConfiguration) |
+| `EnvironmentModel` | the planet, atmosphere, winds, ephemerides and thermal model | [EnvironmentModel](#EnvironmentModel) |
+| `DynamicsModel` | the spacecraft and their force and torque models, gravity included | [DynamicsModel](#DynamicsModel), [Gravity and Forces](gravity_forces.md) |
+| `SimulationSettings` | result files, results directory and verbosity | [SimulationSettings](#SimulationSettings) |
+| `FilePaths` | locations of licensed external assets; the defaults suit no-GRAM runs | [FilePaths](#FilePaths) |
+| `make_example_config` | a complete configuration from a planet, a spacecraft, a duration and an epoch | [Using `make_example_config`](#Using-make_example_config) |
+
+Panel angles have their own section further down this page. Articulated and
+compliant vehicles and interlinks have their own pages:
+[Articulated and Compliant Vehicles](articulated_compliant.md) and
+[Interlinks](interlinks.md).
 
 ## The top-level struct
 
@@ -157,7 +179,11 @@ In this form, both `ra` and `hp` are altitudes in metres. The positional
 from the planet's centre. The constructor finds the radius at each apsis
 whose geodetic altitude matches the requested value, then computes `a` and
 `e`. Both altitudes must be nonnegative, and the resulting apoapsis radius
-must exceed the periapsis radius.
+must exceed the periapsis radius. This mode therefore cannot express a
+circular orbit: equal apoapsis and periapsis altitudes give equal radii, which
+are refused because the apoapsis radius must exceed the periapsis radius
+(rounding occasionally lets an orbit with eccentricity near zero through). For a
+circular orbit use Mode 1 with `ra` equal to `rp`, or Mode 2 with `e = 0.0`.
 
 Use the same `initial_time` and `ephemerides_model` in the simulation
 configuration so the constructor uses the intended inertial-to-planet-fixed
@@ -172,19 +198,18 @@ For non-Keplerian starts or when state is available in an inertial Cartesian
 frame:
 
 ```julia
-using StaticArrays: SVector
-
 ic = SM.CartesianInitialCondition(
     [6_778_137.0, 0.0, 0.0],              # inertial position, m (positional)
     [0.0, 7784.0, 0.0];                   # inertial velocity, m/s (positional)
-    q       = SVector(0.0, 0.0, 0.0, 1.0),   # unit quaternion, scalar-last [x, y, z, w]; the identity attitude
-    ang_vel = SVector(0.0, 0.0, 0.0)         # bus angular velocity, rad/s
+    q       = [0.0, 0.0, 0.0, 1.0],       # unit quaternion, scalar-last [x, y, z, w]; the identity attitude
+    ang_vel = [0.0, 0.0, 0.0]             # bus angular velocity, rad/s
 )
 ```
 
 Position and velocity are positional arguments; `q` and `ang_vel` are keyword
-arguments that must be `SVector`s and default to the values shown, so
-`SM.CartesianInitialCondition(pos, vel)` is also valid.
+arguments, each any vector or tuple of 4 or 3 numbers (an `SVector` too), and
+default to the values shown, so `SM.CartesianInitialCondition(pos, vel)` is
+also valid. `InitialCondition` takes `q` and `ang_vel` the same way.
 
 ## MissionConfiguration
 
@@ -197,7 +222,7 @@ SM.MissionConfiguration(
     number_of_orbits = 1,                # orbit count (MissionOrbits)
     keplerian        = true,             # use Keplerian orbit mode
     orientation_sim  = false,            # include attitude dynamics
-    num_steps_to_save = 1000,            # output buffer size before flush
+    num_steps_to_save = 1000,            # not read: results are written when the run ends
     data_rate        = 10.0              # output sample cadence, seconds
 )
 ```
@@ -207,6 +232,16 @@ When `mission_type = SM.MissionOrbits`, the simulation terminates after
 uses Keplerian two-phase integration (free-flight + drag-pass). Set
 `keplerian = false` to keep uniform integration throughout (useful for
 continuous atmosphere scenarios or full entry trajectories).
+
+To size `mission_time` from an orbit count, use the planet's gravitational
+parameter `planet.μ` in m³/s², a field of every built-in planet including the
+one returned by `make_no_gram_planet(:earth)`: one Keplerian period is
+`2π * sqrt(a^3 / planet.μ)` seconds for a semi-major axis `a` in metres, so a
+400 km circular Earth orbit (`a = planet.Rp_e + 400e3`) takes about
+92.6 minutes. `make_example_config` always builds a `MissionTime` mission, so
+pass that product as its `mission_time`; to stop after a number of completed
+orbits instead, construct `MissionConfiguration` yourself with
+`mission_type = SM.MissionOrbits`.
 
 ## EnvironmentModel
 
@@ -269,6 +304,32 @@ wind requests on the locked path (see [Parallel Execution](parallel_execution.md
 For the supported atmosphere models and their constructors, see
 [Atmosphere Models](atmosphere_models.md).
 
+### Ephemerides models
+
+`SM.SpiceEphemeridesModel()` takes the planet's frame and the Sun from the
+run's SPICE kernels. `SM.SimpleEphemeridesModel()` needs no kernels: it turns
+the planet about its spin axis, and has the Sun for Earth only. An ephemerides
+model of your own subtypes `SpaceAGORA.AbstractEphemeridesModel` and implements
+five hooks, each with the model first:
+
+| Hook | Returns |
+|---|---|
+| `ephemerides_epoch_seconds(model, initial_time)` | the run's start, in seconds past J2000 on the model's timeline |
+| `ephemerides_frame_lpi(model, planet, et)` | the rotation `L` from the inertial (J2000) frame to the planet-fixed frame, `r_pf = L * r_ii` |
+| `ephemerides_sun_ii(model, planet, et)` | the unit vector from the planet's center to the Sun, inertial, or `nothing` |
+| `ephemerides_requires_spice(model)` | whether the model reads SPICE kernels |
+| `ephemerides_cache_key(model)` | a tuple; models with equal keys must give the same frames and times |
+
+`et` is the run's start plus the elapsed time, in seconds. The two built-in
+models, in `src/models/environment/ephemerides/simple_ephemerides.jl`, show each
+hook. The [Extension Hook Reference](../generated/extension_hook_reference.md)
+lists when the engine calls them.
+
+Before SpaceAGORA 0.3.0 three of the hooks took the model last:
+`planet_frame_lpi(planet, et, model)`, `ephemerides_sun_direction_ii(planet, et, model)`
+and `ephemerides_time_seconds(initial_time, model)`. SpaceAGORA 0.5.0 removed
+those names: move the model to the front when you rename them.
+
 ## DynamicsModel
 
 Holds the list of spacecraft and the tuple of force/torque effectors:
@@ -279,10 +340,9 @@ SM.DynamicsModel([spacecraft], (SM.InverseSquaredJ2GravityModel(),))
 
 Multiple spacecraft can be passed in the array for parallel propagation. The
 effectors tuple accepts any combination of `AbstractForceTorqueModel`
-implementations. Common built-in effectors:
-
-- `SM.InverseSquaredGravityModel()` — inverse-square point-mass gravity
-- `SM.InverseSquaredJ2GravityModel()` — point-mass gravity with J2 oblateness
+implementations. The built-in gravity models, including spherical-harmonic
+gravity, and how to combine force models are on
+[Gravity and Forces](gravity_forces.md).
 
 ## SimulationSettings
 
@@ -293,7 +353,7 @@ SM.SimulationSettings(
     results            = true,           # write output files
     verbose            = false,          # print solver diagnostics
     results_directory  = "output",       # directory for CSV and bundle output
-    generate_plots     = true,           # generate plots after simulation (default)
+    generate_plots     = true,           # default true; make_example_config sets false (see below)
     generate_filenames = false,          # embed run parameters in output filenames (default)
     normalize          = false,          # legacy compatibility flag; typed run_simulation propagates SI state directly (default)
     save_csv           = true,           # write CSV alongside the Feather bundle
@@ -301,14 +361,26 @@ SM.SimulationSettings(
     checkpoint_enabled = false,          # periodic checkpoint for restart safety
     checkpoint_interval_s = 300.0,      # checkpoint cadence, simulated seconds
     checkpoint_directory  = "",         # defaults to results_directory/checkpoints
-    resume_from_checkpoint = false       # resume from latest checkpoint if present
+    resume_from_checkpoint = false,      # resume from latest checkpoint if present
+    results_layout = :wide               # :long writes one row per spacecraft and saved time (see Simulation Outputs)
 )
 ```
 
 Set `results = false` to run without writing any output (useful for
-performance profiling or validation-only runs). Set `generate_plots = false`
-to skip plot generation, which is typically what you want for CLI/batch runs
-and performance studies.
+performance profiling or validation-only runs). `generate_plots` does not
+change what `run_simulation` writes (see below); plots come from scripts that
+read the saved files.
+
+`generate_plots = true` is the default of `SimulationSettings` itself, not of
+the example helper: `make_example_config` builds its settings with
+`generate_plots = false`, so a configuration from that helper writes the CSV,
+Feather and manifest files and no plots. No code path in `run_simulation`
+reads this flag in either case: it is only carried along when settings are
+copied, and the verification study switches its own plots with the CLI's
+`--plots=` option. The four PNG files the quickstart saves under
+`output/plots/` come from that example script's own plotting code, which
+reads the saved CSV. For a helper-built run, make plots from the saved files
+as [Simulation Outputs](outputs.md) describes.
 
 ## FilePaths
 
@@ -320,18 +392,21 @@ SM.FilePaths(
     results              = "Results",
     GRAM                 = "data/GRAMSuite.jl/GRAM Suite 2.0",
     SPICE                = "data/GRAMSuite.jl/GRAM Suite 2.0/SPICE",
-    topography_harmonics = "data/Topography_harmonics_data",
-    gravity_harmonics    = "data/Gravity_harmonics_data"
+    topography_harmonics = "data/planets/topography",
+    gravity_harmonics    = "data/planets/gravity"
 )
 ```
 
 ## Using `make_example_config`
 
-For quick studies and all repository examples, `make_example_config` from
-`SpaceAGORA.TelemetryVerification` assembles the configuration in one call:
+For quick studies, the public `make_example_config` helper assembles the
+configuration in one call. Both it and `make_three_body_spacecraft` are exported
+by `SpaceAGORA`:
 
 ```julia
-import SpaceAGORA.TelemetryVerification: make_example_config, make_three_body_spacecraft, run_and_report
+using SpaceAGORA
+
+planet = make_no_gram_planet(:earth)
 
 spacecraft = make_three_body_spacecraft(
     bus_dims        = (2.05, 2.05, 2.8),
@@ -339,32 +414,33 @@ spacecraft = make_three_body_spacecraft(
     bus_mass        = 620.0,
     panel_mass_each = 10.0,
     panel_offset_y  = 2.05/2.0 + 2.85/2.0,
-    ic              = SM.InitialCondition(ra=..., rp=..., i=28.5, ω=10.0, Ω=20.0, ν=0.0),
+    ic              = InitialCondition(ra=planet.Rp_e + 500e3, rp=planet.Rp_e + 500e3,
+                                     i=28.5, ω=10.0, Ω=20.0, ν=0.0),
     prop_mass       = 200.0,
     id              = 1
 )
 
 config = make_example_config(
-    planet             = SM.make_no_gram_planet(:earth),
+    planet             = planet,
     spacecraft         = spacecraft,
     mission_time       = 3600.0 * 12.0,
-    initial_time       = SM.InitialTime(year=2024, month=1, day=1),
-    dynamic_effectors  = (SM.InverseSquaredJ2GravityModel(),),
-    density_model      = SM.NoAtmosphereModel(),
-    ephemerides_model  = SM.SimpleEphemeridesModel(),
+    initial_time       = InitialTime(year=2024, month=1, day=1),
+    dynamic_effectors  = (InverseSquaredJ2GravityModel(),),
+    density_model      = NoAtmosphereModel(),
+    ephemerides_model  = SimpleEphemeridesModel(),
     orientation_sim    = false,
     keplerian          = true,
     EI_km              = 120.0,
     verbose            = true
 )
 
-run_and_report(config)
+run_simulation(config)
 ```
 
-`make_example_config` is not part of the stable root `SpaceAGORA` export — it
-lives in `SpaceAGORA.TelemetryVerification` and is imported by all repository
-examples through `examples/common.jl`. It is appropriate for examples and
-quick studies; for production use, build `SimulationConfiguration` directly.
+`using SpaceAGORA` is sufficient for this example; no nested helper import is
+needed. For a helper-based first run, see [Your First Script](first_script.md).
+Build `SimulationConfiguration` directly when you need to choose its components
+explicitly, as described above.
 
 ## `make_three_body_spacecraft`
 
@@ -380,12 +456,15 @@ make_three_body_spacecraft(
     panel_offset_y  = offset,            # panel center offset from bus center, m
     ic              = SM.InitialCondition(...),
     prop_mass       = 200.0,             # propellant mass, kg
-    id              = 1                  # spacecraft ID, used in output column names
+    id              = 1                  # spacecraft identifier; CSV prefixes use list position
 )
 ```
 
-The `id` field determines the column prefix in the output CSV: spacecraft 1
-gets `sc1_*` columns, spacecraft 2 gets `sc2_*`, and so on.
+Saved columns use the spacecraft's one-based position in the list passed to
+`DynamicsModel`, not its `id`. For `DynamicsModel([spacecraft_a, spacecraft_b],
+effectors)`, the first spacecraft gets `sc1_*` columns and the second gets `sc2_*`,
+even if their IDs are `42` and `7`. A single spacecraft with `id=42` still gets
+`sc1_*` columns. See the [Output Columns](output_columns.md).
 
 ## Panel angles and heating
 
@@ -418,34 +497,3 @@ root attitudes can give a different incidence without changing the stored
 command. In the Odyssey energy-depletion example, saved maximum-link heat
 columns include the uncontrolled bus, while the controller's panel heat limits
 apply only to its controlled panels.
-
-## Source ownership for contributors
-
-The existing configuration API is assembled by `src/simulation/config/configuration.jl`.
-This is a source-file organization; users still access the same types through
-`SpaceAGORA.SimulationModel`. No new configuration wrapper is required.
-
-| Source file under `src/simulation/config/` | Responsibility |
-| --- | --- |
-| `run_settings.jl` | Epoch, mission duration/orbits, sampling, paths, output and checkpoint settings |
-| `solver_settings.jl` | `SolverConfig` and `IntegrationTolerances` |
-| `environment_settings.jl` | Select and compose environmental models |
-| `constellation_configuration.jl` | Existing `DynamicsModel`: member spacecraft and selected dynamic effectors |
-| `simulation_configuration.jl` | Final container and `_with_configuration` helper |
-
-`constellation_configuration.jl` is included inside the existing `SpacecraftModels`
-module to preserve the identity of `DynamicsModel`; the other definitions remain
-inside `SimConfig`. A one-spacecraft run and a constellation use the same collection.
-The constructor retains the supplied spacecraft vector. It does not generate orbital
-layouts, schedule activities or introduce additional collection validation.
-
-Execution policy remains in `src/simulation/engine/config/`: `SimulationEngineConfig`
-composes parallel, solver, runtime-policy and artifact settings. It uses the same
-`SolverConfig` definition, not a second solver type. Output and checkpoint path
-derivation stays in `src/io/config/`; solver environment settings are parsed in
-`src/simulation/engine/adapters/from_env.jl`. These are distinct responsibilities
-from assembling a scenario.
-
-`_with_configuration` makes a shallow update and preserves unspecified references.
-Runtime state isolation remains the engine's responsibility. Moving the definitions
-changes neither those semantics nor typed-solver precedence over environment settings.

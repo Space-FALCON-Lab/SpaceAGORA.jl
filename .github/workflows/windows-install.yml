@@ -1,0 +1,323 @@
+name: Windows install
+
+# The documented first install on Windows: the README's instantiate command in
+# an empty Julia depot, precompilation, the setup check, the README's examples
+# setup and its CLI smoke run, in PowerShell as the onboarding pages describe.
+# Every other workflow runs on Linux. Not a required check, and it does not run on every
+# pull request: weekly, on manual dispatch, and on pull requests that change
+# the install path (the package environment, Git attributes, the quickstart
+# and the code it runs at precompile time) or the pages that document its
+# commands.
+on:
+  workflow_dispatch:
+    inputs:
+      julia_113_release:
+        description: Julia release for the non-blocking 1.13 job, for example 1.13.0
+        type: string
+        default: "1.13"
+  schedule:
+    - cron: "30 8 * * 1"
+  pull_request:
+    paths:
+      - "Project.toml"
+      - "Manifest.toml"
+      - "README.md"
+      - "docs/src/user/quickstart.md"
+      - "docs/src/user/installation_environment.md"
+      - ".gitattributes"
+      - ".gitmodules"
+      - "examples/AGORA_Basic_Quickstart.jl"
+      - "examples/common.jl"
+      - "examples/Project.toml"
+      - "examples/setup.jl"
+      - "src/interfaces/cli/**"
+      - "src/precompile_workload.jl"
+      - "test/smoke/ci_readme_quickstart.py"
+      - ".github/actions/cache-keys/action.yml"
+      - ".github/workflows/windows-install.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-install-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  julia-1-12:
+    name: Windows, Julia 1.12
+    runs-on: windows-latest
+    timeout-minutes: 180
+    env:
+      # The documented clone leaves the Git LFS payloads (the GRAM surrogate
+      # grids) as pointers; nothing on this path reads them.
+      GIT_LFS_SKIP_SMUDGE: "1"
+      # The quickstart only saves its plots, and a hosted runner has no display.
+      GKSwstype: "100"
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # This checkout needs only this repository.
+          token: ${{ github.token }}
+          persist-credentials: false
+          lfs: false
+          submodules: false
+
+      # The steps below run these commands as written. When a page changes one
+      # of them, this step fails until the step that runs it changes too; the
+      # pages are in the pull request path filter for that reason.
+      - name: Documented commands match
+        shell: bash
+        run: |
+          status=0
+          expect() {
+            if ! grep -qF -- "$2" "$1"; then
+              echo "::error file=$1::$1 no longer contains the command this job runs: $2"
+              status=1
+            fi
+          }
+          instantiate='julia --project=. -e "using Pkg; Pkg.instantiate(julia_version_strict=true)"'
+          setup_check='julia --project=. -e "using SpaceAGORA; println(pkgdir(SpaceAGORA))"'
+          examples_setup='julia --startup-file=no examples/setup.jl'
+          smoke='julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --smoke'
+          expect README.md "$instantiate"
+          expect README.md "$examples_setup"
+          expect README.md "$smoke"
+          for page in docs/src/user/quickstart.md docs/src/user/installation_environment.md; do
+            expect "$page" "$instantiate"
+            expect "$page" "$setup_check"
+            expect "$page" "$examples_setup"
+          done
+          exit "$status"
+
+      # Git for Windows converts text files to CRLF on checkout unless told
+      # otherwise, and the repository sets no eol attribute. A student's clone
+      # gets the same conversion, so it is recorded here and not switched off.
+      - name: Record Git settings
+        shell: bash
+        run: |
+          git --version
+          git config --show-origin --get-all core.autocrlf || echo "core.autocrlf is not set"
+          if grep -q $'\r' Project.toml; then echo "Project.toml was checked out with CRLF line endings"; else echo "Project.toml was checked out with LF line endings"; fi
+          git lfs ls-files || true
+
+      # The shared action only installs Julia here. The depot cache it keys is
+      # neither restored nor saved: the job starts from an empty depot like a
+      # first install, and a Windows depot saved beside the Linux one would
+      # compete with it for the repository's cache space.
+      - name: Setup Julia
+        id: julia
+        uses: ./.github/actions/cache-keys
+        with:
+          julia-version: "1.12"
+
+      - name: Julia version (setup check)
+        run: julia --version
+
+      # The README command. Precompilation runs as its own step so that a
+      # failure or a timeout names its phase.
+      - name: Instantiate (README command)
+        timeout-minutes: 30
+        env:
+          JULIA_PKG_PRECOMPILE_AUTO: "0"
+        run: julia --project=. -e "using Pkg; Pkg.instantiate(julia_version_strict=true)"
+
+      - name: Precompile
+        timeout-minutes: 120
+        run: julia --project=. -e "using Pkg; Pkg.precompile(; strict=true, timing=true)"
+
+      - name: Load the package (setup check)
+        run: julia --project=. -e "using SpaceAGORA; println(pkgdir(SpaceAGORA))"
+
+      # The CLI runs the quickstart in the examples environment, which adds the
+      # plotting packages to the installed package versions.
+      - name: Prepare the examples environment (README command)
+        timeout-minutes: 60
+        run: julia --startup-file=no examples/setup.jl
+
+      - name: README quickstart smoke
+        timeout-minutes: 30
+        run: julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --smoke
+
+      # The same output checks as the Linux README job (readme-command-smoke).
+      - name: Check quickstart outputs
+        run: python -B -c "import json, sys; sys.path.insert(0, 'test/smoke'); import ci_readme_quickstart as q; print(json.dumps(q.verify_outputs('output'), sort_keys=True))"
+
+      - name: Upload quickstart outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-julia-1.12-output-${{ github.run_id }}
+          path: output/
+          if-no-files-found: warn
+
+  # Julia 1.13 is outside the root compat bound (`~1.12`). This job records how
+  # the documented install command refuses it and, past the refusal, whether the
+  # earlier install command (plain `Pkg.instantiate()`, which only warns about
+  # the manifest's Julia version) works on Windows. Manual runs also replay the
+  # commit of the first Windows user trial (2026-09-23), whose compat entry
+  # (`julia = "1.12"`) still admitted 1.13 and whose README used the plain
+  # command. It never fails the workflow.
+  julia-1-13:
+    name: Windows, Julia 1.13 (${{ matrix.source }}, non-blocking)
+    if: github.event_name != 'pull_request'
+    continue-on-error: true
+    runs-on: windows-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        source: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '["this-commit", "trial-4bfa4555"]' || '["this-commit"]') }}
+    env:
+      GIT_LFS_SKIP_SMUDGE: "1"
+      GKSwstype: "100"
+      TRIAL_COMMIT: 4bfa455569a379ef07653c2ae908c789f8579957
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: ${{ matrix.source == 'trial-4bfa4555' && 'trial-checkout' || '.' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # This checkout needs only this repository.
+          token: ${{ github.token }}
+          persist-credentials: false
+          lfs: false
+          submodules: false
+
+      # Beside this commit, which keeps the shared action and the output
+      # checker available: the trial commit has neither.
+      - name: Checkout the trial commit
+        if: matrix.source == 'trial-4bfa4555'
+        uses: actions/checkout@v7
+        with:
+          token: ${{ github.token }}
+          persist-credentials: false
+          lfs: false
+          submodules: false
+          ref: ${{ env.TRIAL_COMMIT }}
+          path: trial-checkout
+
+      - name: Record Git settings
+        shell: bash
+        run: |
+          git --version
+          git rev-parse HEAD
+          git config --show-origin --get-all core.autocrlf || echo "core.autocrlf is not set"
+          if grep -q $'\r' Project.toml; then echo "Project.toml was checked out with CRLF line endings"; else echo "Project.toml was checked out with LF line endings"; fi
+          grep -n '^julia = ' Project.toml || true
+          grep -n '^julia_version = ' Manifest.toml || true
+
+      - name: Setup Julia
+        id: julia
+        uses: ./.github/actions/cache-keys
+        with:
+          julia-version: ${{ inputs.julia_113_release || '1.13' }}
+
+      - name: Julia version
+        run: julia --version
+
+      # Expected: the strict instantiate stops at once because the manifest
+      # was resolved with Julia 1.12 (docs/src/user/troubleshooting.md, "Wrong
+      # Julia version"). The step passes only when it stops with that message.
+      - name: README instantiate command (expected refusal)
+        id: refusal
+        if: matrix.source == 'this-commit'
+        continue-on-error: true
+        shell: bash
+        run: |
+          mkdir -p windows-logs
+          log=windows-logs/strict-instantiate.log
+          set +e
+          JULIA_PKG_PRECOMPILE_AUTO=0 julia --project=. -e "using Pkg; Pkg.instantiate(julia_version_strict=true)" > "$log" 2>&1
+          status=$?
+          set -e
+          cat "$log"
+          echo "exit status: $status"
+          if [ "$status" -ne 0 ] && grep -q "resolved with a different julia version" "$log"; then
+            echo "Refused with the documented message."
+          else
+            echo "::warning::$(julia --version) was not refused with the documented message."
+            exit 1
+          fi
+
+      - name: Plain instantiate (earlier README command)
+        id: instantiate
+        timeout-minutes: 30
+        env:
+          JULIA_PKG_PRECOMPILE_AUTO: "0"
+        run: julia --project=. -e "using Pkg; Pkg.instantiate()"
+
+      - name: Precompile
+        id: precompile
+        timeout-minutes: 120
+        run: julia --project=. -e "using Pkg; Pkg.precompile(; strict=true, timing=true)"
+
+      - name: Load the package
+        id: load
+        run: julia --project=. -e "using SpaceAGORA; println(pkgdir(SpaceAGORA))"
+
+      # The trial commit predates the examples environment: its CLI ran the
+      # quickstart in the root project.
+      - name: Prepare the examples environment
+        id: examples
+        if: matrix.source == 'this-commit'
+        timeout-minutes: 60
+        run: julia --startup-file=no examples/setup.jl
+
+      # The CLI entry point moved from src/cli to src/interfaces/cli after the
+      # trial commit.
+      - name: Quickstart smoke
+        id: quickstart
+        timeout-minutes: 30
+        run: julia --project=. ${{ matrix.source == 'trial-4bfa4555' && 'src/cli/main.jl' || 'src/interfaces/cli/main.jl' }} run --example=AGORA_Basic_Quickstart.jl --smoke
+
+      - name: Check quickstart outputs
+        id: outputs
+        if: matrix.source == 'this-commit'
+        run: python -B -c "import json, sys; sys.path.insert(0, 'test/smoke'); import ci_readme_quickstart as q; print(json.dumps(q.verify_outputs('output'), sort_keys=True))"
+
+      - name: Summary
+        if: always()
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        env:
+          SOURCE: ${{ matrix.source }}
+          JULIA_RELEASE: ${{ steps.julia.outputs.julia-version }}
+          REFUSAL: ${{ steps.refusal.outcome }}
+          INSTANTIATE: ${{ steps.instantiate.outcome }}
+          PRECOMPILE: ${{ steps.precompile.outcome }}
+          LOAD: ${{ steps.load.outcome }}
+          EXAMPLES: ${{ steps.examples.outcome }}
+          QUICKSTART: ${{ steps.quickstart.outcome }}
+          OUTPUTS: ${{ steps.outputs.outcome }}
+        run: |
+          {
+            echo "### Julia ${JULIA_RELEASE:-unknown} on Windows: $SOURCE"
+            echo ""
+            echo "| Step | Outcome |"
+            echo "| --- | --- |"
+            echo "| README instantiate command refuses 1.13 with the documented message | ${REFUSAL:-not run} |"
+            echo "| Plain instantiate | ${INSTANTIATE:-not run} |"
+            echo "| Precompile | ${PRECOMPILE:-not run} |"
+            echo "| Load the package | ${LOAD:-not run} |"
+            echo "| Prepare the examples environment | ${EXAMPLES:-not run} |"
+            echo "| Quickstart smoke | ${QUICKSTART:-not run} |"
+            echo "| Quickstart outputs | ${OUTPUTS:-not run} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload logs and quickstart outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-julia-1.13-${{ matrix.source }}-${{ github.run_id }}
+          path: |
+            windows-logs/
+            output/
+            trial-checkout/output/
+          if-no-files-found: warn

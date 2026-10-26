@@ -22,7 +22,7 @@ _sun_declination_deg(d) = rad2deg(asin(clamp(d[3], -1.0, 1.0)))
 
         # June solstice 2020: the Sun is over the northern tropic and its right
         # ascension is 6 h, so the direction is +y-ish with the obliquity in z.
-        june = SM_SUN.ephemerides_sun_direction_ii(earth, _sun_et(DateTime(2020, 6, 20, 21, 44, 0)), simple)
+        june = SM_SUN.ephemerides_sun_ii(simple, earth, _sun_et(DateTime(2020, 6, 20, 21, 44, 0)))
         @test june !== nothing
         @test isapprox(norm(june), 1.0; atol=1e-12)
         @test _sun_declination_deg(june) ≈ 23.44 atol = 0.2
@@ -30,25 +30,25 @@ _sun_declination_deg(d) = rad2deg(asin(clamp(d[3], -1.0, 1.0)))
         @test abs(june[1]) < 0.05
 
         # December solstice: the mirror image, the Sun south of the equator.
-        december = SM_SUN.ephemerides_sun_direction_ii(earth, _sun_et(DateTime(2020, 12, 21, 10, 2, 0)), simple)
+        december = SM_SUN.ephemerides_sun_ii(simple, earth, _sun_et(DateTime(2020, 12, 21, 10, 2, 0)))
         @test _sun_declination_deg(december) ≈ -23.44 atol = 0.2
         @test december[2] < -0.9
 
         # March equinox: the Sun crosses the equator at the vernal equinox
         # itself, the +x axis of the frame.
-        march = SM_SUN.ephemerides_sun_direction_ii(earth, _sun_et(DateTime(2020, 3, 20, 3, 50, 0)), simple)
+        march = SM_SUN.ephemerides_sun_ii(simple, earth, _sun_et(DateTime(2020, 3, 20, 3, 50, 0)))
         @test abs(_sun_declination_deg(march)) < 0.3
         @test march[1] > 0.99
 
         # September equinox: the opposite crossing, the Sun near -x.
-        september = SM_SUN.ephemerides_sun_direction_ii(earth, _sun_et(DateTime(2020, 9, 22, 13, 31, 0)), simple)
+        september = SM_SUN.ephemerides_sun_ii(simple, earth, _sun_et(DateTime(2020, 9, 22, 13, 31, 0)))
         @test abs(_sun_declination_deg(september)) < 0.3
         @test september[1] < -0.99
 
         # The simple model carries no planetary ephemeris, so it declines to
         # invent a Sun for any other body.
-        @test SM_SUN.ephemerides_sun_direction_ii(make_no_gram_planet(:mars), 0.0, simple) === nothing
-        @test SM_SUN.ephemerides_sun_direction_ii(make_no_gram_planet(:venus), 0.0, simple) === nothing
+        @test SM_SUN.ephemerides_sun_ii(simple, make_no_gram_planet(:mars), 0.0) === nothing
+        @test SM_SUN.ephemerides_sun_ii(simple, make_no_gram_planet(:venus), 0.0) === nothing
     end
 
     # Apollo 11 landed with the Sun 10.8 degrees above the horizon at Tranquility
@@ -61,13 +61,13 @@ _sun_declination_deg(d) = rad2deg(asin(clamp(d[3], -1.0, 1.0)))
             moon = SM_SUN.Moon("", SUN_SPICE_PATH)
             spice = SM_SUN.SpiceEphemeridesModel()
             et = utc2et("1969-07-20T20:05:05")
-            direction = SM_SUN.ephemerides_sun_direction_ii(moon, et, spice)
+            direction = SM_SUN.ephemerides_sun_ii(spice, moon, et)
             @test direction !== nothing
             @test isapprox(norm(direction), 1.0; atol=1e-12)
 
             # Rotate into the body-fixed frame and take the elevation over the
             # site's local vertical.
-            lpi = SM_SUN.planet_frame_lpi(moon, et, spice)
+            lpi = SM_SUN.ephemerides_frame_lpi(spice, moon, et)
             sun_pcpf = lpi * direction
             lat, lon = deg2rad(0.67416), deg2rad(23.47314)
             up = SVector{3, Float64}(cos(lat) * cos(lon), cos(lat) * sin(lon), sin(lat))

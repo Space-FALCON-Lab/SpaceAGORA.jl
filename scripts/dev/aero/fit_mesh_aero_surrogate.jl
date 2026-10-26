@@ -1,6 +1,6 @@
 # Fit the free-molecular surrogate of a CAD model from the command line.
 #
-#   julia --project=. scripts/dev/aero/fit_mesh_aero_surrogate.jl --model=data/models/magellan_nasa_3d_resources.glb \
+#   julia --project=. scripts/dev/aero/fit_mesh_aero_surrogate.jl --model=data/scene/models/magellan_nasa_3d_resources.glb \
 #         --scale=1.0 --rotation=-180,90,90 --out=output/aero/magellan.json [--degree=8] [--poly=2] \
 #         [--directions=1200] [--speed-ratios=3,5,8,12,20] [--sigma-n=1] [--sigma-t=1] [--grid=256] \
 #         [--ref-area=<m2>] [--ref-length=<m>] [--no-shadowing] [--outward-normals]

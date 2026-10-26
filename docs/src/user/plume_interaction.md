@@ -6,12 +6,19 @@ that vector in simulation spacecraft order. The primary engine thrust must
 already be supplied by the control model. One plume effector publishes the seven
 `sc{i}_plume_*` diagnostic columns; it may cover multiple spacecraft.
 
+Use this model when you already have a landing configuration and want to
+inspect its plume diagnostics. The [lunar landing guide](lunar_landing.md)
+provides a complete scenario; this page explains how to configure and interpret
+the plume model.
+
 The closure represents a Gaussian pressure footprint, wall shear, excess-shear
 erosion, bounded ejecta speed and a small axial augmentation. Defaults are
 illustrative phenomenological parameters. They have not been established as an
 Apollo flight calibration, and the model does not solve gas dynamics, regolith
 transport or a changing surface. Engine and soil metadata fields that do not
 enter the closure are identified in [`PlumeSurfaceConfig`](@ref).
+
+## Set the terrain and engine geometry
 
 The supplied terrain uses planetocentric latitude/longitude in degrees and a
 reference sphere in meters. Pass `reference_radius_m` when the mission uses an
@@ -32,12 +39,16 @@ body -z. When attitude is absent, exhaust points radially inward. The scalar
 reference point. The force line therefore crosses that point and the modeled
 torque is zero. An off-axis engine needs an additional geometry/torque model.
 
+## Read the diagnostics across a run
+
 Pure wrench evaluations do not alter diagnostics. An accepted-step callback
 samples the trajectory and integrates erosion rate by trapezoidal quadrature,
 using the thrust held across that interval. Endpoint throttle changes apply to
 the following interval. A new run resets the integral; checkpoint segments
 inside one run retain it. A separately resumed run starts a new diagnostic
-integral at its resume time.
+integral at its resume time. Its results table holds the whole run (see
+[Outputs](outputs.md)), so the cumulative mass column falls back to zero after the
+resume time and counts only the resumed interval from there.
 
 The cumulative mass is a diagnostic, not an extra ODE state controlled by solver
 tolerances. Demonstrate convergence by reducing `dt_max_orbit` and, for an
@@ -46,6 +57,8 @@ quantities from the supplied saved state and held interval thrust. Saved mass
 uses the accepted-interval trapezoidal interpolation. Save queries must occur in
 the current accepted interval; these fields do not reconstruct arbitrary past
 history from the current mutable effector state.
+
+## Choose compatible stopping and solver settings
 
 The model validates finite configuration values, positive length/material scales,
 nonnegative coefficients and matching spacecraft counts. A full propagation

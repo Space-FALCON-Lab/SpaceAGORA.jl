@@ -1,8 +1,50 @@
+# Check the comparison owner in the actual standalone module world, including
+# the route that begins with pre-existing lifecycle and visualizer services.
+function _test_standalone_comparison_tracking(model)
+    owner = model.RPOComparisonTracking
+    guidance = model.GuidanceHooks
+    @test parentmodule(owner) === model
+    @test !isdefined(guidance, :RPOComparisonTracking)
+    @test !Base.isexported(model, :RPOComparisonTracking)
+    for name in (:rpo_lqmpc_reference_preview, :rpo_lqmpc_tracking_fuel_used_pct,
+                 :rpo_track_retimed_path_lqmpc, :rpo_comparison_segment_clearance,
+                 :rpo_track_two_body_path, :rpo_execute_two_body_reference)
+        f = getproperty(guidance, name)
+        @test getproperty(owner, name) === f
+        @test parentmodule(f) === guidance
+        @test length(methods(f)) == 1
+        @test only(methods(f)).module === owner
+    end
+    for (source, names) in (
+        (model.ControlHooks, (:init_rpo_lqmpc, :rpo_lqmpc_control,
+            :rpo_allocate_six_axis_thrusters, :rpo_thruster_wrench_body)),
+        (guidance, (:RPOPSOConfig, :RPOLQMPCTrackingSettings, :rpo_pso_config,
+            :rpo_reference_from_path, :rpo_init_two_body_plant, :rpo_step_two_body!)),
+        (model.ThrusterModels, (:SixAxisThrusterModel,)),
+        (model.NavigationHooks, (:rpo_clearance_distance_to_station,)),
+        (model.FrameTransforms, (:rtn_dcm_from_inertial,)),
+    )
+        for name in names
+            @test getproperty(owner, name) === getproperty(source, name)
+        end
+    end
+    @test owner.HYPRSupport === model.HYPRSupport
+    @test model.rpo_track_retimed_path_lqmpc === guidance.rpo_track_retimed_path_lqmpc
+end
+
 @testset "SimulationModel Export Contract" begin
     sandbox = EXPORT_IMPORT_SANDBOX
-    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "orchestration", "simulation", "composition", "simulation_model.jl"))
+    _test_standalone_comparison_tracking(sandbox.SimulationModel)
     @test Core.eval(sandbox, :(isdefined(@__MODULE__, :RuntimeServices)))
     @test isdefined(sandbox, :SimulationLifecycle)
+    @test isdefined(sandbox, :VisualizerServices)
+    # The comparison planners subtype the RPO planner contract, which the aggregator supplies standalone.
+    @test isdefined(sandbox, :GNCAlgorithms) && isdefined(sandbox, :RPOPlannerInterfaces)
+    @test sandbox.SimulationModel.GuidanceHooks.AbstractRPOComparisonPlanner <: sandbox.RPOPlannerInterfaces.AbstractRPOPlanner
+    @test sandbox.SimulationModel.SceneVisualization.VisualizerServices === sandbox.VisualizerServices
+    @test !sandbox.VisualizerServices.available()
+    @test_throws sandbox.VisualizerServices.VisualizerUnavailableError sandbox.VisualizerServices.require_available()
     @test sandbox.SimulationModel.ControlHooks.SimulationLifecycle === sandbox.SimulationLifecycle
     @test sandbox.SimulationLifecycle.before_reference_control!(nothing, nothing, nothing, nothing, 0.0) === nothing
     @test_nowarn Core.eval(sandbox, :(using .SimulationModel))
@@ -55,8 +97,10 @@ end
 
 @testset "Include-Order + Name Ambiguity Smoke" begin
     sandbox = INCLUDE_ORDER_SANDBOX
-    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "gnc", "interfaces", "simulation_lifecycle.jl"))
+    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "models", "gnc", "contracts", "simulation_lifecycle.jl"))
     lifecycle = sandbox.SimulationLifecycle
+    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "interfaces", "analysis", "visualization", "visualizer_services.jl"))
+    visualizer = sandbox.VisualizerServices
 
     Base.include_string(sandbox, """
     module ConflictingExports
@@ -66,11 +110,16 @@ end
     using .ConflictingExports
     """)
 
-    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "orchestration", "simulation", "composition", "simulation_model.jl"))
+    _test_standalone_comparison_tracking(sandbox.SimulationModel)
     @test sandbox.SimulationLifecycle === lifecycle
     @test sandbox.SimulationModel.ControlHooks.SimulationLifecycle === lifecycle
+    @test sandbox.VisualizerServices === visualizer
+    @test sandbox.SimulationModel.SceneVisualization.VisualizerServices === visualizer
+    @test !visualizer.available()
+    @test_throws visualizer.VisualizerUnavailableError visualizer.require_available()
     Core.eval(sandbox, :(const quat_mult = SimulationModel.quat_mult))
-    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine", "simulation_engine.jl"))
     @test isdefined(sandbox, :RuntimeServices)
     @test isdefined(sandbox, :SimulationEngine)
     @test sandbox.SimulationEngine.SimulationLifecycle === lifecycle
@@ -79,38 +128,38 @@ end
 
 @testset "SimulationModel Sibling-Module Topology Contract" begin
     spaceagora_src = read(joinpath(REPO_ROOT, "src", "SpaceAGORA.jl"), String)
-    runtime_services_src = read(joinpath(REPO_ROOT, "src", "simulation", "runtime_services.jl"), String)
-    simulation_model_src = read(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"), String)
-    reference_system_config_src = read(joinpath(REPO_ROOT, "src", "core", "state", "reference_system_config.jl"), String)
-    spacecraft_model_src = read(joinpath(REPO_ROOT, "src", "vehicle", "spacecraft", "model.jl"), String)
-    legacy_model_codes_src = read(joinpath(REPO_ROOT, "src", "core", "types", "compat_model_codes.jl"), String)
-    runtime_types_src = read(joinpath(REPO_ROOT, "src", "core", "types", "runtime_types.jl"), String)
-    command_types_src = read(joinpath(REPO_ROOT, "src", "gnc", "command_types.jl"), String)
-    engine_src = read(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"), String)
-    engine_public_api_src = read(joinpath(REPO_ROOT, "src", "simulation", "engine", "public_api.jl"), String)
-    engine_execution_src = read(joinpath(REPO_ROOT, "src", "simulation", "engine", "execution.jl"), String)
-    telemetry_src = read(joinpath(REPO_ROOT, "src", "analysis", "verification", "telemetry_verification.jl"), String)
-    density_callback_assembly_src = read(joinpath(REPO_ROOT, "src", "simulation", "callbacks", "density_callbacks", "assembly.jl"), String)
+    runtime_services_src = read(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "runtime_services.jl"), String)
+    simulation_model_src = read(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "composition", "simulation_model.jl"), String)
+    reference_system_config_src = read(joinpath(REPO_ROOT, "src", "foundation", "core", "state", "reference_system_config.jl"), String)
+    spacecraft_model_src = read(joinpath(REPO_ROOT, "src", "models", "vehicle", "spacecraft", "model.jl"), String)
+    legacy_model_codes_src = read(joinpath(REPO_ROOT, "src", "foundation", "core", "types", "compat_model_codes.jl"), String)
+    runtime_types_src = read(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "state", "runtime_types.jl"), String)
+    command_types_src = read(joinpath(REPO_ROOT, "src", "models", "gnc", "contracts", "command_types.jl"), String)
+    engine_src = read(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine", "simulation_engine.jl"), String)
+    engine_public_api_src = read(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine", "public_api.jl"), String)
+    engine_execution_src = read(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine", "execution.jl"), String)
+    telemetry_src = read(joinpath(REPO_ROOT, "src", "interfaces", "analysis", "verification", "telemetry_verification.jl"), String)
+    density_callback_assembly_src = read(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "callbacks", "density_callbacks", "assembly.jl"), String)
     legacy_nested_model_path = "SimulationEngine" * ".SimulationModel"
 
-    @test occursin("include(joinpath(@__DIR__, \"simulation\", \"runtime_services.jl\"))", spaceagora_src)
-    @test occursin("include(joinpath(@__DIR__, \"core\", \"simulation_model.jl\"))", spaceagora_src)
-    @test findfirst("include(joinpath(@__DIR__, \"simulation\", \"runtime_services.jl\"))", spaceagora_src) <
-        findfirst("include(joinpath(@__DIR__, \"core\", \"simulation_model.jl\"))", spaceagora_src)
-    @test findfirst("include(joinpath(@__DIR__, \"core\", \"simulation_model.jl\"))", spaceagora_src) <
-        findfirst("include(joinpath(@__DIR__, \"simulation\", \"engine\", \"simulation_engine.jl\"))", spaceagora_src)
+    @test occursin("include(joinpath(@__DIR__, \"orchestration\", \"simulation\", \"runtime_services.jl\"))", spaceagora_src)
+    @test occursin("include(joinpath(@__DIR__, \"orchestration\", \"simulation\", \"composition\", \"simulation_model.jl\"))", spaceagora_src)
+    @test findfirst("include(joinpath(@__DIR__, \"orchestration\", \"simulation\", \"runtime_services.jl\"))", spaceagora_src) <
+        findfirst("include(joinpath(@__DIR__, \"orchestration\", \"simulation\", \"composition\", \"simulation_model.jl\"))", spaceagora_src)
+    @test findfirst("include(joinpath(@__DIR__, \"orchestration\", \"simulation\", \"composition\", \"simulation_model.jl\"))", spaceagora_src) <
+        findfirst("include(joinpath(@__DIR__, \"orchestration\", \"simulation\", \"engine\", \"simulation_engine.jl\"))", spaceagora_src)
     @test occursin("module RuntimeServices", runtime_services_src)
     @test occursin("const SPICE_LOCK = ReentrantLock()", runtime_services_src)
     @test occursin("const GRAM_LOCK = SPICE_LOCK", runtime_services_src)
     @test !occursin("const SPICE_LOCK", simulation_model_src)
     @test !occursin("const GRAM_LOCK", simulation_model_src)
     @test occursin("runtime_services.jl", simulation_model_src)
-    @test occursin("include(joinpath(@__DIR__, \"..\", \"vehicle\", \"spacecraft\", \"model.jl\"))", simulation_model_src)
+    @test occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"vehicle\", \"spacecraft\", \"model.jl\"))", simulation_model_src)
     @test occursin("@reexport using .SpacecraftModels", simulation_model_src)
     @test !occursin("@reexport using .PhysicalModel", simulation_model_src)
-    @test occursin("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"compat_model_codes.jl\"))", simulation_model_src)
-    @test findfirst("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"compat_model_codes.jl\"))", simulation_model_src) <
-        findfirst("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"runtime_types.jl\"))", simulation_model_src)
+    @test occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"foundation\", \"core\", \"types\", \"compat_model_codes.jl\"))", simulation_model_src)
+    @test findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"foundation\", \"core\", \"types\", \"compat_model_codes.jl\"))", simulation_model_src) <
+        findfirst("include(joinpath(@__DIR__, \"..\", \"state\", \"runtime_types.jl\"))", simulation_model_src)
     @test occursin("module ReferenceSystems", reference_system_config_src)
     @test !occursin("module ref_sys", reference_system_config_src)
     @test occursin("module SpacecraftModels", spacecraft_model_src)
@@ -119,9 +168,9 @@ end
     @test occursin("using ..LegacyModelCodes:", runtime_types_src)
     @test occursin("using ..SpacecraftModels: SpacecraftModel", runtime_types_src)
     @test !occursin("@enum Legacy", runtime_types_src)
-    @test occursin("include(joinpath(@__DIR__, \"..\", \"gnc\", \"command_types.jl\"))", simulation_model_src)
-    @test findfirst("include(joinpath(@__DIR__, \"..\", \"gnc\", \"command_types.jl\"))", simulation_model_src) <
-        findfirst("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"runtime_types.jl\"))", simulation_model_src)
+    @test occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"gnc\", \"contracts\", \"command_types.jl\"))", simulation_model_src)
+    @test findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"gnc\", \"contracts\", \"command_types.jl\"))", simulation_model_src) <
+        findfirst("include(joinpath(@__DIR__, \"..\", \"state\", \"runtime_types.jl\"))", simulation_model_src)
     @test occursin("module CommandTypes", command_types_src)
     @test occursin("using ..CommandTypes: PropulsiveManeuverCommand", runtime_types_src)
     @test occursin("maneuver_commands::Vector{PropulsiveManeuverCommand}", runtime_types_src)
@@ -159,25 +208,23 @@ end
 end
 
 @testset "DynamicEffectors Internal Split Contract" begin
-    force_torque_src = read(joinpath(REPO_ROOT, "src", "dynamics", "coupled", "force_torque_models.jl"), String)
-    gravity_effectors_src = read(joinpath(REPO_ROOT, "src", "dynamics", "coupled", "force_torque_models", "gravity_effectors.jl"), String)
-    aerodynamic_effectors_src = read(joinpath(REPO_ROOT, "src", "dynamics", "coupled", "force_torque_models", "aerodynamic_effectors.jl"), String)
-    perturbation_effectors_src = read(joinpath(REPO_ROOT, "src", "dynamics", "coupled", "force_torque_models", "perturbation_effectors.jl"), String)
-    thruster_models_src = read(joinpath(REPO_ROOT, "src", "dynamics", "coupled", "force_torque_models", "thruster_models.jl"), String)
-    guidance_models_src = read(joinpath(REPO_ROOT, "src", "dynamics", "coupled", "force_torque_models", "guidance_models.jl"), String)
-    top_level_thruster_models_src = read(joinpath(REPO_ROOT, "src", "vehicle", "actuators", "thruster", "thruster_models_module.jl"), String)
-    top_level_guidance_models_src = read(joinpath(REPO_ROOT, "src", "gnc", "guidance", "guidance_models.jl"), String)
-    top_level_gravity_effectors_src = read(joinpath(REPO_ROOT, "src", "environment", "gravity", "gravity_effectors.jl"), String)
-    command_types_src = read(joinpath(REPO_ROOT, "src", "gnc", "command_types.jl"), String)
-    guidance_hooks_src = read(joinpath(REPO_ROOT, "src", "gnc", "guidance", "guidance_hooks.jl"), String)
-    control_hooks_src = read(joinpath(REPO_ROOT, "src", "gnc", "control", "control_hooks.jl"), String)
-    callback_registry_src = read(joinpath(REPO_ROOT, "src", "simulation", "callbacks", "registry.jl"), String)
+    force_torque_src = read(joinpath(REPO_ROOT, "src", "models", "dynamics", "effectors", "force_torque_models.jl"), String)
+    gravity_effectors_src = read(joinpath(REPO_ROOT, "src", "models", "dynamics", "effectors", "force_torque_models", "gravity_effectors.jl"), String)
+    aerodynamic_effectors_src = read(joinpath(REPO_ROOT, "src", "models", "dynamics", "effectors", "force_torque_models", "aerodynamic_effectors.jl"), String)
+    perturbation_effectors_src = read(joinpath(REPO_ROOT, "src", "models", "dynamics", "effectors", "force_torque_models", "perturbation_effectors.jl"), String)
+    guidance_models_src = read(joinpath(REPO_ROOT, "src", "models", "dynamics", "effectors", "force_torque_models", "guidance_models.jl"), String)
+    top_level_thruster_models_src = read(joinpath(REPO_ROOT, "src", "models", "vehicle", "actuators", "thruster_models_module.jl"), String)
+    top_level_guidance_models_src = read(joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "models.jl"), String)
+    top_level_gravity_effectors_src = read(joinpath(REPO_ROOT, "src", "models", "environment", "gravity", "gravity_effectors.jl"), String)
+    command_types_src = read(joinpath(REPO_ROOT, "src", "models", "gnc", "contracts", "command_types.jl"), String)
+    guidance_hooks_src = read(joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "hooks.jl"), String)
+    control_hooks_src = read(joinpath(REPO_ROOT, "src", "models", "gnc", "control", "hooks.jl"), String)
+    callback_registry_src = read(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "callbacks", "registry.jl"), String)
 
     for include_name in (
         "gravity_effectors.jl",
         "aerodynamic_effectors.jl",
         "perturbation_effectors.jl",
-        "thruster_models.jl",
         "guidance_models.jl",
     )
         @test occursin("\"$include_name\"", force_torque_src)
@@ -185,7 +232,6 @@ end
     @test occursin("module GravityEffectors", gravity_effectors_src)
     @test occursin("module AerodynamicEffectors", aerodynamic_effectors_src)
     @test occursin("module PerturbationEffectors", perturbation_effectors_src)
-    @test occursin("module ThrusterModels", thruster_models_src)
     @test occursin("module GuidanceModels", guidance_models_src)
     @test occursin("module ThrusterModels", top_level_thruster_models_src)
     @test occursin("module GuidanceModels", top_level_guidance_models_src)
@@ -193,14 +239,12 @@ end
     @test occursin("module CommandTypes", command_types_src)
     @test !occursin(r"^\s+module\s+(GravityEffectors|AerodynamicEffectors|PerturbationEffectors|ThrusterModels|GuidanceModels)"m, force_torque_src)
 
-    @test occursin("function calcForceTorque end", force_torque_src)
+    @test !occursin("calcForceTorque", force_torque_src)
     @test occursin("using ..EffectorSampling: wrench, wrench_caching!, environment_requirements, solver_partition", force_torque_src)
     @test occursin("using .GravityEffectors: ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel", force_torque_src)
     @test occursin("using .AerodynamicEffectors: AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight", force_torque_src)
     @test occursin("using .PerturbationEffectors: NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel", force_torque_src)
-    @test occursin("using .ThrusterModels: BaseThrusterModel", force_torque_src)
     @test occursin("using .GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel", force_torque_src)
-    @test occursin("using ...ThrusterModels: BaseThrusterModel", thruster_models_src)
     @test occursin("using ...GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel", guidance_models_src)
     @test occursin("export aerobraking_gravity_force_ii, srp, srp_cannonball_accel", force_torque_src)
 
@@ -244,17 +288,17 @@ end
 end
 
 @testset "Simulation Filename Canonical Contract" begin
-    engine_path = joinpath(REPO_ROOT, "src", "simulation", "engine", "execution.jl")
-    legacy_events_dir = joinpath(REPO_ROOT, "src", "simulation", "events")
-    legacy_exec_dir = joinpath(REPO_ROOT, "src", "simulation", "execution")
-    legacy_solver_dir = joinpath(REPO_ROOT, "src", "simulation", "solver_orchestration")
-    legacy_aerobraking_path = joinpath(REPO_ROOT, "src", "simulation", "Aerobraking.jl")
-    legacy_complete_path = joinpath(REPO_ROOT, "src", "simulation", "Complete_passage.jl")
-    legacy_mission_model_path = joinpath(REPO_ROOT, "src", "mission", "mission_model.jl")
-    legacy_define_mission_path = joinpath(REPO_ROOT, "src", "mission", "define_mission.jl")
-    legacy_save_results_path = joinpath(REPO_ROOT, "src", "io", "outputs", "save_results.jl")
-    legacy_mc_set_path = joinpath(REPO_ROOT, "src", "mission", "campaigns", "montecarlo_set.jl")
-    legacy_mc_perturbations_path = joinpath(REPO_ROOT, "src", "mission", "campaigns", "montecarlo_perturbations.jl")
+    engine_path = joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine", "execution.jl")
+    legacy_events_dir = joinpath(REPO_ROOT, "src", "orchestration", "simulation", "events")
+    legacy_exec_dir = joinpath(REPO_ROOT, "src", "orchestration", "simulation", "execution")
+    legacy_solver_dir = joinpath(REPO_ROOT, "src", "orchestration", "simulation", "solver_orchestration")
+    legacy_aerobraking_path = joinpath(REPO_ROOT, "src", "orchestration", "simulation", "Aerobraking.jl")
+    legacy_complete_path = joinpath(REPO_ROOT, "src", "orchestration", "simulation", "Complete_passage.jl")
+    legacy_mission_model_path = joinpath(REPO_ROOT, "src", "orchestration", "mission", "mission_model.jl")
+    legacy_define_mission_path = joinpath(REPO_ROOT, "src", "orchestration", "mission", "define_mission.jl")
+    legacy_save_results_path = joinpath(REPO_ROOT, "src", "interfaces", "io", "outputs", "save_results.jl")
+    legacy_mc_set_path = joinpath(REPO_ROOT, "src", "orchestration", "mission", "campaigns", "montecarlo_set.jl")
+    legacy_mc_perturbations_path = joinpath(REPO_ROOT, "src", "orchestration", "mission", "campaigns", "montecarlo_perturbations.jl")
 
     @test isfile(engine_path)
     @test !isdir(legacy_events_dir)
@@ -351,8 +395,8 @@ end
 
 @testset "Documenter Strictness Contract" begin
     docs_make = read(joinpath(REPO_ROOT, "docs", "make.jl"), String)
-    getting_started = read(joinpath(REPO_ROOT, "docs", "src", "getting_started.md"), String)
-    from_env_src = read(joinpath(REPO_ROOT, "src", "simulation", "engine", "adapters", "from_env.jl"), String)
+    quickstart = read(joinpath(REPO_ROOT, "docs", "src", "user", "quickstart.md"), String)
+    from_env_src = read(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine", "adapters", "from_env.jl"), String)
 
     @test occursin("modules = [SpaceAGORA]", docs_make)
     @test occursin("doctest = true", docs_make)
@@ -367,8 +411,70 @@ end
     @test occursin("SpaceAGORA.SpaceAGORACLI", docs_make)
     @test occursin("warnonly = false", docs_make)
     @test occursin("spaceagora_no_gram_example_args", docs_make)
-    @test occursin("```jldoctest", getting_started)
+    @test occursin("```jldoctest", quickstart)
     @test occursin("```jldoctest", from_env_src)
+end
+
+import Markdown
+
+@testset "Forwarded Docstrings Render Without Nested Markdown" begin
+    # Documenter unwraps a docstring that is one nested Markdown.MD, but it renders each
+    # of several nested MDs as text and warns about Julia interpolation. `@doc X` nests
+    # one MD per docstring of X, so a name with several docstrings is forwarded through
+    # `_flat_doc` in src/SpaceAGORA.jl, which keeps the docstrings in order with a rule
+    # between them.
+    function unwrapped(docstr)
+        md = Base.Docs.parsedoc(docstr)
+        while length(md.content) == 1 && first(md.content) isa Markdown.MD
+            md = first(md.content)
+        end
+        return md
+    end
+    squash(md) = replace(Markdown.plain(md), r"\s+" => "")
+
+    forwarded_names = (:cmg_momentum, :actuator_wrench, :actuator_consumption,
+                       :actuator_levels, :RPOStationGeometry, :RPOCubeSatGeometry)
+
+    nested = String[]
+    seen = Symbol[]
+    for mod in Base.Docs.modules
+        Base.moduleroot(mod) === SpaceAGORA || continue
+        meta = Base.Docs.meta(mod; autoinit=false)
+        meta === nothing && continue
+        for (binding, multidoc) in meta
+            binding isa Base.Docs.Binding || continue
+            mod === SpaceAGORA && push!(seen, binding.var)
+            for sig in multidoc.order
+                any(block -> block isa Markdown.MD, unwrapped(multidoc.docs[sig]).content) &&
+                    push!(nested, string(mod, ": ", binding.var))
+            end
+        end
+    end
+    @test isempty(nested)
+    # An empty scan would pass the check above.
+    @test issubset(forwarded_names, seen)
+
+    # `@doc X` gives something other than a Markdown.MD when the REPL docsystem is not
+    # loaded; `_flat_doc` forwards that as is.
+    @test SpaceAGORA._flat_doc(Base.Docs.docstr("x")) isa Base.Docs.DocStr
+    @test SpaceAGORA._flat_doc(nothing) === nothing
+
+    stored = Base.Docs.meta(SpaceAGORA)
+
+    for name in forwarded_names
+        binding = Base.Docs.Binding(SpaceAGORA, name)
+        forwarded = stored[binding]
+        # The docstrings of one binding can sit in several modules (methods are
+        # documented where their types live); `Base.Docs.doc` gathers them in this order.
+        original = [multidoc.docs[sig]
+                    for mod in Base.Docs.modules if mod !== SpaceAGORA
+                    for meta in (Base.Docs.meta(mod; autoinit=false),) if meta !== nothing
+                    for multidoc in (get(meta, binding, nothing),) if multidoc !== nothing
+                    for sig in multidoc.order]
+        @test length(forwarded.order) == 1
+        @test squash(unwrapped(forwarded.docs[only(forwarded.order)])) ==
+            join((squash(unwrapped(docstr)) for docstr in original), "---")
+    end
 end
 
 @testset "Monte Carlo Campaign Runner Contract" begin
@@ -409,20 +515,6 @@ end
     ))
 end
 
-@testset "Aerobraking Selector Contract" begin
-    selector = SimulationModel.DefaultAerobrakingPolicySelector()
-    cfg_default = SimulationModel.AerobrakingPolicyConfig()
-    cfg_targeting = SimulationModel.AerobrakingPolicyConfig(default_strategy=SimulationModel.T_EDG)
-    input = SimulationModel.GuidanceHooks.AerobrakingGuidanceInput(
-        ip=nothing,
-        mission=nothing,
-        args=Dict{Symbol, Any}(:aerobraking_strategy => "e_edg"),
-    )
-
-    @test SimulationModel.select_strategy(selector, cfg_default, input) == SimulationModel.E_EDG
-    @test SimulationModel.select_strategy(selector, cfg_targeting, input) == SimulationModel.T_EDG
-end
-
 @testset "Root Environment Contract" begin
     agora_project = joinpath(REPO_ROOT, "Project.toml")
     agora_manifest = joinpath(REPO_ROOT, "Manifest.toml")
@@ -434,11 +526,21 @@ end
     @test occursin("Project.toml", tracked)
     @test occursin("Manifest.toml", tracked)
 
+    # The examples environment: its project and setup are tracked, and its
+    # manifest is generated from the root manifest.
+    examples_tracked = read(`sh -lc "cd '$REPO_ROOT' && git ls-files examples/Project.toml examples/setup.jl examples/Manifest.toml"`, String)
+    @test occursin("examples/Project.toml", examples_tracked)
+    @test occursin("examples/setup.jl", examples_tracked)
+    @test !occursin("examples/Manifest.toml", examples_tracked)
+
     readme = read(joinpath(REPO_ROOT, "README.md"), String)
-    getting_started = read(joinpath(REPO_ROOT, "docs", "src", "getting_started.md"), String)
-    @test occursin("canonical committed execution environment", readme)
-    @test occursin("canonical committed execution environment", getting_started)
-    @test occursin("there is no bootstrap step", lowercase(readme))
+    quickstart = read(joinpath(REPO_ROOT, "docs", "src", "user", "quickstart.md"), String)
+    @test occursin("julia_version_strict=true", readme)
+    @test occursin("canonical committed execution environment", quickstart)
+    for page in (readme, quickstart)
+        @test occursin("julia --startup-file=no examples/setup.jl", page)
+        @test occursin("julia --project=examples examples/AGORA_Basic_Quickstart.jl", page)
+    end
 end
 
 @testset "Project Compat Coverage Contract" begin
@@ -524,8 +626,8 @@ end
     @test last(precompile_solution.t) > first(precompile_solution.t)
 
     @test occursin("using SpaceAGORA", clean_depot_smoke)
-    @test !occursin("include(joinpath(REPO_ROOT, \"src\", \"core\", \"simulation_model.jl\"))", clean_depot_smoke)
-    @test !occursin("include(joinpath(REPO_ROOT, \"src\", \"simulation\", \"engine\", \"simulation_engine.jl\"))", clean_depot_smoke)
+    @test !occursin("include(joinpath(REPO_ROOT, \"src\", \"orchestration\", \"simulation\", \"composition\", \"simulation_model.jl\"))", clean_depot_smoke)
+    @test !occursin("include(joinpath(REPO_ROOT, \"src\", \"orchestration\", \"simulation\", \"engine\", \"simulation_engine.jl\"))", clean_depot_smoke)
 end
 
 @testset "Dependabot Contract" begin
@@ -555,8 +657,8 @@ function ensure_guidance_sandbox_loaded!()
         return
     end
 
-    Core.eval(GUIDANCE_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "gnc", "guidance", "thruster_guidance", "thruster_guidance_models.jl"))))
-    Core.eval(GUIDANCE_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "gnc", "guidance", "thruster_guidance", "thruster_guidance_functions.jl"))))
+    Core.eval(GUIDANCE_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "models", "gnc", "guidance", "maneuvers", "thruster_guidance_models.jl"))))
+    Core.eval(GUIDANCE_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "models", "gnc", "guidance", "maneuvers", "thruster_guidance_functions.jl"))))
     GUIDANCE_SANDBOX_LOADED[] = true
 end
 
@@ -890,11 +992,11 @@ end
         dynamic_effectors=(InverseSquaredGravityModel(),),
         keplerian=true
     )
-    force_nbody, torque_nbody = calcForceTorque(nbody_jupiter, nbody_state, ODEParams(n_sats=1, args=args_nbody), 1)
+    force_nbody, torque_nbody = dynamics_force_torque(nbody_jupiter, nbody_state, ODEParams(n_sats=1, args=args_nbody), 1)
     @test all(isfinite, force_nbody)
     @test torque_nbody == SVector{3, Float64}(0.0, 0.0, 0.0)
 
-    harmonics_file = joinpath(REPO_ROOT, "data/Gravity_harmonics_data", "EarthGGM05C.csv")
+    harmonics_file = joinpath(REPO_ROOT, "data/planets/gravity", "EarthGGM05C.csv")
     harmonics_l20 = GravitationalHarmonicsModel(20, 20, harmonics_file, EARTH)
     @test size(harmonics_l20.C) == (21, 21)
     @test size(harmonics_l20.S) == (21, 21)
@@ -1066,19 +1168,19 @@ end
     u = ComponentVector(pos=[0.0, 0.0, 0.0], vel=[0.0, 0.0, 0.0], mass=1.0, heat_loads=[0.0])
 
     p.orbit_counter[1] = 3
-    sandbox.calcGuidanceEffect!(guidance_model, u, p, 0.0, 1)
+    sandbox.update_guidance!(guidance_model, u, p, 0.0, 1)
     @test p.shared_buffers.maneuver_commands[1].valid == true
     @test p.shared_buffers.maneuver_commands[1].delta_v_mps == 20.0
     @test isapprox(p.shared_buffers.maneuver_commands[1].direction_rad, 0.0; atol=1e-12, rtol=0.0)
 
     p.orbit_counter[1] = 2
-    sandbox.calcGuidanceEffect!(guidance_model, u, p, 0.0, 1)
+    sandbox.update_guidance!(guidance_model, u, p, 0.0, 1)
     @test p.shared_buffers.maneuver_commands[1].valid == true
     @test p.shared_buffers.maneuver_commands[1].delta_v_mps == 5.0
     @test isapprox(p.shared_buffers.maneuver_commands[1].direction_rad, π; atol=1e-12, rtol=0.0)
 
     p.orbit_counter[1] = 1
-    sandbox.calcGuidanceEffect!(guidance_model, u, p, 0.0, 1)
+    sandbox.update_guidance!(guidance_model, u, p, 0.0, 1)
     @test p.shared_buffers.maneuver_commands[1].valid == true
     @test p.shared_buffers.maneuver_commands[1].delta_v_mps == 0.0
 end
@@ -1119,7 +1221,7 @@ end
         target_apoapsis_radius_m=planet.Rp_e + 600e3,
         target_periapsis_altitude_m=200e3
     )
-    @test sandbox.calcGuidanceEffect!(model, u, p, 0.0, 1) === nothing
+    @test sandbox.update_guidance!(model, u, p, 0.0, 1) === nothing
     command = p.shared_buffers.maneuver_commands[1]
     apoapsis = planet.Rp_e + 500e3
     current_a = (apoapsis + planet.Rp_e + 100e3) / 2
@@ -1183,12 +1285,12 @@ end
     u = ComponentVector(pos=[0.0, 0.0, 0.0], vel=[0.0, 0.0, 0.0], mass=1.0, heat_loads=[0.0])
 
     p.orbit_counter[1] = 7
-    sandbox.calcGuidanceEffect!(sandbox_guidance, u, p, 0.0, 1)
+    sandbox.update_guidance!(sandbox_guidance, u, p, 0.0, 1)
     @test p.shared_buffers.maneuver_commands[1].delta_v_mps > 0.0
     @test isapprox(p.shared_buffers.maneuver_commands[1].direction_rad, 0.0; atol=1e-12, rtol=0.0)
 
     p.orbit_counter[1] = 14
-    sandbox.calcGuidanceEffect!(sandbox_guidance, u, p, 0.0, 1)
+    sandbox.update_guidance!(sandbox_guidance, u, p, 0.0, 1)
     @test p.shared_buffers.maneuver_commands[1].delta_v_mps > 0.0
     @test isapprox(p.shared_buffers.maneuver_commands[1].direction_rad, π; atol=1e-12, rtol=0.0)
 end

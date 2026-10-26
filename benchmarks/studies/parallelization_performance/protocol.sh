@@ -19,7 +19,7 @@ fi
 export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
 export GKSwstype="${GKSwstype:-100}"
 
-julia --project=. benchmarks/studies/parallelization_performance.jl "$PROFILE" \
+julia --project=examples benchmarks/studies/parallelization_performance.jl "$PROFILE" \
   --outdir="$OUTDIR" \
   "${THREAD_ARGS[@]}" \
   --repeats="$REPEATS" \

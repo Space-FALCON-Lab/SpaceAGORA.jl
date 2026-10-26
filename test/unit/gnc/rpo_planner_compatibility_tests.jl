@@ -34,7 +34,6 @@ snapshots=[]
     @test P !== G
     @test :AbstractRPOPlanner in names(SpaceAGORA) # Packet 3 makes the accepted contract public.
     @test SpaceAGORA.AbstractRPOPlanner === SpaceAGORA.RPOPlannerInterfaces.AbstractRPOPlanner
-    @test !hasfield(S.RPOGuidanceModel,:planner)
     @test fieldnames(S.RPOPlanBuffer)==(:valid,:plan,:updated_at_s)
     for (mode,accel,seed) in ((:legacy,false,741),(:legacy,true,742),(:manuscript,true,743))
         first=fixture(mode,accel,seed);second=fixture(mode,accel,seed)
@@ -80,4 +79,5 @@ snapshots=[]
 end
 snapshot_path=get(ENV,"SPACEAGORA_RPO_CONTRACT_SNAPSHOT","")
 isempty(snapshot_path) || write(snapshot_path,JSON.json(snapshots))
+
 end

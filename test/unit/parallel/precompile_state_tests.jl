@@ -22,9 +22,9 @@ using SpaceAGORA
 # the native-lock window's start time (reset to "now"), the per-acquisition
 # scratch the tracked lock overwrites on every entry before reading it, and
 # write/generation counters that only ever count up.
-const PS_VOLATILE = Set(["_NATIVE_LOCK_RESET_NS", "_native_lock_entry_ns",
+const PS_VOLATILE = Set(["_NATIVE_LOCK_RESET_NS", "_native_lock_entry_ns", "_native_lock_entry_site",
                          "_native_lock_entry_wait_ns", "_ATOMIC_WRITE_COUNTER",
-                         "_MACHINE_CONSTANTS_GENERATION"])
+                         "_MACHINE_CONSTANTS_GENERATION", "_SPICE_KERNEL_POOL_GENERATION"])
 
 function ps_describe(v)
     v isa Base.RefValue && return isassigned(v) ? "Ref " * repr(v[]; context = :limit => true) : "Ref #undef"

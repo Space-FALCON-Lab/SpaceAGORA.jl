@@ -1,0 +1,3 @@
+# A package commits no Manifest: its users resolve their own environments.
+Manifest*.toml
+output/

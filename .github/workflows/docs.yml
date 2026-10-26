@@ -47,8 +47,12 @@ jobs:
           gramsuite-smoke: "false"
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
+      # Documenter lives in the docs environment, not in the root project.
+      - name: Prepare docs environment
+        run: julia --startup-file=no docs/setup.jl
+
       - name: Build and deploy docs
-        run: julia --project=. docs/make.jl
+        run: julia --project=docs docs/make.jl
 
       - name: Upload undocumented public API report
         if: always()

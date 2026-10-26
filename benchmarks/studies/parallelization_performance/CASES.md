@@ -10,19 +10,19 @@ larger constellations, and Monte Carlo sweeps.
 Run the minimal integration test with:
 
 ```bash
-julia --project=. benchmarks/studies/parallelization_performance.jl test
+julia --project=examples benchmarks/studies/parallelization_performance.jl test
 ```
 
 Run the short smoke check with:
 
 ```bash
-julia --project=. benchmarks/studies/parallelization_performance.jl smoke
+julia --project=examples benchmarks/studies/parallelization_performance.jl smoke
 ```
 
 Run the full benchmark suite with the machine-scaled default thread ladder:
 
 ```bash
-julia --project=. benchmarks/studies/parallelization_performance.jl full --outdir=output/performance/parallelization_performance_manual
+julia --project=examples benchmarks/studies/parallelization_performance.jl full --outdir=output/performance/parallelization_performance_manual
 ```
 
 Run the standard benchmark-machine protocol wrapper with the same
@@ -40,7 +40,7 @@ entrypoint.
 To override the thread ladder explicitly, pass `--threads`:
 
 ```bash
-julia --project=. benchmarks/studies/parallelization_performance.jl full --threads=1,2,4,8,12,16,24
+julia --project=examples benchmarks/studies/parallelization_performance.jl full --threads=1,2,4,8,12,16,24
 ```
 
 Or set the protocol wrapper's thread ladder through the environment:
@@ -117,7 +117,7 @@ gravity/RHS costs and constellation scaling without aero or attitude coupling.
 | `gravity_256sat_l20_vacuum` | 256 | L20 gravity harmonics | Very large constellation with expensive gravity. |
 | `gravity_1024sat_l20_vacuum` | 1024 | L20 gravity harmonics | Extreme expensive-gravity scheduling case. |
 
-The harmonics cases use `data/Gravity_harmonics_data/EarthGGM05C.csv` when it is
+The harmonics cases use `data/planets/gravity/EarthGGM05C.csv` when it is
 available. If that file is missing, the builder falls back to J2 gravity.
 
 ### Few-Spacecraft High-Fidelity Cases

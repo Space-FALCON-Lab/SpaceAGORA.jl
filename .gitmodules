@@ -4,3 +4,21 @@
 	branch = main
 	shallow = true
 	fetchRecurseSubmodules = false
+
+[submodule "HYPR"]
+	path = packages/robotics/HYPR.jl
+	url = https://github.com/Space-FALCON-Lab/HYPR.jl.git
+	shallow = true
+	fetchRecurseSubmodules = false
+
+[submodule "SpaceAGORAMuJoCo"]
+	path = packages/robotics/SpaceAGORAMuJoCo.jl
+	url = https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl.git
+	shallow = true
+	fetchRecurseSubmodules = false
+
+[submodule "SpaceAGORAEDG"]
+	path = packages/gnc/SpaceAGORAEDG.jl
+	url = https://github.com/Space-FALCON-Lab/SpaceAGORAEDG.jl.git
+	shallow = true
+	fetchRecurseSubmodules = false

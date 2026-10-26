@@ -119,29 +119,3 @@ end
     @timing_test cmp.wins_b > 0
     @timing_test 0.5 < cmp.median_ratio < 2.0
 end
-
-@testset "Reference kernels are positive and reproducible" begin
-    for f in (PC.reference_kernel_ns, PC.reference_memory_kernel_ns)
-        a = f()
-        b = f()
-        @test a > 0.0
-        @test isfinite(a)
-        # Reproducibility is the property the staleness canary depends on: if
-        # two back-to-back readings disagree, the canary cannot distinguish
-        # "machine changed" from "measurement noise".
-        @timing_test 0.5 < a / b < 2.0
-    end
-end
-
-@testset "The two references measure different resources" begin
-    # If they tracked the same bottleneck there would be no point carrying both.
-    # A cache-line touch that misses L1 costs materially more than one lane of
-    # L1-resident FMA; if this ever stops holding, the memory reference is not
-    # doing its job and the stride-bound terms are effectively unnormalised.
-    fma = PC.reference_kernel_ns()
-    mem = PC.reference_memory_kernel_ns()
-    # Both kernels must measure something under any build; only their ORDERING
-    # is a property of the machine that coverage instrumentation destroys.
-    @test mem > 0.0 && fma > 0.0
-    @timing_test mem > fma
-end

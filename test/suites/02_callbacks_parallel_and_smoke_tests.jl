@@ -332,7 +332,7 @@
     # default (16), which exceeds the CI thread count. args_control uses
     # NoAtmosphereModel, which routes through the lock-free density-callback
     # source (see the source= selection in
-    # src/simulation/callbacks/density_callbacks/config.jl), so the
+    # src/orchestration/simulation/callbacks/density_callbacks/config.jl), so the
     # lock-free-specific knob is what actually gates this decision.
     withenv(
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto",
@@ -1230,7 +1230,11 @@ end
 
     @test dynamic_effectors._multibody_use_threads(1) == false
     if Threads.nthreads() > 1
+        # Each case sets SPACEAGORA_MULTIBODY_PARALLEL, so it refreshes the
+        # cached mode inside its withenv the way a solve start would; without
+        # the refresh the decision reads the ambient mode instead.
         withenv("SPACEAGORA_MULTIBODY_PARALLEL" => "on") do
+            dynamic_effectors.refresh_multibody_parallel_mode!()
             @test dynamic_effectors._multibody_use_threads(64) == true
         end
         withenv(
@@ -1239,6 +1243,7 @@ end
             "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
             "SPACEAGORA_MULTIBODY_PARALLEL_ALLOW_WITH_OUTER" => "0"
         ) do
+            dynamic_effectors.refresh_multibody_parallel_mode!()
             @test dynamic_effectors._multibody_use_threads(64) == false
         end
         withenv(
@@ -1247,8 +1252,11 @@ end
             "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0",
             "SPACEAGORA_MULTIBODY_PARALLEL_HEAVY_ONLY" => "1"
         ) do
+            dynamic_effectors.refresh_multibody_parallel_mode!()
             @test dynamic_effectors._multibody_use_threads(64; heavy_work=false) == false
         end
+        # Leave the cache agreeing with the ambient environment for later testsets.
+        dynamic_effectors.refresh_multibody_parallel_mode!()
     end
 
     @test dynamic_effectors._threadid_capacity() >= Threads.maxthreadid()
@@ -1338,233 +1346,90 @@ end
     end
 end
 
-# Test doubles for the cost probe. Defined at file scope because the probe
-# dispatches on their concrete types.
-#
-# _ProbeWorkEffector stands in for a user-defined effector with no
-# effector_cost_terms method: the whole point of the probe is that such an
-# effector needs to implement nothing to be routable. _ProbeThrowingEffector
-# stands in for one that fails when evaluated, which must degrade the model to
-# "cannot predict" rather than take the solve down with it.
-struct _ProbeWorkEffector <: SimulationModel.AbstractForceTorqueModel
-    iterations::Int
-end
+# Contention-probe failure doubles, at file scope because the RHS dispatches on
+# their concrete types. The first throws on every evaluation, so the probe's
+# warm-up pass fails. The second throws only after t = 0.5 s, so a probe that
+# steps its epoch fails in a measured pass after the warm-up succeeded.
+struct _ContentionThrowingEffector <: SimulationModel.AbstractForceTorqueModel end
 
-function SimulationModel.calcForceTorque(
-    model::_ProbeWorkEffector, x::AbstractVector{Float64}, param::ODEParams, i::Int64
+function SimulationModel.wrench(
+    ::_ContentionThrowingEffector, ::SimulationModel.StateSample, ::SimulationModel.EnvironmentSample, ::Float64
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    acc = 0.0
-    @inbounds for j in 1:model.iterations
-        acc = muladd(x[1], 1.0000001, acc)
-    end
-    return (SVector{3, Float64}(acc * 0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0))
+    error("deliberate contention probe failure")
 end
 
-struct _ProbeThrowingEffector <: SimulationModel.AbstractForceTorqueModel end
+struct _ContentionLateEffector <: SimulationModel.AbstractForceTorqueModel end
 
-function SimulationModel.calcForceTorque(
-    ::_ProbeThrowingEffector, ::AbstractVector{Float64}, ::ODEParams, ::Int64
+function SimulationModel.wrench(
+    ::_ContentionLateEffector, ::SimulationModel.StateSample, ::SimulationModel.EnvironmentSample, t::Float64
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    error("deliberate probe failure")
-end
-
-# Survives the warm-up RHS, then throws once the probe starts hammering it.
-# This is the failure mode the per-effector try/catch exists for: an effector
-# that works in the RHS but not under isolated re-evaluation. The
-# always-throwing double above cannot exercise it, because it takes the warm-up
-# down first and nothing is ever probed.
-const _PROBE_FLAKY_CALLS = Ref(0)
-
-struct _ProbeFlakyEffector <: SimulationModel.AbstractForceTorqueModel
-    succeed_for::Int
-end
-
-function SimulationModel.calcForceTorque(
-    model::_ProbeFlakyEffector, ::AbstractVector{Float64}, ::ODEParams, ::Int64
-)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    _PROBE_FLAKY_CALLS[] += 1
-    _PROBE_FLAKY_CALLS[] > model.succeed_for && error("deliberate probe failure")
+    t > 0.5 && error("deliberate contention probe failure")
     return (SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0))
 end
 
-@testset "Effector Cost Probe" begin
-    PC = SimulationModel.ParallelCost
-    harmonics_file = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
-    harmonics = GravitationalHarmonicsModel(4, 4, harmonics_file, EARTH)
-    cheap = _ProbeWorkEffector(64)
-    dear  = _ProbeWorkEffector(16_384)
-
-    args_probe = build_config_multi(
+function _contention_probe_case(dynamic_effectors::Tuple)
+    args = build_config_multi(
         spacecraft=[
             make_spacecraft(ra_alt_m=500e3 + 10e3 * i, rp_alt_m=480e3 + 5e3 * i, ν_deg=120.0 + 5.0 * i)
-            for i in 1:4
+            for i in 1:2
         ],
         density_model=NoAtmosphereModel(),
         orientation_sim=false,
         mission_time=30.0,
         EI_km=120.0,
-        dynamic_effectors=(harmonics, cheap, dear),
+        dynamic_effectors=dynamic_effectors,
         keplerian=true,
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
-    p_probe = ODEParams(n_sats=4, args=args_probe)
-    _initialize_heat_rate_buffers!(p_probe)
-    _initialize_harmonics_workspace_buffers!(p_probe)
-    SimulationEngine._initialize_density_model_instances!(p_probe)
-    SimulationEngine._initialize_density_cache_buffers!(p_probe)
-    SimulationEngine._initialize_gram_isolated_pool_buffers!(p_probe)
-    _initialize_aero_workspace_buffers!(p_probe)
-    _initialize_nbody_workspace_buffers!(p_probe)
-    u_probe = build_initial_conditions(args_probe)
+    p = ODEParams(n_sats=2, args=args)
+    _initialize_heat_rate_buffers!(p)
+    _initialize_harmonics_workspace_buffers!(p)
+    SimulationEngine._initialize_density_model_instances!(p)
+    SimulationEngine._initialize_density_cache_buffers!(p)
+    SimulationEngine._initialize_gram_isolated_pool_buffers!(p)
+    _initialize_aero_workspace_buffers!(p)
+    _initialize_nbody_workspace_buffers!(p)
+    return args, p, build_initial_conditions(args)
+end
 
-    probes = SimulationEngine.probe_effector_costs!(p_probe, u_probe, args_probe)
+@testset "Contention probe" begin
+    # The native-lock width cap calls this at run start inside a `try` that
+    # turns any failure into "no constraint", so a solve cannot show whether the
+    # probe still works. It is called directly here.
+    PC = SimulationModel.ParallelCost
+    args_cp, p_cp, u_cp = _contention_probe_case((InverseSquaredJ2GravityModel(),))
 
-    @test length(probes) == 3
-    @test all(haskey(probes, i) for i in 1:3)
+    ci = SimulationEngine.probe_contention_inputs!(p_cp, u_cp, args_cp; k = 3, t_step = 1.0)
+    @test ci isa PC.ContentionInputs
+    @test ci.valid
+    @test ci.pass_ns > 0.0
+    @test ci.alloc_bytes_per_pass >= 0.0
+    @test ci.n_active_sats == 2
+    @test 0.0 <= PC.lock_duty_cycle(ci, 1) <= 1.0
 
-    # Harmonics declares analytic terms, so it is probed only to validate.
-    @test probes[1].declared
-    @test !probes[2].declared
-    @test !probes[3].declared
+    # A pass that cannot run reads as "no scaling evidence", never as a
+    # workload that scales perfectly: no derivative buffer, a warm-up pass that
+    # throws, and a measured pass that throws after the warm-up succeeded.
+    @test !SimulationEngine.probe_contention_inputs!(p_cp, nothing, args_cp).valid
+    args_bad, p_bad, u_bad = _contention_probe_case((InverseSquaredJ2GravityModel(), _ContentionThrowingEffector()))
+    @test !SimulationEngine.probe_contention_inputs!(p_bad, u_bad, args_bad).valid
+    args_late, p_late, u_late = _contention_probe_case((InverseSquaredJ2GravityModel(), _ContentionLateEffector()))
+    @test SimulationEngine.probe_contention_inputs!(p_late, u_late, args_late; k = 2).valid
+    @test !SimulationEngine.probe_contention_inputs!(p_late, u_late, args_late; k = 2, t_step = 1.0).valid
+end
 
-    # A user-defined effector with no trait method is measured, and the
-    # measurement is real work rather than a folded-away constant.
-    floor_ns = PC.timing_noise_floor()
-    for i in 2:3
-        @test isfinite(probes[i].ns_per_sat)
-        @test probes[i].ns_per_sat > floor_ns
-        @test isfinite(probes[i].reference_ratio)
-        @test probes[i].reference_ratio > 0.0
+@testset "Contention probe: the width cap reaches it" begin
+    # The cap logs a failed probe at debug level and runs on without a
+    # constraint, so a broken call (a renamed or removed keyword) would leave
+    # every run succeeding. A cap-on solve must not log that failure.
+    args_cap, _, _ = _contention_probe_case((InverseSquaredJ2GravityModel(),))
+    logger = Test.TestLogger(min_level = Logging.Debug)
+    withenv("SPACEAGORA_RHS_LOCK_WIDTH_CAP" => "1") do
+        Logging.with_logger(logger) do
+            run_simulation(args_cap)
+        end
     end
-
-    # The probe must order effectors by cost -- that is the only property the
-    # model actually consumes from it. 256x the inner iterations must read as
-    # materially dearer; the bound is loose because SIMD width and loop overhead
-    # make the true factor machine-specific.
-    @test probes[3].ns_per_sat > 4 * probes[2].ns_per_sat
-
-    # probe_ns_map feeds constellation_work_counts and must omit declared
-    # effectors, whose cost comes from their counts -- including them would
-    # double-count.
-    ns_map = PC.probe_ns_map(probes)
-    @test !haskey(ns_map, 1)
-    @test haskey(ns_map, 2) && haskey(ns_map, 3)
-
-    # Second call, post-compilation: the probe runs at every solve setup, so
-    # its own cost has to stay negligible against the sweep it replaces (which
-    # evaluated the whole RHS 15 times for each of up to 10 candidate plans).
-    probe_elapsed_s = @elapsed SimulationEngine.probe_effector_costs!(p_probe, u_probe, args_probe)
-    @info "Effector cost probe overhead" effectors=3 seconds=probe_elapsed_s
-    @test probe_elapsed_s < 0.5
-
-    counts = PC.constellation_work_counts(args_probe, 4; probe=ns_map)
-    @test counts.unknown_effectors == 2
-    @test counts.probe_ns ≈ ns_map[2] + ns_map[3]
-    @test counts.simd_terms > 0.0                     # harmonics contributed analytically
-    # Harmonics is pre-pass handled; the two doubles are not, so only they
-    # produce queue nodes.
-    @test counts.queue_nodes == 4 * 2
-    @test counts.in_domain
-end
-
-@testset "Effector Cost Probe: failures do not break the run" begin
-    PC = SimulationModel.ParallelCost
-    args_bad = build_config_multi(
-        spacecraft=[
-            make_spacecraft(ra_alt_m=500e3 + 10e3 * i, rp_alt_m=480e3 + 5e3 * i, ν_deg=120.0 + 5.0 * i)
-            for i in 1:2
-        ],
-        density_model=NoAtmosphereModel(),
-        orientation_sim=false,
-        mission_time=30.0,
-        EI_km=120.0,
-        dynamic_effectors=(InverseSquaredJ2GravityModel(), _ProbeThrowingEffector()),
-        keplerian=true,
-        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
-    )
-    p_bad = ODEParams(n_sats=2, args=args_bad)
-    _initialize_heat_rate_buffers!(p_bad)
-    _initialize_harmonics_workspace_buffers!(p_bad)
-    SimulationEngine._initialize_density_model_instances!(p_bad)
-    SimulationEngine._initialize_density_cache_buffers!(p_bad)
-    SimulationEngine._initialize_gram_isolated_pool_buffers!(p_bad)
-    _initialize_aero_workspace_buffers!(p_bad)
-    _initialize_nbody_workspace_buffers!(p_bad)
-    u_bad = build_initial_conditions(args_bad)
-
-    # An effector that cannot be evaluated at all takes the warm-up RHS down,
-    # so nothing is probed. That must return empty rather than throw: a solve
-    # whose RHS fails once was not going to run regardless, and the probe is
-    # not the place to surface it.
-    probes = SimulationEngine.probe_effector_costs!(p_bad, u_bad, args_bad)
-    @test isempty(probes)
-
-    # And the model must decline rather than treat the unmeasured effector as
-    # free -- the whole point of routing an unknown effector to the probe is
-    # lost if a failed probe silently becomes zero cost.
-    counts = PC.constellation_work_counts(args_bad, 2; probe=PC.probe_ns_map(probes))
-    @test counts.unknown_effectors == 1
-    @test !counts.in_domain
-end
-
-@testset "Effector Cost Probe: isolated-evaluation failure is contained" begin
-    PC = SimulationModel.ParallelCost
-    _PROBE_FLAKY_CALLS[] = 0
-    args_flaky = build_config_multi(
-        spacecraft=[
-            make_spacecraft(ra_alt_m=500e3 + 10e3 * i, rp_alt_m=480e3 + 5e3 * i, ν_deg=120.0 + 5.0 * i)
-            for i in 1:2
-        ],
-        density_model=NoAtmosphereModel(),
-        orientation_sim=false,
-        mission_time=30.0,
-        EI_km=120.0,
-        # succeed_for covers the warm-up RHS (one call per active satellite),
-        # then the probe's own repeated calls trip the failure.
-        dynamic_effectors=(InverseSquaredJ2GravityModel(), _ProbeFlakyEffector(2)),
-        keplerian=true,
-        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
-    )
-    p_flaky = ODEParams(n_sats=2, args=args_flaky)
-    _initialize_heat_rate_buffers!(p_flaky)
-    _initialize_harmonics_workspace_buffers!(p_flaky)
-    SimulationEngine._initialize_density_model_instances!(p_flaky)
-    SimulationEngine._initialize_density_cache_buffers!(p_flaky)
-    SimulationEngine._initialize_gram_isolated_pool_buffers!(p_flaky)
-    _initialize_aero_workspace_buffers!(p_flaky)
-    _initialize_nbody_workspace_buffers!(p_flaky)
-    u_flaky = build_initial_conditions(args_flaky)
-
-    probes = SimulationEngine.probe_effector_costs!(p_flaky, u_flaky, args_flaky)
-    @test haskey(probes, 2)
-    @test isnan(probes[2].ns_per_sat)
-    @test isnan(probes[2].reference_ratio)
-
-    # NaN must not leak into the counts as a number.
-    counts = PC.constellation_work_counts(args_flaky, 2; probe=PC.probe_ns_map(probes))
-    @test !counts.in_domain
-    @test counts.probe_ns == 0.0
-    @test !isnan(counts.probe_ns)
-end
-
-@testset "Declaration mismatch is warned, not enforced" begin
-    PC = SimulationModel.ParallelCost
-    # Agreement inside the factor, disagreement outside it.
-    @test PC.validate_declaration(100.0, 150.0)
-    @test PC.validate_declaration(150.0, 100.0)
-    @test !PC.validate_declaration(100.0, 10.0)
-    @test !PC.validate_declaration(10.0, 100.0)
-    # An unmeasurable probe cannot invalidate a declaration.
-    @test PC.validate_declaration(NaN, 100.0)
-
-    probes = Dict(
-        1 => PC.EffectorProbe(100.0, 5.0, true),    # declared, agrees
-        2 => PC.EffectorProbe(100.0, 5.0, true),    # declared, disagrees 10x
-        3 => PC.EffectorProbe(100.0, 5.0, false),   # undeclared, never checked
-    )
-    predicted = Dict(1 => 120.0, 2 => 10.0, 3 => 1.0)
-    mismatches = SimulationEngine.warn_on_declaration_mismatch(probes, predicted)
-    @test mismatches == 1
+    @test !any(r -> occursin("contention probe failed", string(r.message)), logger.logs)
 end
 
 @testset "Successive-halving sweep" begin
@@ -1576,7 +1441,7 @@ end
     # to take a solve down.
     Threads.nthreads() > 1 || return
 
-    harmonics_file = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+    harmonics_file = joinpath(REPO_ROOT, "data", "planets", "gravity", "EarthGGM05C.csv")
     args_sweep = build_config_multi(
         spacecraft=[
             make_spacecraft(ra_alt_m=500e3 + 10e3 * i, rp_alt_m=480e3 + 5e3 * i,
@@ -1639,7 +1504,7 @@ end
     # optimisation silently altered trajectories.
     Threads.nthreads() > 1 || return
 
-    harmonics_file = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+    harmonics_file = joinpath(REPO_ROOT, "data", "planets", "gravity", "EarthGGM05C.csv")
     args_red = build_config_multi(
         spacecraft=[
             make_spacecraft(ra_alt_m=500e3 + 10e3 * (i % 7), rp_alt_m=480e3 + 5e3 * (i % 5),
@@ -1898,7 +1763,7 @@ end
     end
 
     # ── Calibration guard: SPACEAGORA_RHS_CALIBRATE=off skips entirely ───────
-    harmonics_file = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+    harmonics_file = joinpath(REPO_ROOT, "data", "planets", "gravity", "EarthGGM05C.csv")
     harmonics_model = GravitationalHarmonicsModel(4, 4, harmonics_file, EARTH)
 
     args_calib = build_config_multi(
@@ -2211,6 +2076,85 @@ end
         results=false, verbose=false, generate_plots=false, normalize=false
     )
     @test SimulationCampaigns._ensemble_member_settings(settings_plain, "sat_3_id_33") === settings_plain
+end
+
+# A user effector bound to a spacecraft by the engine's cross-satellite index
+# field. It has no wrench: the ensemble must refuse it before any member runs.
+struct _EnsembleTargetBoundEffector <: SimulationModel.AbstractForceTorqueModel
+    target_index::Int
+end
+
+@testset "Constellation Ensemble Index-Bound Effectors" begin
+    # Each member runs its spacecraft alone at run position 1 with the whole
+    # dynamic effector tuple, so an effector bound to a run position cannot be
+    # split. Before the refusal, an effector bound to spacecraft k > 1 never
+    # acted in member k, one bound to spacecraft 1 acted on every member, and a
+    # plume failed every member at its own setup.
+    planet_ng = SimulationModel.make_no_gram_planet(:earth)
+    trio() = [
+        _no_gram_ring_sat(planet_ng, 11, 0.0),
+        _no_gram_ring_sat(planet_ng, 22, 40.0),
+        _no_gram_ring_sat(planet_ng, 33, 80.0),
+    ]
+    ensemble_cfg(spacecraft, extra...) = build_config_multi(
+        spacecraft=spacecraft,
+        density_model=SimulationModel.NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=60.0,
+        EI_km=120.0,
+        dynamic_effectors=(SimulationModel.InverseSquaredJ2GravityModel(), extra...),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
+        ephemerides_model=SimulationModel.SimpleEphemeridesModel(),
+        planet=planet_ng
+    )
+    refusal(cfg; kwargs...) = try
+        SimulationCampaigns.run_constellation_ensemble(cfg; kwargs...)
+        nothing
+    catch err
+        err
+    end
+    message(cfg; kwargs...) = (err = refusal(cfg; kwargs...); err isa ArgumentError ? sprint(showerror, err) : "")
+    knots = collect(0.0:10.0:60.0)
+    wheel(index) = SimulationModel.ReactionWheelMomentumModel(knots, fill(100.0, length(knots), 1),
+        reshape([0.0, 0.0, 1.0], 3, 1), 0.01; spacecraft_index=index, num_spacecraft=max(index, 3))
+    plume(n) = SimulationModel.PlumeSurfaceInteractionModel((; actuators=(; thrust_n=fill(1000.0, n))))
+    arm(index) = SimulationModel.RobotArmReactionEffector(spacecraft_index=index)
+
+    # Bound to spacecraft 2, it would never act in member 2.
+    msg = message(ensemble_cfg(trio(), arm(2)))
+    @test occursin("dynamic_effectors[2] (RobotArmReactionEffector)", msg)
+    @test occursin("spacecraft_index=2 binds it to member 2 (spacecraft id 22)", msg)
+    @test occursin("never act", msg)
+    # allow_gnc_effectors opts GNC effectors in; it does not cover these.
+    @test occursin("member 2 (spacecraft id 22)", message(ensemble_cfg(trio(), arm(2)); allow_gnc_effectors=true))
+
+    # Bound to spacecraft 1, it would act on every member.
+    msg = message(ensemble_cfg(trio(), wheel(1)))
+    @test occursin("dynamic_effectors[2] (ReactionWheelMomentumModel)", msg)
+    @test occursin("would also act on member 2 (spacecraft id 22)", msg)
+    @test occursin("spacecraft_index=5 names no member of this 3-member ensemble", message(ensemble_cfg(trio(), wheel(5))))
+    # The engine's cross-satellite index fields bind an effector too.
+    @test occursin("target_index=3 binds it to member 3 (spacecraft id 33)",
+        message(ensemble_cfg(trio(), _EnsembleTargetBoundEffector(3))))
+
+    # A plume's per-spacecraft thrust and state cannot be split, and one
+    # spacecraft's plume would act on every member.
+    msg = message(ensemble_cfg(trio(), plume(3)))
+    @test occursin("dynamic_effectors[2] (PlumeSurfaceInteractionModel)", msg)
+    @test occursin("thrust and state for 3 spacecraft", msg)
+    @test occursin("member 1 (spacecraft id 11)", msg)
+    @test occursin("would also act on member 2 (spacecraft id 22)", message(ensemble_cfg(trio(), plume(1))))
+
+    # One member bound to position 1 keeps its binding.
+    solo = [_no_gram_ring_sat(planet_ng, 11, 0.0)]
+    for effector in (arm(1), wheel(1), plume(1), _EnsembleTargetBoundEffector(1))
+        @test SimulationCampaigns._validate_ensemble_uncoupled(ensemble_cfg(solo, effector), false) === nothing
+    end
+    @test occursin("spacecraft_index=2 names no member of this 1-member ensemble", message(ensemble_cfg(solo, arm(2))))
+    res = SimulationCampaigns.run_constellation_ensemble(ensemble_cfg(solo, arm(1)))
+    @test isempty(res.failed)
+    @test SimulationCampaigns._validate_ensemble_uncoupled(ensemble_cfg(trio()), false) === nothing
 end
 
 @testset "GRAM Lock Scope" begin

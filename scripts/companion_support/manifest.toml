@@ -1,0 +1,21 @@
+format = 1
+
+[[files]]
+source = "installation.jl"
+destination = "scripts/support/installation.jl"
+packages = ["SpaceAGORAEDG", "SpaceAGORAMuJoCo"]
+
+[[files]]
+source = "installation_contract_tests.jl"
+destination = "test/support/installation_contract.jl"
+packages = ["SpaceAGORAEDG", "SpaceAGORAMuJoCo"]
+
+[[files]]
+source = "core_access.jl"
+destination = "test/core_access.jl"
+packages = ["HYPR", "SpaceAGORAEDG", "SpaceAGORAMuJoCo"]
+
+[[files]]
+source = "shared-support.yml"
+destination = ".github/workflows/shared-support.yml"
+packages = ["HYPR", "SpaceAGORAEDG", "SpaceAGORAMuJoCo"]

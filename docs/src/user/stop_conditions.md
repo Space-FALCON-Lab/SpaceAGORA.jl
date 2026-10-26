@@ -37,7 +37,10 @@ does what you need:
 - `mission_type = SM.MissionOrbits` stops after `number_of_orbits` orbits
   (counted at apoapsis passages) and prints `termination_cause=orbit_count`;
 - a spacecraft that descends to 50 km above a sphere of the planet's
-  equatorial radius is deactivated (it stops being propagated); when every
+  equatorial radius is deactivated: it stops being propagated, and its
+  guidance, navigation and control models stop ticking for it, unless a model
+  declares `skip_inactive(model) = false` (see
+  [Writing a GNC Algorithm](gnc_algorithm.md#Declarations)); when every
   spacecraft in the run is inactive the run ends and prints
   `termination_cause=impact`.
 
@@ -233,7 +236,8 @@ spherical altitude (here by 13 km at 51 degrees latitude).
   `mission_time` already does.
 - **Do something other than stopping.** `stop!` can do anything with the
   integrator: record the time in a global, print a state, or change the state
-  (then call `u_modified!(integrator, true)` so the solver knows). The engine's
+  (then call `derivative_discontinuity!(integrator, true)`, imported from
+  `OrdinaryDiffEq` like `terminate!`, so the solver knows). The engine's
   own scheduled state anchors, described on
   [Verification Study](verification_study.md), are built this way.
 - **Several spacecraft.** All spacecraft in a run share one integration. A

@@ -112,11 +112,11 @@ end
 
     @testset "station asset paths" begin
         demo_path = ASSETS.station_geometry_path()
-        @test demo_path == joinpath(REPO_ROOT, "data", "rpo", "station_geometry", "demo", "station_pointcloud.csv")
+        @test demo_path == joinpath(REPO_ROOT, "data", "scene", "models", "station_pointcloud_demo.csv")
         @test ASSETS.station_geometry_path(:demo) == demo_path
 
         gw_path = ASSETS.station_cad_path()
-        @test gw_path == joinpath(REPO_ROOT, "data", "rpo", "station_geometry", "gateway", "Gateway_Core.stl")
+        @test gw_path == joinpath(REPO_ROOT, "data", "scene", "models", "gateway_core.stl")
         @test ASSETS.station_cad_path(:gateway) == gw_path
         @test ASSETS.station_cad_path(:gateway_core) == gw_path
         # CAD-backed kinds route the geometry-path helper to the CAD path.

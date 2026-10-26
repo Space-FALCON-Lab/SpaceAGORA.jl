@@ -1,6 +1,13 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const SRC_ROOT = joinpath(REPO_ROOT, "src")
-const ROTATIONAL_ROOT = joinpath(SRC_ROOT, "dynamics", "rotational")
+const ROTATIONAL_ROOT = joinpath(SRC_ROOT, "models", "dynamics", "rotational")
+isdir(ROTATIONAL_ROOT) || error("Missing rotational ownership root")
+
+# A file belongs to the owner only when the owner directory is a proper path
+# prefix. A raw string prefix would also exempt a sibling such as
+# `rotational_outside/`.
+_owned_by(path::AbstractString, root::AbstractString) =
+    startswith(path, string(rstrip(root, ('/', '\\')), Base.Filesystem.path_separator))
 
 const FORBIDDEN_PATTERNS = (
     r"0\.5\s*\*\s*quat_mult\(",
@@ -14,7 +21,7 @@ for (root, _, files) in walkdir(SRC_ROOT)
     for file in files
         endswith(file, ".jl") || continue
         path = joinpath(root, file)
-        startswith(path, ROTATIONAL_ROOT) && continue
+        _owned_by(path, ROTATIONAL_ROOT) && continue
 
         rel = relpath(path, REPO_ROOT)
         src = read(path, String)

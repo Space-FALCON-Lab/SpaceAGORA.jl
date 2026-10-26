@@ -34,45 +34,57 @@
     )
     p = ODEParams(n_sats=1, args=args)
     u = build_initial_conditions(args).sc[1]
+    # The state sample the control output hooks receive for spacecraft `i`.
+    x_of(u_, i) = StateSample(SVector{3, Float64}(u_.pos), SVector{3, Float64}(u_.vel), Float64(u_.mass);
+        spacecraft_index=i)
 
     _burn_plan(p_, sat_idx) = p_.shared_buffers.maneuver_burn_plans[sat_idx]
     _clear_burn_plan!(p_, sat_idx) = (p_.shared_buffers.maneuver_burn_plans[sat_idx] = PropulsiveBurnPlan())
     _expected_burn_duration(mass_kg, thrust_n, isp_s, delta_v_mps) =
         mass_kg * isp_s * 9.80665 * (1.0 - exp(-delta_v_mps / (isp_s * 9.80665))) / thrust_n
 
-    @testset "calcControlForceTorque" begin
+    @testset "control_wrench" begin
         model = make_base_thruster_model(thrust=2.0, direction=0.0, start_burn_time=50.0, stop_burn_time=150.0)
 
-        force_pre, torque_pre = calcControlForceTorque(model, u, p, 1, 49.9)
+        force_pre, torque_pre = control_wrench(model, x_of(u, 1), p, 49.9)
         @test force_pre == SVector{3, Float64}(0.0, 0.0, 0.0)
         @test torque_pre == SVector{3, Float64}(0.0, 0.0, 0.0)
 
         expected_dir = normalize(SVector{3, Float64}(u.vel))
-        force_start, torque_start = calcControlForceTorque(model, u, p, 1, 50.0)
+        # At the window's ends the thrust follows the burn's state, which the run
+        # switches between integration steps (`refresh_burn!` at each end).
+        @test control_wrench(model, x_of(u, 1), p, 50.0)[1] == SVector{3, Float64}(0.0, 0.0, 0.0)   # not lit yet
+        SimulationModel.ControlHooks.refresh_burn!(model, p, 1, 50.0)
+        force_start, torque_start = control_wrench(model, x_of(u, 1), p, 50.0)
         @test isapprox(force_start, 2.0 .* expected_dir; atol=1e-12, rtol=0.0)
         @test torque_start == SVector{3, Float64}(0.0, 0.0, 0.0)
 
-        force_stop, _ = calcControlForceTorque(model, u, p, 1, 150.0)
-        @test isapprox(force_stop, 2.0 .* expected_dir; atol=1e-12, rtol=0.0)
+        force_mid, _ = control_wrench(model, x_of(u, 1), p, 100.0)
+        @test isapprox(force_mid, 2.0 .* expected_dir; atol=1e-12, rtol=0.0)
 
-        force_post, _ = calcControlForceTorque(model, u, p, 1, 150.1)
+        force_stop, _ = control_wrench(model, x_of(u, 1), p, 150.0)        # the step ending at the stop burns
+        @test isapprox(force_stop, 2.0 .* expected_dir; atol=1e-12, rtol=0.0)
+        SimulationModel.ControlHooks.refresh_burn!(model, p, 1, 150.0)
+        @test control_wrench(model, x_of(u, 1), p, 150.0)[1] == SVector{3, Float64}(0.0, 0.0, 0.0)  # and the next one coasts
+
+        force_post, _ = control_wrench(model, x_of(u, 1), p, 150.1)
         @test force_post == SVector{3, Float64}(0.0, 0.0, 0.0)
 
         model.direction[1] = π
-        force_retro, _ = calcControlForceTorque(model, u, p, 1, 100.0)
+        force_retro, _ = control_wrench(model, x_of(u, 1), p, 100.0)
         @test dot(force_retro, expected_dir) < 0.0
 
         u_zero = ComponentVector(pos=[0.0, 0.0, 0.0], vel=[0.0, 0.0, 0.0], mass=1.0, heat_loads=[0.0])
-        force_zero, torque_zero = calcControlForceTorque(model, u_zero, p, 1, 100.0)
+        force_zero, torque_zero = control_wrench(model, x_of(u_zero, 1), p, 100.0)
         @test force_zero == SVector{3, Float64}(0.0, 0.0, 0.0)
         @test torque_zero == SVector{3, Float64}(0.0, 0.0, 0.0)
 
-        force_oob, torque_oob = calcControlForceTorque(model, u, p, 2, 100.0)
+        force_oob, torque_oob = control_wrench(model, x_of(u, 2), p, 100.0)
         @test force_oob == SVector{3, Float64}(0.0, 0.0, 0.0)
         @test torque_oob == SVector{3, Float64}(0.0, 0.0, 0.0)
     end
 
-    @testset "calcControlMassFlowRate" begin
+    @testset "control_propellant_rate" begin
         model = make_base_thruster_model(
             thrust=2.0,
             direction=0.0,
@@ -81,14 +93,14 @@
             Isp=300.0
         )
 
-        mdot_pre = calcControlMassFlowRate(model, u, p, 1, 49.9)
+        mdot_pre = control_propellant_rate(model, x_of(u, 1), p, 49.9)
         @test mdot_pre == 0.0
 
-        mdot_on = calcControlMassFlowRate(model, u, p, 1, 100.0)
-        expected_mdot = -2.0 / (300.0 * 9.80665)
+        mdot_on = control_propellant_rate(model, x_of(u, 1), p, 100.0)
+        expected_mdot = 2.0 / (300.0 * 9.80665)
         @test isapprox(mdot_on, expected_mdot; atol=1e-14, rtol=0.0)
 
-        mdot_post = calcControlMassFlowRate(model, u, p, 1, 150.1)
+        mdot_post = control_propellant_rate(model, x_of(u, 1), p, 150.1)
         @test mdot_post == 0.0
 
         model_bad_isp = make_base_thruster_model(
@@ -98,24 +110,25 @@
             stop_burn_time=150.0,
             Isp=0.0
         )
-        @test calcControlMassFlowRate(model_bad_isp, u, p, 1, 100.0) == 0.0
+        @test control_propellant_rate(model_bad_isp, x_of(u, 1), p, 100.0) == 0.0
 
         u_zero = ComponentVector(pos=[0.0, 0.0, 0.0], vel=[0.0, 0.0, 0.0], mass=1.0, heat_loads=[0.0])
-        @test calcControlMassFlowRate(model, u_zero, p, 1, 100.0) == 0.0
-        @test calcControlMassFlowRate(model, u, p, 2, 100.0) == 0.0
+        @test control_propellant_rate(model, x_of(u_zero, 1), p, 100.0) == 0.0
+        @test control_propellant_rate(model, x_of(u, 2), p, 100.0) == 0.0
 
         model_subtyped = TimedTangentialThrusterModel(1.0, +1.0, 10.0, 20.0)
-        @test calcControlMassFlowRate(model_subtyped, u, p, 1, 15.0) == 0.0
+        # Without a rate method of its own an effector gets the default: none used.
+        @test control_propellant_rate(model_subtyped, x_of(u, 1), p, 15.0) === 0.0
 
         struct UntypedControlEffector end
-        @test calcControlMassFlowRate(UntypedControlEffector(), u, p, 1, 100.0) == 0.0
+        @test control_propellant_rate(UntypedControlEffector(), x_of(u, 1), p, 100.0) === 0.0
     end
 
-    @testset "calcControlEffect!" begin
+    @testset "update_control!" begin
         model = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
         state = build_initial_conditions(args)
         _clear_burn_plan!(p, 1)
-        calcControlEffect!(model, state, p, 100.0, 1)
+        update_control!(model, state, p, 100.0, 1)
         plan = _burn_plan(p, 1)
         @test plan.valid
         @test isfinite(plan.start_burn_s)
@@ -137,7 +150,7 @@
 
         model_signed_prograde = make_base_thruster_model(thrust=2.0, direction=π, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
         _clear_burn_plan!(p, 1)
-        calcControlEffect!(model_signed_prograde, state, p, 100.0, 1)
+        update_control!(model_signed_prograde, state, p, 100.0, 1)
         @test model_signed_prograde.Δv[1] == 20.0
         @test isapprox(model_signed_prograde.direction[1], 0.0; atol=1e-12, rtol=0.0)
         signed_prograde_plan = _burn_plan(p, 1)
@@ -149,7 +162,7 @@
 
         model_signed_retrograde = make_base_thruster_model(thrust=2.0, direction=0.0, Δv=-20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
         _clear_burn_plan!(p, 1)
-        calcControlEffect!(model_signed_retrograde, state, p, 100.0, 1)
+        update_control!(model_signed_retrograde, state, p, 100.0, 1)
         @test model_signed_retrograde.Δv[1] == 20.0
         @test isapprox(model_signed_retrograde.direction[1], π; atol=1e-12, rtol=0.0)
         signed_retrograde_plan = _burn_plan(p, 1)
@@ -159,24 +172,30 @@
         @test model_signed_retrograde.start_burn_time[1] == signed_retrograde_plan.start_burn_s
         @test model_signed_retrograde.stop_burn_time[1] == signed_retrograde_plan.stop_burn_s
 
-        # Pre-ignition tracking: a future scheduled window should be retimed.
+        # An explicitly accepted future window stays fixed until completion.
         model_track = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=10_000.0, stop_burn_time=11_000.0)
         _clear_burn_plan!(p, 1)
-        calcControlEffect!(model_track, state, p, 100.0, 1)
+        update_control!(model_track, state, p, 100.0, 1)
         plan_track = _burn_plan(p, 1)
-        @test plan_track.valid
-        @test plan_track.start_burn_s != 10_000.0
-        @test plan_track.stop_burn_s != 11_000.0
-        @test model_track.start_burn_time[1] == plan_track.start_burn_s
-        @test model_track.stop_burn_time[1] == plan_track.stop_burn_s
+        @test !plan_track.valid # The explicit model window needs no generated plan.
+        @test model_track.start_burn_time[1] == 10_000.0
+        @test model_track.stop_burn_time[1] == 11_000.0
 
-        # Post-ignition lock: once burn start time has been reached, keep fixed.
-        s_sched = plan.start_burn_s
-        e_sched = plan.stop_burn_s
-        calcControlEffect!(model, state, p, s_sched + 1e-6, 1)
-        plan_locked = _burn_plan(p, 1)
-        @test plan_locked.start_burn_s == s_sched
-        @test plan_locked.stop_burn_s == e_sched
+        # An independently accepted plan also stays fixed before and during ignition.
+        p_lock = ODEParams(n_sats=1, args=args)
+        model_lock = make_base_thruster_model(thrust=2.0, Δv=2.0, start_burn_time=-1.0, stop_burn_time=-1.0)
+        update_control!(model_lock, state, p_lock, 100.0, 1)
+        accepted_plan = _burn_plan(p_lock, 1)
+        @test accepted_plan.valid
+        s_sched, e_sched = accepted_plan.start_burn_s, accepted_plan.stop_burn_s
+        @test 100.0 < s_sched < e_sched
+        for tick in (100.5, s_sched + 1e-6)
+            update_control!(model_lock, state, p_lock, tick, 1)
+            plan_locked = _burn_plan(p_lock, 1)
+            @test plan_locked == accepted_plan
+            @test model_lock.start_burn_time[1] == s_sched
+            @test model_lock.stop_burn_time[1] == e_sched
+        end
 
         sc_ineligible = make_spacecraft(ra_alt_m=600e3, rp_alt_m=400e3, ν_deg=210.0)
         args_ineligible = build_config(
@@ -192,12 +211,12 @@
         state_ineligible = build_initial_conditions(args_ineligible)
         model_ineligible = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=11.0, stop_burn_time=22.0)
         _clear_burn_plan!(p_ineligible, 1)
-        calcControlEffect!(model_ineligible, state_ineligible, p_ineligible, 100.0, 1)
+        update_control!(model_ineligible, state_ineligible, p_ineligible, 100.0, 1)
         @test !_burn_plan(p_ineligible, 1).valid
 
         model_zero_thrust = make_base_thruster_model(thrust=0.0, Δv=20.0, start_burn_time=33.0, stop_burn_time=44.0)
         _clear_burn_plan!(p, 1)
-        calcControlEffect!(model_zero_thrust, state, p, 100.0, 1)
+        update_control!(model_zero_thrust, state, p, 100.0, 1)
         @test !_burn_plan(p, 1).valid
 
         sc_edge_block = make_spacecraft(ra_alt_m=600e3, rp_alt_m=400e3, ν_deg=180.0)
@@ -216,7 +235,7 @@
         state_edge_block = build_initial_conditions(args_edge_block)
         model_edge_block = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
         _clear_burn_plan!(p_edge_block, 1)
-        calcControlEffect!(model_edge_block, state_edge_block, p_edge_block, 100.0, 1)
+        update_control!(model_edge_block, state_edge_block, p_edge_block, 100.0, 1)
         @test !_burn_plan(p_edge_block, 1).valid
 
         sc_edge_allow = make_spacecraft(ra_alt_m=600e3, rp_alt_m=400e3, ν_deg=170.0)
@@ -235,7 +254,7 @@
         state_edge_allow = build_initial_conditions(args_edge_allow)
         model_edge_allow = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
         _clear_burn_plan!(p_edge_allow, 1)
-        calcControlEffect!(model_edge_allow, state_edge_allow, p_edge_allow, 100.0, 1)
+        update_control!(model_edge_allow, state_edge_allow, p_edge_allow, 100.0, 1)
         @test _burn_plan(p_edge_allow, 1).valid
 
         sc_circular = make_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, ν_deg=330.0)
@@ -252,7 +271,7 @@
         state_circular = build_initial_conditions(args_circular)
         model_circular = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
         _clear_burn_plan!(p_circular, 1)
-        calcControlEffect!(model_circular, state_circular, p_circular, 100.0, 1)
+        update_control!(model_circular, state_circular, p_circular, 100.0, 1)
         @test _burn_plan(p_circular, 1).valid
 
         state_hyperbolic = build_initial_conditions(args)
@@ -262,7 +281,7 @@
         state_hyperbolic.sc[1].vel .= (1.2 * escape_speed) .* vhat
         model_hyperbolic = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=91.0, stop_burn_time=92.0)
         _clear_burn_plan!(p, 1)
-        @test_nowarn calcControlEffect!(model_hyperbolic, state_hyperbolic, p, 100.0, 1)
+        @test_nowarn update_control!(model_hyperbolic, state_hyperbolic, p, 100.0, 1)
         @test !_burn_plan(p, 1).valid
         @test model_hyperbolic.start_burn_time[1] == -1.0
         @test model_hyperbolic.stop_burn_time[1] == -1.0
@@ -274,7 +293,7 @@
         state_near_parabolic.sc[1].vel .= v_near_parabolic .* vhat_parabolic
         model_near_parabolic = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=95.0, stop_burn_time=96.0)
         _clear_burn_plan!(p, 1)
-        @test_nowarn calcControlEffect!(model_near_parabolic, state_near_parabolic, p, 100.0, 1)
+        @test_nowarn update_control!(model_near_parabolic, state_near_parabolic, p, 100.0, 1)
         @test _burn_plan(p, 1).valid
         @test isfinite(_burn_plan(p, 1).start_burn_s)
         @test isfinite(_burn_plan(p, 1).stop_burn_s)
@@ -286,7 +305,7 @@
         state_singular.sc[1].vel .= 0.0
         model_singular = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=93.0, stop_burn_time=94.0)
         _clear_burn_plan!(p, 1)
-        @test_nowarn calcControlEffect!(model_singular, state_singular, p, 100.0, 1)
+        @test_nowarn update_control!(model_singular, state_singular, p, 100.0, 1)
         @test !_burn_plan(p, 1).valid
         @test model_singular.start_burn_time[1] == -1.0
         @test model_singular.stop_burn_time[1] == -1.0
@@ -296,7 +315,7 @@
         state_tiny_a.sc[1].vel .= SVector{3, Float64}(0.0, 0.1, 0.0)
         model_tiny_a = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=97.0, stop_burn_time=98.0)
         _clear_burn_plan!(p, 1)
-        @test_nowarn calcControlEffect!(model_tiny_a, state_tiny_a, p, 100.0, 1)
+        @test_nowarn update_control!(model_tiny_a, state_tiny_a, p, 100.0, 1)
         @test !_burn_plan(p, 1).valid
         @test model_tiny_a.start_burn_time[1] == -1.0
         @test model_tiny_a.stop_burn_time[1] == -1.0
@@ -316,7 +335,7 @@
         state_budget = build_initial_conditions(args_budget)
         model_budget = make_base_thruster_model(thrust=2.0, Δv=400.0, start_burn_time=-1.0, stop_burn_time=-1.0)
         _clear_burn_plan!(p_budget, 1)
-        calcControlEffect!(model_budget, state_budget, p_budget, 100.0, 1)
+        update_control!(model_budget, state_budget, p_budget, 100.0, 1)
         @test !_burn_plan(p_budget, 1).valid
 
         sc_multi_1 = make_spacecraft(ra_alt_m=650e3, rp_alt_m=450e3, ν_deg=120.0)
@@ -342,7 +361,7 @@
         )
         _clear_burn_plan!(p_multi, 1)
         _clear_burn_plan!(p_multi, 2)
-        calcControlEffect!(model_multi, state_multi, p_multi, 100.0, 1)
+        update_control!(model_multi, state_multi, p_multi, 100.0, 1)
         @test _burn_plan(p_multi, 1).valid
         @test !_burn_plan(p_multi, 2).valid
         @test model_multi.start_burn_time[1] == _burn_plan(p_multi, 1).start_burn_s
@@ -352,7 +371,7 @@
 
         s1 = _burn_plan(p_multi, 1).start_burn_s
         e1 = _burn_plan(p_multi, 1).stop_burn_s
-        calcControlEffect!(model_multi, state_multi, p_multi, 100.0, 2)
+        update_control!(model_multi, state_multi, p_multi, 100.0, 2)
         @test _burn_plan(p_multi, 1).valid
         @test _burn_plan(p_multi, 1).start_burn_s == s1
         @test _burn_plan(p_multi, 1).stop_burn_s == e1
@@ -363,7 +382,7 @@
         @test model_multi.stop_burn_time[2] == _burn_plan(p_multi, 2).stop_burn_s
 
         model_oob = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
-        @test_nowarn calcControlEffect!(model_oob, state, p, 100.0, 2)
+        @test_nowarn update_control!(model_oob, state, p, 100.0, 2)
         @test model_oob.start_burn_time[1] == -1.0
         @test model_oob.stop_burn_time[1] == -1.0
 
@@ -379,17 +398,16 @@
             planet=throw_planet
         )
         p_throw = ODEParams(n_sats=1, args=args_throw)
-        model_throw = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=123.0, stop_burn_time=124.0)
+        model_throw = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
         withenv("SPACEAGORA_DEBUG_CONTROL" => "1", "SPACEAGORA_STRICT_CONTROL_EXCEPTIONS" => "0") do
-            @test_logs (:warn, r"orbital-element conversion failed") calcControlEffect!(model_throw, state, p_throw, 100.0, 1)
+            @test_logs (:warn, r"orbital-element conversion failed") update_control!(model_throw, state, p_throw, 100.0, 1)
         end
-        @test model_throw.start_burn_time[1] == 123.0
-        @test model_throw.stop_burn_time[1] == 124.0
+        @test model_throw.start_burn_time[1] == -1.0
+        @test model_throw.stop_burn_time[1] == -1.0
         withenv("SPACEAGORA_STRICT_CONTROL_EXCEPTIONS" => "1") do
-            @test_throws ErrorException calcControlEffect!(model_throw, state, p_throw, 100.0, 1)
+            @test_throws ErrorException update_control!(model_throw, state, p_throw, 100.0, 1)
         end
 
-        trace_key_helper = SimulationModel.ControlHooks._maneuver_trace_key
         trace_bool_helper = SimulationModel.ControlHooks._trace_bool_enabled
         trace_path_helper = SimulationModel.ControlHooks._maneuver_trace_path
         safe_orbit_counter_helper = SimulationModel.ControlHooks._safe_orbit_counter
@@ -398,7 +416,6 @@
         @test trace_bool_helper("yes")
         @test trace_bool_helper("ON")
         @test !trace_bool_helper("0")
-        @test trace_key_helper(model_throw, 1) isa Tuple{UInt64, Int64}
 
         p_no_orbit_counter = (shared_buffers=(debug_control=Ref(false),),)
         @test safe_orbit_counter_helper(p_no_orbit_counter, 1) == -1
@@ -411,30 +428,55 @@
             ) do
                 @test trace_path_helper() == trace_csv
 
-                model_trace = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
+                # A short burn, so the window opens after the scheduling call.
+                model_trace = make_base_thruster_model(thrust=2.0, Δv=2.0, start_burn_time=-1.0, stop_burn_time=-1.0)
                 state_trace = build_initial_conditions(args)
                 p_trace = ODEParams(n_sats=1, args=args)
 
+                # The engine's sequence: each scheduling call is followed by
+                # `refresh_burn!`, which also runs at the window's ends.
+                refresh_trace!(t) = SimulationModel.ControlHooks.refresh_burn!(model_trace, p_trace, 1, t)
+                schedule_trace!(t) = (update_control!(model_trace, state_trace, p_trace, t, 1); refresh_trace!(t))
+                level_trace() = only(SimulationModel.ControlHooks.control_thruster_levels(model_trace, 1))
+
                 _clear_burn_plan!(p_trace, 1)
-                calcControlEffect!(model_trace, state_trace, p_trace, 100.0, 1)
+                schedule_trace!(100.0)
                 s_trace = _burn_plan(p_trace, 1).start_burn_s
                 e_trace = _burn_plan(p_trace, 1).stop_burn_s
-                @test s_trace < e_trace
+                @test 100.0 < s_trace < e_trace
+                @test level_trace() == 0.0
+                schedule_trace!(100.0)                 # same window: no second schedule event
 
-                calcControlEffect!(model_trace, state_trace, p_trace, s_trace + 1e-6, 1)
-                calcControlEffect!(model_trace, state_trace, p_trace, e_trace + 1.0, 1)
+                refresh_trace!(s_trace)                # the burn switches on at the start
+                @test level_trace() == 1.0
+                schedule_trace!(s_trace + 1e-6)        # the schedule holds during the burn
+                @test level_trace() == 1.0
+                refresh_trace!(e_trace)                # and off at the stop
+                @test level_trace() == 0.0
+                schedule_trace!(e_trace + 1.0)
                 trace_plan_after = _burn_plan(p_trace, 1)
-                @test !trace_plan_after.valid ||
-                      trace_plan_after.start_burn_s != s_trace ||
-                      trace_plan_after.stop_burn_s != e_trace
+                @test !trace_plan_after.valid
+                @test model_trace.start_burn_time[1] == -1.0
+                @test model_trace.stop_burn_time[1] == -1.0
 
                 @test isfile(trace_csv)
                 trace_text = read(trace_csv, String)
                 @test occursin("event,t_s,spacecraft_idx", trace_text)
-                @test occursin("schedule_set", trace_text)
-                @test occursin("burn_start", trace_text)
-                @test occursin("burn_end", trace_text)
-                @test occursin("schedule_clear", trace_text)
+                trace_rows = [split(line, ",") for line in split(chomp(trace_text), "\n")[2:end]]
+                # A consumed request clears without planning the same burn again.
+                @test [row[1] for row in trace_rows] == ["schedule_set", "burn_start", "burn_end", "schedule_clear"]
+                # The burn's events fall on the window's ends, with the window they ran.
+                @test parse(Float64, trace_rows[2][2]) == s_trace && parse(Float64, trace_rows[3][2]) == e_trace
+                @test all(parse(Float64, row[8]) == s_trace && parse(Float64, row[9]) == e_trace for row in trace_rows[1:4])
+
+                # A changed request is accepted on the next scheduling call.
+                model_trace.Δv[1] = 1.0
+                schedule_trace!(e_trace + 2.0)
+                @test _burn_plan(p_trace, 1).valid
+                @test _burn_plan(p_trace, 1).delta_v_mps == 1.0
+                @test _burn_plan(p_trace, 1).start_burn_s > e_trace + 2.0
+                changed_rows = [split(line, ",") for line in split(chomp(read(trace_csv, String)), "\n")[2:end]]
+                @test [row[1] for row in changed_rows] == ["schedule_set", "burn_start", "burn_end", "schedule_clear", "schedule_set"]
 
                 trace_event_helper("manual_event", model_trace, p_no_orbit_counter, 1, 0.0)
                 trace_text_after_manual = read(trace_csv, String)
@@ -677,72 +719,6 @@
         end
     end
 
-    @testset "update_thrusters!" begin
-        mktempdir() do tmp
-            cd(tmp) do
-                link = Link(root=true, attitude_control_rate=0.1)
-                update_thrusters!(link, SVector{3, Float64}(0.0, 0.0, 0.0), 0.0)
-                @test isempty(link.thrusters)
-                @test size(link.J_thruster) == (3, 0)
-
-                thr = Thruster(
-                    max_thrust=1.0,
-                    cutoff_frequency=100.0,
-                    min_firing_time=0.0,
-                    location=MVector{3, Float64}(0.0, 1.0, 0.0),
-                    direction=MVector{3, Float64}(0.0, 0.0, 1.0)
-                )
-                push!(link.thrusters, thr)
-
-                update_thrusters!(link, SVector{3, Float64}(-1.0, 0.0, 0.0), 0.1)
-                @test link.thrusters[1].thrust >= 0.0
-
-                link_full = Link(root=true, attitude_control_rate=0.1)
-                push!(link_full.thrusters, Thruster(max_thrust=100.0, cutoff_frequency=1e6, min_firing_time=0.0, location=MVector{3, Float64}(0.0, 1.0, 0.0), direction=MVector{3, Float64}(0.0, 0.0, 1.0)))
-                push!(link_full.thrusters, Thruster(max_thrust=100.0, cutoff_frequency=1e6, min_firing_time=0.0, location=MVector{3, Float64}(0.0, 0.0, 1.0), direction=MVector{3, Float64}(1.0, 0.0, 0.0)))
-                push!(link_full.thrusters, Thruster(max_thrust=100.0, cutoff_frequency=1e6, min_firing_time=0.0, location=MVector{3, Float64}(1.0, 0.0, 0.0), direction=MVector{3, Float64}(0.0, 1.0, 0.0)))
-                τ_req_full = SVector{3, Float64}(1.0, 2.0, 3.0)
-                update_thrusters!(link_full, τ_req_full, 0.2)
-                @test rank(link_full.J_thruster) == 3
-                @test all(isfinite, link_full.J_thruster)
-                @test all(thr_i -> isfinite(thr_i.thrust) && thr_i.thrust >= 0.0, link_full.thrusters)
-                @test any(thr_i -> thr_i.thrust > 0.0, link_full.thrusters)
-                thrust_full = [thr_i.thrust for thr_i in link_full.thrusters]
-                τ_ach_full = link_full.J_thruster * thrust_full
-                @test norm(τ_ach_full - τ_req_full) / norm(τ_req_full) < 1e-6
-
-                link_singular = Link(root=true, attitude_control_rate=0.1)
-                push!(link_singular.thrusters, Thruster(max_thrust=100.0, cutoff_frequency=1e6, min_firing_time=0.0, location=MVector{3, Float64}(0.0, 1.0, 0.0), direction=MVector{3, Float64}(0.0, 0.0, 1.0)))
-                push!(link_singular.thrusters, Thruster(max_thrust=100.0, cutoff_frequency=1e6, min_firing_time=0.0, location=MVector{3, Float64}(0.0, 2.0, 0.0), direction=MVector{3, Float64}(0.0, 0.0, 1.0)))
-                τ_req_singular = SVector{3, Float64}(0.0, 1.0, 0.0)
-                update_thrusters!(link_singular, τ_req_singular, 0.3)
-                @test rank(link_singular.J_thruster) == 1
-                @test all(isfinite, link_singular.J_thruster)
-                @test all(thr_i -> isfinite(thr_i.thrust) && thr_i.thrust >= 0.0, link_singular.thrusters)
-                thrust_singular = [thr_i.thrust for thr_i in link_singular.thrusters]
-                τ_ach_singular = link_singular.J_thruster * thrust_singular
-                τ_lsq_singular = link_singular.J_thruster * (pinv(link_singular.J_thruster) * τ_req_singular)
-                @test norm(τ_ach_singular - τ_lsq_singular) < 1e-6
-
-                link_degenerate = Link(root=true, attitude_control_rate=0.1)
-                push!(
-                    link_degenerate.thrusters,
-                    Thruster(
-                        max_thrust=50.0,
-                        cutoff_frequency=100.0,
-                        min_firing_time=0.0,
-                        location=MVector{3, Float64}(0.5, 0.0, 0.0),
-                        direction=MVector{3, Float64}(0.0, 0.0, 0.0)
-                    )
-                )
-                @test_nowarn update_thrusters!(link_degenerate, SVector{3, Float64}(0.5, 0.0, 0.0), 0.4)
-                @test all(isfinite, link_degenerate.J_thruster)
-                @test link_degenerate.J_thruster[:, 1] == zeros(3)
-                @test isfinite(link_degenerate.thrusters[1].thrust)
-                @test link_degenerate.thrusters[1].thrust >= 0.0
-            end
-        end
-    end
 end
 
 @testset "Control Burn Energy Sign (End-to-End)" begin
@@ -887,10 +863,12 @@ end
     )
     df = run_case_silent(args; isolate_state=false)
 
+    # Both one-shot requests have finished by the end of the run. Their windows
+    # clear rather than silently scheduling another burn from the same request.
     for sat_idx in 1:2
-        @test isfinite(shared_thruster.start_burn_time[sat_idx])
-        @test isfinite(shared_thruster.stop_burn_time[sat_idx])
-        @test shared_thruster.stop_burn_time[sat_idx] > shared_thruster.start_burn_time[sat_idx]
+        @test shared_thruster.start_burn_time[sat_idx] == -1.0
+        @test shared_thruster.stop_burn_time[sat_idx] == -1.0
+        @test !shared_thruster.burning[sat_idx]
     end
 
     mass1 = Vector{Float64}(df.sc1_mass)
@@ -912,23 +890,16 @@ include(joinpath(REPO_ROOT, "test", "probes", "coverage_parallel_telemetry_probe
 include(joinpath(REPO_ROOT, "test", "probes", "coverage_runtime_boundary_probes.jl"))
 include(joinpath(REPO_ROOT, "test", "probes", "coverage_targeted_90_probes.jl"))
 include(joinpath(REPO_ROOT, "test", "probes", "coverage_r6_routing_probes.jl"))
-include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "e_edg_strategy_parity_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "t_edg_strategy_parity_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "mission", "aerobraking_policy_selector_stub_tests.jl"))
 
 @testset "Aqua Package Quality" begin
-    if HAS_AQUA
-        Aqua.test_all(
-            SimulationModel;
-            ambiguities=false,
-            stale_deps=false,
-            deps_compat=false,
-            project_extras=false,
-            piracies=false,
-            persistent_tasks=false,
-            undocumented_names=false
-        )
-    else
-        @test_skip "Aqua is not available in this test environment"
-    end
+    Aqua.test_all(
+        SimulationModel;
+        ambiguities=false,
+        stale_deps=false,
+        deps_compat=false,
+        project_extras=false,
+        piracies=false,
+        persistent_tasks=false,
+        undocumented_names=false
+    )
 end

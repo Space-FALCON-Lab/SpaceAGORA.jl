@@ -14,17 +14,9 @@ using SpaceAGORA
 const SCamp = SpaceAGORA.SimulationCampaigns
 const PCost = SpaceAGORA.SimulationModel.ParallelCost
 
-_curve() = PCost.RateCurve([0.0, 10.0], [1.0, 1.0])
-
-# A MachineConstants carrying nothing but the two USL terms the planner reads.
-# The other fields are required by the struct and are not consulted here.
+# A MachineConstants carrying the two USL terms the planner reads.
 function _constants(; alpha = 0.05, beta_alloc = 0.004)
     return PCost.MachineConstants(
-        simd_lane = _curve(), coeff_touch = _curve(), parallel_speedup = _curve(),
-        ns_per_scalar_item = 1.0, ns_per_queue_node = 1.0,
-        dispatch_pool_ns_base = 1.0, dispatch_pool_ns_per_worker = 1.0,
-        dispatch_batch_ns_base = 1.0, dispatch_batch_ns_per_worker = 1.0,
-        ns_per_atomic = 1.0, reference_fma_ns = 1.0, reference_mem_ns = 1.0,
         usl_alpha_base = alpha, usl_beta_alloc = beta_alloc,
     )
 end
@@ -862,4 +854,18 @@ end
     @test moved.worker_slowdown == 1.0
     @test moved.heap_slowdown == SCamp.predictive_heap_slowdown(nothing, 4)
     @test moved.makespan == SCamp.predictive_makespan(53, fill(moved.heap_slowdown, 4))
+end
+
+@testset "a fixed pool cost moves a short single-round campaign to threads" begin
+    plan(; n, T, pool_fixed) = SCamp.predictive_plan(
+        n_samples = n, threads = T, process_workers = T, threads_candidate = true,
+        local_slots_cap = 0, config = _cfg(),
+        terms = SCamp.PredictiveCostTerms(pool_fixed = pool_fixed)).chosen.route
+    # mcgrid_16sat_8mc: 8 samples of ~0.28 s, 0.025 s of pool cost = 0.089 samples.
+    @test plan(n = 8, T = 8, pool_fixed = 0.0) === :process      # exact tie goes to the pool
+    @test plan(n = 8, T = 8, pool_fixed = 0.025 / 0.28) === :threads
+    # P4 rung 32: one round of ~0.7 s samples, the cost is 3.6% of it: pool stays.
+    @test plan(n = 32, T = 32, pool_fixed = 0.025 / 0.7) === :process
+    # P3 rung 16: sixteen rounds of 38 ms samples; the cost is amortised: pool stays.
+    @test plan(n = 256, T = 16, pool_fixed = 0.025 / 0.038) === :process
 end

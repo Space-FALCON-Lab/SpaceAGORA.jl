@@ -16,4 +16,4 @@ REMOTES[trx50_base]="~/spaceagora_remote"
 # Optional per-remote override of the data allowlist synced by `seed-data` /
 # `push --sync-data` (space-separated paths relative to the repo root). If
 # unset, DEFAULT_DATA_ALLOWLIST in the main script is used.
-# REMOTES[trx50_data_allowlist]="data/GRAMSuite.jl data/GRAM_surrogate data/telemetry"
+# REMOTES[trx50_data_allowlist]="data/GRAMSuite.jl data/planets/gram_surrogate data/telemetry"

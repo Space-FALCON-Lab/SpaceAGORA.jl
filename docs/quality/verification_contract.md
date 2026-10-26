@@ -14,15 +14,13 @@ This contract defines merge and release quality gates for SpaceAGORA architectur
    - `test/gates/ci_path_policy_gate.jl`
    - `test/gates/ci_thin_entry_files_gate.jl`
    - `test/gates/ci_no_artifact_files_gate.jl`
-   - `test/gates/ci_stale_deps_gate.jl` (Aqua stale-dependency check: every `[deps]` entry is loaded by the package; test/docs/example-only packages are an explicit ignore list)
+   - `test/gates/ci_stale_deps_gate.jl` (Aqua stale-dependency check: every `[deps]` entry is loaded by the package; the packages only the examples and tests still load are an explicit ignore list, and the test and docs tools live in `test/Project.toml` and `docs/Project.toml`)
    - `test/gates/ci_tracked_feather_registry_gate.jl` (every tracked feather is named in `test/telemetry_benchmark_manifest.toml` or lies under an in-tree required, non lab-private `data/assets_manifest.toml` asset)
    - `test/gates/ci_vehicle_structure_boundary_gate.jl`
    - `test/gates/ci_src_completeness_contract_gate.jl`
    - `test/gates/ci_no_legacy_include_chains_gate.jl`
-   - `test/gates/ci_no_inert_force_terms_gate.jl`
    - `test/gates/ci_gnc_aerobraking_boundary_gate.jl`
    - `test/gates/ci_no_guidance_control_cross_include_gate.jl`
-   - `test/gates/ci_aerobraking_strategy_contract_gate.jl`
    - `test/gates/ci_rotational_ownership_gate.jl`
    - `test/gates/ci_scaffold_interface_gate.jl`
    - `test/gates/ci_typed_config_equivalence_gate.jl`
@@ -30,7 +28,24 @@ This contract defines merge and release quality gates for SpaceAGORA architectur
    - `test/gates/ci_rhs_parallel_route_gate.jl`
    - `test/gates/ci_docs_contract_gate.jl`
    - `test/gates/ci_public_api_surface_gate.jl`
-   - `test/gates/ci_hpc_extensibility_docs_gate.jl`
+   - `test/gates/ci_hpc_extensibility_docs_gate.jl` (the extension templates, starters and HPC scripts exist, the extensibility and HPC pages keep their markers, and every snippet region of the scripts in `examples/gnc_algorithm_env/` and `examples/walkthrough_env/` appears unchanged as a code block of the page that shows it (`gnc_feedback.md`, `gnc_planning.md`, `custom_effector.md`, `custom_actuator.md`), with each script listed and run by its environment's `smoke.jl`)
+   - `test/gates/ci_extension_hook_reference_gate.jl` (every exported function in the hook sections of `docs/public_api_symbols.jl` is a row of `docs/extension_hooks.jl` or a listed non-hook; each row's signature is its docstring's first line, its arity and fallback agree with the method table, its page names it, deprecated rows are consistent and current rows use `spacecraft_index`; listed known gaps fail once they no longer apply)
+   - `test/gates/ci_gnc_typed_command_boundary_gate.jl` (GNC reaches actuators through the typed command boundary; algorithm directories stay in scan scope)
+   - `test/gates/ci_gnc_random_stream_gate.jl` (GNC and the in-repo HYPR adapter draw random numbers only from an explicit stream argument: no `default_rng()`, `seed!` or stream-less `rand`/`randn`)
+   - `test/gates/ci_project_compat_gate.jl` (every non-standard-library `[deps]` entry has a `[compat]` bound)
+   - `test/gates/ci_sysimage_package_lists_gate.jl` (every package named in the sysimage builder's `FULL_PACKAGES` and `CI_PACKAGES` is `:SpaceAGORA` or a root `[deps]` entry; parses `build/build_sysimage.jl` and `Project.toml`, builds nothing)
+   - `test/gates/ci_runtime_legacy_surface_gate.jl` (the active runtime does not regain prohibited legacy entry surfaces)
+   - `test/gates/ci_translational_ownership_gate.jl` (translational equations stay with their owner directory)
+   - `test/gates/ci_runtime_any_hotpath_gate.jl` (no new explicit `Vector{Any}` or `Dict{Symbol, Any}` in runtime hot paths, including whitespace and qualified spellings; each inventoried heterogeneous boundary must occur exactly once in its declared owner)
+   - `test/gates/ci_ppc_mode_profile_parity_gate.jl` (the parallelization benchmark's evaluated mode values, scheduler and declared profile identity agree with the shipped routing profiles it names)
+   - `test/gates/ci_runtime_analysis_copy_overhead_gate.jl` (synthetic rows check actual summary/report copy-overhead values, successful-run denominators, failed/empty/zero cases, ordering and input preservation; no simulation or performance measurement)
+   - `test/gates/ci_removed_hook_names_gate.jl` (no method, declaration or other use of an extension hook name removed in 0.5.0, and no five-argument `wrench` method or call, in `src/`, `ext/`, `templates/` or `examples/`, found by parsing; the contributor starters do not name a removed hook in any file)
+
+The paper workload coverage gate belongs to
+SpaceAGORAParallelizationStudies.
+It checks that the research workload names every case and mode its paper phases
+run. The core mode-profile parity and runtime-analysis gates above remain
+required.
 
 Additional required smoke checks for this migration track:
 1. `test/smoke/ci_clean_depot_smoke.jl`
@@ -53,13 +68,13 @@ Main thresholds:
 2. Main per-file coverage: `>= 80.0%` (unless explicit override exists)
 
 Critical-file thresholds (`>= 90.0%`):
-1. `src/simulation/engine/execution.jl`
-2. `src/gnc/control/propulsive_maneuvers.jl`
-3. `src/core/interfaces/reference_system.jl`
+1. `src/orchestration/simulation/engine/execution.jl`
+2. `src/models/gnc/control/maneuvers/propulsive_maneuvers.jl`
+3. `src/foundation/core/interfaces/reference_system.jl`
 
 Main per-file overrides:
-1. `src/simulation/engine/adapters/from_env.jl` => `>= 70.0%`
-2. `src/simulation/engine/dynamics_rhs.jl` => `>= 70.0%`
+1. `src/orchestration/simulation/engine/adapters/from_env.jl` => `>= 70.0%`
+2. `src/orchestration/simulation/engine/dynamics_rhs.jl` => `>= 70.0%`
 
 ## Native GRAM probe reporting
 
@@ -105,3 +120,9 @@ Required sections:
 
 ## Nightly Policy
 Nightly stress checks remain required for release readiness and run through `.github/workflows/nightly-stress.yml`.
+
+## Windows Install Check
+`.github/workflows/windows-install.yml` runs the documented install path and the README quickstart smoke on `windows-latest` with Julia 1.12, weekly, on manual dispatch and on pull requests that change the install path or the pages that document its commands. It is not a required check. A non-blocking job in the same workflow records how Julia 1.13 is refused or fails on that path.
+
+## Contributor CI Workflow
+`.github/workflows/contributor-ci.yml` is a reusable workflow (`on: workflow_call`) for repositories built on SpaceAGORA. The caller passes the same full commit SHA as the `uses:` ref and as `spaceagora-rev`, and records it in `SpaceAGORASource.toml` beside its `Project.toml`, which has no `[sources]` entry for SpaceAGORA. The workflow refuses a mismatch, tests the repository in a separate environment built by `scripts/contributor_environment.jl` with that core developed by path, and certifies interface conformance only. The `contributor-kit` job in `julia-ci.yml` runs it on each starter of `templates/starters/` (project, package and companion), generated from the commit under test by `scripts/new_contributor_repository.jl`, with this checkout as the core. It is not a required check. `.github/workflows/contributor-kit-demonstration.yml` runs the same workflow on the kit's demonstration repository, `Space-FALCON-Lab/SpaceAGORAKitDemo.jl` (input `repository`), every night against `main` and in each release pull request (a branch named `release-*`) against its merge commit, after `scripts/contributor_environment.jl repin` moves the demonstration's pin to the commit under test. It is not a required check either; a failure is resolved before the release is tagged.

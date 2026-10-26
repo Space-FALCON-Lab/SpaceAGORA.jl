@@ -13,8 +13,8 @@ const EM = SpaceAGORA.SimulationModel.EnvironmentModels
 const GRAM_LOCK = SpaceAGORA.RuntimeServices.GRAM_LOCK
 const RS = SpaceAGORA.RuntimeServices
 
-include("gram_grid_atmosphere.jl")
-include("gram_near_surface_atmosphere.jl")
+include(joinpath("SpaceAGORAGRAMSuiteExt", "gram_grid_atmosphere.jl"))
+include(joinpath("SpaceAGORAGRAMSuiteExt", "gram_near_surface_atmosphere.jl"))
 
 # Attributed views of the one shared native lock. Same critical section, same
 # mutual exclusion; the site only decides which occupancy counter the time lands
@@ -207,6 +207,21 @@ end
 const _GRAM_EPHEM_CACHE = Dict{String, Tuple{Float64, NTuple{6, Float64}}}()
 const _GRAM_ET0_CACHE = Dict{String, Float64}()
 const _GRAM_NAIF_ID_CACHE = Dict{String, Int}()
+const _GRAM_EPHEM_GENERATION = Ref{UInt}(0)
+
+# Called only while holding the shared SPICE lock. Kernel changes can affect
+# every body, including a previously cached Earth epoch when Mars is loaded.
+# A generation comparison keeps cache hits free of additional SPICE calls.
+@inline function _ensure_gram_ephemeris_cache_current!()
+    generation = SpaceAGORA.SimulationModel.Planets._SPICE_KERNEL_POOL_GENERATION[]
+    if _GRAM_EPHEM_GENERATION[] != generation
+        empty!(_GRAM_EPHEM_CACHE)
+        empty!(_GRAM_ET0_CACHE)
+        empty!(_GRAM_NAIF_ID_CACHE)
+        _GRAM_EPHEM_GENERATION[] = generation
+    end
+    return nothing
+end
 
 @inline function _gram_ephemeris_cache_enabled()::Bool
     raw = lowercase(strip(get(ENV, "SPACEAGORA_GRAM_EPHEMERIS_CACHE", "on")))
@@ -220,14 +235,16 @@ end
 """
     clear_gram_ephemeris_cache!()
 
-Drop the cached epoch-level ephemeris, start-epoch and NAIF-id lookups. Only
-needed when SPICE kernels are re-furnished mid-process.
+Drop the cached epoch-level ephemeris, start-epoch and NAIF-id lookups. Managed
+planet kernel changes invalidate them automatically. Call this after changing
+kernels directly through SPICE rather than the planet constructors.
 """
 function clear_gram_ephemeris_cache!()
     lock(_tl(:gram_setup)) do
         empty!(_GRAM_EPHEM_CACHE)
         empty!(_GRAM_ET0_CACHE)
         empty!(_GRAM_NAIF_ID_CACHE)
+        _GRAM_EPHEM_GENERATION[] = SpaceAGORA.SimulationModel.Planets._SPICE_KERNEL_POOL_GENERATION[]
     end
     return nothing
 end
@@ -236,6 +253,7 @@ end
 # and bodn2c does a name lookup, so neither belongs in a per-call path.
 @inline function _gram_et0(utc::String)::Float64
     lock(_tl(:spice_body)) do
+        _ensure_gram_ephemeris_cache_current!()
         get!(_GRAM_ET0_CACHE, utc) do
             SPICE.utc2et(utc)
         end
@@ -244,6 +262,7 @@ end
 
 @inline function _gram_naif_id(naif_name::String)::Int
     lock(_tl(:spice_body)) do
+        _ensure_gram_ephemeris_cache_current!()
         get!(_GRAM_NAIF_ID_CACHE, naif_name) do
             Int(SPICE.bodn2c(naif_name))
         end
@@ -277,6 +296,7 @@ end
 function _gram_body_ephemeris(naif_name::String, et::Float64)::NTuple{6, Float64}
     _gram_ephemeris_cache_enabled() || return _gram_body_ephemeris_uncached(naif_name, et)
     lock(_tl(:spice_ephemeris)) do
+        _ensure_gram_ephemeris_cache_current!()
         hit = get(_GRAM_EPHEM_CACHE, naif_name, nothing)
         # Exact epoch match only: the value is a nonlinear function of et, so
         # interpolating or tolerating a nearby epoch would silently change the
@@ -429,10 +449,14 @@ function EM.reset_density_model_history!(model::EM.GRAMAtmosphereModel)::Bool
     core = model.core
     hasfield(typeof(core), :gram) && hasfield(typeof(core), :gram_atmosphere) || return false
     gram = core.gram
-    isdefined(gram, :set_seed!) || return false
+    # Native bindings may have been loaded after the caller entered its world.
+    # The availability check and binding lookup need the same latest-world
+    # boundary as the call itself, including on the first construction/reset.
+    Base.invokelatest(isdefined, gram, :set_seed!) || return false
     _ensure_native_static_tables!(core)
     lock(_gram_call_lock(model)) do
-        Base.invokelatest(getfield(gram, :set_seed!), core.gram_atmosphere, seed)
+        set_seed! = Base.invokelatest(getfield, gram, :set_seed!)
+        Base.invokelatest(set_seed!, core.gram_atmosphere, seed)
     end
     return true
 end

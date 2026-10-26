@@ -6,9 +6,9 @@ struct SgPushEffector <: SpaceAGORA.AbstractControlEffectorModel
     sat_idx::Int
     force_n::SVector{3, Float64}
 end
-SpaceAGORA.calcControlEffect!(::SgPushEffector, u, p::SpaceAGORA.SimulationModel.ODEParams, t::Float64, i::Int) = nothing
-SpaceAGORA.calcControlForceTorque(m::SgPushEffector, u::AbstractVector, p::SpaceAGORA.SimulationModel.ODEParams, i::Int, t::Float64) =
-    i == m.sat_idx ? (m.force_n, SVector{3, Float64}(0.0, 0.0, 0.0)) :
+SpaceAGORA.update_control!(::SgPushEffector, u, p::SpaceAGORA.SimulationModel.ODEParams, t::Float64, i::Int) = nothing
+SpaceAGORA.control_wrench(m::SgPushEffector, x::SpaceAGORA.StateSample, p::SpaceAGORA.SimulationModel.ODEParams, t::Float64) =
+    x.spacecraft_index == m.sat_idx ? (m.force_n, SVector{3, Float64}(0.0, 0.0, 0.0)) :
                      (SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0))
 SpaceAGORA.bind_spacecraft(m::SgPushEffector, sat_idx::Int) = SgPushEffector(sat_idx, m.force_n)
 
@@ -90,16 +90,16 @@ final_state(args) = collect(run_simulation(args; return_solution=true).u[end])
     end
 
     @testset "built-in effectors" begin
-        m = MagneticMomentumManagerModel(sat_idx=1)
+        m = MagneticMomentumManagerModel(spacecraft_index=1)
         @test bind_spacecraft(m, 1) === m
-        @test bind_spacecraft(m, 3).sat_idx == 3
-        @test m.sat_idx == 1
+        @test bind_spacecraft(m, 3).spacecraft_index == 3
+        @test m.spacecraft_index == 1
         r = RobotArmControlEffector()
-        @test bind_spacecraft(r, 2).spacecraft_idx == 2
+        @test bind_spacecraft(r, 2).spacecraft_index == 2
         # Multi-vehicle and unindexed effectors cannot be declared on a spacecraft.
         @test_throws ArgumentError bind_spacecraft(RPOMPCControlModel(), 1)
         err = try bind_spacecraft(RPOMPCControlModel(), 1) catch e e end
-        @test occursin("chaser", sprint(showerror, err)) && occursin("configuration level", sprint(showerror, err))
+        @test occursin("couples several spacecraft", sprint(showerror, err)) && occursin("configuration level", sprint(showerror, err))
         thr = BaseThrusterModel(thrust=[0.0], direction=[0.0], Δv=[0.0], start_burn_time=[0.0], stop_burn_time=[0.0], Isp=[300.0])
         err = try bind_spacecraft(thr, 1) catch e e end
         @test err isa ArgumentError && occursin("every spacecraft", sprint(showerror, err))
@@ -109,16 +109,44 @@ final_state(args) = collect(run_simulation(args; return_solution=true).u[end])
 
     @testset "built-in binding methods" begin
         # Index-field effectors: new index, original untouched, same index returns the same object.
-        m = MagneticMomentumManagerModel(sat_idx=1, mu_gain=0.02)
+        m = MagneticMomentumManagerModel(spacecraft_index=1, mu_gain=0.02)
         mb = bind_spacecraft(m, 2)
-        @test mb isa MagneticMomentumManagerModel && mb.sat_idx == 2 && m.sat_idx == 1 && mb !== m
+        @test mb isa MagneticMomentumManagerModel && mb.spacecraft_index == 2 && m.spacecraft_index == 1 && mb !== m
         @test mb.mu_gain == 0.02
         @test bind_spacecraft(mb, 2) === mb
-        r = RobotArmControlEffector(spacecraft_idx=1, joint_kp=3.0)
+        r = RobotArmControlEffector(spacecraft_index=1, joint_kp=3.0)
         rb = bind_spacecraft(r, 2)
-        @test rb isa RobotArmControlEffector && rb.spacecraft_idx == 2 && r.spacecraft_idx == 1 && rb !== r
+        @test rb isa RobotArmControlEffector && rb.spacecraft_index == 2 && r.spacecraft_index == 1 && rb !== r
         @test rb.joint_kp == 3.0
         @test bind_spacecraft(rb, 2) === rb
+        # One template on several spacecraft: each bound copy owns its MPC warm
+        # start and held command; the read-only reference plan stays shared.
+        arm = SpaceAGORA.default_cloth_arm_model()
+        arm_base = SpaceAGORA.ClothArmBasePose([0.0, 0.0, 0.0])
+        arm_target = SpaceAGORA.cloth_fk(arm, arm_base, [0.25, -0.35, 0.20]).end_effector_position
+        arm_plan = SpaceAGORA.plan_robot_arm_motion(arm, arm_base, zeros(3), arm_target;
+            config=SpaceAGORA.RobotArmPlannerConfig(dt_s=0.25, duration_s=1.0, ik_tol_m=5.0e-4))
+        template = RobotArmControlEffector(spacecraft_index=1, plan=arm_plan,
+            controller=SpaceAGORA.init_robot_arm_joint_mpc(arm_plan; dt_s=0.1, horizon=4))
+        r2, r3 = bind_spacecraft(template, 2), bind_spacecraft(template, 3)
+        for (a, b) in ((template, r2), (template, r3), (r2, r3))
+            @test a.controller !== b.controller && a.controller.U_prev !== b.controller.U_prev
+            @test a.held !== b.held
+            @test a.plan === b.plan
+        end
+        @test r2.controller.H == template.controller.H && r2.controller.U_prev == template.controller.U_prev
+        preview = SpaceAGORA.robot_arm_joint_mpc_reference_preview(arm_plan, 0.5, 0.1, template.controller.horizon)
+        SpaceAGORA.robot_arm_joint_mpc_control(r2.controller, preview[:, 1] .+ 0.1, preview)
+        @test any(!iszero, r2.controller.U_prev)
+        @test all(iszero, template.controller.U_prev) && all(iszero, r3.controller.U_prev)
+        # A configured held command (here with no plan, so no tick replaces it)
+        # carries over to each bound copy, in storage of its own.
+        commanded = RobotArmControlEffector(spacecraft_index=1, held=RobotArmHeldActuation(joint_torque_nm=[0.5, -0.25],
+            base_force_ii=SVector(1.0, 2.0, 3.0), base_torque_body=SVector(0.0, 0.1, 0.0)))
+        c2 = bind_spacecraft(commanded, 2)
+        @test c2.held !== commanded.held && c2.held.joint_torque_nm !== commanded.held.joint_torque_nm
+        @test c2.held.joint_torque_nm == [0.5, -0.25] && c2.held.base_force_ii == SVector(1.0, 2.0, 3.0) &&
+              c2.held.base_torque_body == SVector(0.0, 0.1, 0.0)
 
         # Apollo guidance and control, state sized for two spacecraft.
         tg, ta = apollo11_descent_targets()
@@ -166,11 +194,11 @@ struct SgNavigationProbe
 end
 SpaceAGORA.bind_spacecraft(m::SgGuidanceProbe, i::Int) = SgGuidanceProbe(i, m.visits)
 SpaceAGORA.bind_spacecraft(m::SgNavigationProbe, i::Int) = SgNavigationProbe(i, m.visits)
-function SpaceAGORA.SimulationModel.GuidanceHooks.calcGuidanceEffect!(m::SgGuidanceProbe, u, p, t::Float64, i::Int)
+function SpaceAGORA.SimulationModel.GuidanceHooks.update_guidance!(m::SgGuidanceProbe, u, p, t::Float64, i::Int)
     i == m.sat_idx && push!(m.visits, i)
     return nothing
 end
-function SpaceAGORA.SimulationModel.NavigationHooks.calcNavigationEffect!(m::SgNavigationProbe, u, p, t::Float64, i::Int)
+function SpaceAGORA.SimulationModel.NavigationHooks.update_navigation!(m::SgNavigationProbe, u, p, t::Float64, i::Int)
     i == m.sat_idx && push!(m.visits, i)
     return nothing
 end
@@ -200,14 +228,14 @@ end
     @test args.dynamics_model.spacecraft[2].guidance === gm
     @test args.dynamics_model.spacecraft[2].navigation === nm
 
-    # Built-in rebinds copy scalar fields but retain nested mutable members.
-    arm = RobotArmControlEffector(spacecraft_idx=1)
+    # Built-in rebinds copy scalar fields; the robot arm's held command is its own.
+    arm = RobotArmControlEffector(spacecraft_index=1)
     bound = bind_spacecraft(arm, 2)
     bound.updated_at_s = 5.0
     push!(bound.held.joint_torque_nm, 7.0)
     @test arm.updated_at_s == 0.0
-    @test bound.held === arm.held
-    @test arm.held.joint_torque_nm == [7.0]
+    @test bound.held !== arm.held
+    @test isempty(arm.held.joint_torque_nm)
 end
 
 @testset "Per-spacecraft GNC returned configuration" begin

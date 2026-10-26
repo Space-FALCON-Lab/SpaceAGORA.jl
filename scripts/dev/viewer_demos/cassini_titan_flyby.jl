@@ -13,7 +13,11 @@
 # (model +Y, the antenna axis, to body +x; the magnetometer boom along +y),
 # with or without the probe depending on the flyby.
 #
-#   julia --project=. scripts/dev/viewer_demos/cassini_titan_flyby.jl [TA|T5|all]
+#   julia --project=/path/to/visualizer-env scripts/dev/viewer_demos/cassini_titan_flyby.jl [TA|T5|all]
+# Load the optional renderer before the example helpers continue in the examples environment.
+if abspath(PROGRAM_FILE) == @__FILE__
+    using SpaceAGORAVisualizer
+end
 include(joinpath(@__DIR__, "common.jl"))
 
 const CASSINI_ROTATION_DEG = (-90, -180, 90)   # antenna axis (model +Y) to body +x: long axis along the flow, antenna forward

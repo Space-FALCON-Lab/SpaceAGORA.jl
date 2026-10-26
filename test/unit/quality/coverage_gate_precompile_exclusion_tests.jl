@@ -120,3 +120,26 @@ end
         @test length(found[joinpath("src", "precompile_workload.jl")]) == 1
     end
 end
+
+@testset "Extracted EDG kernels remain measured at the existing thresholds" begin
+    @test CGT.EDG_SRC_ROOT in CGT.SOURCE_ROOTS
+    mktempdir() do root
+        source = joinpath(root, "packages", "gnc", "SpaceAGORAEDG.jl", "src")
+        @test_throws ErrorException CGT.require_edg_coverage(CGT.CoverageSummary[]; source_root=source, repo_root=root)
+        mkpath(source)
+        @test_throws ErrorException CGT.require_edg_coverage(CGT.CoverageSummary[]; source_root=source, repo_root=root)
+        write(joinpath(source, "planner.jl"), "planner(x) = x + 1\n")
+        @test_throws ErrorException CGT.require_edg_coverage(CGT.CoverageSummary[]; source_root=source, repo_root=root)
+        relative = relpath(joinpath(source, "planner.jl"), root)
+        measured = [CGT.CoverageSummary(relative, 10, 10, 100.0, false)]
+        @test CGT.require_edg_coverage(measured; source_root=source, repo_root=root) === nothing
+        write(joinpath(source, "another.jl"), "another(x) = 2x\n")
+        @test_throws ErrorException CGT.require_edg_coverage(measured; source_root=source, repo_root=root)
+        # An extracted file does not gain an exclusion or lower file threshold.
+        low = CGT.CoverageSummary(relative, 1, 100, 1.0, false)
+        all_sources = [CGT.CoverageSummary(path, 100, 100, 100.0, false)
+                       for path in keys(CGT.CRITICAL_FILE_MIN_OVERRIDES)]
+        push!(all_sources, low)
+        @test_throws ErrorException CGT.enforce_gate(all_sources)
+    end
+end

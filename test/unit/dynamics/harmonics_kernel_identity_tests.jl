@@ -1,5 +1,5 @@
 # Regression guard for `@simd ivdep` on the flat harmonics batch kernel
-# (`_harmonics_flat_batch_kernel!`, src/dynamics/coupled/perturbations.jl).
+# (`_harmonics_flat_batch_kernel!`, src/models/dynamics/effectors/perturbations.jl).
 #
 # `@simd ivdep` licenses LLVM to vectorise the three per-degree batch loops
 # unconditionally instead of only above the batch size LLVM's own alias
@@ -28,7 +28,7 @@ const PERT_HKI = SM_HKI.DynamicEffectors.PerturbationEffectors
 
 const HKI_GRAVITY_FILE = joinpath(
     normpath(joinpath(@__DIR__, "..", "..", "..")),
-    "data", "Gravity_harmonics_data", "EarthGGM05C.csv",
+    "data", "planets", "gravity", "EarthGGM05C.csv",
 )
 
 const HKI_LPI = SMatrix{3, 3, Float64, 9}(

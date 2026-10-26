@@ -24,11 +24,11 @@ struct CoverageForceEffector <: SimulationModel.AbstractForceTorqueModel
     torque::SVector{3, Float64}
 end
 
-function SimulationModel.calcForceTorque(
+function SimulationModel.wrench(
     model::CoverageForceEffector,
-    x,
-    p,
-    i::Int64
+    x::SimulationModel.StateSample,
+    env::SimulationModel.EnvironmentSample,
+    t::Float64
 )
     return model.force, model.torque
 end
@@ -46,15 +46,6 @@ struct CoverageGramNoTrajectoryBase
 end
 
 struct CoverageGramTrajectoryBase
-end
-
-struct CoverageBridgeArgs
-    cnf
-    solution
-end
-
-struct CoverageIndexArgs
-    values::Dict{Symbol, Any}
 end
 
 Base.propertynames(::CoverageNoGramBase, private::Bool=false) = ()
@@ -164,8 +155,6 @@ function SimulationModel.EnvironmentModels.getDensity(
         p.args.environment_model.planet.T_ref,
     )
 end
-
-Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]
 
 @testset "Coverage Targeted >=90 Probes" begin
     @testset "from_env override branch" begin
@@ -420,7 +409,18 @@ Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]
             CoverageForceEffector(SVector{3, Float64}(2.0, 3.0, 4.0), SVector{3, Float64}(0.4, 0.5, 0.6)),
         )
         decision = (use_threads=true, allotment=2, policy_applied=false, mode=:on)
-        SimulationEngine._accumulate_dynamic_effectors!(f, τ, ComponentVector((x=0.0,)), nothing, 1, effectors, decision)
+        # wrench reads a state sample, which the accumulation builds from the run's parameters.
+        args_branches = build_config(
+            spacecraft=make_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+            density_model=NoAtmosphereModel(),
+            orientation_sim=false,
+            mission_time=120.0,
+            EI_km=120.0,
+            dynamic_effectors=effectors
+        )
+        p_branches = ODEParams(n_sats=1, args=args_branches)
+        u_branches = build_initial_conditions(args_branches)
+        SimulationEngine._accumulate_dynamic_effectors!(f, τ, u_branches.sc[1], p_branches, 1, effectors, decision)
         @test f == MVector{3, Float64}(3.0, 5.0, 7.0)
         @test isapprox(norm(τ - MVector{3, Float64}(0.5, 0.7, 0.9)), 0.0; atol=1e-12, rtol=0.0)
 
@@ -597,133 +597,6 @@ Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]
         @test isapprox(p_cache.shared_buffers.densities[1], 1.23e-6; atol=1e-12, rtol=0.0)
         @test isapprox(p_cache.shared_buffers.temperatures[1], 190.0; atol=1e-12, rtol=0.0)
     end
-end
-
-@testset "GNC Bridge Helper Probes" begin
-    gh = SimulationModel.GuidanceHooks
-    ch = SimulationModel.ControlHooks
-
-    cnf = (time_switch_1 = 1.0, time_switch_2 = 2.0)
-    solution = (orientation = (; time = Float64[]),)
-    args = (; cnf = cnf, solution = solution, EI = 120.0, dry_mass = 1.0)
-    object_args = CoverageBridgeArgs(cnf, solution)
-
-    @test gh._bridge_get_cnf(args) === cnf
-    @test gh._bridge_get_solution(args; cnf=cnf) === solution
-    @test ch._bridge_get_cnf(args) === cnf
-    @test ch._bridge_get_solution(args; cnf=cnf) === solution
-    @test gh._bridge_get_cnf(nothing; cnf=cnf) === cnf
-    @test gh._bridge_get_solution(nothing; solution=solution) === solution
-    @test gh._bridge_get_cnf(object_args) === cnf
-    @test gh._bridge_get_solution(object_args) === solution
-    @test gh._bridge_get_solution((;); cnf=(solution=solution,)) === solution
-    runtime_context = gh._make_aerobraking_runtime_context(
-        mission=:mission,
-        index_phase_aerobraking=2,
-        ip=:ip,
-        aerobraking_phase=3,
-        t_prev=4.0,
-        date_initial=:date,
-        time_0=5.0,
-        args=args,
-        initial_state=:state,
-        gram_atmosphere=:atm,
-        gram=:gram,
-        cnf=cnf,
-        solution=solution,
-    )
-    @test runtime_context.cnf === cnf
-    @test gh._with_control_gain(runtime_context, 1.5).control_gain == 1.5
-    @test gh._with_time_switch(runtime_context, 7.5).time_switch == 7.5
-    @test gh.CONTROL_BRIDGE_STATE_LOCK isa ReentrantLock
-    @test ch.CONTROL_BRIDGE_STATE_LOCK isa ReentrantLock
-
-    spacecraft_args = (;
-        simulation_settings=(verbose=true,),
-        environment_model=(topography=true, EI=111.0),
-        dynamics_model=(spacecraft=[(; dry_mass=66.0)],),
-    )
-    mission = (
-        aerodynamics=(heat_rate_limit=55.0,),
-        body=(dry_mass=77.0,),
-        engines=(ϕ=0.75,),
-    )
-    dict_args = Dict{Symbol, Any}(
-        :EI => 120.0,
-        :AE => 135.0,
-        :body_shape => "Capsule",
-        :heat_load_sol => 2,
-        :max_heat_rate => 88.0,
-        :srp => true,
-        :control_mode => 3,
-        :struct_ctrl => true,
-        :dry_mass => 44.0,
-        :phi => 0.25,
-        :control_in_loop => true,
-        :integrator => "Custom",
-        :drag_passage => true,
-        :topography_model => "Spherical Harmonics",
-    )
-    index_args = CoverageIndexArgs(Dict{Symbol, Any}(:AE => 146.0))
-
-    withenv("SPACEAGORA_DEBUG_LEGACY_CONTROL" => "1") do
-        @test gh._bridge_verbose_enabled() === true
-    end
-    @test gh._bridge_verbose_enabled(spacecraft_args) === true
-    @test gh._bridge_verbose_enabled((; verbose=true)) === true
-    @test gh._bridge_required_field(dict_args, :EI) == 120.0
-    @test gh._bridge_optional_field(dict_args, :missing, 9.0) == 9.0
-    @test gh._bridge_optional_field(index_args, :AE, 0.0) == 146.0
-    @test gh._bridge_aerobraking_topography_enabled(spacecraft_args) === true
-    @test gh._bridge_aerobraking_topography_enabled(dict_args) === true
-    @test gh._bridge_aerobraking_entry_interface_m(spacecraft_args) == 111_000.0
-    @test gh._bridge_aerobraking_entry_interface_m(dict_args) == 120_000.0
-    @test gh._bridge_aerobraking_exit_interface_m((; EI=120.0)) == 120_000.0
-    @test gh._bridge_aerobraking_exit_interface_m(dict_args) == 135_000.0
-    @test gh._bridge_aerobraking_body_shape(dict_args) == "Capsule"
-    @test gh._bridge_aerobraking_heat_load_solution(dict_args) == 2
-    @test gh._bridge_aerobraking_max_heat_rate((;), mission) == 55.0
-    @test gh._bridge_aerobraking_max_heat_rate(dict_args, mission) == 88.0
-    @test gh._bridge_aerobraking_srp_enabled(dict_args) === true
-    @test gh._bridge_aerobraking_control_mode(dict_args) == 3
-    @test gh._bridge_aerobraking_struct_control_enabled(dict_args) === true
-    @test gh._bridge_aerobraking_dry_mass(spacecraft_args, mission) == 66.0
-    @test gh._bridge_aerobraking_dry_mass((;), mission) == 77.0
-    @test gh._bridge_aerobraking_dry_mass(dict_args, mission) == 77.0
-    @test gh._bridge_aerobraking_dry_mass(dict_args, nothing) == 44.0
-    @test gh._bridge_aerobraking_thrust_phi((;), mission) == 0.75
-    @test gh._bridge_aerobraking_thrust_phi(dict_args, mission) == 0.25
-    @test gh._bridge_aerobraking_control_in_loop(dict_args) === true
-    @test gh._bridge_aerobraking_integrator_name(dict_args) == "Custom"
-    @test gh._bridge_aerobraking_drag_passage(dict_args) === true
-
-    settings = gh._make_aerobraking_runtime_settings(dict_args, mission)
-    @test settings.topography_enabled === true
-    @test settings.entry_interface_m == 120_000.0
-    @test settings.exit_interface_m == 135_000.0
-    @test settings.dry_mass == 77.0
-    @test settings.thrust_phi == 0.25
-
-    runtime_context_mission = gh._make_aerobraking_runtime_context(
-        mission=mission,
-        index_phase_aerobraking=1,
-        ip=:ip,
-        aerobraking_phase=2,
-        t_prev=3.0,
-        date_initial=:date,
-        time_0=4.0,
-        args=dict_args,
-        initial_state=:state,
-        gram_atmosphere=:atm,
-        gram=:gram,
-    )
-    @test runtime_context_mission.settings.max_heat_rate == 88.0
-    @test runtime_context_mission.settings.control_mode == 3
-
-    @test_throws ArgumentError gh._bridge_get_cnf((;))
-    @test_throws ArgumentError gh._bridge_get_solution((;); cnf=nothing)
-    @test_throws ArgumentError ch._bridge_get_cnf((;))
-    @test_throws ArgumentError ch._bridge_get_solution((;); cnf=nothing)
 end
 
 @testset "Point Mass Dynamics Branch Probes" begin
@@ -1148,7 +1021,7 @@ end
     p_legacy_aero = ODEParams(n_sats=1, args=args_legacy_aero)
     u_legacy_aero = build_initial_conditions(args_legacy_aero)
     p_legacy_aero.shared_buffers.current_time[] = 0.0
-    force_legacy, torque_legacy = SimulationModel.calcForceTorque(
+    force_legacy, torque_legacy = dynamics_force_torque(
         AerodynamicCoefficientfM(),
         u_legacy_aero.sc[1],
         p_legacy_aero,

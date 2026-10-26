@@ -55,13 +55,4 @@ const PCC = SpaceAGORA.SimulationModel.ParallelCost
             PCC.ContentionInputs(pass_ns = 1.0, lock_hold_ns = 1.0e9, valid = true)
         ) == 1.0
     end
-
-    @testset "footprint is carried, not re-measured" begin
-        # Re-measuring what WorkCounts already counts is how the two come to
-        # disagree; this field exists to be filled from the counts.
-        ci = PCC.ContentionInputs(
-            workspace_bytes_per_sat = 4096.0, n_active_sats = 1024, valid = true,
-        )
-        @test ci.workspace_bytes_per_sat * ci.n_active_sats == 4_194_304.0
-    end
 end

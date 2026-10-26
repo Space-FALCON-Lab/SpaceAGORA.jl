@@ -10,8 +10,6 @@
         "pck_override_probes.jl",
         "xval_provenance_probes.jl",
         "reference_system_probes.jl",
-        "legacy_roots_callers_probes.jl",
-        "aerobraking_study_frame_probes.jl",
         "initial_condition_altitude_probes.jl",
         "parallel_policy_probes.jl",
         "density_selection_probes.jl",
@@ -41,8 +39,11 @@
             Base.julia_cmd().exec...,
             "--startup-file=no",
             "--load=$(joinpath(REPO_ROOT, "test", "helpers", "load_hypr.jl"))",
+            "--load=$(joinpath(REPO_ROOT, "test", "helpers", "load_edg.jl"))",
             "--depwarn=error",
-            "--project=$(REPO_ROOT)",
+            # The environment the tests run in (the test environment, or Pkg.test's
+            # sandbox): probes and unit files use packages the root project lacks.
+            "--project=$(dirname(Base.active_project()))",
             coverage_flags...,
             "--threads=2",
             probe_script,
@@ -82,7 +83,8 @@ end
         Base.julia_cmd().exec...,
         "--startup-file=no",
             "--load=$(joinpath(REPO_ROOT, "test", "helpers", "load_hypr.jl"))",
-        "--project=$(REPO_ROOT)",
+            "--load=$(joinpath(REPO_ROOT, "test", "helpers", "load_edg.jl"))",
+        "--project=$(dirname(Base.active_project()))",
         coverage_flags...,
         "--threads=$(unit_threads)",
         unit_script,
@@ -93,13 +95,12 @@ end
         "SPACEAGORA_WARN_NORMALIZE" => "0"
     )
 
-    output = IOBuffer()
-    proc = run(pipeline(ignorestatus(cmd), stdout=output, stderr=output))
-    text = String(take!(output))
-    if !success(proc)
-        println("----- begin unit suite output -----")
-        println(text)
-        println("----- end unit suite output -----")
-    end
+    # Stream progress while the child runs so a timeout retains the last item.
+    # Keep the exit-status assertion: diagnostic output never implies a pass.
+    println("unit_suite_start ", unit_script)
+    flush(stdout)
+    proc = run(pipeline(ignorestatus(cmd), stdout=stdout, stderr=stderr))
+    println("unit_suite_exit ", proc.exitcode)
+    flush(stdout)
     @test success(proc)
 end

@@ -1,3 +1,4 @@
+Base.include(@__MODULE__, joinpath(@__DIR__, "..", "..", "helpers", "load_visualizer.jl"))
 using Test
 using SpaceAGORA
 using StaticArrays
@@ -233,17 +234,150 @@ end
         @test fq["link_pose"] === nothing
         @test_throws ArgumentError SV.build_viewer_frames(DataFrame(time=[0.0]), scene)
 
-        # Above the Float64 cutoff the positions fall back to Float32.
+        # Above the Float64 cutoff, positions forced to Float32.
         many = SM.SpacecraftModel[SM.SpacecraftModel(root=SM.Link(root=true, m=3.0), initial_condition=args.dynamics_model.spacecraft[1].initial_condition, id=i) for i in 1:(SV.FLOAT64_POSITION_MAX_SPACECRAFT + 1)]
         many_args = SM.SimConfig._with_configuration(args;
         dynamics_model=SM.DynamicsModel(many, args.dynamics_model.dynamic_effectors),
     )
         many_scene = build_visualization_scene(many_args; rotation_max_samples=4)
         many_df = _synthetic_results(many_scene; n_rows=4, with_vel=false, with_link_pose=false)
-        many_frames = SV.build_viewer_frames(many_df, many_scene)
+        many_frames = SV.build_viewer_frames(many_df, many_scene; position_precision=:f32)
         @test many_frames["pos_dtype"] == "f32"
         @test length(_decode_f32(many_frames["pos_km"])) == 4 * length(many) * 3
         @test many_frames["vel_kms"] === nothing
+    end
+
+    @testset "position precision: Float64 above 64 spacecraft when it costs no frames" begin
+        args = _viewer_config(results_directory=mktempdir())
+        ic = args.dynamics_model.spacecraft[1].initial_condition
+        function scene_of(n)
+            fleet = SM.SpacecraftModel[SM.SpacecraftModel(root=SM.Link(root=true, m=3.0), initial_condition=ic, id=i) for i in 1:n]
+            fleet_args = SM.SimConfig._with_configuration(args;
+                dynamics_model=SM.DynamicsModel(fleet, args.dynamics_model.dynamic_effectors))
+            return build_visualization_scene(fleet_args; rotation_max_samples=4)
+        end
+        # Every block but the positions is the same as with Float32 positions, and
+        # the Float64 positions round to the Float32 ones.
+        function only_positions_differ(f64, f32)
+            @test f64["pos_dtype"] == "f64" && f32["pos_dtype"] == "f32"
+            @test all(k -> k in ("pos_dtype", "pos_km") || isequal(f64[k], f32[k]), union(keys(f64), keys(f32)))
+            @test Float32.(_decode_f64(f64["pos_km"])) == _decode_f32(f32["pos_km"])
+        end
+        # The budget (MB) at which the frame budget holds `frames` frames of `S`
+        # spacecraft with `position_bytes` per position: these tables carry
+        # positions and mass per spacecraft, and the time per frame. The margin
+        # keeps the rounding of the MB value from losing a frame.
+        holds(S, frames, position_bytes) = frames * S * cld(S * (position_bytes + 4) + 8, S) / 1.0e6 + 1.0e-12
+        fits_all(S, n, position_bytes) = holds(S, n, position_bytes)
+        n = 100
+
+        # 64 spacecraft: Float64 whatever the budget costs, as before.
+        scene64 = scene_of(SV.FLOAT64_POSITION_MAX_SPACECRAFT)
+        df64 = _synthetic_results(scene64; n_rows=n, with_vel=false, with_link_pose=false)
+        tight64 = fits_all(64, n, 24) - 1.0e-9
+        frames64 = SV.build_viewer_frames(df64, scene64; data_budget_mb=tight64)
+        @test frames64["pos_dtype"] == "f64" && frames64["count"] < n
+        @test SV.build_viewer_frames(df64, scene64)["pos_dtype"] == "f64"
+        @test SV.build_viewer_frames(df64, scene64; position_precision=:f32)["pos_dtype"] == "f32"
+
+        # 65 spacecraft: Float64 up to the budget at which it keeps every row, and
+        # Float32 just below it, where Float64 would keep fewer.
+        scene65 = scene_of(65)
+        df65 = _synthetic_results(scene65; n_rows=n, with_vel=false, with_link_pose=false)
+        at_boundary = fits_all(65, n, 24)
+        @test fits_all(65, n, 12) < at_boundary
+        fits = SV.build_viewer_frames(df65, scene65; data_budget_mb=at_boundary)
+        @test fits["count"] == n
+        only_positions_differ(fits, SV.build_viewer_frames(df65, scene65; data_budget_mb=at_boundary, position_precision=:f32))
+        below = SV.build_viewer_frames(df65, scene65; data_budget_mb=at_boundary - 1.0e-9)
+        @test below["pos_dtype"] == "f32" && below["count"] == n
+        @test JSON.json(below) == JSON.json(SV.build_viewer_frames(df65, scene65; data_budget_mb=at_boundary - 1.0e-9,
+            position_precision=:f32))
+        forced = SV.build_viewer_frames(df65, scene65; data_budget_mb=at_boundary - 1.0e-9, position_precision=:f64)
+        @test forced["pos_dtype"] == "f64" && forced["count"] < n           # frames give way to precision
+        # The default budget holds these rows either way.
+        only_positions_differ(SV.build_viewer_frames(df65, scene65), SV.build_viewer_frames(df65, scene65; position_precision=:f32))
+
+        # A large fleet: the same rule.
+        S = 1000
+        scene_large = scene_of(S)
+        df_large = _synthetic_results(scene_large; n_rows=20, with_vel=false, with_link_pose=false)
+        only_positions_differ(SV.build_viewer_frames(df_large, scene_large),
+            SV.build_viewer_frames(df_large, scene_large; position_precision=:f32))
+        @test SV.build_viewer_frames(df_large, scene_large; data_budget_mb=fits_all(S, 20, 24) - 1.0e-9)["pos_dtype"] == "f32"
+        @test SV.build_viewer_frames(df_large, scene_large; data_budget_mb=fits_all(S, 20, 24))["pos_dtype"] == "f64"
+        # Below two frames, the floor keeps two at either precision, over the
+        # budget: Float32 above 64, Float64 at 64 or fewer.
+        @test SV.build_viewer_frames(df_large, scene_large; data_budget_mb=1.0e-4)["pos_dtype"] == "f32"
+        @test SV.build_viewer_frames(df65, scene65; data_budget_mb=1.0e-4)["pos_dtype"] == "f32"
+        @test SV.build_viewer_frames(df64, scene64; data_budget_mb=1.0e-4)["pos_dtype"] == "f64"
+
+        # A budget at which Float32 also keeps every other row (99 frames by the
+        # budget, so the same stride as Float64's 58): Float64, the same frames.
+        # With mission segments, whose boundary rows the row limit bounds, Float64
+        # would lower that limit, so Float32.
+        same_stride = holds(65, 99, 12)
+        stride_only = SV.build_viewer_frames(df65, scene65; data_budget_mb=same_stride)
+        @test stride_only["pos_dtype"] == "f64" && stride_only["count"] < n
+        only_positions_differ(stride_only, SV.build_viewer_frames(df65, scene65; data_budget_mb=same_stride, position_precision=:f32))
+        mission = Dict{String, Any}("schema" => 1, "name" => "precision", "transitions" => Any[],
+            "segments" => Any[Dict{String, Any}("name" => "coast", "start_s" => 0.0, "end_s" => 500.0)])
+        @test SV.build_viewer_frames(df65, scene65; data_budget_mb=same_stride, mission=mission)["pos_dtype"] == "f32"
+        @test SV.build_viewer_frames(df65, scene65; mission=mission)["pos_dtype"] == "f64"
+        # Twenty-four boundary rows at a budget that holds them as Float32 frames
+        # only: :auto completes, and :f64's refusal names the keyword.
+        bounds = df65.time[10:4:94]
+        m = length(bounds) - 1
+        boundaries = Dict{String, Any}("schema" => 1, "name" => "boundaries",
+            "segments" => Any[Dict{String, Any}("name" => "s$(j)", "start_s" => bounds[j], "end_s" => bounds[j + 1]) for j in 1:m],
+            "transitions" => Any[Dict{String, Any}("time_s" => bounds[j + 1], "from" => "s$(j)", "to" => "s$(j + 1)",
+                "reason" => "boundary") for j in 1:(m - 1)])
+        room = (length(bounds) + 2) * (65 * 16 + 8) / 1.0e6 + 1.0e-12
+        @test SV.build_viewer_frames(df65, scene65; data_budget_mb=room, mission=boundaries)["pos_dtype"] == "f32"
+        err = try SV.build_viewer_frames(df65, scene65; data_budget_mb=room, mission=boundaries, position_precision=:f64)
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError && occursin("position_precision=:auto", err.msg)
+
+        # The keyword is checked before any results are read.
+        for bad in (:f16, "f64", nothing)
+            err = try SV.build_viewer_frames(df65, scene65; position_precision=bad); nothing catch e; e end
+            @test err isa ArgumentError && occursin(repr(bad), err.msg)
+        end
+        err = try export_viewer_payload(joinpath(mktempdir(), "missing"); position_precision=nothing); nothing catch e; e end
+        @test err isa ArgumentError && occursin("position_precision", err.msg)
+    end
+
+    @testset "heat rate reaches the viewer in W/m²" begin
+        # Saved sc{i}_heat_rate is W/cm² (outputs page); the frames field the
+        # viewer reads, heat_rate_w_m2, is W/m², so it carries 1e4 times the column.
+        dir = mktempdir()
+        args = _viewer_config(results_directory=dir)
+        scene = build_visualization_scene(args; rotation_max_samples=8)
+        df = _synthetic_results(scene; n_rows=25, with_link_pose=false)
+        @test SV.build_viewer_frames(df, scene)["heat_rate_w_m2"] === nothing
+        df.sc1_heat_rate = 0.05 .+ 0.0005 .* df.time
+        heat = _decode_f32(SV.build_viewer_frames(df, scene)["heat_rate_w_m2"])
+        @test length(heat) == 25
+        @test isapprox(heat, Float32.(1.0e4 .* df.sc1_heat_rate); rtol=1e-6)
+
+        # The ensemble exporter resamples each sample onto one time axis; the
+        # shorter sample is NaN after its end and stays NaN.
+        short = _synthetic_results(scene; n_rows=13, with_link_pose=false)
+        short.sc1_heat_rate = 0.2 .+ 0.001 .* short.time
+        samples = [SV.EnsembleSample(i, string(i), true, NaN, "sample $(i)", dir) for i in 1:2]
+        frames, _, per_sample = SV.build_ensemble_frames(samples, [scene, scene], [df, short])
+        @test per_sample == 1 && frames["sats"] == 2
+        t = _decode_f64(frames["t_s"])
+        eheat = _decode_f32(frames["heat_rate_w_m2"])
+        @test length(eheat) == 2 * length(t)
+        @test isapprox(eheat[1:2:end], Float32.(1.0e4 .* (0.05 .+ 0.0005 .* t)); rtol=1e-6)
+        inside = t .<= short.time[end]
+        @test any(inside) && !all(inside)
+        @test isapprox(eheat[2:2:end][inside], Float32.(1.0e4 .* (0.2 .+ 0.001 .* t[inside])); rtol=1e-6)
+        @test all(isnan, eheat[2:2:end][.!inside])
     end
 
     @testset "plume payload" begin
@@ -320,6 +454,22 @@ end
         # A spacecraft the scene draws thrusters for but the run saved no levels for stays at zero count.
         partial = select(df, Not(["sc1_thruster_level_2"]))
         @test SV.build_viewer_frames(partial, scene)["thruster_level"] === nothing
+
+        # Gimballed thrusters' directions: the block only with all its columns,
+        # three per thruster in scene order, aligned with the kept frames.
+        @test !haskey(frames, "thruster_direction")
+        for k in 1:6
+            df[!, "sc1_thruster_direction_$(k)"] = [k == 3 ? cos(r / 25) : k == 1 ? sin(r / 25) : k == 4 ? 1.0 : 0.0 for r in 1:25]
+        end
+        turned = SV.build_viewer_frames(df, scene)
+        block = turned["thruster_direction"]
+        @test block["stride"] == 3 && block["counts"] == [2] && block["offsets"] == [0] && block["total"] == 6
+        dirs = _decode_f32(block["data"])
+        @test length(dirs) == 25 * 6
+        @test dirs[1:6] ≈ Float32[sin(1 / 25), 0, cos(1 / 25), 1, 0, 0]
+        @test length(_decode_f32(SV.build_viewer_frames(df, scene; max_frames=6)["thruster_direction"]["data"])) ==
+              SV.build_viewer_frames(df, scene; max_frames=6)["count"] * 6
+        @test !haskey(SV.build_viewer_frames(select(df, Not(["sc1_thruster_direction_5"])), scene), "thruster_direction")
     end
 
     @testset "scalar channels align with selected rows" begin
@@ -390,7 +540,7 @@ end
         @test isnan(y[1]) && isnan(y[3]) && y[2] == 1001f0
         payload = SV.viewer_payload(fleet, df; include_textures=false, channels=specs)
         @test only(payload["frames"]["channels"])["name"] == "error_deg"
-        html = SV.render_viewer_html(payload)
+        html = SpaceAGORAVisualizer.render_viewer_html(payload)
         @test !occursin("<script>label</script>", html)
         @test occursin("<script>label<\\/script>", html)
     end
@@ -487,7 +637,7 @@ end
         @test_throws ArgumentError SV.model_payloads(scene; models=Dict(1 => joinpath(dir, "x.fbx")))
 
         # The shipped NASA ISS model embeds as GLB.
-        iss = joinpath(REPO, "data", "models", "iss_nasa_3d_resources_b.glb")
+        iss = joinpath(REPO, "data", "scene", "models", "iss_nasa_3d_resources_b.glb")
         @test isfile(iss)
         @test read(iss, 4) == Vector{UInt8}("glTF")
         @test SV.gltf_required_extensions(iss) == String[]   # shipped decompressed; the NASA original needs Draco
@@ -512,7 +662,7 @@ end
         @test size(load_model_triangles(stl)) == (3, 3)
         @test model_bounding_box(stl)[2] == SVector(1.0, 1.0, 0.0)
 
-        iss = joinpath(REPO, "data", "models", "iss_nasa_3d_resources_b.glb")
+        iss = joinpath(REPO, "data", "scene", "models", "iss_nasa_3d_resources_b.glb")
         iss_tris = load_model_triangles(iss)
         @test size(iss_tris, 2) > 100_000 && size(iss_tris, 2) % 3 == 0
         lo, hi = model_bounding_box(iss)
@@ -649,9 +799,9 @@ end
         df = _synthetic_results(scene)
         payload = SV.viewer_payload(scene, df; include_textures=false, references=[(t_s=t, pos_m=pos)])
         @test length(payload["references"]) == 1
-        @test haskey(SV.viewer_import_map()["imports"], "viewer/references.js")
-        @test haskey(SV.viewer_import_map()["imports"], "viewer/plots.js")
-        @test haskey(SV.viewer_import_map()["imports"], "viewer/terrain.js")
+        @test haskey(SpaceAGORAVisualizer.viewer_import_map()["imports"], "viewer/references.js")
+        @test haskey(SpaceAGORAVisualizer.viewer_import_map()["imports"], "viewer/plots.js")
+        @test haskey(SpaceAGORAVisualizer.viewer_import_map()["imports"], "viewer/terrain.js")
     end
 
     @testset "STL overrides" begin
@@ -682,12 +832,12 @@ end
     end
 
     @testset "import map and HTML assembly" begin
-        imports = SV.viewer_import_map()["imports"]
+        imports = SpaceAGORAVisualizer.viewer_import_map()["imports"]
         for key in ("three", "three/addons/controls/OrbitControls.js", "three/addons/loaders/STLLoader.js", "three/addons/loaders/OBJLoader.js", "three/addons/loaders/GLTFLoader.js", "three/addons/utils/BufferGeometryUtils.js", "viewer/main.js", "viewer/globe.js", "viewer/data.js", "viewer/spacecraft.js", "viewer/lod.js", "viewer/timeline.js", "viewer/ui.js")
             @test haskey(imports, key)
             @test startswith(imports[key], "data:text/javascript;base64,")
         end
-        @test_throws ArgumentError SV.viewer_import_map(mktempdir())
+        @test_throws ArgumentError SpaceAGORAVisualizer.viewer_import_map(mktempdir())
 
         dir = mktempdir()
         args = _viewer_config(results_directory=dir)
@@ -696,7 +846,7 @@ end
         payload = SV.viewer_payload(scene, df; texture_resolution="4k", options=Dict("frame" => "planet_fixed", "title" => "a</script>b"))
         @test haskey(payload["textures"], "mars")
         @test payload["textures"]["mars"]["resolution"] == "4k"
-        html = SV.render_viewer_html(payload; title="T<1>")
+        html = SpaceAGORAVisualizer.render_viewer_html(payload; title="T<1>")
         @test occursin("<title>T&lt;1&gt;</title>", html)
         @test occursin("window.SPACEAGORA_VIEWER = {", html)
         @test occursin("\"planet_fixed\"", html)
@@ -708,7 +858,7 @@ end
 
         no_tex = SV.viewer_payload(scene, df; include_textures=false)
         @test isempty(no_tex["textures"])
-        @test_throws ArgumentError SV.render_viewer_html(payload; viewer_dir=mktempdir())
+        @test_throws ArgumentError SpaceAGORAVisualizer.render_viewer_html(payload; viewer_dir=mktempdir())
     end
 
     @testset "end-to-end export from a flagged run" begin
@@ -744,7 +894,7 @@ end
         @test _decode_f32(only(channel_payload["frames"]["channels"])["data"]) ==
             _decode_f32(channel_payload["frames"]["mass_kg"])
 
-        iss = joinpath(REPO, "data", "models", "iss_nasa_3d_resources_b.glb")
+        iss = joinpath(REPO, "data", "scene", "models", "iss_nasa_3d_resources_b.glb")
         iss_page = export_visualization(args; out=joinpath(dir, "iss.html"), textures=false, models=Dict(1 => iss), model_scale=2.4, model_rotation_deg=Dict(1 => (-90, 0, -90)))
         iss_html = read(iss_page, String)
         @test occursin("data:model/gltf-binary;base64,", iss_html)
@@ -787,7 +937,9 @@ end
         @test_throws ArgumentError run_cli(["visualize"]; io=devnull)
         @test_throws ArgumentError run_cli(["visualize", "--run=$(dir)", "--bogus"]; io=devnull)
         print_out = IOBuffer()
-        @test run_cli(["run", "--example=AGORA_Basic_Quickstart.jl", "--visualize", "--print-only"]; io=print_out) == 0
+        withenv("SPACEAGORA_VISUALIZER_ENV" => ENV["SPACEAGORA_VISUALIZER_TEST_ENV"]) do
+            @test run_cli(["run", "--example=AGORA_Basic_Quickstart.jl", "--visualize", "--print-only"]; io=print_out) == 0
+        end
         @test occursin("SPACEAGORA_VISUALIZATION=1", replace(String(take!(print_out)), " => " => "="))
 
         # A run without the flag has no sidecar to export.
@@ -826,11 +978,11 @@ end
     # The module is registered in every list that has to carry it, in the same
     # relative position: the bundler, the development harness, the standalone
     # builder. Each shipped entrypoint must carry the same module.
-    @test "groundtrack.js" in SV.VIEWER_MODULES
-    @test isfile(joinpath(SV.VIEWER_DIR, "src", "groundtrack.js"))
+    @test "groundtrack.js" in SpaceAGORAVisualizer.VIEWER_MODULES
+    @test isfile(joinpath(SpaceAGORAVisualizer.viewer_directory(), "src", "groundtrack.js"))
     for (path, needle) in (
-        (joinpath(REPO, "viewer", "dev.html"), "\"viewer/groundtrack.js\""),
-        (joinpath(REPO, "viewer", "build_standalone.py"), "\"groundtrack.js\""),
+        (joinpath(SpaceAGORAVisualizer.viewer_directory(), "dev.html"), "\"viewer/groundtrack.js\""),
+        (joinpath(SpaceAGORAVisualizer.viewer_directory(), "build_standalone.py"), "\"groundtrack.js\""),
     )
         @test occursin(needle, read(path, String))
     end
@@ -852,7 +1004,7 @@ end
         craft = only(raw["spacecraft"])
         raw["spacecraft"] = [merge(copy(craft), Dict("id" => i, "name" => "mission $(i)")) for i in eachindex(files)]
         scene = SV._scene_from_dict(raw)
-        models = Dict(i => joinpath(REPO, "data", "models", file) for (i, file) in enumerate(files))
+        models = Dict(i => joinpath(REPO, "data", "scene", "models", file) for (i, file) in enumerate(files))
         payload = SV.model_payloads(scene; models=models)
         @test length(payload) == length(files)
         for (i, file) in enumerate(files)

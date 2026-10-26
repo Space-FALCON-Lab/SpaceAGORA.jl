@@ -13,6 +13,7 @@ function prepare(args)
     owned=deepcopy(args)
     u=E.build_initial_conditions(owned)
     p=S.ODEParams(n_sats=length(owned.dynamics_model.spacecraft),args=owned)
+    SpaceAGORA.SimulationModel.SimulationCallbacks.initialize_gnc_links!(owned,u,p,0.)   # links first, as the engine does
     for g in owned.guidance_model.guidance_effectors
         Hooks.initialize_guidance!(g,u,p,0.)
     end
@@ -31,20 +32,23 @@ end
     @test g.plan_buffer===only(owned.control_model.control_effectors).plan_buffer
     g2=deepcopy(g); @test g2.runtime.rng!==g.runtime.rng
     c=only(owned.control_model.control_effectors)
-    S.calcControlEffect!(c,u,p,.1,1)
+    # The engine calls the planner that writes the controller's buffer before its tick.
+    @test SpaceAGORA.SimulationModel.SimulationCallbacks._linked_producers(c,owned)==(g,)
+    Hooks.before_reference_control!(g,c,u,p,.1)
+    S.update_control!(c,u,p,.1,1)
     @test last(g.runtime.records).event===:control && last(g.runtime.records).request_id==1
-    S.GuidanceHooks.calcGuidanceEffect!(g,u,p,.1,1)
+    S.GuidanceHooks.update_guidance!(g,u,p,.1,1)
     @test g.runtime.request_id==3
     rng=copy(g.runtime.rng)
-    S.GuidanceHooks.calcGuidanceEffect!(g,u,p,.1,1)
+    S.GuidanceHooks.update_guidance!(g,u,p,.1,1)
     @test g.runtime.request_id==3 && rand(copy(rng))==rand(copy(g.runtime.rng))
-    S.GuidanceHooks.calcGuidanceEffect!(g,u,p,.2,1)
+    S.GuidanceHooks.update_guidance!(g,u,p,.2,1)
     @test g.runtime.request_id==4
     @test last(g.runtime.records).reason===:retime
     push!(g.events,RPOPlanningEvent(.2;token=4))
-    S.GuidanceHooks.calcGuidanceEffect!(g,u,p,.2,1)
+    S.GuidanceHooks.update_guidance!(g,u,p,.2,1)
     @test g.runtime.request_id==5 # A new token at the same accepted time is not a duplicate.
-    S.GuidanceHooks.calcGuidanceEffect!(g,u,p,.2,1)
+    S.GuidanceHooks.update_guidance!(g,u,p,.2,1)
     @test g.runtime.request_id==5
     sol=run_simulation(a;return_solution=true)
     report=rpo_run_report(sol)
@@ -97,7 +101,7 @@ end
     @test e isa RPOPlanningError && e.reason===:expired_reference
     a=holdargs(replan_interval_s=.1,mission_time_s=.2)
     owned,u,p,g=prepare(a)
-    S.GuidanceHooks.calcGuidanceEffect!(g,u,p,.1,1)
+    S.GuidanceHooks.update_guidance!(g,u,p,.1,1)
     @test last(g.runtime.records).reason===:replan
 end
 
@@ -136,29 +140,32 @@ end
     # The existing absolute time tolerance admits a near-boundary tick only.
     owned, u, p, g = prepare(holdargs(replan_interval_s=0.2))
     atol = g.validation.time_atol_s
-    S.GuidanceHooks.calcGuidanceEffect!(g, u, p, 0.2 - 2atol, 1)
+    S.GuidanceHooks.update_guidance!(g, u, p, 0.2 - 2atol, 1)
     @test g.runtime.request_id == 1
-    S.GuidanceHooks.calcGuidanceEffect!(g, u, p, 0.2 - atol/2, 1)
+    S.GuidanceHooks.update_guidance!(g, u, p, 0.2 - atol/2, 1)
     @test g.runtime.request_id == 2
     rng = copy(g.runtime.rng)
-    S.GuidanceHooks.calcGuidanceEffect!(g, u, p, 0.2 - atol/2, 1)
+    S.GuidanceHooks.update_guidance!(g, u, p, 0.2 - atol/2, 1)
     @test g.runtime.request_id == 2
     @test rand(copy(rng)) == rand(copy(g.runtime.rng))
     owned, u, p, g = prepare(holdargs())
     for tick in 1:19
-        S.GuidanceHooks.calcGuidanceEffect!(g, u, p, tick * dt, 1)
+        S.GuidanceHooks.update_guidance!(g, u, p, tick * dt, 1)
     end
     @test g.runtime.request_id == 1 # Infinite interval keeps background planning disabled.
 end
 
 @testset "Independent runs and ID-based streams" begin
+    # Equal reruns, and concurrent runs equal to sequential ones: the conformance
+    # kit's simulation check runs the hold configuration both ways.
+    K=SpaceAGORA.Conformance
+    report=K.check_algorithm(Hold(),K.rpo_conformance_requests(goal_rtn_m=nothing);trusted=K.rpo_trusted_queries(),
+        simulation=K.rpo_conformance_simulation(goal_rtn_m=(3.,0.,0.),mission_time_s=.2))
+    @test K.passed(report)
+    @test only(c.status for c in report.checks if c.id===:simulation_run)===:pass
     args=holdargs(mission_time_s=.2)
-    s1=run_simulation(args;return_solution=true);s2=run_simulation(args;return_solution=true)
-    @test s1.t==s2.t && s1.u==s2.u
+    run_simulation(args;return_solution=true)
     @test args.guidance_model.guidance_effectors[1].runtime===nothing
-    tasks=[Threads.@spawn run_simulation(args;return_solution=true) for _ in 1:2]
-    concurrent=fetch.(tasks)
-    @test all(s->s.t==s1.t&&s.u==s1.u,concurrent)
     specs=((id=101,start_rtn_m=(3.,0.,0.),goal_rtn_m=(3.,0.,0.)),
            (id=102,start_rtn_m=(5.,0.,0.),goal_rtn_m=(5.,0.,0.)))
     reports=[rpo_run_report(run_simulation(make_rpo_configuration(planner=Hold(),chasers=x,
@@ -176,6 +183,8 @@ end
 end
 
 @testset "Preflight refusal before outputs" begin
+    # The hold planner keeps state of its own (its proposal count) and declares no
+    # restart, so a checkpoint cannot hold it: checkpoint writing and resume are refused.
     mktempdir() do folder
         output=joinpath(folder,"must-not-exist")
         for settings in (SimulationSettings(results=true,results_directory=output,checkpoint_enabled=true),
@@ -245,10 +254,17 @@ end
     retained.diagnostics.mutable_values .= 99
     @test g.plan_buffer.plan.r_ref_rtn[1,1]==3.
     @test g.plan_buffer.plan.diagnostics.planner.mutable_values==[1,2]
-    @test g.runtime.reference.r_ref_rtn_m[1,1]==3.
+    @test g.runtime.product.r_ref_rtn_m[1,1]==3.
 end
 
 using DiffEqCallbacks: PresetTimeCallback
+# A guidance that is not a planner, on the plan buffer it shares with the
+# controller: it writes no plan, so the controller tracks what the test installs.
+struct SharedBufferGuidance <: SpaceAGORA.AbstractGuidanceModel
+    plan_buffer::S.RPOPlanBuffer
+end
+SpaceAGORA.update_guidance!(::SharedBufferGuidance, u, p, t::Float64, spacecraft_index::Int) = nothing
+SpaceAGORA.gnc_links(g::SharedBufferGuidance) = (SpaceAGORA.Produces(g.plan_buffer),)
 @testset "Matched legacy HYPR references and propagated control" begin
     for (mode,adaptive,forced) in ((:legacy,false,false),(:manuscript,false,false),(:legacy,true,true))
         cfg=rpo_pso_config(RPOPublicPilot.hypr().config;hypr_mode=mode,adaptive_enable=adaptive)
@@ -276,7 +292,7 @@ using DiffEqCallbacks: PresetTimeCallback
         legacy=deepcopy(args)
         control=only(legacy.control_model.control_effectors)
         S.update_rpo_plan_buffer!(control.plan_buffer,plans[1],0.)
-        guide=S.RPOGuidanceModel(chaser_idx=1,target_idx=2,plan_buffer=control.plan_buffer)
+        guide=SharedBufferGuidance(control.plan_buffer)
         legacy=S.SimConfig._with_configuration(legacy;guidance_model=S.GuidanceModel(
             guidance_effectors=(guide,),guidance_rates=[.1]))
         callback=PresetTimeCallback([.1],integ->begin

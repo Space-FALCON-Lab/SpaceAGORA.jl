@@ -25,7 +25,7 @@ const PERT_HBP = SM_HBP.DynamicEffectors.PerturbationEffectors
 
 const HBP_GRAVITY_FILE = joinpath(
     normpath(joinpath(@__DIR__, "..", "..", "..")),
-    "data", "Gravity_harmonics_data", "EarthGGM05C.csv",
+    "data", "planets", "gravity", "EarthGGM05C.csv",
 )
 
 const HBP_LPI = SMatrix{3, 3, Float64, 9}(

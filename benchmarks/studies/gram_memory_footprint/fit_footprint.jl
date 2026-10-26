@@ -1,7 +1,7 @@
 # Fit an intercept and a per-spacecraft slope to one results CSV of the GRAM
 # memory-footprint study, and print the table that
 # `docs/architecture/gram_memory_footprint.md` and the routing constants in
-# `src/parallel/routing/machine_topology.jl` are sourced from.
+# `src/orchestration/parallel/routing/machine_topology.jl` are sourced from.
 #
 #   julia --project=. benchmarks/studies/gram_memory_footprint/fit_footprint.jl \
 #       benchmarks/studies/gram_memory_footprint/results/gram_memory_footprint_<host>.csv

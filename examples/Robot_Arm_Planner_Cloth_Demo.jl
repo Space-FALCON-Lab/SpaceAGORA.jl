@@ -1,6 +1,7 @@
-# Load from the companion environment before common.jl activates the root project.
+# Load from the companion environment before common.jl continues in the examples environment.
 # Setup: julia --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
-using SpaceAGORAHYPR
+#        julia --startup-file=no examples/setup.jl
+using SpaceAGORA, HYPR
 include(joinpath(@__DIR__, "common.jl"))
 
 using CSV
@@ -18,13 +19,17 @@ using StaticArrays
 
 Standalone smoke/demo case for the robotics arm port:
 
-- builds the canonical `ClothArmModel`
+- builds the canonical `RobotArmModel`
 - chooses a reachable inspection target and random spherical path obstacles
 - solves IK and generates a HYPR joint-space arm plan around the obstacles
-- realizes the plan through the compliant Cloth multibody dynamics backend
+- realizes the plan through the compliant multibody dynamics backend
 - saves joint, end-effector, and tracking-error CSV/PNG artifacts
 
-Run with:
+The historical filename, output directories, CSV keys, `:cloth_quintic` planner
+identifier and `retime_cloth_*` configuration fields remain unchanged.
+
+Run with, after preparing the HYPR environment (`examples/rpo_planner_env/setup.jl`)
+and the examples environment (`julia --startup-file=no examples/setup.jl`):
 
 ```text
 julia --project=examples/rpo_planner_env examples/Robot_Arm_Planner_Cloth_Demo.jl
@@ -104,7 +109,7 @@ function _joint_dataframe(plan::RobotArmPlan)
     return df
 end
 
-function _ee_dataframe(plan::RobotArmPlan, sim::ClothRobotArmSimulation)
+function _ee_dataframe(plan::RobotArmPlan, sim::CompliantRobotArmSimulation)
     df = DataFrame(time_s=sim.trajectory.t_s)
     df.ee_ref_x_m = sim.reference_end_effector_positions[1, :]
     df.ee_ref_y_m = sim.reference_end_effector_positions[2, :]
@@ -248,7 +253,7 @@ function _plot_joint_history(plan::RobotArmPlan)
     return plt
 end
 
-function _plot_ee_path(plan::RobotArmPlan, sim::ClothRobotArmSimulation, obstacles::Vector{RobotArmSphereObstacle})
+function _plot_ee_path(plan::RobotArmPlan, sim::CompliantRobotArmSimulation, obstacles::Vector{RobotArmSphereObstacle})
     lo, hi = _axis_limits_3d(plan, sim, obstacles)
     plt = plot(
         sim.reference_end_effector_positions[1, :],
@@ -272,7 +277,7 @@ function _plot_ee_path(plan::RobotArmPlan, sim::ClothRobotArmSimulation, obstacl
         sim.end_effector_positions[1, :],
         sim.end_effector_positions[2, :],
         sim.end_effector_positions[3, :];
-        label="Cloth realization",
+        label="Compliant arm realization",
         lw=2,
         ls=:dash,
     )
@@ -296,14 +301,14 @@ function _plot_ee_path(plan::RobotArmPlan, sim::ClothRobotArmSimulation, obstacl
     return plt
 end
 
-function _plot_tracking_error(sim::ClothRobotArmSimulation)
+function _plot_tracking_error(sim::CompliantRobotArmSimulation)
     return plot(
         sim.trajectory.t_s,
         1.0e3 .* sim.tracking_error_m;
         label=false,
         xlabel="Time (s)",
         ylabel="EE tracking error (mm)",
-        title="Cloth Realization Tracking Error",
+        title="Compliant Arm Tracking Error",
         lw=2,
         size=(900, 420),
     )
@@ -344,7 +349,7 @@ function _plot_stabilization_demand(base_sim::CoupledBaseSimulation)
 end
 
 function _arm_polyline_from_plan(plan::RobotArmPlan, q)
-    pose = cloth_fk(plan.model, plan.base_pose, q)
+    pose = robot_arm_fk(plan.model, plan.base_pose, q)
     pts = vcat([pose.joint_origins[1]], pose.link_tip_positions)
     return (
         x=[p[1] for p in pts],
@@ -507,9 +512,9 @@ function _coupled_base_initial_state(plan::RobotArmPlan)
         heat_loads=zeros(1),
         q=Float64[0.0, 0.0, 0.0, 1.0],
         ω=zeros(3),
-    ), coupled_cloth_robot_arm_state_shape(plan))
+    ), coupled_compliant_robot_arm_state_shape(plan))
     state = ComponentVector(shape)
-    initialize_coupled_cloth_robot_arm_state!(state, plan; t_s=0.0)
+    initialize_coupled_compliant_robot_arm_state!(state, plan; t_s=0.0)
     return state
 end
 
@@ -549,7 +554,7 @@ function _root_reaction_from_cloth_state(
     du = zero(state)
     reaction_force = MVector{3, Float64}(0.0, 0.0, 0.0)
     reaction_torque = MVector{3, Float64}(0.0, 0.0, 0.0)
-    assign_coupled_cloth_robot_arm_rhs!(
+    assign_coupled_compliant_robot_arm_rhs!(
         du,
         state,
         plan,
@@ -593,7 +598,7 @@ function _coupled_base_rhs!(
     du .= 0.0
     reaction_force = MVector{3, Float64}(0.0, 0.0, 0.0)
     reaction_torque = MVector{3, Float64}(0.0, 0.0, 0.0)
-    assign_coupled_cloth_robot_arm_rhs!(
+    assign_coupled_compliant_robot_arm_rhs!(
         du,
         state,
         plan,
@@ -703,7 +708,7 @@ end
 
 function simulate_coupled_base_motion(
     plan::RobotArmPlan;
-    arm_sim::ClothRobotArmSimulation,
+    arm_sim::CompliantRobotArmSimulation,
     dt_s::Real=0.001,
     duration_s::Real=plan.t_ref_s[end],
     k_translation_n_m::Real=8.0e3,
@@ -802,7 +807,7 @@ end
 
 function _axis_limits_3d(
     plan::RobotArmPlan,
-    sim::ClothRobotArmSimulation,
+    sim::CompliantRobotArmSimulation,
     obstacles::Vector{RobotArmSphereObstacle};
     base_sim::Union{Nothing, CoupledBaseSimulation}=nothing,
 )
@@ -842,7 +847,7 @@ end
 
 function _plot_arm_motion_html(
     plan::RobotArmPlan,
-    sim::ClothRobotArmSimulation,
+    sim::CompliantRobotArmSimulation,
     obstacles::Vector{RobotArmSphereObstacle},
     base_sim::CoupledBaseSimulation,
 )
@@ -949,7 +954,7 @@ end
 
 function _planner_metrics_html(
     plan::RobotArmPlan,
-    sim::ClothRobotArmSimulation,
+    sim::CompliantRobotArmSimulation,
     obstacles::Vector{RobotArmSphereObstacle},
     hypr::RobotArmHYPRResult,
     base_sim::CoupledBaseSimulation,
@@ -964,9 +969,9 @@ function _planner_metrics_html(
     ref_clearance_mm = 1.0e3 .* _obstacle_clearance_series(plan.ee_ref, obstacles)
     cloth_clearance_mm = 1.0e3 .* _obstacle_clearance_series(sim.end_effector_positions, obstacles)
     push!(traces, PlotlyJS.scatter(x=plan.t_ref_s, y=ee_speed, mode="lines", name="EE speed m/s", xaxis="x4", yaxis="y4"))
-    push!(traces, PlotlyJS.scatter(x=sim.trajectory.t_s, y=1.0e3 .* sim.tracking_error_m, mode="lines", name="Cloth EE error mm", xaxis="x4", yaxis="y4"))
+    push!(traces, PlotlyJS.scatter(x=sim.trajectory.t_s, y=1.0e3 .* sim.tracking_error_m, mode="lines", name="Compliant arm EE error mm", xaxis="x4", yaxis="y4"))
     push!(traces, PlotlyJS.scatter(x=plan.t_ref_s, y=ref_clearance_mm, mode="lines", name="Reference obstacle clearance mm", xaxis="x4", yaxis="y4"))
-    push!(traces, PlotlyJS.scatter(x=sim.trajectory.t_s, y=cloth_clearance_mm, mode="lines", name="Cloth obstacle clearance mm", xaxis="x4", yaxis="y4"))
+    push!(traces, PlotlyJS.scatter(x=sim.trajectory.t_s, y=cloth_clearance_mm, mode="lines", name="Compliant EE obstacle clearance mm", xaxis="x4", yaxis="y4"))
     push!(traces, PlotlyJS.scatter(
         x=collect(1:length(hypr.cost_history)),
         y=hypr.cost_history,
@@ -1007,7 +1012,7 @@ end
 
 function _planner_summary_html(
     plan::RobotArmPlan,
-    sim::ClothRobotArmSimulation,
+    sim::CompliantRobotArmSimulation,
     obstacles::Vector{RobotArmSphereObstacle},
     hypr::RobotArmHYPRResult,
     base_sim::CoupledBaseSimulation,
@@ -1020,10 +1025,10 @@ function _planner_summary_html(
     rw_peak = maximum(vec(sqrt.(sum(base_sim.stabilization_rw_torque_nm .^ 2; dims=1))))
     metric_names = [
         "IK final error (mm)",
-        "Cloth max EE error (mm)",
-        "Cloth final EE error (mm)",
+        "Compliant arm max EE error (mm)",
+        "Compliant arm final EE error (mm)",
         "Min reference clearance (mm)",
-        "Min Cloth clearance (mm)",
+        "Min compliant EE clearance (mm)",
         "Plan duration (s)",
         "Reference samples",
         "HYPR best cost",
@@ -1167,16 +1172,16 @@ end
 
 function _run_robot_arm_case(case; out_dir::AbstractString, save_plots::Bool)
     mkpath(out_dir)
-    arm = default_cloth_arm_model(
+    arm = default_robot_arm_model(
         mount_offset_body=(0.15, 0.0, 0.0),
     )
-    base_pose = ClothArmBasePose([0.0, 0.0, 0.0])
+    base_pose = RobotArmBasePose([0.0, 0.0, 0.0])
     q_start = Float64.(case.q_start)
 
     # Use a known reachable FK pose as the synthetic inspection target. This keeps
     # the example deterministic and makes IK/planning errors meaningful.
     q_target_truth = Float64.(case.q_target_truth)
-    target = cloth_fk(arm, base_pose, q_target_truth).end_effector_position
+    target = robot_arm_fk(arm, base_pose, q_target_truth).end_effector_position
 
     planner_cfg = RobotArmPlannerConfig(
         dt_s=0.05,
@@ -1249,7 +1254,7 @@ function _run_robot_arm_case(case; out_dir::AbstractString, save_plots::Bool)
     plan = hypr.plan
     sim_duration_s = plan.t_ref_s[end]
 
-    sim = simulate_cloth_robot_arm_plan(
+    sim = simulate_compliant_robot_arm_plan(
         plan;
         dt_s=0.025,
         duration_s=sim_duration_s,
@@ -1325,7 +1330,7 @@ end
 function run_robot_arm_planner_cloth_demo()
     result = _run_robot_arm_case(_single_arm_case_spec(); out_dir=OUT_DIR, save_plots=true)
     println()
-    println("Robot arm planner + Cloth dynamics demo complete.")
+    println("Robot arm planner + compliant multibody dynamics demo complete.")
     println("  planner              = ", result.plan.planner)
     println("  sphere obstacles      = ", length(result.obstacles))
     println("  fuel used             = ", @sprintf("%.6f kg (%.3f%%)", result.metrics.fuel_used_kg, result.metrics.fuel_used_pct))
@@ -1342,7 +1347,7 @@ function _arm_batch_metrics_plot(df::DataFrame)
     specs = [
         (:fuel_used_pct, "Fuel used (%)"),
         (:cloth_tracking_max_m, "Max tracking error (m)"),
-        (:min_cloth_clearance_m, "Min cloth clearance (m)"),
+        (:min_cloth_clearance_m, "Min compliant EE clearance (m)"),
         (:max_thrust_saturation_ratio, "Max thrust sat. (x)"),
         (:max_rw_saturation_ratio, "Max RW sat. (x)"),
         (:planned_duration_s, "Plan duration (s)"),
@@ -1393,7 +1398,7 @@ function _arm_batch_tracking_plot(results)
     return PlotlyJS.Plot(
         traces,
         PlotlyJS.Layout(
-            title="Robot Arm Batch Cloth Tracking Error",
+            title="Robot Arm Batch Compliant Tracking Error",
             xaxis_title="time (s)",
             yaxis_title="tracking error (m)",
         ),
@@ -1433,7 +1438,7 @@ function run_robot_arm_planner_cloth_batch(;
     println("  mean fuel used        = ", @sprintf("%.6f kg", sum(summary_df.fuel_used_kg) / max(nrow(summary_df), 1)))
     println("  max fuel used         = ", @sprintf("%.6f kg", maximum(summary_df.fuel_used_kg)))
     println("  max tracking error    = ", @sprintf("%.3f mm", 1.0e3 * maximum(summary_df.cloth_tracking_max_m)))
-    println("  min cloth clearance   = ", @sprintf("%.3f mm", 1.0e3 * minimum(summary_df.min_cloth_clearance_m)))
+    println("  min compliant EE clearance = ", @sprintf("%.3f mm", 1.0e3 * minimum(summary_df.min_cloth_clearance_m)))
     println("  summary CSV           = ", abspath(summary_csv))
     println("  case manifest CSV     = ", abspath(cases_csv))
     println("  metrics HTML          = ", abspath(metrics_html))

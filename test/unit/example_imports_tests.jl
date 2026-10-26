@@ -75,7 +75,7 @@ using Test
 # Load the same definitions as the examples, without running a mission, plotting,
 # furnishing kernels, or loading a native atmosphere model.
 include(joinpath(@__DIR__, "..", "..", "examples", "common.jl"))
-include(joinpath(@__DIR__, "..", "..", "examples", "aerobraking_mission_plot_utils.jl"))
+include(joinpath(@__DIR__, "..", "..", "examples", "support", "aerobraking_mission_plot_utils.jl"))
 
 @testset "RTN error helper remains available through plotting facade" begin
     @test _rtn_error_components([-2], [3], [-4], [2], [0], [0], [0], [4], [0]) ==

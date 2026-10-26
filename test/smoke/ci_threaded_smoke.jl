@@ -136,7 +136,7 @@ println("threaded_smoke_ok")
 # so leaving it unpinned turned this check into a lottery on the CI runners.
 # The route drift itself is measured and printed further down, not asserted.
 # ---------------------------------------------------------------------------
-harmonics_file = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+harmonics_file = joinpath(REPO_ROOT, "data", "planets", "gravity", "EarthGGM05C.csv")
 det_effectors = (
     InverseSquaredGravityModel(),
     NBodyGravityModel(["Sun", "Moon"], "Earth", spice_path),

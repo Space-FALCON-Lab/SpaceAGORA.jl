@@ -7,51 +7,46 @@ function _read(rel)
 end
 
 spaceagora_src = _read(joinpath("src", "SpaceAGORA.jl"))
-runtime_services_src = _read(joinpath("src", "simulation", "runtime_services.jl"))
-simulation_model_src = _read(joinpath("src", "core", "simulation_model.jl"))
-reference_system_config_src = _read(joinpath("src", "core", "state", "reference_system_config.jl"))
-spacecraft_model_src = _read(joinpath("src", "vehicle", "spacecraft", "model.jl"))
-legacy_model_codes_src = _read(joinpath("src", "core", "types", "compat_model_codes.jl"))
-runtime_types_src = _read(joinpath("src", "core", "types", "runtime_types.jl"))
-command_types_src = _read(joinpath("src", "gnc", "command_types.jl"))
-top_level_thruster_models_src = _read(joinpath("src", "vehicle", "actuators", "thruster", "thruster_models_module.jl"))
-top_level_guidance_models_src = _read(joinpath("src", "gnc", "guidance", "guidance_models.jl"))
-top_level_gravity_effectors_src = _read(joinpath("src", "environment", "gravity", "gravity_effectors.jl"))
-engine_src = _read(joinpath("src", "simulation", "engine", "simulation_engine.jl"))
-engine_public_api_src = _read(joinpath("src", "simulation", "engine", "public_api.jl"))
-engine_execution_src = _read(joinpath("src", "simulation", "engine", "execution.jl"))
-telemetry_src = _read(joinpath("src", "analysis", "verification", "telemetry_verification.jl"))
-rhs_src = _read(joinpath("src", "simulation", "engine", "dynamics_rhs.jl"))
-force_torque_src = _read(joinpath("src", "dynamics", "coupled", "force_torque_models.jl"))
-gravity_effectors_src = _read(joinpath("src", "dynamics", "coupled", "force_torque_models", "gravity_effectors.jl"))
-aerodynamic_effectors_src = _read(joinpath("src", "dynamics", "coupled", "force_torque_models", "aerodynamic_effectors.jl"))
-perturbation_effectors_src = _read(joinpath("src", "dynamics", "coupled", "force_torque_models", "perturbation_effectors.jl"))
-thruster_models_src = _read(joinpath("src", "dynamics", "coupled", "force_torque_models", "thruster_models.jl"))
-guidance_models_src = _read(joinpath("src", "dynamics", "coupled", "force_torque_models", "guidance_models.jl"))
-guidance_hooks_src = _read(joinpath("src", "gnc", "guidance", "guidance_hooks.jl"))
-control_hooks_src = _read(joinpath("src", "gnc", "control", "control_hooks.jl"))
-callback_registry_src = _read(joinpath("src", "simulation", "callbacks", "registry.jl"))
-density_callback_assembly_src = _read(joinpath("src", "simulation", "callbacks", "density_callbacks", "assembly.jl"))
-density_models_src = _read(joinpath("src", "environment", "atmosphere", "density_models.jl"))
+runtime_services_src = _read(joinpath("src", "orchestration", "simulation", "runtime_services.jl"))
+simulation_model_src = _read(joinpath("src", "orchestration", "simulation", "composition", "simulation_model.jl"))
+reference_system_config_src = _read(joinpath("src", "foundation", "core", "state", "reference_system_config.jl"))
+spacecraft_model_src = _read(joinpath("src", "models", "vehicle", "spacecraft", "model.jl"))
+legacy_model_codes_src = _read(joinpath("src", "foundation", "core", "types", "compat_model_codes.jl"))
+runtime_types_src = _read(joinpath("src", "orchestration", "simulation", "state", "runtime_types.jl"))
+command_types_src = _read(joinpath("src", "models", "gnc", "contracts", "command_types.jl"))
+top_level_thruster_models_src = _read(joinpath("src", "models", "vehicle", "actuators", "thruster_models_module.jl"))
+top_level_guidance_models_src = _read(joinpath("src", "models", "gnc", "guidance", "models.jl"))
+top_level_gravity_effectors_src = _read(joinpath("src", "models", "environment", "gravity", "gravity_effectors.jl"))
+engine_src = _read(joinpath("src", "orchestration", "simulation", "engine", "simulation_engine.jl"))
+engine_public_api_src = _read(joinpath("src", "orchestration", "simulation", "engine", "public_api.jl"))
+engine_execution_src = _read(joinpath("src", "orchestration", "simulation", "engine", "execution.jl"))
+telemetry_src = _read(joinpath("src", "interfaces", "analysis", "verification", "telemetry_verification.jl"))
+rhs_src = _read(joinpath("src", "orchestration", "simulation", "engine", "dynamics_rhs.jl"))
+force_torque_src = _read(joinpath("src", "models", "dynamics", "effectors", "force_torque_models.jl"))
+gravity_effectors_src = _read(joinpath("src", "models", "dynamics", "effectors", "force_torque_models", "gravity_effectors.jl"))
+aerodynamic_effectors_src = _read(joinpath("src", "models", "dynamics", "effectors", "force_torque_models", "aerodynamic_effectors.jl"))
+perturbation_effectors_src = _read(joinpath("src", "models", "dynamics", "effectors", "force_torque_models", "perturbation_effectors.jl"))
+guidance_models_src = _read(joinpath("src", "models", "dynamics", "effectors", "force_torque_models", "guidance_models.jl"))
+guidance_hooks_src = _read(joinpath("src", "models", "gnc", "guidance", "hooks.jl"))
+control_hooks_src = _read(joinpath("src", "models", "gnc", "control", "hooks.jl"))
+callback_registry_src = _read(joinpath("src", "orchestration", "simulation", "callbacks", "registry.jl"))
+density_callback_assembly_src = _read(joinpath("src", "orchestration", "simulation", "callbacks", "density_callbacks", "assembly.jl"))
+density_models_src = _read(joinpath("src", "models", "environment", "atmosphere", "density_models.jl"))
 gram_suite_ext_src = _read(joinpath("ext", "SpaceAGORAGRAMSuiteExt.jl"))
-ephemerides_models_src = _read(joinpath("src", "environment", "ephemerides", "ephemerides_models.jl"))
-setup_src = _read(joinpath("src", "simulation", "engine", "setup.jl"))
-control_commands_src = _read(joinpath("src", "gnc", "control", "aerobraking", "control_commands.jl"))
-constraint_tracking_src = _read(joinpath("src", "gnc", "control", "aerobraking", "constraint_tracking.jl"))
-trajectory_predictor_src = _read(joinpath("src", "gnc", "guidance", "aerobraking", "t_edg", "trajectory_predictor.jl"))
-eom_predictor_src = _read(joinpath("src", "gnc", "guidance", "aerobraking", "t_edg", "eom_predictor.jl"))
+ephemerides_models_src = _read(joinpath("src", "models", "environment", "ephemerides", "ephemerides_models.jl"))
+setup_src = _read(joinpath("src", "orchestration", "simulation", "engine", "setup.jl"))
 
 occursin("run_simulation(args...; kwargs...) = SimulationEngine.run_simulation(args...; kwargs...)", spaceagora_src) ||
     error("SpaceAGORA.run_simulation is not forwarded to SimulationEngine.")
-occursin("include(joinpath(@__DIR__, \"simulation\", \"runtime_services.jl\"))", spaceagora_src) ||
-    error("SpaceAGORA does not include src/simulation/runtime_services.jl as the canonical runtime-services sibling module.")
-occursin("include(joinpath(@__DIR__, \"core\", \"simulation_model.jl\"))", spaceagora_src) ||
-    error("SpaceAGORA does not include src/core/simulation_model.jl as the canonical sibling module.")
-findfirst("include(joinpath(@__DIR__, \"simulation\", \"runtime_services.jl\"))", spaceagora_src) <
-    findfirst("include(joinpath(@__DIR__, \"core\", \"simulation_model.jl\"))", spaceagora_src) ||
+occursin("include(joinpath(@__DIR__, \"orchestration\", \"simulation\", \"runtime_services.jl\"))", spaceagora_src) ||
+    error("SpaceAGORA does not include src/orchestration/simulation/runtime_services.jl as the canonical runtime-services sibling module.")
+occursin("include(joinpath(@__DIR__, \"orchestration\", \"simulation\", \"composition\", \"simulation_model.jl\"))", spaceagora_src) ||
+    error("SpaceAGORA does not include src/orchestration/simulation/composition/simulation_model.jl as the canonical sibling module.")
+findfirst("include(joinpath(@__DIR__, \"orchestration\", \"simulation\", \"runtime_services.jl\"))", spaceagora_src) <
+    findfirst("include(joinpath(@__DIR__, \"orchestration\", \"simulation\", \"composition\", \"simulation_model.jl\"))", spaceagora_src) ||
     error("SpaceAGORA is not loading RuntimeServices before SimulationModel.")
-findfirst("include(joinpath(@__DIR__, \"core\", \"simulation_model.jl\"))", spaceagora_src) <
-    findfirst("include(joinpath(@__DIR__, \"simulation\", \"engine\", \"simulation_engine.jl\"))", spaceagora_src) ||
+findfirst("include(joinpath(@__DIR__, \"orchestration\", \"simulation\", \"composition\", \"simulation_model.jl\"))", spaceagora_src) <
+    findfirst("include(joinpath(@__DIR__, \"orchestration\", \"simulation\", \"engine\", \"simulation_engine.jl\"))", spaceagora_src) ||
     error("SpaceAGORA is not loading SimulationModel before SimulationEngine.")
 occursin("module RuntimeServices", runtime_services_src) ||
     error("RuntimeServices owner module is missing.")
@@ -65,16 +60,16 @@ occursin("const GRAM_LOCK = SPICE_LOCK", runtime_services_src) ||
     error("SimulationModel still owns GRAM_LOCK.")
 occursin("runtime_services.jl", simulation_model_src) ||
     error("SimulationModel standalone include contract is not bootstrapping RuntimeServices.")
-occursin("include(joinpath(@__DIR__, \"..\", \"vehicle\", \"spacecraft\", \"model.jl\"))", simulation_model_src) ||
+occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"vehicle\", \"spacecraft\", \"model.jl\"))", simulation_model_src) ||
     error("SimulationModel is not including the canonical spacecraft model owner.")
 occursin("@reexport using .SpacecraftModels", simulation_model_src) ||
     error("SimulationModel is not reexporting the canonical SpacecraftModels owner.")
 !occursin("@reexport using .PhysicalModel", simulation_model_src) ||
     error("SimulationModel still reexports the retired PhysicalModel owner.")
-occursin("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"compat_model_codes.jl\"))", simulation_model_src) ||
-    error("SimulationModel does not include src/core/types/compat_model_codes.jl before runtime types.")
-findfirst("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"compat_model_codes.jl\"))", simulation_model_src) <
-    findfirst("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"runtime_types.jl\"))", simulation_model_src) ||
+occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"foundation\", \"core\", \"types\", \"compat_model_codes.jl\"))", simulation_model_src) ||
+    error("SimulationModel does not include src/foundation/core/types/compat_model_codes.jl before runtime types.")
+findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"foundation\", \"core\", \"types\", \"compat_model_codes.jl\"))", simulation_model_src) <
+    findfirst("include(joinpath(@__DIR__, \"..\", \"state\", \"runtime_types.jl\"))", simulation_model_src) ||
     error("SimulationModel is not loading LegacyModelCodes before ConfigTypes.")
 occursin("module ReferenceSystems", reference_system_config_src) ||
     error("Reference system config is not using the CamelCase ReferenceSystems module.")
@@ -85,17 +80,17 @@ occursin("module SpacecraftModels", spacecraft_model_src) ||
 !occursin("module PhysicalModel", spacecraft_model_src) ||
     error("Spacecraft model owner still uses the retired PhysicalModel module name.")
 occursin("module LegacyModelCodes", legacy_model_codes_src) ||
-    error("Legacy model selector enums were not split into src/core/types/compat_model_codes.jl.")
+    error("Legacy model selector enums were not split into src/foundation/core/types/compat_model_codes.jl.")
 occursin("using ..LegacyModelCodes:", runtime_types_src) ||
     error("ConfigTypes is not importing legacy model codes from LegacyModelCodes.")
 occursin("using ..SpacecraftModels: SpacecraftModel", runtime_types_src) ||
     error("ConfigTypes is not importing SpacecraftModel from SpacecraftModels.")
 !occursin("@enum Legacy", runtime_types_src) ||
     error("ConfigTypes still defines Legacy*Code enums directly in runtime_types.jl.")
-occursin("include(joinpath(@__DIR__, \"..\", \"gnc\", \"command_types.jl\"))", simulation_model_src) ||
-    error("SimulationModel does not include src/gnc/command_types.jl before runtime types.")
-findfirst("include(joinpath(@__DIR__, \"..\", \"gnc\", \"command_types.jl\"))", simulation_model_src) <
-    findfirst("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"runtime_types.jl\"))", simulation_model_src) ||
+occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"gnc\", \"contracts\", \"command_types.jl\"))", simulation_model_src) ||
+    error("SimulationModel does not include src/models/gnc/contracts/command_types.jl before runtime types.")
+findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"gnc\", \"contracts\", \"command_types.jl\"))", simulation_model_src) <
+    findfirst("include(joinpath(@__DIR__, \"..\", \"state\", \"runtime_types.jl\"))", simulation_model_src) ||
     error("SimulationModel is not loading CommandTypes before ConfigTypes.")
 occursin("module CommandTypes", command_types_src) ||
     error("CommandTypes owner module is missing.")
@@ -107,30 +102,30 @@ occursin("using ..CommandTypes: PropulsiveManeuverCommand", runtime_types_src) |
     error("ConfigTypes is not importing PropulsiveManeuverCommand from CommandTypes.")
 occursin("maneuver_commands::Vector{PropulsiveManeuverCommand}", runtime_types_src) ||
     error("SharedBuffers is missing the typed maneuver_commands buffer.")
-occursin("include(joinpath(@__DIR__, \"..\", \"vehicle\", \"actuators\", \"thruster\", \"thruster_models_module.jl\"))", simulation_model_src) ||
+occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"vehicle\", \"actuators\", \"thruster_models_module.jl\"))", simulation_model_src) ||
     error("SimulationModel does not include the top-level ThrusterModels owner.")
 occursin("module ThrusterModels", top_level_thruster_models_src) ||
     error("Top-level ThrusterModels owner module is missing.")
 occursin("include(joinpath(@__DIR__, \"thruster_models.jl\"))", top_level_thruster_models_src) ||
-    error("Top-level ThrusterModels owner is not including vehicle/actuators/thruster/thruster_models.jl.")
-occursin("include(joinpath(@__DIR__, \"..\", \"gnc\", \"guidance\", \"guidance_models.jl\"))", simulation_model_src) ||
+    error("Top-level ThrusterModels owner is not including vehicle/actuators/thruster_models.jl.")
+occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"gnc\", \"guidance\", \"models.jl\"))", simulation_model_src) ||
     error("SimulationModel does not include the top-level GuidanceModels owner.")
 occursin("module GuidanceModels", top_level_guidance_models_src) ||
     error("Top-level GuidanceModels owner module is missing.")
-occursin("include(joinpath(@__DIR__, \"thruster_guidance\", \"thruster_guidance_models.jl\"))", top_level_guidance_models_src) ||
+occursin("include(joinpath(@__DIR__, \"maneuvers\", \"thruster_guidance_models.jl\"))", top_level_guidance_models_src) ||
     error("Top-level GuidanceModels owner is not including the thruster guidance model definitions.")
-findfirst("include(joinpath(@__DIR__, \"..\", \"vehicle\", \"actuators\", \"thruster\", \"thruster_models_module.jl\"))", simulation_model_src) <
-    findfirst("include(joinpath(@__DIR__, \"..\", \"dynamics\", \"coupled\", \"force_torque_models.jl\"))", simulation_model_src) ||
+findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"vehicle\", \"actuators\", \"thruster_models_module.jl\"))", simulation_model_src) <
+    findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"dynamics\", \"effectors\", \"force_torque_models.jl\"))", simulation_model_src) ||
     error("SimulationModel is not loading ThrusterModels before DynamicEffectors.")
-findfirst("include(joinpath(@__DIR__, \"..\", \"gnc\", \"guidance\", \"guidance_models.jl\"))", simulation_model_src) <
-    findfirst("include(joinpath(@__DIR__, \"..\", \"dynamics\", \"coupled\", \"force_torque_models.jl\"))", simulation_model_src) ||
+findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"gnc\", \"guidance\", \"models.jl\"))", simulation_model_src) <
+    findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"dynamics\", \"effectors\", \"force_torque_models.jl\"))", simulation_model_src) ||
     error("SimulationModel is not loading GuidanceModels before DynamicEffectors.")
-occursin("include(joinpath(@__DIR__, \"..\", \"environment\", \"gravity\", \"gravity_effectors.jl\"))", simulation_model_src) ||
+occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"environment\", \"gravity\", \"gravity_effectors.jl\"))", simulation_model_src) ||
     error("SimulationModel does not include the top-level GravityEffectors boundary module.")
 occursin("module GravityEffectors", top_level_gravity_effectors_src) ||
     error("Top-level GravityEffectors boundary module is missing.")
-findfirst("include(joinpath(@__DIR__, \"..\", \"dynamics\", \"coupled\", \"force_torque_models.jl\"))", simulation_model_src) <
-    findfirst("include(joinpath(@__DIR__, \"..\", \"environment\", \"gravity\", \"gravity_effectors.jl\"))", simulation_model_src) ||
+findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"dynamics\", \"effectors\", \"force_torque_models.jl\"))", simulation_model_src) <
+    findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"environment\", \"gravity\", \"gravity_effectors.jl\"))", simulation_model_src) ||
     error("SimulationModel is not loading the top-level GravityEffectors boundary after DynamicEffectors.")
 occursin("using ..SimulationModel", engine_src) ||
     error("SimulationEngine is not loading SimulationModel as a sibling module.")
@@ -140,7 +135,7 @@ occursin("import ..RuntimeServices", engine_src) ||
     error("SimulationEngine still carries the legacy parent-module include-order guard for SimulationModel.")
 !occursin("isdefined(parentmodule(@__MODULE__), :RuntimeServices)", engine_src) ||
     error("SimulationEngine still carries the legacy parent-module include-order guard for RuntimeServices.")
-!occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"core\", \"simulation_model.jl\"))", engine_src) ||
+!occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"foundation\", \"core\", \"simulation_model.jl\"))", engine_src) ||
     error("SimulationEngine still directly includes core/simulation_model.jl.")
 !occursin("include(joinpath(@__DIR__, \"..\", \"runtime_services.jl\"))", engine_src) ||
     error("SimulationEngine still directly includes runtime_services.jl.")
@@ -165,7 +160,7 @@ occursin("using ..ReferenceSystems", guidance_hooks_src) ||
     error("GuidanceHooks is not importing the CamelCase ReferenceSystems module.")
 occursin("using ..ReferenceSystems", control_hooks_src) ||
     error("ControlHooks is not importing the CamelCase ReferenceSystems module.")
-!occursin("ref_sys", guidance_hooks_src * control_hooks_src * control_commands_src * constraint_tracking_src * trajectory_predictor_src * eom_predictor_src) ||
+!occursin("ref_sys", guidance_hooks_src * control_hooks_src) ||
     error("Package-owned source still references the retired ref_sys module name.")
 !occursin("Any[", density_callback_assembly_src) ||
     error("Density callback assembly still builds callback collections through Any[].")
@@ -200,7 +195,6 @@ for include_name in (
     "gravity_effectors.jl",
     "aerodynamic_effectors.jl",
     "perturbation_effectors.jl",
-    "thruster_models.jl",
     "guidance_models.jl",
 )
     occursin("\"$include_name\"", force_torque_src) ||
@@ -212,12 +206,8 @@ occursin("module AerodynamicEffectors", aerodynamic_effectors_src) ||
     error("DynamicEffectors split contract violation: missing AerodynamicEffectors module owner file.")
 occursin("module PerturbationEffectors", perturbation_effectors_src) ||
     error("DynamicEffectors split contract violation: missing PerturbationEffectors module owner file.")
-occursin("module ThrusterModels", thruster_models_src) ||
-    error("DynamicEffectors split contract violation: missing ThrusterModels module owner file.")
 occursin("module GuidanceModels", guidance_models_src) ||
     error("DynamicEffectors split contract violation: missing GuidanceModels module owner file.")
-occursin("using ...ThrusterModels: BaseThrusterModel", thruster_models_src) ||
-    error("DynamicEffectors split contract violation: ThrusterModels shim is not forwarding from the top-level ThrusterModels owner.")
 occursin("using ...GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel", guidance_models_src) ||
     error("DynamicEffectors split contract violation: GuidanceModels shim is not forwarding from the top-level GuidanceModels owner.")
 !occursin(r"^\s+module\s+(GravityEffectors|AerodynamicEffectors|PerturbationEffectors|ThrusterModels|GuidanceModels)"m, force_torque_src) ||
@@ -257,36 +247,41 @@ occursin("using ..GravityEffectors: InverseSquaredJ2GravityModel", callback_regi
     error("Callback registry still imports gravity models from DynamicEffectors.GravityEffectors.")
 
 for rel in (
-    joinpath("src", "vehicle", "actuators", "thruster", "thruster_hooks.jl"),
-    joinpath("src", "vehicle", "structure", "structure_models.jl"),
-    joinpath("src", "vehicle", "structure", "assembly_graph.jl"),
-    joinpath("src", "vehicle", "structure", "mass_properties.jl"),
-    joinpath("src", "vehicle", "structure", "geometry_properties.jl"),
-    joinpath("src", "dynamics", "coupled", "force_torque_models.jl"),
-    joinpath("src", "gnc", "guidance", "aerobraking", "interfaces.jl"),
-    joinpath("src", "gnc", "guidance", "aerobraking", "dispatcher.jl"),
-    joinpath("src", "gnc", "guidance", "aerobraking", "e_edg", "e_edg_strategy.jl"),
-    joinpath("src", "gnc", "guidance", "aerobraking", "t_edg", "t_edg_strategy.jl"),
-    joinpath("src", "mission", "operations", "aerobraking_policy", "policy_types.jl"),
+    joinpath("src", "models", "vehicle", "actuators", "thruster_hooks.jl"),
+    joinpath("src", "models", "vehicle", "structure", "structure_models.jl"),
+    joinpath("src", "models", "vehicle", "structure", "mass_properties.jl"),
+    joinpath("src", "models", "vehicle", "structure", "geometry_properties.jl"),
+    joinpath("src", "models", "dynamics", "effectors", "force_torque_models.jl"),
 )
     isfile(joinpath(REPO_ROOT, rel)) ||
         error("Canonical-ownership contract violation: missing canonical owner file: $rel")
 end
 
-# Gravity ownership contract:
-# - canonical gravity owner is environment/gravity
-# - translational folder must not own gravity models
-isfile(joinpath(REPO_ROOT, "src", "environment", "gravity", "gravity_models.jl")) ||
-    error("Canonical-ownership contract violation: missing gravity owner at src/environment/gravity/gravity_models.jl")
-isfile(joinpath(REPO_ROOT, "src", "dynamics", "translational", "gravity_models.jl")) &&
-    error("Canonical-ownership contract violation: gravity model must not be owned by src/dynamics/translational")
+# Gravity kernels are environmental; runtime adapters retain their existing
+# DynamicEffectors.GravityEffectors module owner under coupled dynamics.
+for relative in (
+    "src/models/environment/gravity/gravity_models.jl",
+    "src/models/environment/gravity/central_acceleration.jl",
+    "src/models/environment/gravity/encke_and_j2.jl",
+    "src/models/environment/gravity/secular_rates.jl",
+    "src/models/environment/gravity/gravity_gradient.jl",
+    "src/models/dynamics/effectors/gravity/models.jl",
+    "src/models/dynamics/effectors/gravity/runtime_force_helpers.jl",
+    "src/models/dynamics/effectors/gravity/sampled_gravity_gradient.jl",
+    "src/models/dynamics/effectors/gravity/wrenches.jl",
+    "src/models/dynamics/effectors/gravity/gravity_gradient_effector.jl",
+)
+    isfile(joinpath(REPO_ROOT, relative)) || error("Missing gravity kernel/adapter owner: $relative")
+end
+isfile(joinpath(REPO_ROOT, "src", "models", "dynamics", "translational", "gravity_models.jl")) &&
+    error("Canonical-ownership contract violation: gravity model must not be owned by src/models/dynamics/translational")
 
 # Translational ownership contract:
 # - translational RHS equations are owned by dynamics/translational and consumed by engine RHS.
 for rel in (
-    joinpath("src", "dynamics", "translational", "translational_models.jl"),
-    joinpath("src", "dynamics", "translational", "position_kinematics.jl"),
-    joinpath("src", "dynamics", "translational", "point_mass_dynamics.jl"),
+    joinpath("src", "models", "dynamics", "translational", "translational_models.jl"),
+    joinpath("src", "models", "dynamics", "translational", "position_kinematics.jl"),
+    joinpath("src", "models", "dynamics", "translational", "point_mass_dynamics.jl"),
 )
     isfile(joinpath(REPO_ROOT, rel)) ||
         error("Canonical-ownership contract violation: missing translational owner file: $rel")
@@ -299,12 +294,12 @@ occursin("DynamicsTranslational.assign_slow_translational_rhs!", rhs_src) ||
 occursin("DynamicsTranslational.assign_control_only_translational_rhs!", rhs_src) ||
     error("Engine RHS is not using canonical translational owner for control-only path.")
 
-engine_dir = joinpath(REPO_ROOT, "src", "simulation", "engine")
+engine_dir = joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine")
 for (root, _, files) in walkdir(engine_dir)
     for file in files
         endswith(file, ".jl") || continue
         rel = relpath(joinpath(root, file), REPO_ROOT)
-        rel == joinpath("src", "simulation", "engine", "adapters", "from_env.jl") && continue
+        rel == joinpath("src", "orchestration", "simulation", "engine", "adapters", "from_env.jl") && continue
         src = read(joinpath(root, file), String)
         if occursin("get(ENV", src) || occursin("ENV[", src)
             error("ENV usage found outside engine adapters: $rel")

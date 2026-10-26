@@ -1,8 +1,12 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
-const GUIDANCE_ROOTS = (joinpath(REPO_ROOT, "packages", "SpaceAGORAHYPR", "src"),
-    (joinpath(REPO_ROOT, "src", "gnc", owner) for owner in ("guidance", "shared", "hypr", "rrt"))...)
+const GUIDANCE_ROOTS = (
+    (joinpath(REPO_ROOT, "src", "models", "gnc", owner) for owner in ("guidance", "planning", "companions", "contracts"))...,
+    joinpath(REPO_ROOT, "src", "interfaces", "analysis", "planning"))
 
 violations = String[]
+for owner_root in GUIDANCE_ROOTS
+    isdir(owner_root) || error("Missing guidance scan root: $(relpath(owner_root, REPO_ROOT))")
+end
 for owner_root in GUIDANCE_ROOTS, (root, _, files) in walkdir(owner_root)
     for file in files
         endswith(file, ".jl") || continue

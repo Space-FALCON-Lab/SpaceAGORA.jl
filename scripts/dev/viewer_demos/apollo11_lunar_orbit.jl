@@ -6,7 +6,11 @@
 # degree and order 50, Earth and Sun third bodies, solar radiation pressure,
 # no atmosphere. The page draws NASA's Apollo Lunar Module model.
 #
-#   julia --project=. scripts/dev/viewer_demos/apollo11_lunar_orbit.jl
+#   julia --project=/path/to/visualizer-env scripts/dev/viewer_demos/apollo11_lunar_orbit.jl
+# Load the optional renderer before the example helpers continue in the examples environment.
+if abspath(PROGRAM_FILE) == @__FILE__
+    using SpaceAGORAVisualizer
+end
 include(joinpath(@__DIR__, "common.jl"))
 
 

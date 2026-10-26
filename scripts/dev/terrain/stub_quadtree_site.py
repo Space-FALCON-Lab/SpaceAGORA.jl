@@ -3,7 +3,7 @@
 quadtree tile payload the viewer's horizon renderer expects.
 
 Older site bundles may contain nested square images (`imagery/imagery.json`).
-The current `fetch_moon_site.py` already writes a quadtree and needs no conversion. The renderer in `viewer/src/terrain.js` instead
+The current `fetch_moon_site.py` already writes a quadtree and needs no conversion. The companion renderer in `SpaceAGORAVisualizer.jl/viewer/src/terrain.js` instead
 takes a quadtree over one square root region:
 
     tiles = { scheme: "quadtree", root: {lat_min, lat_max, lon_min, lon_max},
@@ -15,7 +15,7 @@ present ancestor's texture for the rest. This script builds such a funnel from
 sources that are already on disk, so the renderer can be developed and measured
 before the real tile pyramid lands:
 
-  * the global surface texture (`data/textures/moon_lroc_wac_4k.jpg`) feeds the
+  * the global surface texture (`data/scene/textures/moon_lroc_wac_4k.jpg`) feeds the
     coarse levels over the whole root, which is sized to cover the descent
     corridor rather than only the site;
   * each nested square of the existing site feeds the levels whose tiles it both
@@ -145,7 +145,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--site", default="data/terrain/moon/apollo11", help="site directory written by fetch_moon_site.py")
     ap.add_argument("--out", default="output/terrain/moon/apollo11_quadtree", help="directory to write the stub site into")
-    ap.add_argument("--global-texture", default="data/textures/moon_lroc_wac_4k.jpg")
+    ap.add_argument("--global-texture", default="data/scene/textures/moon_lroc_wac_4k.jpg")
     ap.add_argument("--texture-lon-left", type=float, default=-180.0)
     ap.add_argument("--root-deg", type=float, default=32.0, help="side of the square root region, degrees")
     ap.add_argument("--uprange-km", type=float, default=480.0, help="distance the vehicle starts uprange of the site")

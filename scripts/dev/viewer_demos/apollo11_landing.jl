@@ -12,7 +12,7 @@
 # draws, draped with the bundle's imagery quadtree when one was built.
 #
 #   python3 scripts/dev/terrain/fetch_moon_site.py --site 0.67416 23.47314 --nac-half-deg 0.03 --out data/terrain/moon/apollo11
-#   julia --project=. scripts/dev/viewer_demos/apollo11_landing.jl [--duration-s S] [--output-dir DIR]
+#   julia --project=/path/to/visualizer-env scripts/dev/viewer_demos/apollo11_landing.jl [--duration-s S] [--output-dir DIR]
 #
 # The NAC window is narrowed to 0.03 degrees because the registered Apollo 11
 # NAC digital terrain model is a narrow strip whose fully valid square around
@@ -27,6 +27,10 @@
 # guidance, control, terrain-contact and plume models on one documented case.
 # It is not a reconstruction of the flown Apollo 11 trajectory and does not
 # establish flight accuracy; see docs/src/user/lunar_landing.md.
+# Load the optional renderer before the example helpers continue in the examples environment.
+if abspath(PROGRAM_FILE) == @__FILE__
+    using SpaceAGORAVisualizer
+end
 include(joinpath(@__DIR__, "common.jl"))
 
 const APOLLO11_SITE_DEFAULT = joinpath(REPO_ROOT, "data", "terrain", "moon", "apollo11", "site.json")
@@ -88,13 +92,16 @@ one up, one down per quad) at the LM's quad positions; the viewer draws a plume
 on each firing thruster from the levels the control effector reports.
 """
 function lunar_module(ic::SM.CartesianInitialCondition)
+    # A thruster's direction is its thrust direction, the opposite of its nozzle's
+    # exhaust; the layout below is written as exhaust directions.
+    thrust(exhaust) = MVector{3, Float64}((-1.0 .* exhaust)...)
     dps = SM.Thruster(max_thrust=DPS_THRUST_N, location=MVector{3, Float64}(0.0, 0.0, 1.5),
-        direction=MVector{3, Float64}(0.0, 0.0, 1.0), Isp=311.0)
+        direction=thrust((0.0, 0.0, 1.0)), Isp=311.0)
     rcs = SM.Thruster[]
     for sx in (-1.0, 1.0), sy in (-1.0, 1.0)
         quad = MVector{3, Float64}(RCS_QUAD_ARM_M * sx, RCS_QUAD_ARM_M * sy, RCS_QUAD_Z_M)
-        for d in ((sx, 0.0, 0.0), (0.0, sy, 0.0), (0.0, 0.0, 1.0), (0.0, 0.0, -1.0))
-            push!(rcs, SM.Thruster(max_thrust=RCS_THRUST_N, location=copy(quad), direction=MVector{3, Float64}(d...), Isp=290.0))
+        for exhaust in ((sx, 0.0, 0.0), (0.0, sy, 0.0), (0.0, 0.0, 1.0), (0.0, 0.0, -1.0))
+            push!(rcs, SM.Thruster(max_thrust=RCS_THRUST_N, location=copy(quad), direction=thrust(exhaust), Isp=290.0))
         end
     end
     root = SM.Link(root=true, m=LM_MASS_KG, dims=MVector{3, Float64}(LM_DIMS_M...), ref_area=1.0,

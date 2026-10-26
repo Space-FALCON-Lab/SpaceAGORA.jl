@@ -8,7 +8,7 @@ end
 
 @testset "Static-versus-parallel launcher routing" begin
     repo = normpath(joinpath(@__DIR__, "..", "..", ".."))
-    launcher = joinpath(repo, "benchmarks", "studies", "performance_static_vs_parallel.jl")
+    launcher = joinpath(repo, "benchmarks", "studies", "performance", "performance_static_vs_parallel.jl")
     owner = joinpath(repo, "benchmarks", "scripts", "performance_paper_pipeline.jl")
     probe = Module(gensym(:BenchmarkLauncherProbe))
     # Stop before the pipeline loads GRAM or any benchmark definitions.

@@ -5,7 +5,8 @@ using ComponentArrays
 
 const RHSDA_SE = SpaceAGORA.SimulationEngine
 
-function _rhs_direct_assembly_config(; n_sats::Int=3)
+function _rhs_direct_assembly_config(; n_sats::Int=3, effectors::Tuple=(InverseSquaredGravityModel(),),
+                                     orientation_sim::Bool=false)
     planet = Earth()
     spacecraft = SpacecraftModel[]
     for i in 1:n_sats
@@ -48,7 +49,7 @@ function _rhs_direct_assembly_config(; n_sats::Int=3)
             keplerian=true,
             number_of_orbits=1,
             mission_time=120.0,
-            orientation_sim=false,
+            orientation_sim=orientation_sim,
             num_steps_to_save=20,
         ),
         environment_model=EnvironmentModel(
@@ -60,7 +61,7 @@ function _rhs_direct_assembly_config(; n_sats::Int=3)
             wind=false,
             ephemerides_model=SimpleEphemeridesModel(),
         ),
-        dynamics_model=DynamicsModel(spacecraft, (InverseSquaredGravityModel(),)),
+        dynamics_model=DynamicsModel(spacecraft, effectors),
         guidance_model=GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
         navigation_model=NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
         control_model=ControlModel(control_effectors=(), control_rates=Float64[]),
@@ -281,4 +282,521 @@ end
         :implicit,
         1,
     )
+end
+
+# The harmonics-only flat route fuses the harmonics pre-pass, the reduction and
+# the final assembly into one parallel region (each worker finishes the
+# spacecraft range its slice covers). It must write exactly what the unfused
+# composition writes -- pre-pass and reduction, then every spacecraft assembled
+# from the totals -- for both assemblies and both pre-pass dispatches (persistent
+# pool, spin barrier), with inactive spacecraft at the ends and in the gaps
+# between slices.
+@testset "Fused harmonics RHS matches the unfused route bit for bit" begin
+    planet = Earth()
+    gravity_file = joinpath(normpath(joinpath(@__DIR__, "..", "..", "..")),
+        "data", "planets", "gravity", "EarthGGM05C.csv")
+    model = GravitationalHarmonicsModel(20, 20, gravity_file, planet)
+    n = 37
+    args = _rhs_direct_assembly_config(n_sats=n, effectors=(model,))
+    u = RHSDA_SE.build_initial_conditions(args)
+    plan = (
+        mode=:flat_constellation_effector_queue, allotment=max(2, Threads.nthreads()),
+        scheduler=:static, dominant_axis=:flat_effector, policy_applied=false,
+        effector_decision=(use_threads=false, allotment=1, mode=:off, policy_applied=false),
+    )
+    PP = SpaceAGORA.SimulationModel.ParallelPolicy
+    for spin in (false, true), direct in (false, true), inactive in (Int[], [1, 2, 9, 10, 11, 36, 37], [5])
+        fresh_p() = begin
+            p = ODEParams(n_sats=n, args=args)
+            p.is_active .= true
+            p.is_active[inactive] .= false
+            p.shared_buffers.rhs_env_config[] = withenv(
+                "SPACEAGORA_RHS_FINAL_ASSEMBLY_DIRECT_LAYOUT" => (direct ? "1" : "0"),
+                "SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER" => (spin ? "1" : "0"),
+            ) do
+                RHSDA_SE._snapshot_rhs_plan_env_config()
+            end
+            p
+        end
+        p_fused = fresh_p()
+        fused = fill!(zero(u), 99.0)
+        RHSDA_SE._spacecraft_dynamics_flat_constellation_effector_queue!(
+            fused, u, p_fused, 30.0, plan; rhs_kind=:full)
+
+        p_ref = fresh_p()
+        ref = fill!(zero(u), 99.0)
+        RHSDA_SE._accumulate_dynamic_effectors_flat_batch!(u.sc, p_ref, 30.0, (model,), plan)
+        totals = p_ref.shared_buffers.rhs_flat_effector_totals[]
+        env = p_ref.shared_buffers.rhs_env_config[]
+        stride = RHSDA_SE._flat_translational_direct_layout_stride(ref, u, p_ref, env, :full)
+        @test (stride > 0) == direct
+        for i in 1:n
+            RHSDA_SE._assemble_flat_satellite!(
+                ref.sc, u.sc, ComponentArrays.getdata(ref), ComponentArrays.getdata(u),
+                p_ref, 30.0, totals, args.dynamics_model.spacecraft,
+                p_ref.shared_buffers.debug_control[], stride, :full, i)
+        end
+        @test !any(==(99.0), ComponentArrays.getdata(fused))
+        @test isequal(ComponentArrays.getdata(fused), ComponentArrays.getdata(ref))
+        @test isequal(p_fused.shared_buffers.rhs_flat_effector_totals[][:, 1:n], totals[:, 1:n])
+    end
+    # Stop the spin-barrier workers so they do not hold threads for later tests.
+    PP._destroy_persistent_foreach_scope!(PP._active_policy_scope_id())
+end
+
+# The per-region width search halves the width while the region keeps within
+# the stop ratio of its best time, then keeps the fastest width only if it beats
+# the full allotment by the margin.
+@testset "Per-region width search" begin
+    T = SpaceAGORA.SimulationModel.RhsRegionTuner
+    feed!(t, cost) = for _ in 1:RHSDA_SE._REGION_SAMPLES
+        RHSDA_SE._region_tuner_observe!(t, Int64(cost(t.width)))
+    end
+    # Dispatch dominated: every halving is faster, so the search runs to serial.
+    t = T(16)
+    while t.searching
+        feed!(t, w -> 1000 + 100 * w)
+    end
+    @test t.width == 1
+    # Work dominated: halving doubles the time, so it stops after one probe.
+    t = T(16)
+    while t.searching
+        feed!(t, w -> 160_000 ÷ w)
+    end
+    @test t.width == 16
+    # Interior optimum of work/w + d*w at w = 4.
+    t = T(32)
+    while t.searching
+        feed!(t, w -> 16_000 ÷ w + 1000 * w)
+    end
+    @test t.width == 4
+    # A narrower width within the margin does not displace the allotment.
+    t = T(8)
+    while t.searching
+        feed!(t, w -> w == 8 ? 1000 : 980)
+    end
+    @test t.width == 8
+    # The search re-runs after the reprobe interval.
+    for _ in 1:RHSDA_SE._REGION_REPROBE
+        RHSDA_SE._region_tuner_observe!(t, Int64(1))
+    end
+    @test t.searching && t.width == 8
+end
+
+@testset "Per-region width search labels its observations" begin
+    T = SpaceAGORA.SimulationModel.RhsRegionTuner
+    fake(tuning) = (; shared_buffers=(; rhs_region_tuning=Ref(tuning), rhs_region_tuners=Dict{Symbol, T}()))
+    p = fake(true)
+    # The first samples run at the full allotment; once the search narrows the
+    # region, its calls must not be recorded as full-width observations.
+    for _ in 1:RHSDA_SE._REGION_SAMPLES
+        RHSDA_SE._rhs_region(w -> nothing, p, :probe, 8)
+        @test RHSDA_SE._rhs_region_ran_full(p, :probe)
+    end
+    RHSDA_SE._rhs_region(w -> nothing, p, :probe, 8)
+    @test p.shared_buffers.rhs_region_tuners[:probe].last_width < 8
+    @test !RHSDA_SE._rhs_region_ran_full(p, :probe)
+    # Search off, or a region never run: every observation is at full width.
+    @test RHSDA_SE._rhs_region_ran_full(fake(false), :probe)
+    @test RHSDA_SE._rhs_region_ran_full(fake(true), :never_run)
+    # An unrecognised setting is an error, not a silent "auto".
+    withenv("SPACEAGORA_RHS_REGION_WIDTH" => "8") do
+        @test_throws ArgumentError RHSDA_SE._rhs_region_width_enabled()
+    end
+end
+
+# With the search on, the width of every region changes from call to call
+# while it searches; the derivative must not.
+@testset "Per-region width search leaves the RHS bit-identical" begin
+    planet = Earth()
+    gravity_file = joinpath(normpath(joinpath(@__DIR__, "..", "..", "..")),
+        "data", "planets", "gravity", "EarthGGM05C.csv")
+    model = GravitationalHarmonicsModel(20, 20, gravity_file, planet)
+    n = 37
+    args = _rhs_direct_assembly_config(n_sats=n, effectors=(model, InverseSquaredGravityModel()))
+    u = RHSDA_SE.build_initial_conditions(args)
+    plan = (
+        mode=:flat_constellation_effector_queue, allotment=max(2, Threads.nthreads()),
+        scheduler=:static, dominant_axis=:flat_effector, policy_applied=false,
+        effector_decision=(use_threads=false, allotment=1, mode=:off, policy_applied=false),
+    )
+    for effectors in ((model,), (model, InverseSquaredGravityModel()))
+        a = _rhs_direct_assembly_config(n_sats=n, effectors=effectors)
+        fresh_p() = begin
+            p = ODEParams(n_sats=n, args=a)
+            p.is_active .= true
+            p.shared_buffers.rhs_env_config[] = withenv(
+                "SPACEAGORA_RHS_REDUCTION_MIN_SATS_PER_WORKER" => "1",
+            ) do
+                RHSDA_SE._snapshot_rhs_plan_env_config()
+            end
+            p
+        end
+        p_ref = fresh_p()
+        ref = zero(u)
+        withenv("SPACEAGORA_RHS_REDUCTION_MIN_SATS_PER_WORKER" => "1") do
+            RHSDA_SE._spacecraft_dynamics_flat_constellation_effector_queue!(ref, u, p_ref, 30.0, plan; rhs_kind=:full)
+        end
+        p = fresh_p()
+        p.shared_buffers.rhs_region_tuning[] = true
+        widths = Set{Int}()
+        for _ in 1:60
+            du = fill!(zero(u), 99.0)
+            withenv("SPACEAGORA_RHS_REDUCTION_MIN_SATS_PER_WORKER" => "1") do
+                RHSDA_SE._spacecraft_dynamics_flat_constellation_effector_queue!(du, u, p, 30.0, plan; rhs_kind=:full)
+            end
+            @test isequal(ComponentArrays.getdata(du), ComponentArrays.getdata(ref))
+            for t in values(p.shared_buffers.rhs_region_tuners)
+                push!(widths, t.width)
+            end
+        end
+        @test !isempty(p.shared_buffers.rhs_region_tuners)
+        Threads.nthreads() > 1 && @test length(widths) > 1
+    end
+end
+
+# SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER: 1/0 force the barrier, `auto` (the
+# default) probes both arms during the solve and keeps the faster.
+@testset "Spin barrier env modes" begin
+    PP = SpaceAGORA.SimulationModel.ParallelPolicy
+    for (raw, mode) in ((nothing, :auto), ("auto", :auto), (" AUTO ", :auto), ("1", :on), ("on", :on),
+                        ("true", :on), ("0", :off), ("off", :off), ("false", :off))
+        withenv("SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER" => raw) do
+            @test PP.harmonics_batch_spin_barrier_mode() === mode
+            # Only a forced `on` counts as enabled for the pre-solve paths.
+            @test PP.harmonics_batch_spin_barrier_enabled() == (mode === :on)
+            @test RHSDA_SE._snapshot_rhs_plan_env_config().harmonics_batch_spin_barrier === mode
+        end
+    end
+    withenv("SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER" => "sometimes") do
+        @test_throws ArgumentError PP.harmonics_batch_spin_barrier_mode()
+    end
+    # Resolution per call: forced modes ignore the tuner; auto follows its arm,
+    # and is off where there is no tuner.
+    T = SpaceAGORA.SimulationModel.SpinBarrierTuner
+    env_for(raw) = withenv(() -> RHSDA_SE._snapshot_rhs_plan_env_config(),
+        "SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER" => raw)
+    for on in (false, true)
+        t = T(); t.on = on
+        p = (; shared_buffers=(; spin_barrier_tuner=t))
+        @test RHSDA_SE._spin_barrier_active(p, env_for("1"))
+        @test !RHSDA_SE._spin_barrier_active(p, env_for("0"))
+        @test RHSDA_SE._spin_barrier_active(p, env_for("auto")) == on
+    end
+    @test !RHSDA_SE._spin_barrier_active(nothing, env_for("auto"))
+    # The barrier lifts the flat route's floor; without it the floor applies.
+    env = env_for("auto")
+    @test RHSDA_SE._rhs_flat_default_admits(env, 64, 32, true)
+    @test !RHSDA_SE._rhs_flat_default_admits(env, 64, 32, false)
+end
+
+@testset "Spin barrier auto: decision logic" begin
+    T = SpaceAGORA.SimulationModel.SpinBarrierTuner
+    SE = RHSDA_SE
+    span = SE._SPIN_WINDOWS * SE._SPIN_SAMPLES
+    fake() = (; shared_buffers=(; rhs_plan_step_cache=Ref{Any}(:cached)))
+    observe!(p, t, ns) = SE._spin_barrier_observe!(p, t, Int64(ns))
+    # Run calls costing cost(t) until the current probe decides; returns the call count.
+    probe!(p, t, cost) = (n = 0; while t.probing; observe!(p, t, cost(t)); n += 1; end; n)
+    arm(on_ns, off_ns) = t -> t.on ? on_ns : off_ns
+    fresh() = (t = T(); SE._spin_barrier_tuner_reset!(t, true); t)
+
+    # Starts off and times the incumbent over the full span before switching.
+    p = fake(); t = fresh()
+    @test !t.on && !t.incumbent && t.probing
+    for _ in 1:(SE._SPIN_SETTLE + span - 1)
+        observe!(p, t, 1000)
+    end
+    @test !t.on
+    observe!(p, t, 1000)
+    @test t.on && t.probing                                    # now timing the challenger
+    @test p.shared_buffers.rhs_plan_step_cache[] === nothing   # cached plan dropped
+    # A challenger ahead by more than the margin takes over after its full span.
+    n = probe!(p, t, arm(500, 1000))
+    @test n == SE._SPIN_SETTLE + span
+    @test t.on && t.incumbent
+    @test t.switches == 1 && t.probes == 1 && t.period == SE._SPIN_REPROBE
+
+    # It reprobes after the period; if the barrier now loses, the solve goes back.
+    for _ in 1:t.period
+        observe!(p, t, 500)
+    end
+    @test t.probing
+    probe!(p, t, arm(2000, 1000))
+    @test !t.on && !t.incumbent && t.switches == 2 && t.period == SE._SPIN_REPROBE
+
+    # A clearly slower challenger is cut after one window, and the period
+    # doubles while the choice holds.
+    p = fake(); t = fresh()
+    n = probe!(p, t, arm(9000, 1000))
+    @test n == 2 * SE._SPIN_SETTLE + span + SE._SPIN_SAMPLES
+    @test !t.on && !t.incumbent && t.switches == 0
+    @test t.period == 2 * SE._SPIN_REPROBE
+    @test p.shared_buffers.rhs_plan_step_cache[] === nothing
+    for k in 2:10
+        for _ in 1:t.period
+            observe!(p, t, 1000)
+        end
+        probe!(p, t, arm(9000, 1000))
+    end
+    @test t.period == SE._SPIN_REPROBE_MAX && !t.on
+
+    # Faster by less than the margin: the incumbent stays.
+    p = fake(); t = fresh()
+    probe!(p, t, arm(980, 1000))
+    @test !t.incumbent && !t.on
+
+    # Means, not medians: a challenger fast on most calls but with rare long
+    # stalls that make it slower overall does not take over.
+    p = fake(); t = fresh()
+    k = Ref(0)
+    probe!(p, t, t -> t.on ? (k[] += 1; k[] % 64 == 0 ? 60_000 : 500) : 1000)
+    @test !t.incumbent
+
+    # Settle calls after a switch are not samples: a slow start on the new arm
+    # (pool start-up) does not decide the probe.
+    p = fake(); t = fresh()
+    probe!(p, t, t -> t.skip > 0 ? 10^9 : (t.on ? 500 : 1000))
+    @test t.incumbent
+end
+
+@testset "Spin barrier auto: observations labelled by arm" begin
+    T = SpaceAGORA.SimulationModel.SpinBarrierTuner
+    R = SpaceAGORA.SimulationModel.RhsRegionTuner
+    t = T(); RHSDA_SE._spin_barrier_tuner_reset!(t, true)
+    p = (; shared_buffers=(; spin_barrier_tuner=t, rhs_region_tuning=Ref(false),
+        rhs_region_tuners=Dict{Symbol, R}(), rhs_plan_step_cache=Ref{Any}(nothing)))
+    @test RHSDA_SE._rhs_region_ran_full(p, :rhs_harmonics_batch)        # incumbent arm
+    t.on = true                                                           # challenger arm
+    @test !RHSDA_SE._rhs_region_ran_full(p, :rhs_harmonics_batch)
+    @test !RHSDA_SE._rhs_region_ran_full(p, :rhs_flat_queue)
+    t.incumbent = true                                                    # settled on
+    @test RHSDA_SE._rhs_region_ran_full(p, :rhs_harmonics_batch_spin)
+    t.enabled = false; t.incumbent = false                                # forced modes: no probe
+    @test RHSDA_SE._rhs_region_ran_full(p, :rhs_harmonics_batch_spin)
+end
+
+# The arm (dispatch, and with it the default route's floors) changes from call
+# to call under auto; the derivative and the solve must not.
+@testset "Spin barrier on/off/auto leave the RHS and the solve bit-identical" begin
+    PP = SpaceAGORA.SimulationModel.ParallelPolicy
+    planet = Earth()
+    gravity_file = joinpath(normpath(joinpath(@__DIR__, "..", "..", "..")),
+        "data", "planets", "gravity", "EarthGGM05C.csv")
+    model = GravitationalHarmonicsModel(20, 20, gravity_file, planet)
+    n = 37
+    args = _rhs_direct_assembly_config(n_sats=n, effectors=(model,))
+    u = RHSDA_SE.build_initial_conditions(args)
+    fresh_p(raw) = begin
+        p = ODEParams(n_sats=n, args=args)
+        p.is_active .= true
+        p.shared_buffers.rhs_env_config[] = withenv(() -> RHSDA_SE._snapshot_rhs_plan_env_config(),
+            "SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER" => raw)
+        p
+    end
+    rhs(p) = (du = fill!(zero(u), 99.0); RHSDA_SE.spacecraft_dynamics!(du, u, p, 30.0); ComponentArrays.getdata(du))
+    ref = rhs(fresh_p("0"))
+    @test !any(==(99.0), ref)
+    @test isequal(rhs(fresh_p("1")), ref)
+    p = fresh_p("auto")
+    RHSDA_SE._spin_barrier_tuner_reset!(p.shared_buffers.spin_barrier_tuner, true)
+    arms = Set{Bool}()
+    calls = RHSDA_SE._SPIN_SETTLE + RHSDA_SE._SPIN_WINDOWS * RHSDA_SE._SPIN_SAMPLES + 40
+    same = true
+    for k in 1:calls
+        push!(arms, p.shared_buffers.spin_barrier_tuner.on)
+        same &= isequal(rhs(p), ref)
+    end
+    @test same
+    @test arms == Set([false, true])
+    PP._destroy_persistent_foreach_scope!(PP._active_policy_scope_id())
+
+    finals = Dict{String, Vector{Float64}}()
+    for raw in ("0", "1", "auto")
+        sol = withenv("SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER" => raw) do
+            SpaceAGORA.run_simulation(_rhs_direct_assembly_config(n_sats=n, effectors=(model,));
+                return_solution=true)
+        end
+        s = sol isa Tuple ? last(sol) : sol
+        finals[raw] = copy(ComponentArrays.getdata(s.u[end]))
+    end
+    @test isequal(finals["1"], finals["0"])
+    @test isequal(finals["auto"], finals["0"])
+end
+
+# Every sample the engine builds carries the run index of the spacecraft it
+# describes (`StateSample.spacecraft_index`). The probes record what each route
+# hands them: a sample for spacecraft k must carry k and spacecraft k's position.
+using StaticArrays: SVector, SMatrix
+using RecursiveArrayTools: ArrayPartition
+
+struct _RHSDAIndexProbe <: SpaceAGORA.AbstractForceTorqueModel
+    seen::Vector{Tuple{Int, SVector{3, Float64}}}
+    lock::ReentrantLock
+end
+_RHSDAIndexProbe() = _RHSDAIndexProbe(Tuple{Int, SVector{3, Float64}}[], ReentrantLock())
+_rhsda_record!(m, x) = lock(() -> push!(m.seen, (x.spacecraft_index, x.pos_ii)), m.lock)
+const _RHSDA_Z3 = SVector(0.0, 0.0, 0.0)
+
+function SpaceAGORA.wrench(m::_RHSDAIndexProbe, x::StateSample, env::EnvironmentSample, t::Float64)
+    _rhsda_record!(m, x)
+    return _RHSDA_Z3, _RHSDA_Z3
+end
+SpaceAGORA.gravity_backbone_kick_structure(::_RHSDAIndexProbe) = :velocity_kick_explicit
+function SpaceAGORA.gravity_backbone_kick_acceleration_ii(m::_RHSDAIndexProbe, x::StateSample, env::EnvironmentSample, t::Float64)
+    _rhsda_record!(m, x)
+    return _RHSDA_Z3
+end
+
+# Position-only gravity: the gravity-backbone core and the articulated and
+# attachment gravity callables sample it at each body.
+struct _RHSDAGravityProbe <: SpaceAGORA.AbstractForceTorqueModel
+    seen::Vector{Tuple{Int, SVector{3, Float64}}}
+    lock::ReentrantLock
+end
+_RHSDAGravityProbe() = _RHSDAGravityProbe(Tuple{Int, SVector{3, Float64}}[], ReentrantLock())
+SpaceAGORA.gravity_backbone_structure(::_RHSDAGravityProbe) = :position_only_static_gravity
+function SpaceAGORA.gravity_backbone_acceleration_ii(m::_RHSDAGravityProbe, x::StateSample, env::EnvironmentSample, t::Float64)
+    _rhsda_record!(m, x)
+    return _RHSDA_Z3
+end
+SpaceAGORA.wrench(::_RHSDAGravityProbe, x::StateSample, env::EnvironmentSample, t::Float64) = (_RHSDA_Z3, _RHSDA_Z3)
+
+function _rhsda_check_indices(seen, positions)
+    @test !isempty(seen)
+    @test all(((k, pos),) -> 1 <= k <= length(positions) && pos == positions[k], seen)
+    @test sort!(unique(first.(seen))) == collect(eachindex(positions))
+end
+
+function _rhsda_index_params(args, n, mode)
+    p = ODEParams(n_sats=n, args=args)
+    p.is_active .= true
+    p.shared_buffers.rhs_env_config[] = withenv(RHSDA_SE._snapshot_rhs_plan_env_config,
+        "SPACEAGORA_RHS_EXECUTION_MODE" => mode)
+    return p
+end
+
+@testset "StateSample carries the spacecraft's run index" begin
+    pos, vel = SVector(7.0e6, 0.0, 0.0), SVector(0.0, 7.5e3, 0.0)
+    @test StateSample(pos, vel, 500.0).spacecraft_index == 0
+    @test StateSample(pos, vel, 500.0; spacecraft_index=3).spacecraft_index == 3
+    @test StateSample(pos, vel, 500.0, nothing, nothing, nothing).spacecraft_index == 0
+    @test StateSample(pos, vel, 500.0, nothing, nothing, nothing, 2).spacecraft_index == 2
+    # The parameterized six-field form of the default constructor before the
+    # field existed: it still converts each argument to its field type.
+    six = StateSample{Nothing}(pos, vel, 500, nothing, nothing, nothing)
+    @test six.spacecraft_index == 0 && six.mass_kg === 500.0 && six.spacecraft === nothing
+    @test StateSample{Nothing}(pos, vel, 500.0, nothing, nothing, nothing, 4).spacecraft_index == 4
+    constructors = vcat(collect(methods(StateSample)), collect(methods(StateSample{Nothing})))
+    @test !any(Base.isambiguous(a, b) for a in constructors, b in constructors if a !== b)
+
+    n = 3
+    probe = _RHSDAIndexProbe()
+    args = _rhs_direct_assembly_config(n_sats=n, effectors=(InverseSquaredGravityModel(), probe))
+    u = RHSDA_SE.build_initial_conditions(args)
+    positions = [SVector{3, Float64}(u.sc[k].pos) for k in 1:n]
+
+    @testset "engine sample builder" begin
+        for k in 1:n
+            x = RHSDA_SE.build_state_sample(u.sc[k], args.dynamics_model.spacecraft[k], false, k)
+            @test x.spacecraft_index == k && x.pos_ii == positions[k]
+        end
+        @test RHSDA_SE.build_state_sample(u.sc[1], nothing, false).spacecraft_index == 0
+    end
+
+    for mode in ("serial", "satellite")
+        @testset "full right-hand side, $mode execution" begin
+            empty!(probe.seen)
+            RHSDA_SE.spacecraft_dynamics!(zero(u), u, _rhsda_index_params(args, n, mode), 0.0)
+            _rhsda_check_indices(probe.seen, positions)
+        end
+    end
+
+    @testset "flat constellation queue" begin
+        plan = (
+            mode=:flat_constellation_effector_queue, allotment=1, scheduler=:static,
+            dominant_axis=:effector, policy_applied=false,
+            effector_decision=(use_threads=false, allotment=1, mode=:off, policy_applied=false),
+        )
+        empty!(probe.seen)
+        RHSDA_SE._spacecraft_dynamics_flat_constellation_effector_queue!(
+            zero(u), u, _rhsda_index_params(args, n, "auto"), 0.0, plan; rhs_kind=:full, partition=nothing)
+        _rhsda_check_indices(probe.seen, positions)
+    end
+
+    for (label, rhs!) in (("split IMEX explicit remainder", RHSDA_SE.spacecraft_dynamics_explicit_remainder!),
+                          ("multirate slow part", RHSDA_SE.spacecraft_dynamics_slow!))
+        @testset "$label" begin
+            empty!(probe.seen)
+            rhs!(zero(u), u, _rhsda_index_params(args, n, "auto"), 0.0)
+            _rhsda_check_indices(probe.seen, positions)
+        end
+    end
+
+    @testset "gravity backbone core and kick samples" begin
+        gravity, kick = _RHSDAGravityProbe(), _RHSDAIndexProbe()
+        bargs = _rhs_direct_assembly_config(n_sats=n, effectors=(InverseSquaredGravityModel(), gravity, kick))
+        bu = RHSDA_SE.build_initial_conditions(bargs)
+        bp = _rhsda_index_params(bargs, n, "auto")
+        q, dq = RHSDA_SE._gravity_backbone_initial_states(bu, bargs)
+        RHSDA_SE.spacecraft_dynamics_gravity_backbone!(zero(dq), dq, q, bp, 0.0)
+        _rhsda_check_indices(gravity.seen, positions)
+        state = ArrayPartition(deepcopy(dq), deepcopy(q))
+        RHSDA_SE._gravity_backbone_half_kick!(state, bp, 0.0, 1.0)
+        _rhsda_check_indices(kick.seen, positions)
+    end
+
+    @testset "articulated and attachment gravity callables" begin
+        gravity = _RHSDAGravityProbe()
+        gargs = _rhs_direct_assembly_config(n_sats=n, effectors=(gravity,))
+        gp = _rhsda_index_params(gargs, n, "auto")
+        r = SVector(7.0e6, 1.0e5, -2.0e5)
+        for k in 1:n
+            empty!(gravity.seen)
+            RHSDA_SE._gravity_only_acceleration_ii(gp, r, 0.0; sat_idx=k)
+            @test first.(gravity.seen) == [k]
+            g = RHSDA_SE._ArticulatedGravity(gp, 0.0, SMatrix{3, 3, Float64, 9}(1, 0, 0, 0, 1, 0, 0, 0, 1),
+                gargs.dynamics_model.spacecraft[k], gargs.dynamics_model.dynamic_effectors, k)
+            empty!(gravity.seen)
+            SpaceAGORA.SimulationModel.CompliantAttachmentDynamics.relative_gravity(g, r, SVector(1.0, 0.0, 0.0), _RHSDA_Z3)
+            @test first.(gravity.seen) == [k, k]
+        end
+    end
+
+    @testset "operational segment context" begin
+        context = SpaceAGORA.MissionWorkflow._segment_context(u, 0.0, args)
+        @test [x.spacecraft_index for x in context.spacecraft] == collect(1:n)
+    end
+end
+
+@testset "the flat route's buffered state sample is the one built from the state" begin
+    # The flat route evaluates wrench effectors with a sample it rebuilds from
+    # its per-satellite buffers, where every other route builds it from the
+    # state. Field for field the two must be the same, with and without
+    # attitude, including fields no current effector reads.
+    plan = (
+        mode=:flat_constellation_effector_queue, allotment=1, scheduler=:static,
+        dominant_axis=:effector, policy_applied=false,
+        effector_decision=(use_threads=false, allotment=1, mode=:off, policy_applied=false),
+    )
+    n = 3
+    for orientation_sim in (false, true)
+        args = _rhs_direct_assembly_config(n_sats=n, effectors=(InverseSquaredJ2GravityModel(), _RHSDAIndexProbe()),
+                                           orientation_sim=orientation_sim)
+        u = RHSDA_SE.build_initial_conditions(args)
+        p = _rhsda_index_params(args, n, "auto")
+        RHSDA_SE._spacecraft_dynamics_flat_constellation_effector_queue!(
+            zero(u), u, p, 0.0, plan; rhs_kind=:full, partition=nothing)
+        @test length(p.shared_buffers.rhs_flat_state_pos_ii[]) >= n
+        for k in 1:n
+            flat = RHSDA_SE._rhs_flat_state_sample_from_buffers(
+                p.shared_buffers, args.dynamics_model.spacecraft, k, orientation_sim)
+            built = RHSDA_SE.build_state_sample(u.sc[k], args.dynamics_model.spacecraft[k], orientation_sim, k)
+            @test typeof(flat) === typeof(built)
+            for field in fieldnames(StateSample)
+                @test getfield(flat, field) === getfield(built, field)
+            end
+            @test (built.q_ib === nothing) == !orientation_sim
+        end
+    end
 end

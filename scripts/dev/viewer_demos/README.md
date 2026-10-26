@@ -1,10 +1,36 @@
 # Local viewer demonstrations
 
+This family owns local mission setup, simulation and saved-result export
+examples. SpaceAGORA owns those mission configurations; the separate visualizer
+package owns rendering. Keep shared export helpers here, and put research
+reconstructions with their studies rather than adding them to this demo family.
+
+HTML rendering is supplied by the optional `SpaceAGORAVisualizer` companion.
+Prepare a separate environment once, then use it for the direct demonstration
+commands below. The demos load the renderer from it and then continue in the
+examples environment through `examples/common.jl`, so prepare that once too:
+
+```bash
+julia --startup-file=no scripts/setup_visualizer.jl /path/to/visualizer-env
+julia --startup-file=no examples/setup.jl
+julia --project=/path/to/visualizer-env scripts/dev/viewer_demos/iss_demo.jl --duration-s 60 --output-dir output/iss-first-run
+```
+
+The setup uses the reviewed commit in `packages/VisualizerSource.toml`; it does
+not add the renderer to SpaceAGORA's normal environment. The executable demos
+load the companion explicitly. For demos launched through `scripts/dev/run.jl`,
+set `SPACEAGORA_VISUALIZER_ENV=/path/to/visualizer-env` so that launcher can see
+the prepared environment. A demo that also uses HYPR needs both companions in
+the same separate environment; run `scripts/setup_hypr.jl` against that
+visualizer environment first. The browser and page-building tools live under
+`SpaceAGORAVisualizer.viewer_directory()` in the companion installation.
+
+
 Run these scripts from the repository with its Julia environment instantiated.
 The four basic demonstrations below use analytic ephemerides and either no
 atmosphere or an exponential model.
 Native GRAM, SPICE kernels and private telemetry are not required. The ISS display
-uses the tracked NASA model in `data/models/`; it is display geometry, not the
+uses the tracked NASA model in `data/scene/models/`; it is display geometry, not the
 physical mass or aerodynamic mesh.
 
 | Script | Default simulated time | What it demonstrates |
@@ -17,7 +43,7 @@ physical mass or aerodynamic mesh.
 For a short first run:
 
 ```sh
-julia --project=. scripts/dev/viewer_demos/iss_demo.jl --duration-s 60 --output-dir output/iss-first-run
+julia --project=/path/to/visualizer-env scripts/dev/viewer_demos/iss_demo.jl --duration-s 60 --output-dir output/iss-first-run
 ```
 
 All four scripts accept `--duration-s` and `--output-dir` with space-separated
@@ -49,23 +75,26 @@ The station model and controller are a demonstration, not an ISS flight model.
 
 Start with the short hop:
 
-Prepare the optional HYPR companion environment once from the repository root:
+Add HYPR to the separate visualizer environment from the repository root, and
+prepare the examples environment if it is not prepared yet:
 
 ```text
-julia --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
+julia --startup-file=no scripts/setup_hypr.jl /path/to/visualizer-env
+julia --startup-file=no examples/setup.jl
 ```
 
-These HYPR examples load `SpaceAGORAHYPR` before their common helper activates
-the root project. Baseline examples continue to use `--project=.`.
+These HYPR examples load `SpaceAGORA` and `HYPR` and the renderer before their common
+helper continues in the examples environment, so both environments are needed.
+Baseline examples without HTML export use `--project=examples`.
 
 ```sh
-SPACEAGORA_DEMO_SMOKE=1 julia --project=examples/rpo_planner_env scripts/dev/viewer_demos/iss_hypr.jl
+SPACEAGORA_DEMO_SMOKE=1 julia --project=/path/to/visualizer-env scripts/dev/viewer_demos/iss_hypr.jl
 ```
 
 Run the complete approach by omitting the environment variable:
 
 ```sh
-julia --project=examples/rpo_planner_env scripts/dev/viewer_demos/iss_hypr.jl
+julia --project=/path/to/visualizer-env scripts/dev/viewer_demos/iss_hypr.jl
 ```
 
 The script prints the HTML path under `output/viewer_demos/iss_hypr_<inputs digest>/`.
@@ -109,7 +138,7 @@ starting 2.5 hours before the searched closest approach. All accept
 bounded run. Existing nonempty outputs are refused, never reused or removed.
 `SPACEAGORA_DEMO_FORCE` no longer overrides that protection.
 
-These drivers use the tracked mission display models in `data/models/` and
+These drivers use the tracked mission display models in `data/scene/models/` and
 require existing SPICE kernels (`SPACEAGORA_SPICE_PATH`). Magellan, Odyssey and
 Cassini require installed native GRAM support; each wrapper is constructed explicitly
 at the simulation's initial epoch. This does not validate native time-system,
@@ -190,9 +219,8 @@ leap-second calendar fields to the general `InitialTime` API.
 
 ## CYGNSS research tools
 
-Use the [reconstruction record](../../../docs/spaceagora_cygnss_reconstruction_record.md)
-for the separate development environment, seven-spacecraft Earthdata fetch,
-private-input access, and the distinction between the wheels-only diagnostic
-and recorded-command reconstruction. Generated flight pages remain private.
-The wheels-only physical-adequacy check is currently failing, even when the
-demo completes. Do not report execution success as physical acceptance.
+The CYGNSS reconstruction study (SpaceAGORAMissionReconstructions)
+owns the data pipeline, research drivers and tested helpers. Its guide separates
+Earthdata inputs from private slew telemetry and explains the interpretation
+limits. The study reuses this family's saved-result export helpers; it does not
+duplicate the renderer.

@@ -1,7 +1,7 @@
 # Controller for the GRAM memory-footprint study.
 #
 # Why this study exists: the outer-route memory model in
-# `src/parallel/routing/machine_topology.jl` charges a per-spacecraft term to
+# `src/orchestration/parallel/routing/machine_topology.jl` charges a per-spacecraft term to
 # every process worker on a native-GRAM constellation, and that term decides
 # whether the process route is offered at all. It has to be a measured number
 # per density path, not one number for "GRAM".

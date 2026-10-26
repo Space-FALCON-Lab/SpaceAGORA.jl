@@ -1,4 +1,5 @@
 module TerrainExportTests
+Base.include(@__MODULE__, joinpath(@__DIR__, "..", "..", "helpers", "load_visualizer.jl"))
 using Test, SpaceAGORA, JSON, Base64, StaticArrays, DataFrames, Arrow
 import SpaceAGORA.TelemetryVerification: make_example_config, make_three_body_spacecraft
 const SM=SpaceAGORA.SimulationModel

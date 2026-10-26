@@ -431,7 +431,7 @@ function ppc_mode_env_pairs(
     #   SPACEAGORA_PARALLEL_POLICY_HINT_EXPLORATION and _HINT_MIN_SAMPLES were
     #     also never emitted (R5 ships 1.8/3, R4 1.5/2).
     #
-    # scripts/paired_profile_probe.jl already derives from
+    # scripts/calibration/paired_profile_probe.jl already derives from
     # ParallelProfiles.profile_env_pairs for exactly this reason, and its header
     # records that a duplicated table drifted within an hour of being written.
     # This one drifted for longer because nothing compared it to the source of

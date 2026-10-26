@@ -113,7 +113,7 @@ function gmf_gravity_effector(planet)
     GMF_GRAVITY == "invsq" && return InverseSquaredGravityModel()
     lm = GMF_GRAVITY == "l50" ? 50 : 20
     return GravitationalHarmonicsModel(
-        lm, lm, joinpath(GMF_REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv"), planet
+        lm, lm, joinpath(GMF_REPO_ROOT, "data", "planets", "gravity", "EarthGGM05C.csv"), planet
     )
 end
 

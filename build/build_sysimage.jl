@@ -12,6 +12,11 @@
 #
 #   julia --project=build build/build_sysimage.jl
 #
+# The default precompile trace runs examples/AGORA_Basic_GRAMEarth.jl, which
+# continues in the examples environment: prepare it first with
+# `julia --startup-file=no examples/setup.jl`, or name another trace script in
+# SPACEAGORA_SYSIMAGE_PRECOMPILE_FILE.
+#
 # The resulting sysimage is written to SpaceAGORA.so in the repository root.
 # That file is listed in .gitignore and should NOT be committed to version
 # control.  Rebuild it whenever the package set in Project.toml
@@ -20,7 +25,9 @@
 using PackageCompiler
 
 # All packages from the root Project.toml that should be baked into the
-# full local sysimage. PackageCompiler needs them listed by symbol.
+# full local sysimage. PackageCompiler needs them listed by symbol, and each
+# name must be :SpaceAGORA or a root Project.toml [deps] entry
+# (test/gates/ci_sysimage_package_lists_gate.jl checks both lists).
 # :SpaceAGORA itself is included so the package's own ~40+ src/ files get
 # compiled into the image too -- without it, PackageCompiler only bakes in
 # the dependencies, and `using SpaceAGORA` still recompiles the package's own
@@ -37,17 +44,11 @@ const FULL_PACKAGES = [
     :DiffEqCallbacks,
     :Interpolations,
     :LoopVectorization,
-    :NLsolve,
     :OrdinaryDiffEq,
-    :PlotlyJS,
     :Polyester,
-    :Quaternions,
     :Reexport,
-    :Roots,
     :SPICE,
-    :SatelliteToolbox,
     :SatelliteToolboxGeomagneticField,
-    :SatelliteToolboxGravityModels,
     :SpecialFunctions,
     :StaticArrays,
 ]
@@ -65,16 +66,11 @@ const CI_PACKAGES = [
     :DiffEqBase,
     :DiffEqCallbacks,
     :Interpolations,
-    :NLsolve,
     :OrdinaryDiffEq,
     :Polyester,
-    :Quaternions,
     :Reexport,
-    :Roots,
     :SPICE,
-    :SatelliteToolbox,
     :SatelliteToolboxGeomagneticField,
-    :SatelliteToolboxGravityModels,
     :SpecialFunctions,
     :StaticArrays,
 ]
@@ -106,6 +102,13 @@ const PRECOMPILE_SCRIPT = let
         nothing
     end
 end
+
+# The default trace example stops without the examples environment; say so before
+# the build starts rather than after it.
+PRECOMPILE_SCRIPT !== nothing && endswith(PRECOMPILE_SCRIPT, joinpath("examples", "AGORA_Basic_GRAMEarth.jl")) &&
+    !isfile(joinpath(PROJECT_ROOT, "examples", "Manifest.toml")) &&
+    error("The default precompile trace runs an example: prepare the examples environment first with " *
+          "`julia --startup-file=no examples/setup.jl`, or name another trace script in SPACEAGORA_SYSIMAGE_PRECOMPILE_FILE.")
 
 println("Building sysimage → $(abspath(SYSIMAGE_PATH))")
 println("This will take several minutes the first time …")

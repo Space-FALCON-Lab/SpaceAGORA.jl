@@ -25,10 +25,9 @@ module ControlHooks
     using ..AbstractTypes: AbstractTerrainModel
     using ..TerrainModels: NoTerrainModel, DEMTerrainModel
     using ..EnvironmentModels: getDensity, density_altitude_derivative, _environment_wind
-    using ..DynamicsKS: cartesian_to_ks_state, ks_state_to_cartesian, ks_position, ks_velocity
-    using ..DynamicsKS: ks_rk4_step, ks_first_order_tangent_map
-    using ..DynamicsKS: ks_kinematics_jacobians, ks_density_value_gradient, ks_rotation_cross_matrix
-    using ..DynamicsKS: ks_density_difference
+    using ..DynamicsKS: KSPropagationParams, cartesian_to_ks_state, ks_state_to_cartesian
+    using ..DynamicsKS: ks_rk4_step, ks_first_order_tangent_map, ks_rotation_cross_matrix
+    using ..DynamicsKS: ks_density_value, ks_density_difference, ks_relative_velocity
     using ..EphemeridesModels: ephemerides_requires_spice, ephemerides_frame_lpi
     using ..ReferenceSystems
     using ..LinearAlgebra
@@ -49,7 +48,7 @@ module ControlHooks
     export RPOControlCommandLog, RPOHeldActuation, RPOMPCControlModel
     export MagneticMomentumManagerModel
     export AerobrakingMPCMode, TargetEnergyMode, MaxEnergyDepletionMode
-    export AerobrakingMPCParams, AerobrakingMPCConfig, AerobrakingMPCProblem
+    export AerobrakingMPCConfig, AerobrakingMPCProblem
     export AerobrakingMPCSolution, AerobrakingMPCState, AerobrakingMPCConstraintSet
     export AerobrakingMPCReferenceConfig, AerobrakingMPCControlModel
     export AerobrakingMPCCampaignState, AerobrakingMPCCampaignControlModel
@@ -58,9 +57,9 @@ module ControlHooks
     export spacecraft_mass_kg, spacecraft_reference_areas
     export density_function_from_spaceagora
     export build_reference_drag_pass, build_mpc_problem, solve_mpc_qp
-    export objective_kind, objective_label, commanded_area_fraction
+    export objective_kind, commanded_area_fraction
     export alpha_from_commanded_area, commanded_area_from_alpha
-    export interpolate_mpc_plan, interpolate_mpc_history
+    export interpolate_mpc_plan
     export evaluate_cartesian_mpc_outputs, evaluate_ks_mpc_outputs
     export cumulative_mpc_heat_load, propagate_ks_mpc_plan
     export mpc_control_save_fields, mpc_campaign_save_fields

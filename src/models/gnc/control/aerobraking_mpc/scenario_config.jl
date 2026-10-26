@@ -17,26 +17,22 @@ function _planet_radius_m(planet)::Float64
     return Float64(value)
 end
 
+# Rotation rate about the pole: a scalar, or the z component of the planet's
+# spin vector in its planet-fixed frame.
 function _planet_rotation_rate_rad_s(planet)::Float64
-    value = _maybe_property(planet, :ω, _maybe_property(planet, :Ω, _maybe_property(planet, :omega, 0.0)))
-    value isa Number && return Float64(value)
-    try
-        length(value) >= 3 || return 0.0
-        return Float64(value[3])
-    catch
-        return 0.0
-    end
+    value = _maybe_property(planet, :ω, _maybe_property(planet, :Ω, 0.0))
+    return Float64(value isa Number ? value : value[3])
 end
 
 """
-    mpc_params_from_spaceagora(args_or_params) -> AerobrakingMPCParams
+    mpc_params_from_spaceagora(args_or_params) -> KSPropagationParams
 
 The planet constants of a `SimulationConfiguration` (or run parameters `p`).
 """
-function mpc_params_from_spaceagora(obj)::AerobrakingMPCParams
+function mpc_params_from_spaceagora(obj)::KSPropagationParams
     args = _mpc_scenario_args(obj)
     planet = args.environment_model.planet
-    return AerobrakingMPCParams(
+    return KSPropagationParams(
         Re=_planet_radius_m(planet),
         μ=_planet_mu(planet),
         J2=Float64(_maybe_property(planet, :J2, 0.0)),
@@ -117,7 +113,7 @@ function mpc_config_from_spaceagora(
     args = _mpc_scenario_args(obj)
     sc = args.dynamics_model.spacecraft[Int(spacecraft_index)]
     areas = spacecraft_reference_areas(sc; controlled_panel_links=controlled_panel_links)
-    cfg = AerobrakingMPCConfig(
+    return AerobrakingMPCConfig(;
         mode=mode,
         bus_reference_area_m2=areas.bus_reference_area_m2,
         controllable_area_m2=areas.controllable_area_m2,
@@ -127,11 +123,7 @@ function mpc_config_from_spaceagora(
         heat_load_max_j_cm2=Float64(heat_load_max_j_cm2),
         drag_max_n=Float64(drag_max_n),
         area_slew_max_m2_s=Float64(area_slew_max_m2_s),
-        use_constraints=any((constraints.heat_rate, constraints.heat_load, constraints.drag, constraints.slew)),
-        use_slew_constraint=constraints.slew,
-        use_qdot_constraint=constraints.heat_rate,
-        use_heat_load_constraint=constraints.heat_load,
-        use_drag_constraint=constraints.drag,
+        constraint_flags(constraints)...,
         target_energy_mj_kg=Float64(target_energy_mj_kg),
         area_weight=Float64(area_weight),
         area_slew_weight=Float64(area_slew_weight),
@@ -142,5 +134,4 @@ function mpc_config_from_spaceagora(
         osqp_eps_rel=Float64(osqp_eps_rel),
         osqp_max_iter=Int(osqp_max_iter),
     )
-    return cfg
 end

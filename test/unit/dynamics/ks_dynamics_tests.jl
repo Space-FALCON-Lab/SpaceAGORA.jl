@@ -4,6 +4,10 @@ using SpaceAGORA
 using SpaceAGORA.SimulationModel.DynamicsKS
 using StaticArrays
 
+# The state Jacobian of the KS dynamics.
+state_jacobian(state, params) =
+    evaluate_ks_dynamics_and_jacobians(state, params; compute_input_jacobian=Val(false)).state
+
 @testset "reusable KS dynamics" begin
     params = KSPropagationParams(
         Re=6.378137e6,
@@ -11,14 +15,6 @@ using StaticArrays
         J2=1.08262668e-3,
         Ω=7.292115e-5,
     )
-    mpc_params = AerobrakingMPCParams(
-        Re=params.Re,
-        μ=params.μ,
-        J2=params.J2,
-        Ω=params.Ω,
-    )
-    @test ks_j2_acceleration_si([7.0e6, 0.0, 0.0], mpc_params) ≈
-        ks_j2_acceleration_si([7.0e6, 0.0, 0.0], params)
 
     cases = (
         ([7.0e6, 0.0, 0.0], [0.0, 7.5e3, 250.0]),
@@ -54,8 +50,8 @@ using StaticArrays
     @test rk4_state[10] > state[10]
     @test midpoint_state[10] > state[10]
     inplace_rhs = similar(state)
-    @test ks_rhs!(inplace_rhs, state, params) === inplace_rhs
-    @test inplace_rhs ≈ ks_rhs(state, params) rtol=0.0 atol=0.0
+    @test nonlinear_ks_rhs!(inplace_rhs, state, params) === inplace_rhs
+    @test inplace_rhs ≈ nonlinear_ks_rhs(state, params) rtol=0.0 atol=0.0
 
     drag = ks_drag_acceleration_si(
         circular_position,
@@ -77,12 +73,12 @@ using StaticArrays
         for unit in eachcol(Matrix{Float64}(I, 3, 3))
     )...)
     @test j2_jacobian ≈ finite_difference_j2 rtol=2.0e-7 atol=1.0e-15
-    @test ks_rhs_jacobian(state, params) isa SMatrix{10,10,Float64}
+    @test state_jacobian(state, params) isa SMatrix{10,10,Float64}
     tangent = ks_first_order_tangent_map(state, params, 0.0, 1.0e-7)
     @test tangent.transition isa SMatrix{10,10,Float64}
     @test tangent.input_transition isa SVector{10,Float64}
     @test tangent.transition ≈
-        SMatrix{10,10,Float64}(I) + 1.0e-7 * ks_rhs_jacobian(state, params)
+        SMatrix{10,10,Float64}(I) + 1.0e-7 * state_jacobian(state, params)
     @test_throws ArgumentError cartesian_to_ks_state(zeros(3), circular_velocity, params)
     @test_throws ArgumentError ks_drag_acceleration_si(
         circular_position,
@@ -109,21 +105,18 @@ end
     old_state[9] = 2.0 * new_state[9]
 
     ks_dynamics = SpaceAGORA.SimulationModel.DynamicsKS
-    new_rhs = ks_rhs(new_state, params)
+    new_rhs = nonlinear_ks_rhs(new_state, params)
     u = new_state[1:4]
     u_prime = new_state[5:8]
     radius = dot(u, u)
     acceleration = ks_j2_acceleration_si(ks_position(u), params)
 
     expected_u_prime_derivative = -0.5 .* new_state[9] .* u .+
-        0.5 .* radius .* (ks_dynamics.ks_perturbation_matrix(u) * acceleration)
+        0.5 .* radius .* (transpose(ks_dynamics.ks_lambda_matrix(u)) * acceleration)
     @test new_rhs[5:8] ≈ expected_u_prime_derivative rtol=2.0e-14 atol=2.0e-10
     @test new_rhs[9] ≈ -radius * dot(ks_velocity(u, u_prime), acceleration)
     @test sqrt(new_state[9] / 2.0) == sqrt(old_state[9] / 4.0)
-    rhs_jacobian = ks_rhs_jacobian(
-        new_state,
-        params,
-    )
+    rhs_jacobian = state_jacobian(new_state, params)
     @test rhs_jacobian[1:4, 5:8] ≈ Matrix{Float64}(I, 4, 4) rtol=1.0e-9 atol=1.0e-12
     @test rhs_jacobian[5:8, 9] ≈ -0.5 .* u rtol=1.0e-8 atol=1.0e-8
     @test rhs_jacobian[10, 1:4] ≈ 2.0 .* u rtol=1.0e-6 atol=1.0e-6
@@ -138,7 +131,7 @@ end
         vvec = ks_velocity(u, u_prime)
         acceleration = ks_j2_acceleration_si(rvec, params)
         du_prime = -0.25 .* h_old .* u .+
-            0.5 .* radius .* (ks_dynamics.ks_perturbation_matrix(u) * acceleration)
+            0.5 .* radius .* (transpose(ks_dynamics.ks_lambda_matrix(u)) * acceleration)
         dh_old = -2.0 * radius * dot(vvec, acceleration)
         return vcat(u_prime, du_prime, dh_old, radius)
     end

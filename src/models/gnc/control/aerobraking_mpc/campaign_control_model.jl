@@ -1,17 +1,16 @@
-# Supervise the transition from maximum depletion to terminal-energy targeting.
+# Campaign supervisor: maximum energy depletion until the target energy is
+# reachable in the coming pass, then energy targeting.
 """
-Run state of an [`AerobrakingMPCCampaignControlModel`](@ref): its `phase`,
-completed passes, the latest reachable-energy bracket and the switch time.
+Run state of an [`AerobrakingMPCCampaignControlModel`](@ref): its `phase`, the
+passes completed (atmosphere exits of the run), the latest reachable-energy
+bracket (MJ/kg) and the switch time.
 """
 Base.@kwdef mutable struct AerobrakingMPCCampaignState
     phase::Symbol = :maximum_energy_depletion
     completed_passes::Int = 0
-    inside_atmosphere::Bool = false
     bracket_min_energy_mj_kg::Float64 = NaN
     bracket_max_energy_mj_kg::Float64 = NaN
-    bracket_evaluations::Int = 0
     switch_time_s::Float64 = NaN
-    last_bracket_time_s::Float64 = -Inf
     last_error::Union{Nothing, String} = nothing
 end
 
@@ -19,7 +18,8 @@ end
 Aerobraking campaign supervisor: runs `maximum_depletion_control` until at
 least `minimum_depletion_passes` passes are complete and the target energy lies
 within the energy reachable in the coming pass, then hands over to
-`targeting_control`. Both controllers must act on the same spacecraft and panels.
+`targeting_control`. Both controllers must act on the same spacecraft and panels;
+`run_simulation` checks the pair before the run starts.
 """
 Base.@kwdef mutable struct AerobrakingMPCCampaignControlModel <: AbstractControlEffectorModel
     maximum_depletion_control::AerobrakingMPCControlModel
@@ -47,28 +47,17 @@ function _validate_mpc_campaign(model::AerobrakingMPCCampaignControlModel)
     return nothing
 end
 
-function _mpc_specific_energy_mj_kg(state, params::AerobrakingMPCParams)
+# Two-body specific energy (MJ/kg) of a KS state.
+function _mpc_specific_energy_mj_kg(state, params::KSPropagationParams)
     cart = ks_state_to_cartesian(state)
     return (0.5 * dot(cart.velocity_ii_m, cart.velocity_ii_m) -
         params.μ / norm(cart.position_ii_m)) / 1.0e6
 end
 
-function _mpc_campaign_update_pass_count!(
-    model::AerobrakingMPCCampaignControlModel,
-    pos::SVector{3, Float64},
-    vel::SVector{3, Float64},
-    params::AerobrakingMPCParams,
-)
-    h = norm(pos) - params.Re
-    radial_velocity = dot(pos, vel) / norm(pos)
-    inside = h <= model.maximum_depletion_control.reference.h_cut_m
-    if model.state.inside_atmosphere && !inside && radial_velocity > 0.0
-        model.state.completed_passes += 1
-    end
-    model.state.inside_atmosphere = inside
-    return nothing
-end
-
+# The end-of-pass energy reachable from the current state lies between the
+# maximum-depletion prediction (fully exposed panels, as planned) and a reference
+# pass with the panels stowed (bus area only). Records that bracket and returns
+# whether the target energy lies within it, up to `bracket_tolerance_mj_kg`.
 function _mpc_campaign_reachable_bracket!(
     model::AerobrakingMPCCampaignControlModel,
     u,
@@ -104,14 +93,14 @@ function _mpc_campaign_reachable_bracket!(
 
     model.state.bracket_min_energy_mj_kg = min(low_energy, med_energy)
     model.state.bracket_max_energy_mj_kg = max(low_energy, med_energy)
-    model.state.bracket_evaluations += 1
-    model.state.last_bracket_time_s = t
     target_energy = model.targeting_control.config.target_energy_mj_kg
     tol = model.bracket_tolerance_mj_kg
     return model.state.bracket_min_energy_mj_kg - tol <= target_energy <=
         model.state.bracket_max_energy_mj_kg + tol
 end
 
+# Hand the held command and this pass's heat accounting to the targeting
+# controller, which then solves at once.
 function _mpc_campaign_transfer_state!(target::AerobrakingMPCState, source::AerobrakingMPCState)
     target.held_commanded_area_m2 = source.held_commanded_area_m2
     target.held_alpha_rad = source.held_alpha_rad
@@ -119,7 +108,6 @@ function _mpc_campaign_transfer_state!(target::AerobrakingMPCState, source::Aero
     target.estimated_heat_load_j_cm2 = source.estimated_heat_load_j_cm2
     target.last_heat_rate_w_cm2 = source.last_heat_rate_w_cm2
     target.last_drag_n = source.last_drag_n
-    target.last_density_kg_m3 = source.last_density_kg_m3
     target.last_solve_time_s = -Inf
     return nothing
 end
@@ -131,14 +119,8 @@ function update_control!(
     t::Float64,
     sat_idx::Int64,
 )
-    _validate_mpc_campaign(model)
     med = model.maximum_depletion_control
     Int(sat_idx) == med.spacecraft_index || return nothing
-    sc_state = _mpc_control_sat_state(u, Int(sat_idx))
-    pos, vel = _mpc_control_pos_vel(sc_state)
-    params = mpc_params_from_spaceagora(p.args)
-    _mpc_campaign_update_pass_count!(model, pos, vel, params)
-
     if model.state.phase == :maximum_energy_depletion
         previous_solve_count = med.state.solve_count
         update_control!(med, u, p, t, sat_idx)
@@ -171,62 +153,34 @@ function control_wrench(
     return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
-_mpc_campaign_active_control(model::AerobrakingMPCCampaignControlModel) =
+_mpc_active_control(model::AerobrakingMPCCampaignControlModel) =
     model.state.phase == :target_energy ? model.targeting_control : model.maximum_depletion_control
 
 """
     mpc_campaign_save_fields(model) -> Tuple{SaveField...}
 
-The [`mpc_control_save_fields`](@ref) columns of the active controller plus the
-campaign phase, completed passes and the reachable-energy bracket.
+The [`mpc_control_save_fields`](@ref) columns of each campaign's active
+controller plus its phase code (1 maximum depletion, 2 energy targeting),
+completed passes and reachable-energy bracket (MJ/kg), from the run's own
+[`AerobrakingMPCCampaignControlModel`](@ref)s.
 """
-function mpc_campaign_save_fields(model::AerobrakingMPCCampaignControlModel)
-    SaveField = getproperty(parentmodule(@__MODULE__), :SaveField)
-    satellite_count = integrator -> eachindex(integrator.p.args.dynamics_model.spacecraft)
-    per_satellite_value = (integrator, value) -> [
-        i == model.maximum_depletion_control.spacecraft_index ? value : NaN
-        for i in satellite_count(integrator)
-    ]
+function mpc_campaign_save_fields(::AerobrakingMPCCampaignControlModel)
+    T = AerobrakingMPCCampaignControlModel
     return (
-        SaveField(:mpc_commanded_area_m2, (u, t, integrator) ->
-            per_satellite_value(integrator, _mpc_save_control(_mpc_campaign_active_control(model))[1]);
-            per_satellite=true, column_prefix="mpc_commanded_area_m2"),
-        SaveField(:mpc_alpha_rad, (u, t, integrator) ->
-            per_satellite_value(integrator, _mpc_save_control(_mpc_campaign_active_control(model))[2]);
-            per_satellite=true, column_prefix="mpc_alpha_rad"),
-        SaveField(:mpc_active_limit_code, (u, t, integrator) ->
-            per_satellite_value(integrator, _mpc_limit_code(_mpc_campaign_active_control(model).state.active_limit));
-            per_satellite=true, column_prefix="mpc_active_limit_code"),
-        SaveField(:mpc_heat_rate_w_cm2, (u, t, integrator) ->
-            per_satellite_value(integrator, _mpc_campaign_active_control(model).state.last_heat_rate_w_cm2);
-            per_satellite=true, column_prefix="mpc_heat_rate_w_cm2"),
-        SaveField(:mpc_drag_n, (u, t, integrator) ->
-            per_satellite_value(integrator, _mpc_campaign_active_control(model).state.last_drag_n);
-            per_satellite=true, column_prefix="mpc_drag_n"),
-        SaveField(:mpc_heat_load_j_cm2, (u, t, integrator) ->
-            per_satellite_value(integrator, _mpc_campaign_active_control(model).state.estimated_heat_load_j_cm2);
-            per_satellite=true, column_prefix="mpc_heat_load_j_cm2"),
-        SaveField(:mpc_campaign_phase_code, (u, t, integrator) ->
-            per_satellite_value(integrator, model.state.phase == :target_energy ? 2.0 : 1.0);
-            per_satellite=true, column_prefix="mpc_campaign_phase_code"),
-        SaveField(:mpc_campaign_completed_passes, (u, t, integrator) ->
-            per_satellite_value(integrator, Float64(model.state.completed_passes));
-            per_satellite=true, column_prefix="mpc_campaign_completed_passes"),
-        SaveField(:mpc_campaign_bracket_min_energy_mj_kg, (u, t, integrator) ->
-            per_satellite_value(integrator, model.state.bracket_min_energy_mj_kg);
-            per_satellite=true, column_prefix="mpc_campaign_bracket_min_energy_mj_kg"),
-        SaveField(:mpc_campaign_bracket_max_energy_mj_kg, (u, t, integrator) ->
-            per_satellite_value(integrator, model.state.bracket_max_energy_mj_kg);
-            per_satellite=true, column_prefix="mpc_campaign_bracket_max_energy_mj_kg"),
+        _mpc_control_columns(T)...,
+        _mpc_save_field(:mpc_campaign_phase_code, T, e -> e.state.phase == :target_energy ? 2.0 : 1.0),
+        _mpc_save_field(:mpc_campaign_completed_passes, T, e -> e.state.completed_passes),
+        _mpc_save_field(:mpc_campaign_bracket_min_energy_mj_kg, T, e -> e.state.bracket_min_energy_mj_kg),
+        _mpc_save_field(:mpc_campaign_bracket_max_energy_mj_kg, T, e -> e.state.bracket_max_energy_mj_kg),
     )
 end
 
 GNCRuntime.spacecraft_scope(m::AerobrakingMPCCampaignControlModel) =
     BoundSpacecraft((m.maximum_depletion_control.spacecraft_index,))
 GNCRuntime.held_command(m::AerobrakingMPCCampaignControlModel, spacecraft_index) =
-    GNCRuntime.held_command(_mpc_campaign_active_control(m), spacecraft_index)
+    GNCRuntime.held_command(_mpc_active_control(m), spacecraft_index)
 GNCRuntime.held_command_time(m::AerobrakingMPCCampaignControlModel, spacecraft_index) =
-    GNCRuntime.held_command_time(_mpc_campaign_active_control(m), spacecraft_index)
+    GNCRuntime.held_command_time(_mpc_active_control(m), spacecraft_index)
 
 function SimulationLifecycle.bind_spacecraft(m::AerobrakingMPCCampaignControlModel, sat_idx::Int)
     m.maximum_depletion_control.spacecraft_index == sat_idx && return m
@@ -240,7 +194,13 @@ end
 SimulationLifecycle.requires_atmosphere_events(::AerobrakingMPCCampaignControlModel) = true
 function SimulationLifecycle.atmosphere_transition!(
     m::AerobrakingMPCCampaignControlModel, u, p, t, spacecraft_index, inside)
+    # A pass is complete when the spacecraft leaves the atmosphere.
+    !inside && spacecraft_index == m.maximum_depletion_control.spacecraft_index &&
+        (m.state.completed_passes += 1)
     SimulationLifecycle.atmosphere_transition!(m.maximum_depletion_control, u, p, t, spacecraft_index, inside)
     SimulationLifecycle.atmosphere_transition!(m.targeting_control, u, p, t, spacecraft_index, inside)
     return nothing
 end
+
+SimulationLifecycle.preflight_control(m::AerobrakingMPCCampaignControlModel, args; isolate_state) =
+    _validate_mpc_campaign(m)

@@ -113,7 +113,7 @@ end
 
 @testset "nine-state KS MPC linearization" begin
     hooks = SpaceAGORA.SimulationModel.ControlHooks
-    params = AerobrakingMPCParams(
+    params = KSPropagationParams(
         Re=6_378_137.0,
         μ=3.986004418e14,
         J2=1.08262668e-3,
@@ -150,7 +150,7 @@ end
     @test output[4] == -state[9] / 1.0e6
 
     function first_order_flow(candidate_state, candidate_area)
-        derivative = ks_rhs(
+        derivative = nonlinear_ks_rhs(
             candidate_state, params, candidate_area;
             density_kg_m3=density_value,
             drag_coefficient=config.drag_coefficient,
@@ -242,7 +242,7 @@ end
         @test commanded_area_from_alpha(cfg, alpha; min_alpha_rad=0.0, max_alpha_rad=pi / 2) ≈ area
     end
 
-    params = AerobrakingMPCParams(
+    params = KSPropagationParams(
         Re=6.378e6, μ=3.986e14, J2=1.08263e-3, Ω=1.0e-4)
     position = [params.Re + 100.0e3, 0.0, 0.0]
     velocity = [0.0, 7.6e3, 0.0]
@@ -281,7 +281,7 @@ end
     H[11, 3] = 1.0e3
     H[12, :] .= -1.0
     problem = AerobrakingMPCProblem(
-        params=AerobrakingMPCParams(
+        params=KSPropagationParams(
             Re=6.378e6, μ=3.986e14, J2=0.0, Ω=0.0),
         H=H,
         Mx=zeros(N * ny, 9),
@@ -332,7 +332,7 @@ end
     H = zeros(N * ny, N)
     H[N * ny, N] = -1.0
     problem = AerobrakingMPCProblem(
-        params=AerobrakingMPCParams(
+        params=KSPropagationParams(
             Re=6.378e6, μ=3.986e14, J2=0.0, Ω=0.0),
         H=H,
         Mx=zeros(N * ny, 9),
@@ -372,7 +372,7 @@ function _mpc_slack_probe(mode)
     Ybar[:, 2] .= 200.0
     Ybar[:, 3] .= 2.0e4
     problem = AerobrakingMPCProblem(
-        params=AerobrakingMPCParams(Re=6.378e6, μ=3.986e14, J2=0.0, Ω=0.0),
+        params=KSPropagationParams(Re=6.378e6, μ=3.986e14, J2=0.0, Ω=0.0),
         H=zeros(N * ny, N), Mx=zeros(N * ny, 9), δX0=zeros(9), N=N, ny=ny,
         t=[0.0, 100.0], Ybar=Ybar, Xbar=zeros(N, 9), Abar_m2=2.0)
     config = AerobrakingMPCConfig(
@@ -483,4 +483,40 @@ end
     lifecycle.atmosphere_transition!(controller, nothing, nothing, 60.0, 1, true)
     @test controller.state.estimated_heat_load_j_cm2 == 0.0
     @test lifecycle.requires_atmosphere_events(controller)
+end
+
+isdefined(@__MODULE__, :ConformanceInstances) ||
+    include(joinpath(@__DIR__, "..", "..", "fixtures", "conformance_instances.jl"))
+
+@testset "MPC save fields read the run's controllers; campaign passes and preflight" begin
+    template, campaign = ConformanceInstances.aerobraking_mpc_controls()
+    # A run works on its own copy of the controller (here bound to spacecraft 2).
+    running = bind_spacecraft(template, 2)
+    running.state.held_commanded_area_m2 = 7.5
+    running.state.estimated_heat_load_j_cm2 = 3.0
+    integrator = (p=(args=(control_model=(control_effectors=(running,),),
+        dynamics_model=(spacecraft=[nothing, nothing],)),),)
+    fields = Dict(field.name => field for field in mpc_control_save_fields(template))
+    @test isequal(fields[:mpc_commanded_area_m2].getter(nothing, 0.0, integrator), [NaN, 7.5])
+    @test isequal(fields[:mpc_heat_load_j_cm2].getter(nothing, 0.0, integrator), [NaN, 3.0])
+    @test all(isnan, fields[:mpc_drag_n].getter(nothing, 0.0, integrator))
+
+    # Passes are counted at the run's atmosphere exits; entries restart heat accounting.
+    lifecycle = SpaceAGORA.SimulationLifecycle
+    lifecycle.atmosphere_transition!(campaign, nothing, nothing, 10.0, 1, true)
+    @test campaign.state.completed_passes == 0
+    lifecycle.atmosphere_transition!(campaign, nothing, nothing, 400.0, 1, false)
+    lifecycle.atmosphere_transition!(campaign, nothing, nothing, 500.0, 2, false)
+    @test campaign.state.completed_passes == 1
+    campaign_fields = Dict(field.name => field for field in mpc_campaign_save_fields(campaign))
+    run = (p=(args=(control_model=(control_effectors=(campaign,),), dynamics_model=(spacecraft=[nothing],)),),)
+    @test campaign_fields[:mpc_campaign_completed_passes].getter(nothing, 0.0, run) == [1.0]
+    @test campaign_fields[:mpc_campaign_phase_code].getter(nothing, 0.0, run) == [1.0]
+
+    # The pair is checked before the run.
+    swapped = AerobrakingMPCCampaignControlModel(
+        maximum_depletion_control=campaign.targeting_control,
+        targeting_control=campaign.maximum_depletion_control)
+    @test_throws ArgumentError lifecycle.preflight_control(swapped, nothing; isolate_state=true)
+    @test lifecycle.preflight_control(campaign, nothing; isolate_state=true) === nothing
 end

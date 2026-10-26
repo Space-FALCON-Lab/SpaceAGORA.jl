@@ -428,14 +428,14 @@ using .SimulationModel: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDeple
 using .SimulationModel: AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 using .SimulationModel: SolarPanelAngleOfAttackControlModel
 using .SimulationModel: AerobrakingMPCMode, TargetEnergyMode, MaxEnergyDepletionMode
-using .SimulationModel: AerobrakingMPCParams, AerobrakingMPCConfig, AerobrakingMPCProblem
+using .SimulationModel: AerobrakingMPCConfig, AerobrakingMPCProblem
 using .SimulationModel: AerobrakingMPCSolution, AerobrakingMPCState, AerobrakingMPCConstraintSet
 using .SimulationModel: AerobrakingMPCReferenceConfig, AerobrakingMPCControlModel
 using .SimulationModel: AerobrakingMPCCampaignState, AerobrakingMPCCampaignControlModel
 using .SimulationModel: mpc_constraints, constraint_active, constraint_names, apply_constraints
 using .SimulationModel: mpc_params_from_spaceagora, mpc_config_from_spaceagora, spacecraft_mass_kg
 using .SimulationModel: density_function_from_spaceagora, build_reference_drag_pass, build_mpc_problem, solve_mpc_qp
-using .SimulationModel: alpha_from_commanded_area, commanded_area_from_alpha, interpolate_mpc_history
+using .SimulationModel: alpha_from_commanded_area, commanded_area_from_alpha, interpolate_mpc_plan
 using .SimulationModel: evaluate_cartesian_mpc_outputs, evaluate_ks_mpc_outputs
 using .SimulationModel: cumulative_mpc_heat_load, propagate_ks_mpc_plan
 using .SimulationModel: mpc_control_save_fields, mpc_campaign_save_fields
@@ -921,14 +921,14 @@ export AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 export AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 export SolarPanelAngleOfAttackControlModel
 export AerobrakingMPCMode, TargetEnergyMode, MaxEnergyDepletionMode
-export AerobrakingMPCParams, AerobrakingMPCConfig, AerobrakingMPCProblem
+export AerobrakingMPCConfig, AerobrakingMPCProblem
 export AerobrakingMPCSolution, AerobrakingMPCState, AerobrakingMPCConstraintSet
 export AerobrakingMPCReferenceConfig, AerobrakingMPCControlModel
 export AerobrakingMPCCampaignState, AerobrakingMPCCampaignControlModel
 export mpc_constraints, constraint_active, constraint_names, apply_constraints
 export mpc_params_from_spaceagora, mpc_config_from_spaceagora, spacecraft_mass_kg
 export density_function_from_spaceagora, build_reference_drag_pass, build_mpc_problem, solve_mpc_qp
-export alpha_from_commanded_area, commanded_area_from_alpha, interpolate_mpc_history
+export alpha_from_commanded_area, commanded_area_from_alpha, interpolate_mpc_plan
 export evaluate_cartesian_mpc_outputs, evaluate_ks_mpc_outputs
 export cumulative_mpc_heat_load, propagate_ks_mpc_plan
 export mpc_control_save_fields, mpc_campaign_save_fields

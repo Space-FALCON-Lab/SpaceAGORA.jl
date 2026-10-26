@@ -1,4 +1,5 @@
-# Construct the nominal KS trajectory from atmospheric entry through exit.
+# Nominal drag pass for the MPC: from the current state, coast without drag to the
+# inbound interface crossing, then propagate with drag to the outbound crossing.
 """
 Nominal-pass propagation settings: the interface altitude `h_cut_m` (m) that
 bounds the pass, the KS fictitious-time step `delta_s`, and the step budgets of
@@ -6,12 +7,12 @@ the coast to the interface and of the pass itself.
 """
 Base.@kwdef struct AerobrakingMPCReferenceConfig
     h_cut_m::Float64
-    delta_s::Float64 = 10.0e-7
+    delta_s::Float64 = 1.0e-6
     max_coast_steps::Int
     max_pass_steps::Int
 end
 
-function _altitude_from_ks_state(state, params::AerobrakingMPCParams)
+function _altitude_from_ks_state(state, params::KSPropagationParams)
     cart = ks_state_to_cartesian(state)
     return norm(cart.position_ii_m) - params.Re
 end
@@ -33,7 +34,7 @@ callable `(altitude_m, elapsed_s[, position])`, such as
 [`density_function_from_spaceagora`](@ref).
 """
 function build_reference_drag_pass(
-    params::AerobrakingMPCParams,
+    params::KSPropagationParams,
     position_ii_m,
     velocity_ii_m;
     config::AerobrakingMPCConfig,

@@ -255,7 +255,6 @@ function pass_controller(config)
         state=AerobrakingMPCState(),
         spacecraft_index=spacecraft_index,
         controlled_panel_links=controlled_panel_links,
-        control_dt_s=control_dt_s,
         min_alpha_rad=min_panel_alpha_rad,
         max_alpha_rad=max_panel_alpha_rad,
         solve_interval_s=solve_interval_s,

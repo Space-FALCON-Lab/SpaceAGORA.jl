@@ -3,6 +3,7 @@ using LinearAlgebra
 using SpaceAGORA
 using SpaceAGORA.SimulationModel.DynamicsKS
 using SpaceAGORA.SimulationModel.ControlHooks: commanded_area_fraction, interpolate_mpc_plan
+using StaticArrays
 
 @testset "selected planet polyfit feeds the MPC density adapter" begin
     planet = SpaceAGORA.SimulationModel.Earth()
@@ -360,4 +361,126 @@ end
     @test rate_limited_solution.commanded_area_m2[1] ≈ problem.Abar_m2 atol=1.0e-6
     @test maximum(abs.(unconstrained_solution.commanded_area_m2 .-
         rate_limited_solution.commanded_area_m2)) > 1.0
+end
+
+# A pass whose nominal heat rate (2 W/cm²) and drag (200 N) exceed their limits
+# with no control authority (H = 0): only slacks can make it feasible.
+function _mpc_slack_probe(mode)
+    N = 2
+    ny = 4
+    Ybar = zeros(N, ny)
+    Ybar[:, 2] .= 200.0
+    Ybar[:, 3] .= 2.0e4
+    problem = AerobrakingMPCProblem(
+        params=AerobrakingMPCParams(Re=6.378e6, μ=3.986e14, J2=0.0, Ω=0.0),
+        H=zeros(N * ny, N), Mx=zeros(N * ny, 9), δX0=zeros(9), N=N, ny=ny,
+        t=[0.0, 100.0], Ybar=Ybar, Xbar=zeros(N, 9), Abar_m2=2.0)
+    config = AerobrakingMPCConfig(
+        mode=mode, bus_reference_area_m2=2.0, controllable_area_m2=4.0,
+        mass_kg=500.0, drag_coefficient=2.2, qdot_max_w_cm2=1.0,
+        heat_load_max_j_cm2=10.0, drag_max_n=100.0, area_slew_max_m2_s=0.2,
+        use_constraints=true, use_slew_constraint=false, use_qdot_constraint=true,
+        use_heat_load_constraint=true, use_drag_constraint=true,
+        target_energy_mj_kg=-20.0, area_weight=1.0e-5, area_slew_weight=0.0,
+        slack_weight=1.0e3, target_energy_weight=0.0,
+        max_depletion_energy_weight=0.0, osqp_eps_abs=1.0e-7, osqp_eps_rel=1.0e-7,
+        osqp_max_iter=10_000)
+    return solve_mpc_qp(problem, config), N
+end
+
+@testset "MPC slack coupling follows the benchmark formulations" begin
+    # Energy targeting: heat-rate, heat-load and drag slacks restore feasibility.
+    solution, N = _mpc_slack_probe(TargetEnergyMode())
+    @test solution.ok
+    @test length(solution.slacks) == 2N + 1
+    @test all(solution.slacks .>= -1.0e-8)
+    @test maximum(solution.slacks[1:N]) > 0.5           # heat rate
+    @test solution.slacks[N + 1] > 0.5                  # heat load
+    @test maximum(solution.slacks[N + 2:end]) > 0.5     # drag
+
+    # Maximum depletion keeps heat rate and heat load hard: the same pass is infeasible.
+    solution, _ = _mpc_slack_probe(MaxEnergyDepletionMode())
+    @test !solution.ok
+    @test solution.solver_status in (:primal_infeasible, :primal_infeasible_inaccurate)
+    @test all(iszero, solution.ΔU)
+end
+
+@testset "KS density gradient is one-sided at a density cutoff" begin
+    params = KSPropagationParams(Re=6.378137e6, μ=3.986004418e14)
+    top_m = 300.0e3
+    density = (altitude_m, t) -> altitude_m < top_m ? 1.0e-11 * exp(-(altitude_m - top_m) / 5.0e4) : 0.0
+    position = SVector(params.Re + top_m - 1.0, 0.0, 0.0)
+    _, gradient = ks_density_value_gradient(density, position, 0.0, params; gradient_step_m=10.0)
+    expected = -1.0e-11 * exp(1.0 / 5.0e4) / 5.0e4
+    @test gradient[1] ≈ expected rtol=1.0e-3
+    @test abs(gradient[2]) < 1.0e-20 && abs(gradient[3]) < 1.0e-20
+end
+
+# A density model that reports the time it was sampled at, to check the epoch.
+struct _MPCTimeProbeDensity <: SpaceAGORA.AbstractDensityModel end
+SpaceAGORA.getDensity(::_MPCTimeProbeDensity, h, lat, lon, t, wind, p) = (Float64(t), 200.0, zeros(3))
+
+@testset "MPC density adapter: run-time epoch and planet-fixed sampling" begin
+    planet = SpaceAGORA.SimulationModel.Earth()
+    args = (environment_model=(planet=planet, density_model=_MPCTimeProbeDensity()),)
+    hooks = SpaceAGORA.SimulationModel.ControlHooks
+    source = density_function_from_spaceagora(args; epoch_s=1234.0)
+    @test source(150.0e3, 6.0) == 1240.0
+    @test source(150.0e3, 6.0, SVector(planet.Rp_e + 150.0e3, 0.0, 0.0)) == 1240.0
+
+    # After a quarter turn of the planet, a fixed prediction-frame point on +x
+    # lies at longitude -90° in the planet-fixed frame.
+    Ω = source.rotation_rate_rad_s
+    @test Ω ≈ 7.2921159e-5 rtol=1.0e-6
+    τ = (pi / 2) / Ω
+    position_pf = hooks._mpc_prediction_to_planet_fixed(source, SVector(7.0e6, 0.0, 0.0), τ)
+    @test position_pf ≈ SVector(0.0, -7.0e6, 0.0) atol=1.0e-6
+    back = hooks._mpc_planet_fixed_to_prediction(source, position_pf, τ)
+    @test back ≈ SVector(7.0e6, 0.0, 0.0) atol=1.0e-6
+
+    # The analytic polynomial-fit gradient points along the vertical in the
+    # prediction frame, also after the planet has turned.
+    polyfit = (environment_model=(planet=planet, density_model=PolynomialFitAtmosphereModel(planet)),)
+    adapter = density_function_from_spaceagora(polyfit; epoch_s=0.0)
+    position = SVector(planet.Rp_e + 150.0e3, 0.0, 0.0)
+    gradient = adapter(Val(:gradient), position, τ)
+    @test gradient[1] < 0.0
+    @test norm(gradient[2:3]) <= 1.0e-9 * abs(gradient[1])
+end
+
+@testset "MPC control effectors bind to a spacecraft" begin
+    lifecycle = SpaceAGORA.SimulationLifecycle
+    runtime = SpaceAGORA.GNCRuntime
+    config = AerobrakingMPCConfig(
+        mode=MaxEnergyDepletionMode(), bus_reference_area_m2=5.74,
+        controllable_area_m2=5.7, mass_kg=650.0, drag_coefficient=2.2,
+        qdot_max_w_cm2=0.29, heat_load_max_j_cm2=40.0, drag_max_n=7.55,
+        area_slew_max_m2_s=0.2, use_constraints=true, use_slew_constraint=false,
+        use_qdot_constraint=true, use_heat_load_constraint=false,
+        use_drag_constraint=true, target_energy_mj_kg=-6.41, area_weight=1.0e-5,
+        area_slew_weight=0.0, slack_weight=1.0e-2, target_energy_weight=0.0,
+        max_depletion_energy_weight=1.0, osqp_eps_abs=1.0e-5, osqp_eps_rel=1.0e-5,
+        osqp_max_iter=10_000)
+    controller = AerobrakingMPCControlModel(
+        config=config, spacecraft_index=1, controlled_panel_links=(2, 3),
+        min_alpha_rad=1.0e-4, max_alpha_rad=pi / 2, solve_interval_s=10.0,
+        build_reference_on_tick=true, qp_max_nodes=40,
+        reference=AerobrakingMPCReferenceConfig(h_cut_m=300.0e3, max_coast_steps=10, max_pass_steps=10),
+        fallback_area_m2=11.44, prediction_latitude_rad=0.0,
+        prediction_longitude_rad=0.0, prediction_wind=false)
+    @test runtime.spacecraft_scope(controller) isa runtime.BoundSpacecraft
+    bound = bind_spacecraft(controller, 3)
+    @test bound.spacecraft_index == 3 && controller.spacecraft_index == 1
+    @test bound.state !== controller.state
+    @test runtime.held_command(bound, 3) == (commanded_area_m2=NaN, alpha_rad=NaN) ||
+        all(isnan, values(runtime.held_command(bound, 3)))
+    @test runtime.held_command(bound, 1) === nothing
+
+    # Each atmosphere entry starts a new heat-load budget.
+    controller.state.estimated_heat_load_j_cm2 = 12.0
+    lifecycle.atmosphere_transition!(controller, nothing, nothing, 50.0, 1, false)
+    @test controller.state.estimated_heat_load_j_cm2 == 12.0
+    lifecycle.atmosphere_transition!(controller, nothing, nothing, 60.0, 1, true)
+    @test controller.state.estimated_heat_load_j_cm2 == 0.0
+    @test lifecycle.requires_atmosphere_events(controller)
 end

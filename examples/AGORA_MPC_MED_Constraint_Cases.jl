@@ -114,7 +114,7 @@ const AREA_SLEW_QP_BACKOFF_M2_S = 2.0e-3
 
 const AREA_WEIGHT = 1.0e-5
 const AREA_SLEW_WEIGHT = 0.0
-const SLACK_WEIGHT = 1.0e-2
+const SLACK_WEIGHT = 1.0e3  # drag slack weight: soft in MED (benchmark), effectively enforced here
 const MAX_DEPLETION_ENERGY_WEIGHT = 1.0
 const OSQP_EPS_ABS = 1.0e-5
 const OSQP_EPS_REL = 1.0e-5
@@ -325,7 +325,6 @@ function run_spaceagora_callback_case(case, reference)
         state=state,
         spacecraft_index=1,
         controlled_panel_links=(2, 3),
-        control_dt_s=CONTROL_SAMPLE_TIME_S,
         min_alpha_rad=0.0,
         max_alpha_rad=pi / 2,
         solve_interval_s=1.0e9,

@@ -85,12 +85,14 @@ function _mpc_campaign_reachable_bracket!(
         latitude=med.prediction_latitude_rad,
         longitude=med.prediction_longitude_rad,
         wind=med.prediction_wind,
+        epoch_s=t,
     )
+    rotation = _mpc_planet_frame_rotation(p, t)
     low_area = med.config.bus_reference_area_m2
     low_reference = build_reference_drag_pass(
         params,
-        pos,
-        vel;
+        rotation * pos,
+        rotation * vel;
         config=med.config,
         reference=med.reference,
         nominal_area_m2=low_area,
@@ -233,4 +235,12 @@ function SimulationLifecycle.bind_spacecraft(m::AerobrakingMPCCampaignControlMod
     b.targeting_control = SimulationLifecycle.bind_spacecraft(m.targeting_control, sat_idx)
     b.state = deepcopy(m.state)
     return b
+end
+
+SimulationLifecycle.requires_atmosphere_events(::AerobrakingMPCCampaignControlModel) = true
+function SimulationLifecycle.atmosphere_transition!(
+    m::AerobrakingMPCCampaignControlModel, u, p, t, spacecraft_index, inside)
+    SimulationLifecycle.atmosphere_transition!(m.maximum_depletion_control, u, p, t, spacecraft_index, inside)
+    SimulationLifecycle.atmosphere_transition!(m.targeting_control, u, p, t, spacecraft_index, inside)
+    return nothing
 end

@@ -24,19 +24,6 @@ limit is soft, as in the maximum-energy-depletion benchmark formulation.
 struct MaxEnergyDepletionMode <: AerobrakingMPCMode end
 
 """
-Planet constants used by the KS prediction model, in SI units: equatorial
-radius `Re` (m), gravitational parameter `μ` (m³/s²), the `J2` zonal coefficient
-and the rotation rate `Ω` (rad/s) about the planet pole. Build one from a
-configuration with [`mpc_params_from_spaceagora`](@ref).
-"""
-Base.@kwdef struct AerobrakingMPCParams
-    Re::Float64
-    μ::Float64
-    J2::Float64
-    Ω::Float64
-end
-
-"""
 Settings of one aerobraking MPC (keyword constructor; every field is required).
 
 - `mode`: [`TargetEnergyMode`](@ref) or [`MaxEnergyDepletionMode`](@ref).
@@ -89,7 +76,7 @@ states `Xbar`, linearised about the exposed area `Abar_m2`. Built by
 [`build_mpc_problem`](@ref) and solved by [`solve_mpc_qp`](@ref).
 """
 Base.@kwdef struct AerobrakingMPCProblem
-    params::AerobrakingMPCParams
+    params::KSPropagationParams
     H::Matrix{Float64}
     Mx::Matrix{Float64}
     δX0::Vector{Float64}
@@ -127,7 +114,6 @@ heat load of the current pass, the last solution, solver status and error, and
 the limit that last constrained the command (`active_limit`).
 """
 Base.@kwdef mutable struct AerobrakingMPCState
-    selected_mode::Symbol = :inactive
     last_solve_time_s::Float64 = -Inf
     solver_status::Symbol = :not_solved
     held_commanded_area_m2::Float64 = NaN
@@ -136,7 +122,6 @@ Base.@kwdef mutable struct AerobrakingMPCState
     estimated_heat_load_j_cm2::Float64 = 0.0
     last_heat_rate_w_cm2::Float64 = NaN
     last_drag_n::Float64 = NaN
-    last_density_kg_m3::Float64 = NaN
     active_limit::Symbol = :none
     plan_epoch_s::Float64 = NaN
     plan_time_s::Vector{Float64} = Float64[]

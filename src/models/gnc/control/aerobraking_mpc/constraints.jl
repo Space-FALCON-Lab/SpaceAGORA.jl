@@ -1,4 +1,4 @@
-# Active path and actuator constraints are explicit scenario inputs.
+# Selection of the active path (heat rate, heat load, drag) and actuator (slew) limits.
 """
 Active MPC limits: `heat_rate`, `heat_load`, `drag` and actuator `slew`.
 Build one with [`mpc_constraints`](@ref).
@@ -80,29 +80,16 @@ end
 A copy of `config` with the active limits of `set`.
 """
 function apply_constraints(config::AerobrakingMPCConfig, set::AerobrakingMPCConstraintSet)
-    return AerobrakingMPCConfig(
-        mode=config.mode,
-        bus_reference_area_m2=config.bus_reference_area_m2,
-        controllable_area_m2=config.controllable_area_m2,
-        mass_kg=config.mass_kg,
-        drag_coefficient=config.drag_coefficient,
-        qdot_max_w_cm2=config.qdot_max_w_cm2,
-        heat_load_max_j_cm2=config.heat_load_max_j_cm2,
-        drag_max_n=config.drag_max_n,
-        area_slew_max_m2_s=config.area_slew_max_m2_s,
-        use_constraints=any((set.heat_rate, set.heat_load, set.drag, set.slew)),
-        use_slew_constraint=set.slew,
-        use_qdot_constraint=set.heat_rate,
-        use_heat_load_constraint=set.heat_load,
-        use_drag_constraint=set.drag,
-        target_energy_mj_kg=config.target_energy_mj_kg,
-        area_weight=config.area_weight,
-        area_slew_weight=config.area_slew_weight,
-        slack_weight=config.slack_weight,
-        target_energy_weight=config.target_energy_weight,
-        max_depletion_energy_weight=config.max_depletion_energy_weight,
-        osqp_eps_abs=config.osqp_eps_abs,
-        osqp_eps_rel=config.osqp_eps_rel,
-        osqp_max_iter=config.osqp_max_iter,
-    )
+    fields = NamedTuple{fieldnames(AerobrakingMPCConfig)}(
+        ntuple(i -> getfield(config, i), fieldcount(AerobrakingMPCConfig)))
+    return AerobrakingMPCConfig(; fields..., constraint_flags(set)...)
 end
+
+# The `AerobrakingMPCConfig` switches of a constraint set.
+constraint_flags(set::AerobrakingMPCConstraintSet) = (
+    use_constraints=any((set.heat_rate, set.heat_load, set.drag, set.slew)),
+    use_slew_constraint=set.slew,
+    use_qdot_constraint=set.heat_rate,
+    use_heat_load_constraint=set.heat_load,
+    use_drag_constraint=set.drag,
+)

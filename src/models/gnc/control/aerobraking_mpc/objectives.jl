@@ -2,15 +2,12 @@
 objective_kind(::TargetEnergyMode) = :target_energy
 objective_kind(::MaxEnergyDepletionMode) = :max_energy_depletion
 
-objective_label(::TargetEnergyMode) = "target_energy"
-objective_label(::MaxEnergyDepletionMode) = "max_deplete"
-
+# The predicted end-of-pass energy is affine in the area increments:
+# E_N = H_Erow ⋅ ΔU + E_off, from the last node's energy output (index 4).
 function terminal_energy_affine_terms(problem::AerobrakingMPCProblem)
-    S_E = build_output_selector(problem.N, problem.ny; yidx=4)
-    r_E = zeros(problem.N)
-    r_E[end] = 1.0
-    H_Erow = vec(r_E' * S_E * problem.H)
-    E_off = (r_E' * S_E * (problem.Mx * problem.δX0 .+ vec(problem.Ybar')))[1]
+    row = (problem.N - 1) * problem.ny + 4
+    H_Erow = vec(problem.H[row, :])
+    E_off = (problem.Mx[row, :]' * problem.δX0) + problem.Ybar[problem.N, 4]
     return H_Erow, E_off
 end
 

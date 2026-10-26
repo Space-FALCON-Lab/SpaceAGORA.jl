@@ -1,8 +1,12 @@
-"""
-    interpolate_mpc_plan(times_s, areas_m2, time_s)
+# Offline evaluation of MPC plans: physical outputs of a state and nonlinear KS
+# propagation of an area plan, for checking a QP solution against the dynamics.
 
-Linearly interpolate an MPC exposed-area plan in physical time. This is the
-same interpolation convention used by `AerobrakingMPCControlModel` at runtime.
+"""
+    interpolate_mpc_plan(times_s, values, time_s) -> Float64
+
+Linearly interpolate a sampled history, such as an MPC exposed-area plan, at
+`time_s` on the increasing grid `times_s`, holding the end values outside it.
+[`AerobrakingMPCControlModel`](@ref) follows its plan this way.
 """
 function interpolate_mpc_plan(times_s, areas_m2, time_s::Real)
     length(times_s) == length(areas_m2) || throw(DimensionMismatch(
@@ -16,24 +20,21 @@ function interpolate_mpc_plan(times_s, areas_m2, time_s::Real)
     return muladd(fraction, areas_m2[index + 1] - areas_m2[index], areas_m2[index])
 end
 
-"""Linearly sample a scalar history on a monotonically increasing time grid."""
-function interpolate_mpc_history(times_s, values, time_s::Real)
-    return interpolate_mpc_plan(times_s, values, time_s)
-end
-
 """
     evaluate_cartesian_mpc_outputs(position, velocity, elapsed_time_s,
         area_m2, params, config; density)
 
-Evaluate the physical output convention used by the KS aerobraking MPC from
-an accepted Cartesian state.
+The physical outputs the KS aerobraking MPC predicts, evaluated at a Cartesian
+state in the KS frame with exposed area `area_m2`: altitude above `params.Re`,
+density, speed relative to the atmosphere, drag (N), panel heat rate (W/cm²)
+and two-body specific energy (J/kg and MJ/kg).
 """
 function evaluate_cartesian_mpc_outputs(
     position_ii_m,
     velocity_ii_m,
     elapsed_time_s::Real,
     area_m2::Real,
-    params::AerobrakingMPCParams,
+    params::KSPropagationParams,
     config::AerobrakingMPCConfig;
     density::Function,
 )
@@ -41,11 +42,8 @@ function evaluate_cartesian_mpc_outputs(
     velocity = SVector{3, Float64}(velocity_ii_m)
     radius = norm(position)
     altitude = radius - params.Re
-    rho = max(0.0, Float64(applicable(density, altitude, elapsed_time_s,
-        position) ? density(altitude, elapsed_time_s, position) :
-        density(altitude, elapsed_time_s)))
-    relative_velocity = velocity - ks_rotation_cross_matrix(params) * position
-    speed = norm(relative_velocity)
+    rho = ks_density_value(density, position, Float64(elapsed_time_s), params)
+    speed = norm(ks_relative_velocity(position, velocity, params))
     area = Float64(area_m2)
     panel_fraction = commanded_area_fraction(config, area)
     drag = 0.5 * rho * speed^2 * config.drag_coefficient * area
@@ -73,7 +71,7 @@ the public `AerobrakingMPCConfig` convention.
 function evaluate_ks_mpc_outputs(
     state,
     area_m2::Real,
-    params::AerobrakingMPCParams,
+    params::KSPropagationParams,
     config::AerobrakingMPCConfig;
     density::Function,
 )
@@ -114,7 +112,7 @@ function propagate_ks_mpc_plan(
     problem::AerobrakingMPCProblem,
     area_plan,
     config::AerobrakingMPCConfig,
-    params::AerobrakingMPCParams;
+    params::KSPropagationParams;
     density::Function,
     delta_s::Real=reference.delta_s,
     max_steps::Integer=20_000,

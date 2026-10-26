@@ -59,6 +59,8 @@ function _mpc_apply_panel_alpha!(
     return nothing
 end
 
+# The area commanded without a plan, also the nominal area of the reference pass:
+# fully exposed panels for maximum depletion, `fallback_area_m2` for targeting.
 function _mpc_desired_area(model::AerobrakingMPCControlModel)
     if model.config.mode isa MaxEnergyDepletionMode
         return model.config.bus_reference_area_m2 + model.config.controllable_area_m2
@@ -66,22 +68,14 @@ function _mpc_desired_area(model::AerobrakingMPCControlModel)
     return model.fallback_area_m2
 end
 
+# The held plan's area at run time `t`; plan times are relative to `plan_epoch_s`.
 function _mpc_interpolated_plan_area(model::AerobrakingMPCControlModel, t::Float64)
     times = model.state.plan_time_s
     areas = model.state.plan_area_m2
     if !(isfinite(model.state.plan_epoch_s) && length(times) == length(areas) && !isempty(times))
         return _mpc_desired_area(model)
     end
-    τ = max(0.0, t - model.state.plan_epoch_s)
-    τ <= times[1] && return areas[1]
-    τ >= times[end] && return areas[end]
-    idx = searchsortedlast(times, τ)
-    idx = clamp(idx, 1, length(times) - 1)
-    t0 = times[idx]
-    t1 = times[idx + 1]
-    t1 <= t0 && return areas[idx]
-    λ = (τ - t0) / (t1 - t0)
-    return (1.0 - λ) * areas[idx] + λ * areas[idx + 1]
+    return interpolate_mpc_plan(times, areas, t - model.state.plan_epoch_s)
 end
 
 # Rotation from the inertial (J2000) frame to the planet-fixed frame at run time
@@ -103,6 +97,8 @@ function _mpc_planet_fixed_state(p, pos::SVector{3, Float64},
     return pos_pf, vel_pf, rotation
 end
 
+# Density, temperature and planet-relative speed from the simulation's own
+# atmosphere at the current state, for the runtime limits.
 function _mpc_runtime_atmosphere(model::AerobrakingMPCControlModel, p,
     pos::SVector{3, Float64}, vel::SVector{3, Float64}, t::Float64)
     density_model = p.args.environment_model.density_model
@@ -122,6 +118,9 @@ function _mpc_runtime_atmosphere(model::AerobrakingMPCControlModel, p,
     return max(0.0, Float64(rho)), max(Float64(temperature), eps(Float64)), norm(vel_pf)
 end
 
+# Runtime panel heat rate (W/cm²) at angle of attack `alpha`: the configured
+# SpaceAGORA thermal model (`:spaceagora_thermal`, default) or the kinetic-energy
+# flux the QP predicts (`:kinetic_energy_flux`).
 function _mpc_heat_rate_w_cm2(model::AerobrakingMPCControlModel, p,
     speed::Float64, density::Float64, temperature::Float64, alpha::Float64)
     if model.heat_rate_model === :kinetic_energy_flux
@@ -150,6 +149,8 @@ function _mpc_heat_rate_w_cm2(model::AerobrakingMPCControlModel, p,
     return isfinite(qdot) ? max(0.0, Float64(qdot)) : 0.0
 end
 
+# The largest angle of attack in [min_alpha_rad, desired_alpha] whose runtime heat
+# rate stays within `limit_w_cm2`, by bisection (the heat rate grows with alpha).
 function _mpc_alpha_for_heat_rate_limit(
     model::AerobrakingMPCControlModel,
     p,
@@ -181,6 +182,20 @@ function _mpc_alpha_for_heat_rate_limit(
     return lo
 end
 
+# The exposed area at the angle of attack `_mpc_alpha_for_heat_rate_limit` returns.
+function _mpc_area_for_heat_rate_limit(model::AerobrakingMPCControlModel, p,
+    speed::Float64, density::Float64, temperature::Float64, desired_alpha::Float64,
+    limit_w_cm2::Float64)
+    alpha_limit = _mpc_alpha_for_heat_rate_limit(
+        model, p, speed, density, temperature, desired_alpha, limit_w_cm2)
+    return commanded_area_from_alpha(model.config, alpha_limit;
+        min_alpha_rad=model.min_alpha_rad, max_alpha_rad=model.max_alpha_rad)
+end
+
+# Runtime safety filter, applied at every control tick: clamp the plan's (or the
+# default) area to the drag, heat-rate, remaining heat-load and slew limits
+# evaluated with the simulation's atmosphere and thermal model, then hold it.
+# Records the command, its heat rate and drag, and the limit that bound it.
 function _mpc_area_command_from_constraints!(
     model::AerobrakingMPCControlModel,
     p,
@@ -191,7 +206,6 @@ function _mpc_area_command_from_constraints!(
 )
     config = model.config
     state = model.state
-    params = mpc_params_from_spaceagora(p.args)
     min_area = config.bus_reference_area_m2
     max_area = config.bus_reference_area_m2 + config.controllable_area_m2
     desired_area = desired_area_m2 === nothing ? _mpc_desired_area(model) : clamp(desired_area_m2, min_area, max_area)
@@ -216,27 +230,15 @@ function _mpc_area_command_from_constraints!(
     end
 
     if config.use_constraints && config.use_qdot_constraint
-        alpha_limit = _mpc_alpha_for_heat_rate_limit(
-            model,
-            p,
-            speed,
-            density,
-            temperature,
-            desired_alpha,
-            config.qdot_max_w_cm2,
-        )
-        heat_area_limit = commanded_area_from_alpha(
-            config,
-            alpha_limit;
-            min_alpha_rad=model.min_alpha_rad,
-            max_alpha_rad=model.max_alpha_rad,
-        )
+        heat_area_limit = _mpc_area_for_heat_rate_limit(
+            model, p, speed, density, temperature, desired_alpha, config.qdot_max_w_cm2)
         if heat_area_limit < area_limit
             area_limit = heat_area_limit
             active_limit = :heat_rate
         end
     end
 
+    # Accumulate this pass's heat load with the heat rate held since the last tick.
     dt = isfinite(state.last_command_time_s) ? max(0.0, t - state.last_command_time_s) : 0.0
     if dt > 0.0
         previous_heat_rate = isfinite(state.last_heat_rate_w_cm2) ? max(0.0, state.last_heat_rate_w_cm2) : 0.0
@@ -248,22 +250,9 @@ function _mpc_area_command_from_constraints!(
             area_limit = min(area_limit, min_area)
             active_limit = :heat_load
         else
-            allowable_rate = remaining_load / dt
-            alpha_limit = _mpc_alpha_for_heat_rate_limit(
-                model,
-                p,
-                speed,
-                density,
-                temperature,
-                desired_alpha,
-                allowable_rate,
-            )
-            heat_load_area_limit = commanded_area_from_alpha(
-                config,
-                alpha_limit;
-                min_alpha_rad=model.min_alpha_rad,
-                max_alpha_rad=model.max_alpha_rad,
-            )
+            # Spend at most the remaining budget over the next control interval.
+            heat_load_area_limit = _mpc_area_for_heat_rate_limit(
+                model, p, speed, density, temperature, desired_alpha, remaining_load / dt)
             if heat_load_area_limit < area_limit
                 area_limit = heat_load_area_limit
                 active_limit = :heat_load
@@ -301,11 +290,18 @@ function _mpc_area_command_from_constraints!(
     state.last_command_time_s = t
     state.last_heat_rate_w_cm2 = heat_rate
     state.last_drag_n = drag
-    state.last_density_kg_m3 = density
     state.active_limit = active_limit
-    state.selected_mode = objective_kind(config.mode)
     state.solver_status = active_limit == :none ? :area_command : :constraint_limited_area_command
     return commanded_area
+end
+
+function _mpc_clear_plan!(state::AerobrakingMPCState)
+    state.plan_epoch_s = NaN
+    state.plan_time_s = Float64[]
+    state.plan_area_m2 = Float64[]
+    state.predicted_terminal_energy = NaN
+    state.last_solution = nothing
+    return state
 end
 
 function _mpc_update_plan!(
@@ -318,27 +314,20 @@ function _mpc_update_plan!(
     params = mpc_params_from_spaceagora(p.args)
     sc_state = _mpc_control_sat_state(u, sat_idx)
     pos, vel = _mpc_control_pos_vel(sc_state)
-    if model.solve_trigger_altitude_m !== nothing
-        altitude_m = norm(pos) - params.Re
-        radial_velocity_m_s = dot(pos, vel) / norm(pos)
-        if altitude_m > model.solve_trigger_altitude_m
-            model.state.solve_armed = true
-            desired_area = _mpc_interpolated_plan_area(model, t)
-            _mpc_area_command_from_constraints!(model, p, pos, vel, t, desired_area)
-            return nothing
-        elseif !(model.state.solve_armed && radial_velocity_m_s < 0.0)
-            desired_area = _mpc_interpolated_plan_area(model, t)
-            _mpc_area_command_from_constraints!(model, p, pos, vel, t, desired_area)
-            return nothing
-        end
-    end
-    # A reference from inside the interface on the way out would coast to the next
-    # pass; keep following the current plan until the spacecraft has left.
-    outbound_inside = model.solve_trigger_altitude_m === nothing &&
-        norm(pos) - params.Re <= model.reference.h_cut_m && dot(pos, vel) >= 0.0
-    if outbound_inside || t - model.state.last_solve_time_s < model.solve_interval_s
-        desired_area = _mpc_interpolated_plan_area(model, t)
-        _mpc_area_command_from_constraints!(model, p, pos, vel, t, desired_area)
+    altitude_m = norm(pos) - params.Re
+    descending = dot(pos, vel) < 0.0
+    # With a trigger altitude, solve once per pass: the trigger re-arms above that
+    # altitude and fires at the first tick below it while descending. Without one,
+    # solve every `solve_interval_s`, except while climbing out inside the
+    # reference interface, where a new reference would coast to the next pass.
+    trigger = model.solve_trigger_altitude_m
+    trigger !== nothing && altitude_m > trigger && (model.state.solve_armed = true)
+    solve_now = trigger === nothing ?
+        (descending || altitude_m > model.reference.h_cut_m) :
+        (altitude_m <= trigger && model.state.solve_armed && descending)
+    if !(solve_now && t - model.state.last_solve_time_s >= model.solve_interval_s)
+        _mpc_area_command_from_constraints!(
+            model, p, pos, vel, t, _mpc_interpolated_plan_area(model, t))
         return nothing
     end
     density = density_function_from_spaceagora(
@@ -352,16 +341,12 @@ function _mpc_update_plan!(
     model.state.solve_armed = false
     model.state.solve_count += 1
     if !model.build_reference_on_tick
+        # Runtime limits only, on the default area.
         _mpc_area_command_from_constraints!(model, p, pos, vel, t)
-        model.state.plan_epoch_s = NaN
-        model.state.plan_time_s = Float64[]
-        model.state.plan_area_m2 = Float64[]
-        model.state.predicted_terminal_energy = NaN
-        model.state.last_solution = nothing
+        _mpc_clear_plan!(model.state)
         return nothing
     end
     try
-        nominal_area = _mpc_desired_area(model)
         # Prediction frame: inertial axes turned onto the planet-fixed axes at `t`.
         rotation = _mpc_planet_frame_rotation(p, t)
         ref = build_reference_drag_pass(
@@ -370,7 +355,7 @@ function _mpc_update_plan!(
             rotation * vel;
             config=model.config,
             reference=model.reference,
-            nominal_area_m2=nominal_area,
+            nominal_area_m2=_mpc_desired_area(model),
             density=density,
         )
         problem = build_mpc_problem(
@@ -381,39 +366,23 @@ function _mpc_update_plan!(
             max_nodes=model.qp_max_nodes,
         )
         solution = solve_mpc_qp(problem, model.config)
-        model.state.last_solution = solution
-        model.state.last_error = nothing
-        if solution.ok && !isempty(solution.commanded_area_m2)
-            plan_t = collect(problem.t .- first(problem.t))
-            plan_area = collect(solution.commanded_area_m2)
-            area = _mpc_area_command_from_constraints!(
-                model,
-                p,
-                pos,
-                vel,
-                t,
-                first(plan_area),
-            )
-            model.state.plan_epoch_s = t + first(problem.t)
-            model.state.plan_time_s = plan_t
-            model.state.plan_area_m2 = plan_area
-            model.state.predicted_terminal_energy = solution.terminal_energy
-            model.state.solver_status = solution.solver_status
-        else
-            area = _mpc_area_command_from_constraints!(model, p, pos, vel, t)
-            model.state.plan_epoch_s = t + first(problem.t)
-            model.state.plan_time_s = collect(problem.t .- first(problem.t))
-            model.state.plan_area_m2 = fill(area, length(problem.t))
-            model.state.predicted_terminal_energy = solution.terminal_energy
-            model.state.solver_status = solution.solver_status
-        end
+        # Follow the solved plan, or hold the runtime-limited default area over the
+        # pass when OSQP did not solve. Plan times start at the interface crossing.
+        area = solution.ok ?
+            _mpc_area_command_from_constraints!(model, p, pos, vel, t, first(solution.commanded_area_m2)) :
+            _mpc_area_command_from_constraints!(model, p, pos, vel, t)
+        state = model.state
+        state.plan_epoch_s = t + first(problem.t)
+        state.plan_time_s = collect(problem.t .- first(problem.t))
+        state.plan_area_m2 = solution.ok ? collect(solution.commanded_area_m2) : fill(area, problem.N)
+        state.predicted_terminal_energy = solution.terminal_energy
+        state.solver_status = solution.solver_status
+        state.last_solution = solution
+        state.last_error = nothing
     catch err
         _mpc_area_command_from_constraints!(model, p, pos, vel, t)
+        _mpc_clear_plan!(model.state)
         model.state.solver_status = :reference_or_qp_failed
-        model.state.plan_epoch_s = NaN
-        model.state.plan_time_s = Float64[]
-        model.state.plan_area_m2 = Float64[]
-        model.state.last_solution = nothing
         model.state.last_error = sprint(showerror, err)
     end
     return nothing
@@ -477,72 +446,62 @@ function _mpc_limit_code(limit::Symbol)::Float64
     return -1.0
 end
 
+# Result columns read the run's own controller: a run deep-copies its GNC models
+# (unless `isolate_state=false`) and binds those declared on a spacecraft, so the
+# model passed to the save-field functions only selects the columns.
+function _mpc_running_effector(integrator, spacecraft_index::Int, ::Type{T}) where {T}
+    for effector in integrator.p.args.control_model.control_effectors
+        effector isa T && spacecraft_index in GNCRuntime.spacecraft_scope(effector).indices &&
+            return effector
+    end
+    return nothing
+end
+
+# The controller whose command is applied: the model itself, or a campaign's active phase.
+_mpc_active_control(model::AerobrakingMPCControlModel) = model
+
+# One per-spacecraft column `name` of `value(effector)` for the running effector of
+# type `T`, NaN for spacecraft it does not act on.
+function _mpc_save_field(name::Symbol, ::Type{T}, value) where {T}
+    SaveField = getproperty(parentmodule(@__MODULE__), :SaveField)
+    return SaveField(
+        name,
+        (u, t, integrator) -> [
+            begin
+                effector = _mpc_running_effector(integrator, i, T)
+                effector === nothing ? NaN : Float64(value(effector))
+            end
+            for i in eachindex(integrator.p.args.dynamics_model.spacecraft)
+        ];
+        per_satellite=true,
+        column_prefix=String(name),
+    )
+end
+
+# The command and runtime-limit columns shared by the single and campaign controllers.
+function _mpc_control_columns(::Type{T}) where {T}
+    active(effector) = _mpc_active_control(effector)
+    return (
+        _mpc_save_field(:mpc_commanded_area_m2, T, e -> _mpc_save_control(active(e))[1]),
+        _mpc_save_field(:mpc_alpha_rad, T, e -> _mpc_save_control(active(e))[2]),
+        _mpc_save_field(:mpc_active_limit_code, T, e -> _mpc_limit_code(active(e).state.active_limit)),
+        _mpc_save_field(:mpc_heat_rate_w_cm2, T, e -> active(e).state.last_heat_rate_w_cm2),
+        _mpc_save_field(:mpc_drag_n, T, e -> active(e).state.last_drag_n),
+        _mpc_save_field(:mpc_heat_load_j_cm2, T, e -> active(e).state.estimated_heat_load_j_cm2),
+    )
+end
+
 """
     mpc_control_save_fields(model) -> Tuple{SaveField...}
 
-Per-spacecraft result columns for an [`AerobrakingMPCControlModel`](@ref): the
-commanded area and panel angle, the limiting constraint code (0 none, 1 drag,
-2 heat rate, 3 heat load, 4 slew), and the runtime heat rate, drag and heat load.
+Per-spacecraft result columns for the [`AerobrakingMPCControlModel`](@ref)s of a
+run: the commanded area and panel angle, the limiting constraint code (0 none,
+1 drag, 2 heat rate, 3 heat load, 4 slew), and the runtime heat rate (W/cm²),
+drag (N) and heat load of the pass (J/cm²). The values come from the run's own
+controllers, so they hold with `isolate_state` and for a controller declared on
+a spacecraft.
 """
-function mpc_control_save_fields(model::AerobrakingMPCControlModel)
-    SaveField = getproperty(parentmodule(@__MODULE__), :SaveField)
-    return (
-        SaveField(
-            :mpc_commanded_area_m2,
-            (u, t, integrator) -> [
-                i == model.spacecraft_index ? _mpc_save_control(model)[1] : NaN
-                for i in eachindex(integrator.p.args.dynamics_model.spacecraft)
-            ];
-            per_satellite=true,
-            column_prefix="mpc_commanded_area_m2",
-        ),
-        SaveField(
-            :mpc_alpha_rad,
-            (u, t, integrator) -> [
-                i == model.spacecraft_index ? _mpc_save_control(model)[2] : NaN
-                for i in eachindex(integrator.p.args.dynamics_model.spacecraft)
-            ];
-            per_satellite=true,
-            column_prefix="mpc_alpha_rad",
-        ),
-        SaveField(
-            :mpc_active_limit_code,
-            (u, t, integrator) -> [
-                i == model.spacecraft_index ? _mpc_limit_code(model.state.active_limit) : NaN
-                for i in eachindex(integrator.p.args.dynamics_model.spacecraft)
-            ];
-            per_satellite=true,
-            column_prefix="mpc_active_limit_code",
-        ),
-        SaveField(
-            :mpc_heat_rate_w_cm2,
-            (u, t, integrator) -> [
-                i == model.spacecraft_index ? model.state.last_heat_rate_w_cm2 : NaN
-                for i in eachindex(integrator.p.args.dynamics_model.spacecraft)
-            ];
-            per_satellite=true,
-            column_prefix="mpc_heat_rate_w_cm2",
-        ),
-        SaveField(
-            :mpc_drag_n,
-            (u, t, integrator) -> [
-                i == model.spacecraft_index ? model.state.last_drag_n : NaN
-                for i in eachindex(integrator.p.args.dynamics_model.spacecraft)
-            ];
-            per_satellite=true,
-            column_prefix="mpc_drag_n",
-        ),
-        SaveField(
-            :mpc_heat_load_j_cm2,
-            (u, t, integrator) -> [
-                i == model.spacecraft_index ? model.state.estimated_heat_load_j_cm2 : NaN
-                for i in eachindex(integrator.p.args.dynamics_model.spacecraft)
-            ];
-            per_satellite=true,
-            column_prefix="mpc_heat_load_j_cm2",
-        ),
-    )
-end
+mpc_control_save_fields(::AerobrakingMPCControlModel) = _mpc_control_columns(AerobrakingMPCControlModel)
 
 # GNC runtime contract: the MPC acts on one spacecraft, holds an exposed-area and
 # panel-angle command between ticks, and can be declared on a spacecraft.

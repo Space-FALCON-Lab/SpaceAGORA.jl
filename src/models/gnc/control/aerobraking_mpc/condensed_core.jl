@@ -1,4 +1,6 @@
-# Condensed prediction model: δY = HδU + MxδX₀.
+# Condensed prediction model: δY = HδU + MxδX₀ over all nodes, stacked node by
+# node. As in the benchmark scripts, the area increment of node k enters the
+# output of node k through C_k B_k + D_k and later outputs through the A_j.
 function condensed_form(A_hist, B_hist, C_hist, D_hist)
     N  = length(C_hist)
     nx = size(A_hist[1], 1)

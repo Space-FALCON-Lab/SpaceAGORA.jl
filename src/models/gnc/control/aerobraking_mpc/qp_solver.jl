@@ -51,18 +51,13 @@ function solve_mpc_qp(problem::AerobrakingMPCProblem, config::AerobrakingMPCConf
     Mx = problem.Mx
     δX0 = problem.δX0
     Ybar = problem.Ybar
-    Xbar = problem.Xbar
     t = problem.t
     all(isfinite, H) || throw(ArgumentError("MPC prediction matrix H contains non-finite values."))
     all(isfinite, Mx) || throw(ArgumentError("MPC initial-state map Mx contains non-finite values."))
     all(isfinite, Ybar) || throw(ArgumentError("MPC nominal outputs contain non-finite values."))
     all(isfinite, t) || throw(ArgumentError("MPC node times contain non-finite values."))
 
-    S_E = build_output_selector(N, ny; yidx=4)
-    r_E = zeros(N)
-    r_E[end] = 1.0
-    H_Erow = vec(r_E' * S_E * H)
-    E_off = (r_E' * S_E * (Mx * δX0 .+ vec(Ybar')))[1]
+    H_Erow, E_off = terminal_energy_affine_terms(problem)
 
     ns_qdot, ns_Q, ns_drag, qdot_range, heat_load_idx, drag_range = _slack_offsets(config, N)
     ns = ns_qdot + ns_Q + ns_drag
@@ -75,31 +70,29 @@ function solve_mpc_qp(problem::AerobrakingMPCProblem, config::AerobrakingMPCConf
     Abar = clamp(problem.Abar_m2, area_min, area_max)
     Abar_vec = fill(Abar, N)
 
+    # Cost ½ zᵀQz + qᵀz: area and area-change penalties, the objective of the
+    # mode on the predicted end-of-pass energy E_N = H_Erow ⋅ ΔU + E_off, and the
+    # slack penalty.
     Q_uu = 2.0 * config.area_weight * Matrix(I, nU, nU) +
         2.0 * config.area_slew_weight * (Ddu' * Ddu)
     q_u_vec = zeros(nU)
     if config.mode isa TargetEnergyMode
+        # target_energy_weight * (1e6 (E_N - E*))², with E in MJ/kg.
         energy_cost_scale = 1.0e6
         hE = energy_cost_scale .* H_Erow
         cE = energy_cost_scale * (E_off - config.target_energy_mj_kg)
         Q_uu .+= 2.0 * config.target_energy_weight * (hE * hE')
         q_u_vec .+= 2.0 * config.target_energy_weight * cE .* hE
     else
+        # Minimise E_N (J/kg), scaled by the energy and area magnitudes.
         energy_scale = max(1.0, maximum(abs.(Ybar[:, 4])))
         q_u_vec .+= (config.max_depletion_energy_weight / (energy_scale * area_span)) .* H_Erow
     end
 
     Q = zeros(nz, nz)
     Q[1:nU, 1:nU] .= Q_uu
-    if ns_qdot > 0
-        Q[qdot_range, qdot_range] .= 2.0 * config.slack_weight * Matrix(I, ns_qdot, ns_qdot)
-    end
-    if ns_Q > 0
-        Q[heat_load_idx, heat_load_idx] = 2.0 * config.slack_weight
-    end
-    if ns_drag > 0
-        Q[drag_range, drag_range] .= 2.0 * config.slack_weight * Matrix(I, ns_drag, ns_drag)
-    end
+    Q[nU+1:nz, nU+1:nz] .= 2.0 * config.slack_weight * Matrix(I, ns, ns)
+    # A small diagonal keeps Q positive definite when the area weights are zero.
     Q = Matrix(Symmetric(Q + 1.0e-10 * Matrix(I, nz, nz)))
     q = zeros(nz)
     q[1:nU] .= q_u_vec
@@ -108,27 +101,21 @@ function solve_mpc_qp(problem::AerobrakingMPCProblem, config::AerobrakingMPCConf
     lower = Float64[]
     upper = Float64[]
 
-    if ns_qdot > 0
-        A = zeros(ns_qdot, nz)
-        A[:, qdot_range] .= Matrix(I, ns_qdot, ns_qdot)
-        _append_constraint_rows!(rows, lower, upper, A, zeros(ns_qdot), fill(Inf, ns_qdot))
-    end
-    if ns_Q > 0
-        A = zeros(1, nz)
-        A[1, heat_load_idx] = 1.0
-        _append_constraint_rows!(rows, lower, upper, A, [0.0], [Inf])
-    end
-    if ns_drag > 0
-        A = zeros(ns_drag, nz)
-        A[:, drag_range] .= Matrix(I, ns_drag, ns_drag)
-        _append_constraint_rows!(rows, lower, upper, A, zeros(ns_drag), fill(Inf, ns_drag))
+    # Decision vector z = [ΔU (N); heat-rate (N), heat-load (1) and drag (N)
+    # slacks of the active limits]. The slacks are nonnegative.
+    if ns > 0
+        A = zeros(ns, nz)
+        A[:, nU+1:nz] .= Matrix(I, ns, ns)
+        _append_constraint_rows!(rows, lower, upper, A, zeros(ns), fill(Inf, ns))
     end
 
+    # Area bounds: A_bus <= Abar + ΔU_k <= A_bus + A_panel.
     A = zeros(N, nz)
     A[:, 1:nU] .= Matrix(I, N, N)
     _append_constraint_rows!(rows, lower, upper, A, fill(area_min - Abar, N), fill(area_max - Abar, N))
 
     Δt_nodes = length(t) > 1 ? vcat(diff(t), t[end] - t[end - 1]) : fill(0.0, N)
+    # Slew: the first increment is zero and |A_{k+1} - A_k| <= Ȧ_max Δt_k.
     if config.use_constraints && config.use_slew_constraint && N > 1
         A = zeros(1, nz)
         A[1, 1] = 1.0
@@ -154,8 +141,9 @@ function solve_mpc_qp(problem::AerobrakingMPCProblem, config::AerobrakingMPCConf
     # variables stay in the decision vector and are driven to zero by their cost.
     soft_path_limits = config.mode isa TargetEnergyMode
     yoff = Mx * δX0 .+ vec(Ybar')
+    S_qdot = build_output_selector(N, ny; yidx=3)
+    # Heat rate, normalised by the limit: q̇_k <= q̇_max (+ slack) and q̇_k >= 0.
     if config.use_constraints && config.use_qdot_constraint
-        S_qdot = build_output_selector(N, ny; yidx=3)
         Hq = S_qdot * H
         bq = S_qdot * (Mx * δX0)
         qdot_bar = Ybar[:, 3]
@@ -185,8 +173,8 @@ function solve_mpc_qp(problem::AerobrakingMPCProblem, config::AerobrakingMPCConf
         )
     end
 
+    # Heat load: Σ_k q̇_k Δt_k <= Q_max (+ slack), a rectangle rule over the nodes.
     if config.use_constraints && config.use_heat_load_constraint
-        S_qdot = build_output_selector(N, ny; yidx=3)
         Wrow = Δt_nodes' * S_qdot
         H_Q = vec(Wrow * H)
         heat_load_limit = config.heat_load_max_j_cm2 * _JCM2_TO_JM2
@@ -200,6 +188,7 @@ function solve_mpc_qp(problem::AerobrakingMPCProblem, config::AerobrakingMPCConf
             rows, lower, upper, A, [-Inf], [rhs_Q / heat_load_limit])
     end
 
+    # Drag, normalised by the limit: D_k <= D_max + slack.
     if config.use_constraints && config.use_drag_constraint
         S_drag = build_output_selector(N, ny; yidx=2)
         H_drag = S_drag * H

@@ -184,7 +184,7 @@ function base_config()
 end
 
 function refinement_comparison(case_label, baseline, refined)
-    sample(field) = [interpolate_mpc_history(
+    sample(field) = [interpolate_mpc_plan(
         refined.absolute_time_s, getproperty(refined, field), time)
         for time in baseline.absolute_time_s]
     return (
@@ -398,7 +398,7 @@ function run_spaceagora_callback_case(case, reference)
     geodetic_altitude = Float64.(table.sc1_altitude)
     position = hcat(table.sc1_pos_1, table.sc1_pos_2, table.sc1_pos_3)
     velocity = hcat(table.sc1_vel_1, table.sc1_vel_2, table.sc1_vel_3)
-    params = AerobrakingMPCParams(
+    params = KSPropagationParams(
         Re=PLANET.Rp_e, μ=PLANET.μ, J2=PLANET.J2, Ω=norm(PLANET.ω))
     # Evaluate constraints at the accepted Cartesian output states. The
     # dynamics drag cache is updated inside adaptive solver stages and can
@@ -536,7 +536,7 @@ function save_plots(results)
                 field == :heat_rate_w_cm2 ? predicted[:, 3] ./ 1.0e4 :
                 field == :heat_load_j_cm2 ? result.predicted_heat_load_j_cm2 :
                 predicted[:, 4] ./ 1.0e6
-            nonlinear_at_nodes = [interpolate_mpc_history(
+            nonlinear_at_nodes = [interpolate_mpc_plan(
                 rollout.absolute_time_s, getproperty(rollout, field), time)
                 for time in result.problem.t]
             interior = 2:(length(result.problem.t) - 1)
@@ -605,7 +605,7 @@ end
 function main()
     mkpath(OUTPUT_DIRECTORY)
     density = DENSITY_FOR_MPC
-    params = AerobrakingMPCParams(
+    params = KSPropagationParams(
         Re=PLANET.Rp_e, μ=PLANET.μ, J2=PLANET.J2, Ω=norm(PLANET.ω))
     position_0, velocity_0 = orbital_elements_to_cartesian(INITIAL_CONDITION, PLANET)
     config = base_config()
@@ -616,7 +616,7 @@ function main()
         max_pass_steps=MAX_PASS_STEPS,
     )
 
-    println("Phase 1/5: building the corrected hKS=-epsilon nonlinear KS reference")
+    println("Phase 1/5: building the nonlinear KS reference pass")
     reference = build_reference_drag_pass(
         params, position_0, velocity_0;
         config=config,

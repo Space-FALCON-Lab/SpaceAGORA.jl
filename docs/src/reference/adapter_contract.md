@@ -74,7 +74,7 @@ package version, or an updated pin in the documentation, is not a new test run,
 and neither is reading a newer companion's source.
 
 Name the checks you ran with each result, and how each one ran. Pure-Julia HYPR
-tests and analytic EDG runs test behaviour, such as numerical results and run
+tests and analytic EDG runs test behavior, such as numerical results and run
 isolation, without native code. A native or scientific claim needs the case that
 exercises it: a real MuJoCo scene, a GRAM atmosphere or an EDG reference
 campaign.
@@ -112,7 +112,7 @@ they are not undone.
 
 Contract versions must match exactly, even when a change only adds a name. A
 change to signatures, units, frames, result fields, mutability, ownership or
-failure behaviour needs a new, reviewed contract version. A package compatibility
+failure behavior needs a new, reviewed contract version. A package compatibility
 range only limits what the resolver may install; record which releases in the
 range you actually tested.
 

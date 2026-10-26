@@ -63,7 +63,7 @@ your adapter owns. So create a separate mutable runtime for each run when you
 prepare it. The preflight checks the configuration only; the run still checks
 routing and refuses unsupported modes.
 
-Some MuJoCo tests and research scripts still use private SpaceAGORA paths. These
+Some MuJoCo tests still use private SpaceAGORA paths. These
 paths are not supported; maintainers find them listed, with the checks for a
 boundary change, in `docs/contributing/companion_boundaries.md` in the
 [contributor documentation](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/main/docs/contributing).
@@ -86,7 +86,7 @@ boundary change, in `docs/contributing/companion_boundaries.md` in the
 ## Changes from contract 1.0.0
 
 Contract 2.0.0 changes signatures and wording only; the engine's numerical
-behaviour is unchanged.
+behavior is unchanged.
 
 - `external_state(rt, k, t)` became `external_state(rt, t, slot)`, and
   `external_acceleration(rt, k, t)` became `external_acceleration(rt, t, slot)`.

@@ -118,7 +118,7 @@ security sandbox.
 
 The context does not expose `ODEParams`, `shared_buffers`, the live state,
 mutable geometry, an atmosphere reseeding operation or solver controls.
-Atmosphere caches and random-number behaviour stay with SpaceAGORA and use the
+Atmosphere caches and random-number behavior stay with SpaceAGORA and use the
 configured query path; the companion adds no prediction instance, seed or cache
 policy of its own. Any change to those semantics needs its own scientific review.
 

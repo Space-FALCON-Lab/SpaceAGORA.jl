@@ -546,7 +546,7 @@ torque, an atmosphere density model, a controller in the feedback profile
 (`templates/control_hook_template.jl`), an actuator, and a planner in the planning
 profile (`templates/gnc_planner_template.jl`). They define model types and
 methods; they do not build or run a mission. Copy the one you need into the
-package that will own your model, and add tests for the behaviour you implement,
+package that will own your model, and add tests for the behavior you implement,
 with the [conformance checks](user/gnc_algorithm.md#Test-your-algorithm). The
 force/torque template implements `wrench`;
 [Adding a Force or Torque of Your Own](user/custom_effector.md) walks through one

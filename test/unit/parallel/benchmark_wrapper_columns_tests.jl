@@ -42,13 +42,14 @@ function load_definition(file::String, wanted::Symbol)
     end
     error("Required wrapper definition $wanted not found in $file")
 end
+include(joinpath(RUNTIME, "reporting", "runtime_reports.jl"))
+using .RuntimeReports: ProfileSpec, summarize_per_orbit_results, summarize_entry_duration_results,
+    summarize_density_backend_breakdown
+
 const HELPERS = joinpath(RUNTIME, "case_catalog", "profile_types_and_helpers.jl")
-load_definition(HELPERS, :ProfileSpec)
-load_definition(HELPERS, :_safe_unique_join)
 struct BenchmarkCase end
 const PERF_BASELINE_SCENARIO = "baseline_fixture"
-load_definition(REPORT_FIXTURE, :raw_row)
-include(joinpath(RUNTIME, "reporting", "summaries.jl"))
+include(joinpath(@__DIR__, "..", "..", "support", "runtime_report_fixtures.jl"))
 for name in (:PipelineConfig, :ModeRunArtifacts, :_fmt_md, :_write_markdown_table,
              :build_mode_overview, :write_pipeline_report)
     load_definition(PIPELINE, name)

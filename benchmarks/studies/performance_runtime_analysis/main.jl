@@ -237,6 +237,21 @@ if !isdefined(@__MODULE__, :run_simulation)
 end
 
 
+include(joinpath(@__DIR__, "reporting", "runtime_reports.jl"))
+using .RuntimeReports
+using .RuntimeReports: _parse_positive_int_env, _parse_nonnegative_int_env, _parse_nonnegative_float_env, _parse_bool_env,
+    _perf_smoke_mode, _perf_case_name_filter, _exclude_entry_scenarios, _split_rollout_enabled,
+    _split_rollout_enforce, _split_rollout_case_names, _split_rollout_solver_variants, _split_rollout_max_slowdown_ratio,
+    _split_rollout_pos_rel_tol, _split_rollout_vel_rel_tol, _split_rollout_q_angle_tol_rad, _split_rollout_omega_rel_tol,
+    _split_rollout_sample_count, _multirate_rollout_enabled, _multirate_rollout_enforce, _multirate_rollout_case_names,
+    _multirate_rollout_max_slowdown_ratio, _multirate_rollout_pos_rel_tol, _multirate_rollout_vel_rel_tol, _multirate_rollout_q_angle_tol_rad,
+    _multirate_rollout_omega_rel_tol, _multirate_rollout_sample_count, _multirate_env_float_or_missing, _multirate_env_int_or_missing,
+    _multirate_rollout_setting_snapshot, _safe_unique_join, _fmt, _scenario_metric,
+    _safe_stat, _ci95_bounds, _ci95_low, _ci95_high,
+    _sem, _cv_pct, _sum_nonmissing, _safe_share,
+    _summary_group_keys, _case_with_solver, _solution_state_at, _relative_vector_delta,
+    _quaternion_angle_delta_rad, _trajectory_delta_metrics
+
 include(joinpath(@__DIR__, "case_catalog.jl"))
 include(joinpath(@__DIR__, "measurement.jl"))
 include(joinpath(@__DIR__, "reporting.jl"))

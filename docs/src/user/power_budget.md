@@ -1,54 +1,63 @@
 # Powering a Spacecraft
 
 A spacecraft can carry a power budget: solar arrays that generate, a battery
-that stores, and loads that draw. The mounted actuators draw the power they
-report through `actuator_consumption` (laser terminals, and reaction wheels
-and torque rods given power figures). When a battery is mounted, its stored
-energy is part of the integrated state, and when it runs empty the engine
-sheds actuator load until the battery has recharged.
+that stores, and loads that draw. The mounted actuators draw power too: a
+laser terminal draws its optical level over its efficiency, reaction wheels
+and torque rods draw what their power figures give, and kinds of your own
+draw what their `actuator_consumption` reports.
+When a battery is mounted, its stored energy is part of the integrated state,
+and when it runs empty the engine sheds actuator load until the battery has
+recharged.
 
 ## The parts
 
 | Part | Mounted on | What it does |
 |---|---|---|
-| `SolarArray(; normal, area_m2, efficiency, max_power_w=Inf)` | any link | generates `area_m2 * efficiency * S * max(0, cos θ) * ν` W, where `S` is the solar flux, `θ` the angle between `normal` (link frame) and the Sun, and `ν` the lit fraction of the Sun's disk |
-| `Battery(; capacity_wh, initial_soc, charge_efficiency, discharge_efficiency, max_charge_w, max_discharge_w, recovery_soc=0.05)` | the root link, at most one | stores the surplus and covers a shortfall |
-| `PowerLoad(; power_w, name)` | any link | a constant load, never shed |
+| `SolarArray(; normal, area_m2, efficiency, max_power_w=Inf)` | any link | generates `area_m2 * efficiency * S * max(0, cos θ) * ν` W, capped at `max_power_w`, where `S` is the solar flux, `θ` the angle between `normal` (link frame) and the direction to the Sun, and `ν` the lit fraction of the Sun's disk; only the cell side generates |
+| `Battery(; capacity_wh, initial_soc, charge_efficiency=1.0, discharge_efficiency=1.0, max_charge_w=Inf, max_discharge_w=Inf, recovery_soc=0.05)` | the root link, at most one | stores the surplus and covers a shortfall |
+| `PowerLoad(; power_w, name="")` | any link | a constant load, never shed |
 
 Mount them with `add_power!(spacecraft, link, part)`. An array on a hinged
 panel turns with the panel. Without `initial_soc`, the battery starts at the
-spacecraft's `battery_energy_index` (a percentage).
+spacecraft's `battery_energy_index`, a percentage that defaults to 100.
 
 ## What happens during a run
 
 - **Generation.** The Sun's direction comes from the run's ephemerides: SPICE,
-  or, with `SimpleEphemeridesModel`, a low-precision model for Earth (other
-  bodies need SPICE). The solar flux uses the central body's mean distance
-  from the Sun (1 AU for Earth and the Moon); the eclipse model is the one of
-  solar radiation pressure. A `PowerReceiver` adds the power its incoming power
-  beams deliver (see [Interlinks](interlinks.md#Power-links)); a receiver alone
-  counts as a power part.
+  or, with `SimpleEphemeridesModel`, a low-precision model available for Earth
+  only. Around another body `SimpleEphemeridesModel` cannot place the Sun, and
+  the arrays generate nothing. The solar flux is 1361 W/m² at 1 AU, scaled to
+  the central body's mean distance from the Sun (1 AU for Earth and the Moon).
+  The eclipse model is the one the solar radiation pressure uses. A
+  `PowerReceiver` adds the power its incoming power beams deliver (see
+  [Interlinks](interlinks.md#Power-links)); a receiver alone counts as a power
+  part.
 - **Charging.** A surplus charges the battery at `charge_efficiency`, up to
-  `max_charge_w`; a full battery curtails the rest.
+  `max_charge_w`. A full battery curtails the rest.
 - **Discharging.** A shortfall discharges it over `discharge_efficiency`, up
   to `max_discharge_w`.
-- **Shedding.** When the battery is empty, the engine sheds actuator load in
-  tiers until what is left fits what the arrays generate: laser terminals
-  (and the radios that transmit on data links) first, then torque rods, then the reaction wheels' motors (a shed wheel puts
-  no torque on the vehicle). Shedding ends once the battery has recharged to
-  `recovery_soc` of its capacity. Constant loads are never shed; while the
-  battery is empty and they exceed the generation, the net power stays
+- **Shedding.** The engine sheds actuator load when the load is more than the
+  arrays and the battery can supply: the arrays alone while the battery is
+  empty, or the arrays plus `max_discharge_w` otherwise, so with the default
+  unlimited discharge rate only an empty battery causes shedding. It sheds the
+  fewest tiers that bring the load within that supply: laser terminals (and
+  the radios that transmit on data links) first, then torque rods, then the
+  reaction wheels' motors. A shed wheel puts no torque on the vehicle. An empty
+  battery stops shedding once it has recharged to `recovery_soc` of its
+  capacity. Constant loads and other actuator kinds are never shed, so while
+  the battery is empty and they exceed the generation, the net power stays
   negative.
 
 The battery's full and empty states switch at events, when its stored energy
 reaches its capacity or zero; the shedding tier is updated at the end of each
 integration step. The split solver modes (`:split_imex`, `:multirate`,
-`:gravity_backbone_split`) refuse a spacecraft with a battery. The opt-in
+`:gravity_backbone_split`) refuse a spacecraft with a battery and name
+`:tsit5`, `:dp8`, `:rodas5p` and `:auto_stiff` instead. The opt-in
 `:multirate_mri` route integrates battery and interlink power in its fast
-component and supports the same boundary events. A checkpointed
-run keeps these states from one segment to the next, and a run resumed from a
-checkpoint file takes them from the file, which holds the stored energy and
-whether the battery is empty and recharging or full.
+component and supports the same boundary events. A checkpointed run keeps
+these states from one segment to the next, and a run resumed from a checkpoint
+file takes them from the file, which holds the stored energy, whether the
+battery is full or empty and recharging, and the shedding tier.
 
 ## Add power parts to a spacecraft
 
@@ -68,9 +77,11 @@ add_actuator!(spacecraft, bus, LaserTerminal(boresight=SVector(1.0, 0.0, 0.0), m
 For a complete runnable scenario, use
 [`Earth_CubeSat_Power_Budget.jl`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/blob/0487e8226107592b19221618f0f21f500cf2aacf/examples/Earth_CubeSat_Power_Budget.jl)
 with the environment described in the [Examples Catalog](examples_catalog.md).
-It flies this vehicle for two orbits
-with its laser on: the battery fills in sunlight, empties in eclipse, the
-laser is shed until the Sun returns, and the script checks each of these.
+It puts these parts on the bus in a 500 km Earth orbit, with the array facing
+the Sun at the start, and keeps the laser transmitting for two orbits. The
+battery fills in sunlight and empties in eclipse, the laser is shed while the
+battery is empty and comes back after the Sun returns, and the script checks
+each of these.
 
 The results carry the [power columns](output_columns.md#Power-budget):
 stored energy, state of charge, generation, load, shed power and net power.

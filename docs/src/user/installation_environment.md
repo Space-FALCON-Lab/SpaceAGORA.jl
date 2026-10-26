@@ -1,13 +1,12 @@
 # Installation and Environment
 
-Use this page when you need to set up a machine for local development, examples,
-or docs builds.
+This page explains how to set up a machine for SpaceAGORA: the Julia version
+it needs, the Julia environments in the repository and what each is for, the
+optional companion packages, and a project of your own outside the checkout.
 
-This page is for users and contributors who need to understand the repository
-environments before running anything heavier than a quick smoke path.
-
-Shortest successful command. Terminal, from the repository root (the
-directory that contains `Project.toml`):
+The first command installs SpaceAGORA and the package versions its committed
+manifest records. Terminal, from the repository root (the directory that
+contains `Project.toml`):
 
 ```text
 julia --project=. -e "using Pkg; Pkg.instantiate(julia_version_strict=true)"
@@ -26,25 +25,25 @@ What to read next:
 ## Julia version
 
 SpaceAGORA requires Julia 1.12; any 1.12.x patch release works. The root
-`Project.toml` and the Odyssey example environment declare `julia = "~1.12"`,
-which excludes Julia 1.13 and later as well as 1.11 and earlier. Install a
-1.12 release before instantiating either project (with juliaup:
-`juliaup add 1.12` and `juliaup default 1.12`) and confirm it with
-`julia --version`.
+`Project.toml` and the other environments in the repository (examples, test,
+docs and the Odyssey example) declare `julia = "~1.12"`, which excludes Julia
+1.11 and earlier as well as 1.13 and later. Install a 1.12 release before
+instantiating any of them (with juliaup: `juliaup add 1.12` and
+`juliaup default 1.12`) and confirm it with `julia --version`.
 
-What an unsupported release reports:
+An unsupported release fails in one of two ways:
 
 - Resolving an environment, which the Odyssey example setup and every
   `Pkg.add`, `Pkg.update` or `Pkg.resolve` do, stops with an error saying that
-  the `julia = ~1.12` compat entry does not include your Julia version (Julia
+  the `julia = ~1.12` compat entry does not include your Julia version. Julia
   1.12 words it as `julia version requirement for package at ... not
-  satisfied`; other releases word it differently).
+  satisfied`; other releases word it differently.
 - `Pkg.instantiate()` of the root project installs the committed manifest
-  without resolving, so it does not read that compat entry. With
-  `julia_version_strict=true`, the form used in the documented commands, it
-  stops at once with `The active manifest file has dependencies that were
-  resolved with a different julia version (1.12.3)`. Without the option it
-  only warns and then fails later, on missing standard-library sources or in
+  without resolving, so it never reads that compat entry. With
+  `julia_version_strict=true`, as in the commands on this site, it stops at
+  once with `The active manifest file has dependencies that were resolved with
+  a different julia version (1.12.3)`. Without the option it only warns, and
+  the command fails later on missing standard-library sources or during
   precompilation. On Julia 1.11 or older the option itself is unknown and the
   command fails with `type Context has no field julia_version_strict`; the
   remedy is the same.
@@ -54,7 +53,7 @@ with their fixes.
 
 ## Check the installation
 
-A successful setup looks like this. Terminal, from the repository root:
+A working setup passes this check. Terminal, from the repository root:
 
 ```text
 julia --version
@@ -62,10 +61,11 @@ julia --project=. -e "using SpaceAGORA; println(pkgdir(SpaceAGORA))"
 ```
 
 The first command prints `julia version 1.12.` followed by the patch number.
-The second prints the absolute path of your checkout; the first time it runs
-it also compiles the package, which takes several minutes and shows
-precompilation progress, and nothing else should be printed. The same check
-from a Julia REPL started from the repository root with `julia --project=.`:
+The second prints the absolute path of your checkout. The first time it runs
+it also precompiles SpaceAGORA and its dependencies, which takes a while and
+shows precompilation progress; nothing else should be printed. To make the same
+check in a Julia REPL, start Julia from the repository root with
+`julia --project=.`:
 
 ```julia
 julia> Base.active_project()
@@ -76,8 +76,9 @@ julia> using SpaceAGORA
 julia>
 ```
 
-`Base.active_project()` must end in `SpaceAGORA.jl/Project.toml`. Any other
-path means Julia was started from another directory or without
+`Base.active_project()` must return the `Project.toml` of your checkout, which
+ends in `SpaceAGORA.jl/Project.toml` for a clone under its default name. Any
+other path means Julia was started from another directory or without
 `--project=.`, and `using SpaceAGORA` then fails with `Package SpaceAGORA not
 found in current path`. See
 [Troubleshooting](troubleshooting.md#Wrong-working-directory).
@@ -86,20 +87,18 @@ found in current path`. See
 
 ![Which Julia environment to start: the root project for SpaceAGORA itself and the command-line tool; the examples environment for the examples and plotting scripts; the Odyssey example environment for the frozen-atmosphere tutorial; the viewer environment for the 3D viewer; one environment per optional companion for HYPR, MuJoCo and EDG; and your own project for scenarios kept outside the checkout. Each row shows how to start Julia and the one-time setup command.](../assets/figures/environments_map.svg)
 
-The sections below describe each environment.
+Each environment in the figure has a section below.
 
 ### Root project (`--project=.`)
 
-The root project at the repository root is the canonical execution environment:
-it installs SpaceAGORA, and its committed manifest pins the version of every
-package SpaceAGORA uses. The docs, test and examples environments start from
-that manifest.
-
-Use it for:
-
-- loading SpaceAGORA in the Julia REPL or in your own scripts
-- CLI commands; the CLI runs its examples in the examples environment
-- the setup check above and the scripts under `scripts/` that need only SpaceAGORA
+The root project, at the repository root, is the environment SpaceAGORA itself
+runs in. Instantiating it installs SpaceAGORA, and its committed manifest pins
+the version of every package SpaceAGORA uses; the docs, test and examples
+environments are seeded from that manifest when they are set up. Use the root
+project to load SpaceAGORA in the Julia REPL or in your own scripts, to run the
+command-line tool (which starts its examples in the examples environment), and
+to run the installation check above and the scripts under `scripts/` that need
+only SpaceAGORA.
 
 ### Examples environment
 
@@ -114,46 +113,50 @@ julia --startup-file=no examples/setup.jl
 julia --project=examples examples/AGORA_Basic_Quickstart.jl
 ```
 
-The setup seeds the ignored `examples/Manifest.toml` with the root manifest and
-adds the example packages. Resolution starts from that seed, so the packages
-SpaceAGORA uses keep the versions the root manifest records; only the records of
-the libraries bundled with Julia, such as OpenSSL_jll, follow the installed
-Julia. An example that includes `examples/common.jl`, as most do, continues in
-the examples environment when started with `--project=.`, once it is prepared,
-and otherwise stops with the setup command. The cloth-panel and solar-panel
-demos load PlotlyJS directly: run them, like every example, with
-`--project=examples`. Plotting packages are no longer dependencies of SpaceAGORA itself; a
-project of your own that plots adds them itself.
+The setup copies the root manifest to the ignored `examples/Manifest.toml` and
+resolves from that copy, so the packages SpaceAGORA uses keep the versions the
+root manifest records. Only the records of the libraries bundled with Julia,
+such as OpenSSL_jll, follow the installed Julia.
+
+Most examples include `examples/common.jl`. Started with `--project=.`, such an
+example switches to the examples environment by itself once that environment
+is prepared, and otherwise stops and prints the setup command. The cloth-panel
+and solar-panel demos do not include it and load PlotlyJS directly, so run
+them, like every example, with `--project=examples`. Plotting packages are not
+dependencies of SpaceAGORA, so a project of your own that makes plots adds them
+itself.
 
 ### `examples/odyssey_surrogate_env/`
 
 The Odyssey surrogate example has its own environment. It adds the public
 `GRAMSuite` Julia wrapper, which provides the native-free grid atmosphere, and
-uses the current SpaceAGORA checkout. Its setup script instantiates it, and the
-resolved manifest stays local. Terminal, from the repository root:
+takes SpaceAGORA from this checkout. Its setup script instantiates it; the
+resolved manifest is ignored by Git and stays on your machine. Terminal, from
+the repository root:
 
 ```text
 julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate_env/setup.jl
 julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl
 ```
 
-The setup also clones the EDG guidance companion from GitHub into
-`packages/gnc/SpaceAGORAEDG.jl` and adds it to this environment, which
-rewrites the tracked `examples/odyssey_surrogate_env/Project.toml`; `git
-status` then shows that file as modified, which is expected. The environment
-resolves its own manifest, including SpaceAGORA's dependencies, so the root
-instantiate is not a prerequisite, although the documented installation order
-runs it first. The first setup needs network access, and on an empty Julia
-depot it downloads on the order of a gigabyte of packages and binary
-artifacts; with compiled caches and the example's assets the depot grows by a
-few gigabytes. See the [Odyssey walkthrough](../tutorials/odyssey_surrogate.md).
+The setup also installs the EDG guidance companion. It initializes the
+companion's Git submodule at `packages/gnc/SpaceAGORAEDG.jl`, which fetches the
+recorded revision from GitHub, and adds it to this environment. That rewrites
+the tracked `examples/odyssey_surrogate_env/Project.toml`, so `git status` then
+shows the file as modified; this is expected. The environment resolves its own
+manifest, SpaceAGORA's dependencies included, so it does not depend on the root
+instantiate, although the installation order on this site runs that first. The
+first setup needs network access. On an empty Julia depot it downloads on the
+order of a gigabyte of packages and binary artifacts, and with compiled caches
+and the example's assets the depot grows by a few gigabytes. See the
+[Odyssey walkthrough](../tutorials/odyssey_surrogate.md).
 
 ### Optional package commands
 
-From a SpaceAGORA Git clone, a shared helper manages the optional repositories
-under `packages/robotics/` and `packages/gnc/`. It uses Julia's standard library and command-line Git
-for source inspection and checkout; it does not require loading SpaceAGORA first.
-Terminal, from the repository root:
+In a Git clone of SpaceAGORA, one helper script manages the optional companion
+repositories under `packages/robotics/` and `packages/gnc/`. It needs only
+Julia's standard library and the `git` command, and it does not load
+SpaceAGORA. Terminal, from the repository root:
 
 ```sh
 julia --startup-file=no scripts/optional_packages.jl status
@@ -162,31 +165,37 @@ julia --startup-file=no scripts/optional_packages.jl check hypr
 julia --startup-file=no scripts/optional_packages.jl setup hypr /path/to/hypr-env
 ```
 
-The selectors are `hypr`, `mujoco` and `edg`. `status` reports the checkouts; `checkout`
-acquires the selected source at its recorded Git revision; `check` verifies its
-revision, package identity, version and clean state. It does not run scientific
-or native tests. `setup` also performs checkout and verification, then calls the
-existing installer with the selected local package and current core checkout.
-Use a separate environment outside the source checkouts. Installation can
-download dependencies and perform the installer’s normal preparation work.
+The selectors are `hypr`, `mujoco` and `edg`. `status` reports each checkout
+without fetching or writing anything. `checkout` initializes the selected
+submodule at its recorded Git revision. `check` verifies the checkout's
+revision, origin, package name, UUID and version, and that it has no local
+changes; it does not run scientific or native tests. `setup` performs
+`checkout` and `check`, then runs the package's installer
+(`scripts/setup_hypr.jl` for HYPR, the companion's own `scripts/setup_env.jl`
+for MuJoCo and EDG) with that local checkout and this core checkout. The
+installer creates the environment in the directory you name, which must be
+outside the SpaceAGORA checkout. Setup can download dependencies and runs the
+installer's usual preparation steps.
 
-Only the selected submodule is initialized. This route does not recursively
-fetch other packages or change the existing GRAMSuite setup under
-`data/GRAMSuite.jl`. A dirty or mismatched package checkout is refused rather
-than reset. The environment refers to the source paths, so keep those checkouts
-in place while using it.
+Only the selected submodule is initialized: the helper does not fetch other
+submodules and leaves the GRAMSuite setup under `data/GRAMSuite.jl` alone. A
+package checkout with local changes or at another revision is refused, never
+reset. The environment refers to the source paths, so keep those checkouts in
+place while you use it.
 
-GitHub source ZIPs omit submodule contents and the Git metadata needed to verify
-the recorded revisions. Clone SpaceAGORA to use these commands, or follow a
-companion's standalone installation guide. Merely seeing the folder in a clone
-does not mean the package is installed in the active Julia environment.
+GitHub source ZIPs leave out submodule contents and the Git metadata needed to
+verify the recorded revisions. Clone SpaceAGORA to use these commands, or
+follow a companion's standalone installation guide. A package folder present
+in a clone does not mean that the package is installed in the Julia
+environment you have active.
 
 ### 0.7 companion sources
 
-The 0.7 checkout pins the following compatibility updates. Their
-package versions remain unchanged; the existing companion release tags do not
-contain the new core-0.7 compatibility metadata. Use the setup commands from
-this checkout so its immutable source pins select the recorded revisions.
+This checkout pins the companion source revisions below. Their package
+versions are those of the companions' latest release tags, but the tags do not
+declare compatibility with SpaceAGORA 0.7, so the pins name other commits that
+do. Use the setup commands above, from this checkout, so that its recorded pins
+select these revisions.
 
 | Companion | Package version | Source revision |
 | --- | --- | --- |
@@ -194,68 +203,74 @@ this checkout so its immutable source pins select the recorded revisions.
 | SpaceAGORAEDG | 0.5.1 | [`424d8aa8`](https://github.com/Space-FALCON-Lab/SpaceAGORAEDG.jl/commit/424d8aa822e4f2d0a710231b86c28a1bc1dfd636) |
 | SpaceAGORAMuJoCo | 0.5.0 | [`7b5a0031`](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl/commit/7b5a00318f6883d7cdc7c7e7c0c18830f96ce57f) |
 
-The companions' own default core pins still identify their existing 0.6
-verification pairs. Core's optional-package jobs exercise the source revisions
-above against this checkout; a broad package compatibility range alone does not
-qualify every revision in that range.
+Each companion's own default core pin, which its standalone installer uses,
+still names a SpaceAGORA 0.6 release. SpaceAGORA's CI jobs for the optional
+packages test the revisions above against this checkout. A companion's broad
+compatibility range (for example `SpaceAGORA = "0.6, 0.7"`) does not mean that
+every revision in that range has been tested with this core.
 
 ### Optional HYPR planner
 
-HYPR lives at `packages/robotics/HYPR.jl` and supports RPO and robot-arm planning.
-Loading both packages activates HYPR's SpaceAGORA adapter. After `setup hypr`,
-start Julia with `--project=/path/to/hypr-env` and load `SpaceAGORA` and `HYPR`. The [planner guide](rpo_planner_pilot.md#Installing-optional-HYPR)
-also documents the existing `scripts/setup_hypr.jl` route, which acquires HYPR
-from its external repository without using this submodule layout.
+HYPR lives at `packages/robotics/HYPR.jl` and provides RPO and robot-arm
+planning. Loading both packages activates HYPR's SpaceAGORA adapter. After
+`setup hypr`, start Julia with `--project=/path/to/hypr-env` and load
+`SpaceAGORA` and `HYPR`. The
+[planner guide](rpo_planner_pilot.md#Installing-optional-HYPR) also describes
+the `scripts/setup_hypr.jl` route, which fetches HYPR from its own repository
+at the recorded revision instead of using the submodule.
 
 ### Optional MuJoCo companion
 
 [SpaceAGORAMuJoCo.jl](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl)
-provides standalone proximity scenes and externally propagated spacecraft inside
-`run_simulation`. Its repository owns the package, native binding, tests and
-Basilisk comparison harness. Julia 1.12 is required; native scenes currently
-support Linux x86_64 and use the pinned MuJoCo 3.11.0 artifact.
+provides standalone proximity scenes and externally propagated spacecraft
+inside `run_simulation`. Its repository holds the package, the native binding,
+its tests and the Basilisk comparison harness. It requires Julia 1.12; native
+scenes support Linux x86_64 only and use the pinned MuJoCo 3.11.0 artifact.
 
-The pinned source is available at `packages/robotics/SpaceAGORAMuJoCo.jl`.
-Terminal, from the SpaceAGORA repository root:
+The pinned source is at `packages/robotics/SpaceAGORAMuJoCo.jl`. Terminal,
+from the SpaceAGORA repository root:
 
 ```sh
 julia --startup-file=no scripts/optional_packages.jl setup mujoco /path/to/mujoco-env
 julia --startup-file=no --project=/path/to/mujoco-env
 ```
 
-Then, in the Julia REPL that the second command started, load the packages
-explicitly:
+Then, in the Julia REPL that the second command started, load both packages:
 
 ```julia
 using SpaceAGORA, SpaceAGORAMuJoCo
 ```
 
-The shared helper passes this core checkout to the companion's installer through
-`SPACEAGORA_CORE_PATH`. The companion creates its own environment and manifest.
-Loading core alone does not load this adapter or download MuJoCo; the native
-artifact is obtained when first needed by a native operation.
+The helper passes this core checkout to the companion's installer through
+`SPACEAGORA_CORE_PATH`, and the installer creates the environment and its
+manifest. Loading SpaceAGORA alone loads neither the adapter nor MuJoCo; the
+native artifact is downloaded the first time a native operation needs it.
 
-The standalone route remains available: clone the companion separately and run
-its `scripts/setup_env.jl`. Without an explicit core override, that installer
-fetches the exact core revision recorded in the companion's `Project.toml`.
-The standalone default and the current-checkout route are distinct source pairs.
-For either route, a package version-family constraint alone is insufficient;
-the source pair and `ExternalPropagationServices` contract must agree.
-See the companion's [installation guide](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl#installation)
-for standalone commands and overrides. Start with [Orbital Scenes with MuJoCo](mujoco_scenes.md) for
-the frame conventions, ownership rules and complete examples. The supported connection is documented in
+The companion can also be installed on its own: clone it and run its
+`scripts/setup_env.jl`. Without an explicit core override, that installer
+fetches the exact SpaceAGORA revision the companion records in its
+`SpaceAGORASource.toml` (in `Project.toml` on the v0.5.0 release tag), so the
+two routes pair the companion with different core sources. On either route the
+package versions alone do not establish compatibility: the source pair and the
+`ExternalPropagationServices` contract version (2.0.0 in this checkout) must
+agree. The companion's
+[installation guide](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl#installation)
+gives the standalone commands and overrides. Start with
+[Orbital Scenes with MuJoCo](mujoco_scenes.md) for the frame conventions,
+ownership rules and complete examples. The connection itself is documented in
 [External propagation services](../reference/external_propagation_services.md)
 and the shared [optional adapter standard](../reference/adapter_contract.md).
 
 ### Optional energy-depletion guidance
 
-SpaceAGORAEDG contains the experimental energy-depletion planning implementation.
-Its linked checkout belongs in `packages/gnc/SpaceAGORAEDG.jl`. SpaceAGORA owns the
-simulation state, callback schedule, accumulated heat and application of panel
-commands; the companion computes decisions through `EDGServices` contract 3.0.0.
+SpaceAGORAEDG holds the experimental energy-depletion guidance (EDG)
+implementation. Its checkout belongs at `packages/gnc/SpaceAGORAEDG.jl`.
+SpaceAGORA owns the simulation state, the callback schedule, the accumulated
+heat and the application of panel commands; the companion computes the guidance
+and control decisions through the `EDGServices` contract, version 3.0.0.
 
-For a core revision that records a published EDG companion pin. Terminal,
-from the repository root:
+The helper sets it up from the companion revision this checkout records.
+Terminal, from the repository root:
 
 ```sh
 julia --startup-file=no scripts/optional_packages.jl setup edg /path/to/edg-env
@@ -269,34 +284,37 @@ using SpaceAGORA, SpaceAGORAEDG
 SpaceAGORA.EDGServices.require_provider()
 ```
 
-The CLI preserves the prepared EDG environment for the built-in EDG examples.
-Start it with `--project=/path/to/edg-env`, or set
-`SPACEAGORA_EDG_ENV=/path/to/edg-env`. With `--visualize`, the selected visualizer
-environment must also declare SpaceAGORAEDG; this avoids launching a mission
-with only one of its required companions.
+The command-line tool runs the two built-in EDG examples
+(`AGORA_Odyssey_Energy_Depletion_Control_Test.jl` and `odyssey_surrogate.jl`)
+in the prepared EDG environment rather than the examples environment. Start the
+tool with `--project=/path/to/edg-env`, or set
+`SPACEAGORA_EDG_ENV=/path/to/edg-env`. With `--visualize`, the selected
+visualizer environment must also declare SpaceAGORAEDG, so that a mission never
+starts with only one of the two companions it needs.
 
-The installer checks the recorded revision and package identity, then creates a
-separate environment using this core checkout. An absent pin, incompatible
-service contract or missing provider raises an error. It does not select a
-different guidance method or install a provider merely because core was loaded.
-The standalone companion installer instead uses its recorded immutable core
-revision. See the companion's `docs/installation.md` for that route and explicit
-local development overrides.
+The installer checks the recorded revision and the package identity, then
+creates a separate environment that uses this core checkout. A missing pin, an
+incompatible service contract or a missing provider raises an error.
+SpaceAGORA does not fall back to another guidance method, and loading core
+never installs a provider. The companion's standalone installer instead uses
+the core revision that the companion records; its `docs/installation.md`
+describes that route and the overrides for local development.
 
-Installation and load-order checks establish that the packages connect. They do
-not establish flight readiness or full reproduction of the EDG study. The
-approved experimental cases retain the original 3 Hz guidance/control rates and
-original heat and structural limits. Known sampled constraint violations remain
-reported as violations. Native validation still needs the identified GRAM and
-SPICE assets. The native-free Odyssey surrogate exercise is a separate example
-with its own documented configuration, not a substitute for that campaign.
+Installation and load-order checks show that the packages connect. They do not
+show flight readiness or a full reproduction of the EDG study. The
+experimental EDG examples keep the original 3 Hz guidance and control rates and
+the original heat and structural limits, and known constraint violations in the
+sampled output are still reported as violations. Validation with native GRAM
+needs the GRAM and SPICE assets the study used. The native-free Odyssey
+surrogate example is a separate exercise with its own documented
+configuration, not a substitute for that campaign.
 
-The existing numerical EDG suites continue to run in both normal and coverage
-CI, with the companion required. The parent coverage gate also collects the
-companion kernels at the existing thresholds and rejects missing measurements;
-extracting a file does not remove it from that gate. A separate core-only check verifies that
-loading SpaceAGORA without EDG remains possible. To reproduce those tests in an
-isolated development environment, terminal, from the repository root:
+CI runs the numerical EDG test suites with the companion installed, in both
+normal and coverage runs. The coverage gate holds the companion's source files
+to its thresholds along with core's, and fails when any of them has no coverage
+measurement. A separate check confirms that SpaceAGORA still loads without EDG.
+To reproduce those tests in an isolated development environment, terminal,
+from the repository root:
 
 ```sh
 julia --startup-file=no scripts/setup_edg.jl /path/to/edg-test-env
@@ -305,23 +323,25 @@ julia --startup-file=no examples/setup.jl
 SPACEAGORA_EDG_TEST_ENV=/path/to/edg-test-env julia --startup-file=no --project=test test/runtests.jl
 ```
 
-The tests run in the repository's test environment, which holds the test tools,
-and start their example and CLI children in the examples environment; the EDG
-environment is added as the provider. Both setups retain the core's
-dependency versions and leave its tracked project files unchanged.
-`SPACEAGORA_EDG_PATH=/absolute/path/to/SpaceAGORAEDG.jl`
-is an explicit development override for this test helper; it is not a release
-pin. Full suites may require the other documented optional packages and assets.
+The tests run in the repository's test environment, which holds the test
+tools, and start their example and command-line child processes in the
+examples environment; the EDG environment is added to the load path as the
+provider. Both setup scripts keep the core's dependency versions and leave its
+tracked project files unchanged. Setting
+`SPACEAGORA_EDG_PATH=/absolute/path/to/SpaceAGORAEDG.jl` substitutes a local
+EDG checkout, which must be version 0.5.1, for development with this test
+helper; it is not a release pin. The full suites can also need the other
+optional packages and assets described on this site.
 
 ## Your own project
 
-Keep your script and generated results in a project outside the SpaceAGORA
-checkout. First select a recorded commit in your existing checkout and use
-absolute paths. The setup below explicitly installs that checkout into the new
-project, resolves its dependencies without copying a repository manifest, and
-declares the packages imported by the
-[custom-force walkthrough](custom_effector.md). It does not add private modules
-to Julia's load path.
+Keep your scripts and results in a project outside the SpaceAGORA checkout.
+First check out the SpaceAGORA commit you want to use, and use absolute paths.
+The setup script below installs that checkout into the new project as a
+development dependency, resolves the dependencies without copying a repository
+manifest, and adds the packages that the
+[custom-force walkthrough](custom_effector.md) imports. It does not add private
+modules to Julia's load path.
 
 Save this as `setup_user_project.jl` outside the checkout:
 
@@ -339,44 +359,44 @@ Pkg.add([PackageSpec(name="StaticArrays"), PackageSpec(name="CSV"),
 Pkg.instantiate()
 ```
 
-Run setup, then save `my_effector.jl` from the walkthrough in the new project.
-Terminal, from any directory, since both commands use absolute paths:
+Run the setup, then save `my_effector.jl` from the walkthrough in the new
+project. Terminal, from any directory, since both commands use absolute paths:
 
 ```text
 julia --startup-file=no setup_user_project.jl /absolute/SpaceAGORA.jl /absolute/my-project
 JULIA_LOAD_PATH="@:@stdlib" julia --startup-file=no --project=/absolute/my-project /absolute/my-project/my_effector.jl
 ```
 
-The load-path setting prevents unrelated packages in your default global project
-from hiding a missing direct dependency. On Windows, Julia uses `;` as the load
-path separator, so set `JULIA_LOAD_PATH` to `@;@stdlib` before launching Julia.
-The script writes results beside itself, independently of the terminal's working
-directory. Inspect `SimulationResults` and the three written files as described
-on [Simulation Outputs](outputs.md).
+The `JULIA_LOAD_PATH` setting keeps packages in your default global
+environment from hiding a missing direct dependency. On Windows, Julia
+separates load-path entries with `;`, so set `JULIA_LOAD_PATH` to `@;@stdlib`
+before starting Julia. The walkthrough script writes its results next to
+itself, whatever the terminal's working directory. Inspect the
+`SimulationResults` and the three written files as described on
+[Simulation Outputs](outputs.md).
 
-Setup uses your existing Julia depot and can download missing packages. An
-explicit cached/offline check may instead set `JULIA_PKG_OFFLINE=true` and
-`JULIA_PKG_PRECOMPILE_AUTO=0`; a missing cached dependency then remains a setup
-failure, not permission to substitute another version. Success with a populated
-depot is not a clean-depot installation result. Do not modify the source checkout
-while a separate project is using its development path; record the checkout
-commit and both generated environment files with any result you keep.
+Setup uses your existing Julia depot and downloads the packages it is missing.
+To check that setup works from the depot alone, set `JULIA_PKG_OFFLINE=true`
+and `JULIA_PKG_PRECOMPILE_AUTO=0`; a dependency missing from the depot then
+makes setup fail instead of being replaced by another version. A setup that
+succeeds with a well-stocked depot does not show that it would succeed on a
+clean one. Do not change the source checkout while a separate project uses it
+as a development path, and keep the checkout's commit and both generated
+environment files with any result you keep.
 
-The optional planner companion has its own
-[documented installation](rpo_planner_pilot.md#Installing-optional-HYPR). Installing
-the core project alone does not install or qualify HYPR, native GRAM, SPICE data,
-or a full mission workflow.
+The planner companion has its own
+[installation instructions](rpo_planner_pilot.md#Installing-optional-HYPR).
+Installing the core project alone does not install HYPR, native GRAM or SPICE
+data, and does not set up a full mission workflow.
 
 ## Local output paths
 
-Generated reports stay local. Common ignored output roots are:
-
-- `output/`
-- `odyssey_surrogate_results/` and `odyssey_surrogate_<cap>/`, the Odyssey
-  surrogate example's defaults when run from the repository root
+Generated results stay on your machine. Git ignores `output/`, and also
+`odyssey_surrogate_results/` and `odyssey_surrogate_<cap>/`, where the Odyssey
+surrogate example writes by default when it runs from the repository root.
 
 ## When you need more than setup
 
-Environment setup only tells you that the Julia side is ready. If you need to
-know whether the machine also has the right data and licensed assets, go to
+A working environment means the Julia side is ready. Whether the machine also
+has the data and licensed assets a run needs is the subject of
 [Assets & Modes](../assets.md).

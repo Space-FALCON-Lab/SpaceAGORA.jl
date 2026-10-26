@@ -1,25 +1,28 @@
 # Contributor starters
 
-Three repository starters for work built on SpaceAGORA, each tested by core CI
-(the `contributor-kit` job generates every starter from the commit under test and
-runs it through `.github/workflows/contributor-ci.yml`):
+Three starting points for a repository of your own built on SpaceAGORA. Core CI
+tests all three: its `contributor-kit` job generates each starter from the
+commit under test and runs it through the reusable workflow
+`.github/workflows/contributor-ci.yml`.
 
 | Kind | For | Example it ships |
 |---|---|---|
 | `project` | a research study on the public API | a force model (`wrench`) and a short case |
 | `package` | an algorithm package for an existing family | an RPO reference planner |
-| `companion` | a companion that serves a core service facade | an external propagator (`ExternalPropagationServices`) |
+| `companion` | a companion that serves one of core's service facades | an external propagator (`ExternalPropagationServices`) |
 
-Use Julia 1.12 and run the generator from the root of a clean SpaceAGORA
-checkout at the commit you want to build on. The output directory must not
-already contain files:
+Use Julia 1.12 and run the generator from the root of a SpaceAGORA checkout
+with no uncommitted changes to tracked files, at the commit you want to build
+on. The target directory must be empty or not exist yet, and must be outside
+the checkout:
 
 ```bash
 julia --startup-file=no scripts/new_contributor_repository.jl package ../MyPlanner --name MyPlanner --holder "Your Lab"
 ```
 
-The generator fills in the placeholders below and refuses a checkout with tracked
-changes, a non-empty or in-checkout directory, and a name that is not a package name.
+The generator refuses a name that is not a valid package name, `SpaceAGORA`
+itself, a name ending in `jl`, and any name containing the placeholder
+`StarterName`. It fills in these placeholders:
 
 | Placeholder | Becomes |
 |---|---|
@@ -28,11 +31,21 @@ changes, a non-empty or in-checkout directory, and a name that is not a package 
 | `0000000000000000000000000000000000000000` | the checkout's `HEAD` commit (pin file, README checkout command and workflow call) |
 | `SpaceAGORA = "0.0"` | the core's release series in `[compat]` |
 | `version = "0.0.0"` (pin file) | the core's version at that commit |
-| `CORE_CONTRACT_VERSION = v"0.0.0"` | the facade's current contract version |
-| `Copyright (c) 0000 Your name or organization` (`LICENSE`) | this year and `--holder`; without `--holder`, the holder stays for the author to fill |
+| `CORE_CONTRACT_VERSION = v"0.0.0"` | the facade's current contract version (companion) |
+| `Copyright (c) 0000 Your name or organization` (`LICENSE`) | this year and `--holder`; without `--holder` the holder is left for the author to fill in |
 
-The starters use only current hook names (the deprecated-hook gate refuses any
-deprecated name under `templates/starters/`) and only root names or
-`SpaceAGORA.Conformance` (the contributor workflow scans projects and packages for
-internal names). They use no GNC tick hook. A conformance pass certifies interface
-behaviour; validation of a study or a method stays with its author.
+Only the package and companion starters ship a `LICENSE`. A project gets a copy
+of the core commit's `Manifest.toml` instead, so every result can be traced to
+exact package versions.
+
+The starters never name a hook that SpaceAGORA has removed;
+`test/gates/ci_removed_hook_names_gate.jl` checks every file under
+`templates/starters/`, README files and workflows included. They use no GNC
+tick hook. The project and package starters use only exported names and
+`SpaceAGORA.Conformance`; the companion also uses its facade,
+`SpaceAGORA.ExternalPropagationServices`. For projects and packages the
+contributor workflow flags `SpaceAGORA.SimulationModel`,
+`SpaceAGORA.SimulationEngine` and names that start with an underscore.
+
+Passing the conformance checks shows that a repository meets SpaceAGORA's
+interfaces. Validating the study or method is the author's work.

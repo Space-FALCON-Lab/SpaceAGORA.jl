@@ -118,3 +118,19 @@ failure controls and CSV/Markdown assertions remain in the individual tests.
 A fresh-process test checks that module import leaves the environment, project,
 load path, working directory and worker list unchanged. These tests establish
 reporting contracts; they do not qualify simulation accuracy or runtime speed.
+
+### Shared benchmark support
+
+Artifact discovery is owned by `benchmarks/support/artifacts.jl`. Both the static
+comparison wrapper and smart ladder use its newest-mtime lookup; missing required
+artifacts still fail, while optional lookups return `nothing` only when the
+output directory exists but has no matching artifact.
+
+The entry-duration and per-orbit collectors share `measurement/routing.jl` for
+ordered route partitioning. Unsafe thread requests fall back to serial execution.
+Each collector retains its own execution, reference runs, row/log assembly and
+environment restoration. Importing these support modules starts no workers or
+simulation. Tests cover routing decisions, artifact failures and existing retry
+and output-order contracts. The runtime-Any gate tests share fixture construction
+under `test/support/runtime_any_gate_fixtures.jl`; their distinct negative controls
+remain in the individual test files.

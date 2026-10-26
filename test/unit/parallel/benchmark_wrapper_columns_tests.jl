@@ -9,6 +9,8 @@ const REPO = normpath(joinpath(@__DIR__, "..", "..", ".."))
 const RUNTIME = joinpath(REPO, "benchmarks", "studies", "performance_runtime_analysis")
 const PIPELINE = joinpath(REPO, "benchmarks", "scripts", "performance_paper_pipeline.jl")
 const STATIC = joinpath(REPO, "benchmarks", "studies", "performance", "performance_static_vs_parallel.jl")
+include(joinpath(REPO, "benchmarks", "support", "artifacts.jl"))
+using .BenchmarkArtifacts: _latest_artifact_path, _latest_artifact_path_optional
 const REPORT_FIXTURE = joinpath(@__DIR__, "benchmark_report_tests.jl")
 
 # Load selected real definitions and reuse the existing synthetic row schema.
@@ -55,7 +57,7 @@ for name in (:PipelineConfig, :ModeRunArtifacts, :_fmt_md, :_write_markdown_tabl
     load_definition(PIPELINE, name)
 end
 for name in (:StaticVsParallelConfig, :ArmSpec, :PolicyMatrixSpec, :ArmPassResult,
-             :_latest_artifact_path, :_latest_artifact_path_optional, :_same_run_artifact_path,
+             :_same_run_artifact_path,
              :_stage_elapsed_s, :_arm_result_artifacts, :_tag_arm_column, :_write_aggregate_arm_report,
              :_aggregate_arm_artifacts, :_write_static_vs_parallel_report)
     load_definition(STATIC, name)

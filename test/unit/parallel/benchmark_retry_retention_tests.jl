@@ -159,6 +159,8 @@ for name in (:_perf_optional_nonnegative_int_env, :_case_sample_schedule,
              :_run_case_batch_core!, :run_case_batch!)
     load_definition(BATCH, name)
 end
+include(joinpath(RUNTIME, "measurement", "routing.jl"))
+using .BenchmarkRouting: partition_sweep_routes
 include(joinpath(RUNTIME, "measurement", "montecarlo.jl"))
 include(joinpath(RUNTIME, "measurement", "per_orbit.jl"))
 include(joinpath(RUNTIME, "measurement", "entry_duration.jl"))

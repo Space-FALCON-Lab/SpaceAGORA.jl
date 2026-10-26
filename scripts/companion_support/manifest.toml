@@ -39,3 +39,8 @@ packages = ["SpaceAGORA", "SpaceAGORAVisualizer"]
 source = "mission_history_contract.jl"
 destination = "test/support/mission_history_contract.jl"
 packages = ["SpaceAGORA", "SpaceAGORAVisualizer"]
+
+[[files]]
+source = "legacy_environment.jl"
+destination = "scripts/support/legacy_environment.jl"
+packages = ["HYPR"]

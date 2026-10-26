@@ -92,7 +92,8 @@ to that owner instead of raw-including separate model/engine modules and definin
 local GRAM adapters. Its file-backed offline surrogate remains a benchmark-specific
 model: it is not a second native adapter. Caller-project precedence, append fallback,
 worker project resolution, planet/kernel initialization, case definitions and report
-contracts are unchanged. This fixture alone closes no native, scientific or
+contracts are unchanged. Canonical native lifecycle and history policies apply;
+these differ from the independent adapter even when requested options match. This fixture alone closes no native, scientific or
 performance acceptance.
 
 ## Runtime benchmark migration qualification

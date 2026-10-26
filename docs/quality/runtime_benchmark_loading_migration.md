@@ -7,8 +7,9 @@ Published releases and historical benchmark records remain unchanged.
 
 The maintained runtime entrypoint now uses package-loaded SpaceAGORA types and
 the canonical GRAM extension. It removes the benchmark's independent model,
-engine and native-adapter ownership. Case definitions, loading precedence,
-worker project selection, sampling policies and output schemas remain in place.
+engine and native-adapter ownership. Case definitions, loading precedence, worker project selection, requested
+sampling options and output schemas remain in place. Canonical lifecycle/history
+policies now apply to those options.
 
 ## Verified scope
 
@@ -36,8 +37,8 @@ worker project selection, sampling policies and output schemas remain in place.
   velocity components by up to 0.000348 m/s in this bounded case. These short-run
   deltas cannot bound longer campaigns.
 
-The canonical extension also supplies density-history resets and recognizes when
-nominal wind sampling is history dependent. The old independent adapter does not
+The canonical extension also supplies density-history resets and recognizes
+nominal winds as history-independent. The old independent adapter does not
 supply those same contracts. Native samples alone therefore do not qualify a full
 atmospheric campaign or establish old/new timing comparability.
 

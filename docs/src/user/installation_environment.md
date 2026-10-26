@@ -204,8 +204,8 @@ qualify every revision in that range.
 HYPR lives at `packages/robotics/HYPR.jl` and supports RPO and robot-arm planning.
 Loading both packages activates HYPR's SpaceAGORA adapter. After `setup hypr`,
 start Julia with `--project=/path/to/hypr-env` and load `SpaceAGORA` and `HYPR`. The [planner guide](rpo_planner_pilot.md#Installing-optional-HYPR)
-also documents the existing `scripts/setup_hypr.jl` route, which acquires HYPR
-from its external repository without using this submodule layout.
+also documents `scripts/setup_hypr.jl`, a compatibility shortcut that uses
+the same verified source and companion-owned installer.
 
 ### Optional MuJoCo companion
 

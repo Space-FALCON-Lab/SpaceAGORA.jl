@@ -21,8 +21,8 @@ report.commands[1].log
 ```
 
 Load `SpaceAGORA` and `HYPR` in your project, then use `HYPRRPOPlanner(RPOPSOConfig(...))` as the `planner` to choose HYPR. The separate
-`examples/rpo_planner_env` project provides exact, deterministic settings and runs
-both choices through this interface. Its README documents setup and offline
+`examples/rpo_planner_env` scripts prepare an environment outside the source
+checkout and provide exact, deterministic settings for both choices through this interface. Its README documents setup and offline
 execution. The default two-second case is a partial maneuver; the planners need
 not return the same trajectory. It is not a completed rendezvous benchmark.
 
@@ -247,23 +247,30 @@ julia --startup-file=no scripts/optional_packages.jl setup hypr /path/to/my-rpo-
 
 The helper checks out `packages/robotics/HYPR.jl` at the parent repository's
 recorded revision, verifies its identity and clean state, and delegates to the
-existing HYPR installer with that path. The pin agrees with
+companion's `scripts/setup_env.jl` with that path and this core checkout. The pin agrees with
 `packages/HYPRSource.toml`. It selects HYPR 0.5.0 alongside
 the supported SpaceAGORA source. HYPR remains optional for the simulator core;
 there is no separate compatibility loader to install.
 
-The original external-source route is also supported:
+The older command remains as a compatibility shortcut to the same installer:
 
 ```sh
 julia --startup-file=no scripts/setup_hypr.jl /path/to/my-rpo-project
 ```
 
-Without an override, this route resolves the immutable HYPR source pin directly
-from its repository, rather than using the submodule checkout. For coordinated
-local development, `SPACEAGORA_HYPR_PATH` explicitly substitutes another local
-HYPR checkout; that override is not published-installation evidence. Failed
-resolution is an error, not a fallback to another revision. Both routes use the
-existing installer's dependency-preservation policy. See [Optional package commands](installation_environment.md#Optional-package-commands)
+Without an override, this shortcut checks out the same pinned submodule. For
+coordinated local development, `SPACEAGORA_HYPR_PATH` explicitly substitutes
+another local HYPR checkout; that override is not published-installation evidence.
+Failed resolution is an error, not a fallback to another revision. HYPR, EDG and
+MuJoCo use the same shared installation policy: the destination must be outside
+both source checkouts, and existing unmanaged directories are refused.
+
+To preserve an older HYPR environment, migrate its project, manifest and local
+preferences into a fresh destination with
+`scripts/setup_hypr.jl --migrate-from /path/to/old /path/to/new`. This leaves the
+old directory unchanged, selects the current core and HYPR together, and removes
+the retired `SpaceAGORAHYPR` loader. Migration refuses other packages that still
+require that loader; update those packages first. See [Optional package commands](installation_environment.md#Optional-package-commands)
 for source checks and Git-clone requirements.
 
 Run with `--project=/path/to/my-rpo-project` and explicitly load the companion.
@@ -294,8 +301,10 @@ controller dependency. Package separation changes installation, not the validate
 physical limits, planning reserve or numerical policies.
 
 The `examples/rpo_planner_env/setup.jl` command above installs both components
-explicitly for the two-planner demonstration. The RPO and compliant robot-arm HYPR examples and ISS viewer demo also run from that project and
-load the companion before their common helper continues in the examples environment,
+explicitly for the two-planner demonstration in an external managed environment.
+`examples/rpo_planner_env/run.jl` selects that environment for the RPO and compliant
+robot-arm HYPR examples and ISS viewer demo. They load the companion before their
+common helper continues in the examples environment,
 which `julia --startup-file=no examples/setup.jl` prepares. See
 [Examples Catalog](examples_catalog.md) for the exact commands. Baseline examples
 use `--project=examples` and do not preload HYPR. Do not add the companion as a required

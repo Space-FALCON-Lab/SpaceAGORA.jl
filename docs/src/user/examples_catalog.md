@@ -226,7 +226,7 @@ Prepare the optional HYPR companion environment once from the repository root,
 and the examples environment if it is not prepared yet:
 
 ```text
-julia --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
+julia --startup-file=no examples/rpo_planner_env/setup.jl
 julia --startup-file=no examples/setup.jl
 ```
 
@@ -240,7 +240,7 @@ library. Their default station also uses the repository asset
 `data/scene/models/gateway_core.stl`. Start with one RPO case:
 
 ```text
-julia --project=examples/rpo_planner_env examples/Earth_RPO_CubeSat_MPC.jl
+julia --startup-file=no examples/rpo_planner_env/run.jl examples/Earth_RPO_CubeSat_MPC.jl
 ```
 
 By default that script builds the Gateway-core scenario. Its
@@ -311,7 +311,7 @@ julia --project=examples examples/Earth_RPO_Planner_Disturbances.jl
 For a planner-comparison smoke run:
 
 ```text
-SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=examples/rpo_planner_env examples/Earth_RPO_CubeSat_MPC_PlannerComparison.jl --runs 1
+SPACEAGORA_EXAMPLE_SMOKE=1 julia --startup-file=no examples/rpo_planner_env/run.jl examples/Earth_RPO_CubeSat_MPC_PlannerComparison.jl --runs 1
 ```
 
 The comparison writes a CSV of every planner result and HTML figures. The
@@ -323,7 +323,7 @@ native GRAM. Its compliant multibody dynamics are implemented in SpaceAGORA;
 this example does not use MuJoCo contacts. Run it with:
 
 ```text
-SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=examples/rpo_planner_env examples/Robot_Arm_Planner_Cloth_Demo.jl
+SPACEAGORA_EXAMPLE_SMOKE=1 julia --startup-file=no examples/rpo_planner_env/run.jl examples/Robot_Arm_Planner_Cloth_Demo.jl
 ```
 
 For the solar-panel compliant multibody deployment demo:

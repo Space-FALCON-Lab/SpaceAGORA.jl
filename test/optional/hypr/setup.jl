@@ -1,8 +1,8 @@
-include(joinpath(@__DIR__, "..", "..", "..", "scripts", "setup_hypr.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "scripts", "setup_core.jl"))
 include(joinpath(@__DIR__, "..", "..", "..", "scripts", "optional_packages.jl"))
 length(ARGS) == 1 || error("Usage: setup.jl <scratch-directory>")
 directory = abspath(only(ARGS))
-HYPRInstallation.setup(joinpath(directory, "core"); with_hypr=false)
+CoreEnvironment.setup(joinpath(directory, "core"))
 OptionalPackages.setup("hypr", joinpath(directory, "hypr"))
 # The integration campaign (optional.jl) also runs the RPO comparison figure
 # tests, whose figures come from SpaceAGORA's PlotlyJS extension: the

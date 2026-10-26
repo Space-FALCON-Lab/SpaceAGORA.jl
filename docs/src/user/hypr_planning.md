@@ -71,7 +71,7 @@ Its recorded revision agrees with `packages/HYPRSource.toml`.
 The robotics folder is a source organization choice; HYPR supports spacecraft
 RPO as well as robot arms. The [installation guide](installation_environment.md#Optional-package-commands)
 describes source checks, and the [RPO guide](rpo_planner_pilot.md#Installing-optional-HYPR)
-retains the separate `scripts/setup_hypr.jl` route. Keep the HYPR pin and
+documents `scripts/setup_hypr.jl` as a compatibility shortcut to the same companion installer. Keep the HYPR pin and
 SpaceAGORA revision in the run record. The short example executes
 both the direct planner and HYPR through the public interface, checking that
 references reach the controller and produce finite, bounded outputs. It covers

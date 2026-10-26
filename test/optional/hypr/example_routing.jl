@@ -8,7 +8,7 @@ Base.include(ex -> ex == :(examples = list_examples()) ? :(examples = String[]) 
             "Earth_RPO_CubeSat_MPC_PlannerComparison.jl", "Earth_RPO_CubeSat_MPC_Replanning.jl",
             "Robot_Arm_Planner_Cloth_Demo.jl")
         cmd=routing.example_command(joinpath(routing.EXAMPLES_DIR,name))
-        @test "--project=$(joinpath(routing.EXAMPLES_DIR,"rpo_planner_env"))" in cmd.exec
+        @test "--project=$(routing.RPOExampleEnvironment.directory(; root=routing.REPO_ROOT))" in cmd.exec
         @test all(!startswith(arg,"--load") && arg!="-L" for arg in cmd.exec)
     end
     @test routing.example_project("Earth_Torque_Free_Test.jl")==joinpath(routing.REPO_ROOT,"examples")

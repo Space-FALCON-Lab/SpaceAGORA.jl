@@ -5,11 +5,11 @@ machine. The run needs neither GRAM nor SPICE: it propagates an Earth orbit
 with J2 gravity, no atmosphere (`NoAtmosphereModel()`) and the analytic
 ephemerides (`SimpleEphemeridesModel()`).
 
-SpaceAGORA runs in the root environment, and instantiating it installs
-SpaceAGORA at the package versions its committed manifest pins. The examples
-run in a second environment, the examples environment, which one setup command
-prepares from that manifest; it adds the packages the examples use for plots
-and analysis.
+The committed root environment sets the package versions every run uses:
+instantiating it installs SpaceAGORA at the versions its committed manifest
+pins. The examples run in a second environment, the examples environment,
+which one setup command prepares from that manifest; it adds the packages the
+examples use for plots and analysis.
 
 SpaceAGORA requires Julia 1.12 (any 1.12.x release), and `julia --version`
 must say so before you start. Julia 1.11 and earlier, and 1.13 and later, are

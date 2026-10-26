@@ -238,6 +238,14 @@ its copies against that exact owner, independently of its runtime core pin.
 When changing a shared file, update every listed consumer and its support pin.
 Keep companion-specific permitted names and scientific test expectations local.
 
+The shared installer supports companions that declare SpaceAGORA in either
+`[deps]` or `[weakdeps]`. It validates the canonical core UUID in every supplied
+declaration and checks the selected core source against it. The paired
+environment explicitly installs core; the companion can retain an optional
+core integration in its own package metadata. Only direct dependencies and test
+extras become auxiliary environment dependencies: unrelated weak dependencies,
+including HYPR's retired `SpaceAGORAHYPR` compatibility binding, are not installed.
+
 The common installer refuses unmanaged nonempty destinations and destinations
 inside either source checkout, including through symlinked parents. It records
 its source pair before acquisition so interrupted first installs can be retried;

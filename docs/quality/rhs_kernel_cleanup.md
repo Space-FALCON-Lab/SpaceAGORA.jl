@@ -1,39 +1,39 @@
 # Shared per-spacecraft dynamics kernels
 
-`src/orchestration/simulation/engine/dynamics_rhs.jl` owns one private
-per-spacecraft operation for each existing physics partition: full, slow,
-implicit atmosphere, explicit remainder and fast control. Serial and satellite
-batch loops call the same operation for that partition. The partitions remain
-separate because their physics and derivative assignments differ.
+`src/orchestration/simulation/engine/dynamics_rhs.jl` has one private
+per-spacecraft operation for each physics partition of the right-hand side:
+`_spacecraft_full_rhs!`, `_spacecraft_slow_rhs!`, `_spacecraft_implicit_rhs!`
+(the implicit atmosphere part), `_spacecraft_explicit_rhs!` (the explicit
+remainder) and `_spacecraft_fast_control_rhs!`. The serial loop and the
+satellite batch loop of each partition call the same operation, so the two
+routes cannot drift apart. The partitions stay separate because their physics
+and the derivatives they assign differ.
 
-Execution-plan selection, shared-sample prefill, batch sizing, synchronization
-and interlink application remain at their existing outer levels. Early returns
-skip only the current spacecraft. Bounds context propagates through the private
-helper so extraction does not add checks to the established inbounds route.
-Public names and module ownership are unchanged.
+Choosing the execution plan, prefilling the shared samples, sizing and
+synchronizing the batches and applying interlinks stay in the outer loops. An
+early return skips only the current spacecraft. The bounds-checking context of
+the caller passes through to the operation (`Base.@propagate_inbounds`), so the
+`@inbounds` route gains no checks. No public name or module ownership changes.
 
-## Qualification of the extraction
+## How the kernels are checked
 
-The new parity test exercises all five partitions with orientation enabled and
-disabled, including an inactive spacecraft and nonzero atmospheric heat rates.
-A four-thread run passed 88 assertions. Focused wheel, split-solver, external
-propagation, articulation and compliant-attachment regressions also passed.
-The original and extracted implementations produced identical derivatives in
-20 before/after combinations of partition, orientation and serial/batch route.
+`test/unit/simulation/rhs_kernel_parity_tests.jl` builds four spacecraft inside
+an exponential atmosphere, one of them inactive, and evaluates every partition
+with attitude integration off and on, serially and in satellite batches. It
+requires the two routes to agree to `1e-13`, the inactive spacecraft's
+derivative to be zero, and the implicit-atmosphere and fast-control partitions
+to leave the heat loads (and, with attitude, the quaternion) unchanged. With a
+single thread the batch route does not actually batch, and the test skips only
+its check that batching is enabled.
 
-Allocation measurements use the callback environment snapshot captured by normal
-simulation setup. A hand-built parameter fixture without that snapshot instead
-repeatedly parses the environment; its initial single-call measurement showed
-an intermittent difference and was investigated rather than treated as a pass.
-Allocation profiling of the original and extracted code recorded identical
-allocation counts and sizes. In a separate run without other local Julia jobs,
-93 alternating paired batches covering the investigated threaded full, slow and
-fast-control routes each measured 100 allocation samples and 20,000 timed calls.
-Every pair had matching allocation minima and maxima. Paired timing-ratio medians
-were 0.966, 1.017 and 0.991 respectively, with variable individual timings.
+Allocation checks must use the callback environment snapshot that normal
+simulation setup captures. A parameter fixture built by hand without that
+snapshot parses the environment on every call instead, so its allocation
+figures do not represent a real run.
 
-These checks support unchanged tested derivatives and no consistent timing
-regression in the investigated routes. They do not establish a general speedup,
-zero allocations, or full campaign performance acceptance. Independent review
-confirmed the extracted bodies match the originals and found no remaining
-adoption blocker after the targeted measurements.
+When the operations were extracted from the old loop bodies, the derivatives,
+allocation counts and run times of the original and extracted code were
+compared on the threaded full, slow and fast-control routes; the measurements
+are kept in the lab's records. They support unchanged derivatives and no
+consistent change in run time on those routes. They do not establish a speedup,
+zero allocations, or performance acceptance for whole campaigns.

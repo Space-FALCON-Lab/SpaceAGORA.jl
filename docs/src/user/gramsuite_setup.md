@@ -150,7 +150,7 @@ JULIA_PKG_PRECOMPILE_AUTO=0 JULIA_PKG_OFFLINE=true \
 The report directory must also be new. The preparation supplies metadata, not
 package files, so dependencies that are not installed still make the
 diagnostic fail.
-[Real-package loading readiness](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/blob/f3fde6c2251434be57cb9122f60b249ea5b5bbc4/docs/quality/gram_package_readiness.md)
+[GRAM package loading readiness](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/blob/main/docs/quality/gram_package_readiness.md)
 describes the six import and failure cases and the runtime limits. A passing
 report covers the package and extension identities it observed. It says
 nothing about production helpers, workers, native GRAM libraries or data, or
@@ -397,7 +397,7 @@ other.
 
 ## Troubleshooting
 
-### The submodule exists, but GRAM is still reported missing
+### GRAM is reported missing or pointer-only
 
 If `data/GRAMSuite.jl` exists but is empty, the submodule was never checked
 out, and the asset report shows `gram_root` and `spice_directory` as

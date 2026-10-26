@@ -51,3 +51,27 @@ the costate and switching diagnostics, closed-form comparisons, per-link
 histories, attitude and reaction-wheel traces, or torque and inertia histories.
 A similar chart, or a saved field that happens to exist, does not show that the
 inputs and outputs are equivalent.
+
+## Simulation preparation and viewer payload phases
+
+`run_simulation` stays the public entry point, and
+`src/orchestration/simulation/engine/execution.jl` keeps the order of a run:
+checkpoint, solve, save and resume. It prepares a run by calling four private
+helpers in `src/orchestration/simulation/engine/setup.jl`, in this order:
+`_validate_run_models!` (model and configuration checks),
+`_prepare_run_runtime!` (run buffers and caches), `_prepare_run_ephemerides!`
+(the ephemeris caches) and `_prepare_run_execution_policy!` (execution policy).
+The last one calibrates the right-hand-side plan before it starts the in-run
+width identification, and resets the density models' histories after every
+pre-solve probe. Callback creation, the restore of a resumed run and output
+handling stay in `execution.jl`. The helpers add no lifecycle framework of
+their own.
+
+`build_viewer_frames` keeps its public signature in the scene module. Three
+private helpers in `src/interfaces/analysis/visualization/scene/viewer_payload.jl`
+do its work: `_viewer_frame_layout` finds the frame blocks a bundle holds,
+`_select_viewer_frame_rows` chooses the rows and the position precision within
+the byte budget, keeping mission-boundary rows and the Float32/Float64 rule, and
+`_pack_viewer_frame_blocks` packs the selected blocks with the payload's units,
+field names, optional-block rules and byte encodings. These are boundaries
+inside existing modules, not new public namespaces.

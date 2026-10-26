@@ -32,27 +32,10 @@ function run_entry_duration_sweep(spec::ProfileSpec, cases::Vector{BenchmarkCase
     if backend == :auto
         scenario_rows = Vector{Vector{NamedTuple}}(undef, length(selected))
         scenario_logs = Vector{Vector{String}}(undef, length(selected))
-        chosen_routes = fill(:none, length(selected))
-        process_tasks = Tuple{Int, BenchmarkCase}[]
-        thread_indices = Int[]
-        serial_indices = Int[]
-
-        for (idx, base_case) in enumerate(selected)
-            route = auto_backend_for_case(base_case; spec=spec)
-            chosen_routes[idx] = route
-            if route == :process
-                push!(process_tasks, (idx, base_case))
-            elseif route == :threads
-                if _case_outer_threads_safe(base_case)
-                    push!(thread_indices, idx)
-                else
-                    push!(serial_indices, idx)
-                    chosen_routes[idx] = :none
-                end
-            else
-                push!(serial_indices, idx)
-            end
-        end
+        routes = partition_sweep_routes(selected;
+            choose_route=case -> auto_backend_for_case(case; spec=spec),
+            thread_safe=_case_outer_threads_safe)
+        (; chosen_routes, process_tasks, thread_indices, serial_indices) = routes
 
         if !isempty(process_tasks)
             ensure_perf_workers!()

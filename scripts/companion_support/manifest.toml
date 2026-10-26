@@ -18,4 +18,24 @@ packages = ["HYPR", "SpaceAGORAEDG", "SpaceAGORAMuJoCo"]
 [[files]]
 source = "shared-support.yml"
 destination = ".github/workflows/shared-support.yml"
-packages = ["HYPR", "SpaceAGORAEDG", "SpaceAGORAMuJoCo"]
+packages = ["HYPR", "SpaceAGORAEDG", "SpaceAGORAMuJoCo", "SpaceAGORAVisualizer"]
+
+[[files]]
+source = "mission_history.jl"
+destination = "src/interfaces/analysis/visualization/scene/mission_history.jl"
+packages = ["SpaceAGORA"]
+
+[[files]]
+source = "mission_history.jl"
+destination = "src/mission_history.jl"
+packages = ["SpaceAGORAVisualizer"]
+
+[[files]]
+source = "mission_history_cases.jl"
+destination = "test/support/mission_history_cases.jl"
+packages = ["SpaceAGORA", "SpaceAGORAVisualizer"]
+
+[[files]]
+source = "mission_history_contract.jl"
+destination = "test/support/mission_history_contract.jl"
+packages = ["SpaceAGORA", "SpaceAGORAVisualizer"]

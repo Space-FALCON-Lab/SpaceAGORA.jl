@@ -3,7 +3,7 @@ include(joinpath(@__DIR__, "..", "..", "..", "scripts", "sync_companion_support.
 
 @testset "Canonical companion support detects drift" begin
     mktempdir() do temporary
-        for package in ("HYPR", "SpaceAGORAEDG", "SpaceAGORAMuJoCo")
+        for package in ("HYPR", "SpaceAGORAEDG", "SpaceAGORAMuJoCo", "SpaceAGORA", "SpaceAGORAVisualizer")
             repository = mkpath(joinpath(temporary, package))
             write(joinpath(repository, "Project.toml"), "name = \"$package\"\n")
             expected = CompanionSupportSync.expected_files(repository)

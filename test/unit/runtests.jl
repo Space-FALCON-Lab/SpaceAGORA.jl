@@ -252,3 +252,5 @@ include("quality/runtime_any_gate_tests.jl")
 # Optional renderer installer planning is stdlib-only and performs no installation.
 include("visualization/installation_plan_tests.jl")
 include("visualization/output_preservation_tests.jl")
+
+include(joinpath(@__DIR__, "visualization", "mission_history_contract_tests.jl"))

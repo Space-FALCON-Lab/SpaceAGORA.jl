@@ -244,3 +244,22 @@ its source pair before acquisition so interrupted first installs can be retried;
 setup rechecks ownership before package-manager mutation. Existing MuJoCo
 environments without its ownership marker must use a new separate destination.
 This does not change previously published installer sources or release pins.
+
+### Mission-history contract
+
+The optional mission-history validator also has one canonical source,
+`scripts/companion_support/mission_history.jl`. Generated copies live beside the
+core viewer-payload builder and in the standalone viewer's `src/`; neither
+package imports the other to validate saved data. Edit the canonical file and
+regenerate both checkouts, including core itself (`--write . /path/to/viewer`).
+Core's mission-history unit test checks its generated files; the viewer's
+immutable `SharedSupport.toml` pin and generated workflow check its copies.
+
+Both packages run the versioned JSON examples in `mission_history_cases.jl`
+through their loaded runtime validator. The declared accepted/rejected outcomes
+cover absent and empty histories, malformed values, unsupported versions,
+segment continuity, transition ownership and precision-sensitive boundaries.
+Accepted objects must be returned unchanged; times are never rounded or coerced.
+These are data-contract checks, not scientific validation of mission behavior.
+Keep expected outcomes independent of validator internals. A contract change
+requires reviewing the examples and both consumers together.

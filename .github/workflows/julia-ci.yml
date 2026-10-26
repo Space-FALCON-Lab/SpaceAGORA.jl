@@ -543,9 +543,10 @@ jobs:
           persist-credentials: false
 
       # No shared package depot: project dependencies still start from nothing.
-      # Keep compilation outside setup so a timeout identifies the failing phase.
-      - name: Setup (instantiate in clean depot)
-        timeout-minutes: 10
+      # The standalone EDG installer strictly precompiles its managed environment.
+      # Allow cold compilation here; root diagnostics below reuse this same depot.
+      - name: Setup core and compile EDG in clean depot
+        timeout-minutes: 35
         uses: ./.github/actions/setup
         with:
           depot: "false"

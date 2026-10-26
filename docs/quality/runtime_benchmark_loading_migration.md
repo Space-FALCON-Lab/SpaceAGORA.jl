@@ -1,6 +1,6 @@
 # Runtime benchmark package-route migration evidence
 
-Status: implemented and under review. On 2026-10-26, the owner explicitly
+On 2026-10-26, the owner explicitly
 accepted canonical behavior as a new benchmark baseline, with historical results
 unchanged and the difference documented.
 Published releases and historical benchmark records remain unchanged.

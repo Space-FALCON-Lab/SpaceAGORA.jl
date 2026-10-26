@@ -307,8 +307,12 @@ SPACEAGORA_EDG_TEST_ENV=/path/to/edg-test-env julia --startup-file=no --project=
 
 The tests run in the repository's test environment, which holds the test tools,
 and start their example and CLI children in the examples environment; the EDG
-environment is added as the provider. Both setups retain the core's
-dependency versions and leave its tracked project files unchanged.
+environment is added as the provider. `test/setup.jl` retains the core's dependency
+versions. The EDG shortcut delegates to the companion-owned installer, which
+resolves a separate manifest from the packages' compatibility requirements. Both
+leave the core's tracked project files unchanged. Older test environments bearing
+the `.spaceagora-edg-test-environment.toml` marker are not adopted by the shared
+installer; keep them unchanged and choose a fresh empty destination.
 `SPACEAGORA_EDG_PATH=/absolute/path/to/SpaceAGORAEDG.jl`
 is an explicit development override for this test helper; it is not a release
 pin. Full suites may require the other documented optional packages and assets.

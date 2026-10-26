@@ -1,9 +1,9 @@
 # Recipes
 
-Use this page when you want copy-paste commands for common tasks.
-
-This page is for users who already know the task they want to perform and do
-not need a longer explanation first.
+Short commands for common tasks, for readers who already know what they want
+to do. Each recipe links to the page that explains it. Run the commands from
+the repository root. Commands with `--project=examples` need the examples
+environment, prepared once with `julia --startup-file=no examples/setup.jl`.
 
 Shortest successful command:
 
@@ -34,8 +34,10 @@ julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstar
 
 ## Run an aerobraking example in smoke mode
 
-Needs the `data/GRAMSuite.jl` submodule ([GRAMSuite Setup](gramsuite_setup.md)):
-the script loads GRAM even in smoke mode.
+Smoke mode shortens the run, but this example still builds a GRAM atmosphere
+and loads SPICE kernels, so it needs the complete GRAM setup: the
+`data/GRAMSuite.jl` submodule, the official GRAM Suite files and the native
+library ([GRAMSuite Setup](gramsuite_setup.md)).
 
 ```text
 julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Earth_Aerobraking.jl --smoke --output-dir=output/aerobraking_smoke
@@ -47,7 +49,12 @@ julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Earth_Aerobraki
 julia --project=examples --threads=8 examples/AGORA_Earth_MonteCarlo.jl
 ```
 
-Inside the script:
+The script runs `SPACEAGORA_MC_SAMPLES` seeds (default 8) on
+`SPACEAGORA_MC_THREADS` worker tasks (default: the smaller of the Julia thread
+count and the sample count). `SPACEAGORA_MC_PARALLEL=1` lets SpaceAGORA choose
+how to run the campaign instead. Its campaign call follows this pattern, where
+`make_config_for_seed` is the script's own function that builds one
+configuration:
 
 ```julia
 using SpaceAGORA
@@ -68,9 +75,10 @@ julia --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
 julia --startup-file=no examples/setup.jl
 ```
 
-These HYPR examples load `SpaceAGORA` and `HYPR` before their common helper continues
-in the examples environment, so both environments are needed. Baseline examples
-use `--project=examples`.
+The HYPR examples start in the companion environment, load `SpaceAGORA` and
+`HYPR`, and then continue in the examples environment for their other
+packages, so both environments are needed. Baseline examples use
+`--project=examples`.
 
 ```text
 SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=examples/rpo_planner_env examples/Earth_RPO_CubeSat_MPC_PlannerComparison.jl --runs 1
@@ -82,17 +90,17 @@ SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=examples/rpo_planner_env examples/Ear
 SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=examples/rpo_planner_env examples/Robot_Arm_Planner_Cloth_Demo.jl
 ```
 
-The example filename and output identifiers keep their historical spelling for
-compatibility. The model uses compliant multibody dynamics. See the
-[API migration note](../public_api_policy.md#Compliant-multibody-and-robot-arm-names)
+The example filename and output identifiers keep their historical "Cloth"
+spelling for compatibility; the model uses compliant multibody dynamics. See
+the [API migration note](../public_api_policy.md#Compliant-multibody-and-robot-arm-names)
 when updating application code.
 
 ## Reuse a mission and keep each run's results
 
-Build the mission with a function and give every call its own, absent or empty
-output directory; a populated one is refused so an earlier result cannot be
-overwritten. The complete builder and the recovery from a refused directory are
-in [Mission Workflows](mission_workflows.md).
+Build the mission with a function and give every run its own absent or empty
+output directory. `run_mission` refuses a populated one, so an earlier result
+cannot be overwritten. [Mission Workflows](mission_workflows.md) has the
+complete builder and shows how to recover from a refused directory.
 
 ## Stop a run when a condition is met
 
@@ -102,9 +110,12 @@ data, is in [Stopping on a Condition](stop_conditions.md).
 
 ## Attach guidance, navigation or control to one spacecraft
 
-Declare the effector on the spacecraft instead of in the configuration-level `ControlModel`;
-it is bound to that spacecraft's position in the constellation when the run starts, so it
-follows the spacecraft into `run_constellation_ensemble` without `allow_gnc_effectors=true`.
+Declare the effector on the spacecraft instead of in the configuration-level
+`ControlModel`. When the run starts, it is bound to that spacecraft's position
+in the run, so it follows the spacecraft into `run_constellation_ensemble`
+without `allow_gnc_effectors=true`. In this fragment, `tau_fn`, `b_fn`, `root`
+and `ic` are your commanded-torque function, magnetic-field function, root
+`Link` and initial condition:
 
 ```julia
 const SM = SpaceAGORA.SimulationModel
@@ -113,17 +124,21 @@ sc = SM.SpacecraftModel(; links=[root], root=root, initial_condition=ic, id=2,
                         control=SM.ControlModel(control_effectors=(momentum,), control_rates=[1.0]))
 ```
 
-Only effectors that select their vehicle by an index (`bind_spacecraft` is defined for them)
-can be declared this way; RPO chaser/target effectors and effectors that act on every
-spacecraft raise an `ArgumentError` and belong in the configuration.
+Only effectors that select their vehicle by an index, and so have a
+`bind_spacecraft` method, can be declared this way. RPO chaser and target
+effectors, and effectors that act on every spacecraft, raise an
+`ArgumentError` and belong in the configuration.
 
-When any spacecraft declares GNC, the run uses a flattened copy of the configuration.
-With `isolate_state=false`, configuration-level effectors remain your objects. Binding may
-reuse a per-spacecraft effector whose index already matches, or make a shallow copy that
-shares mutable members. Scalar field updates on a copied effector stay on that copy;
-mutations of shared members remain visible on your original. Spacecraft copies also share
-links, joints and initial conditions. Keep the default isolation to preserve caller state,
-and use `run_simulation(...; return_results=true).configuration` to inspect the state that ran.
+When any spacecraft declares GNC, the run uses a flattened copy of the
+configuration. With `isolate_state=false`, configuration-level effectors
+remain your objects. Binding may reuse a per-spacecraft effector whose index
+already matches, or make a shallow copy that shares mutable members: scalar
+field updates on a copied effector stay on that copy, while mutations of
+shared members remain visible on your original. Spacecraft copies also share
+links, joints and initial conditions. Keep the default isolation to preserve
+your objects' state, and use
+`run_simulation(...; return_results=true).configuration` to inspect the state
+that ran.
 
 ## Inspect local assets
 
@@ -134,9 +149,12 @@ julia --project=. src/interfaces/cli/main.jl assets manifest
 
 ## Run the telemetry verification study
 
+Both commands below, and the CLI route in the next recipe, need the
+`data/GRAMSuite.jl` submodule; see [Verification Study](verification_study.md).
+
 ```text
 julia --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl quick --enforce=true
-# one scenario only (also honoured as SPACEAGORA_TELEMETRY_SCENARIOS=odyssey)
+# one scenario only (also read from SPACEAGORA_TELEMETRY_SCENARIOS=odyssey)
 julia --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl quick --enforce=true --scenarios=odyssey
 ```
 
@@ -154,6 +172,10 @@ julia --project=. src/interfaces/cli/main.jl benchmark smart-parallel-ladder smo
 ```
 
 ## Inspect a benchmark command before running it
+
+`--print-only` prints the project, script, environment variables and command
+line the launcher would run, without running it (it still creates the output
+directory):
 
 ```text
 julia --project=. src/interfaces/cli/main.jl benchmark runtime-analysis quick --output-dir=output/perf_quick --print-only

@@ -1,25 +1,22 @@
-# Real-package GRAM loading readiness
+# GRAM package loading readiness
 
 The supported model route loads `SpaceAGORA` as a Julia package, imports
-`GRAMSuite`, and uses the canonical `SpaceAGORAGRAMSuiteExt` extension with
-`SpaceAGORA.SimulationModel` types. The extension owns the integration methods.
-The maintained runtime benchmark uses these canonical package types; its full
-startup and native-worker qualification are outside this package-loading check.
+`GRAMSuite`, and uses the `SpaceAGORAGRAMSuiteExt` extension with
+`SpaceAGORA.SimulationModel` types; the extension owns the integration methods.
+`test/smoke/gram_package_readiness.jl` checks that route against real, already
+prepared package sources, in fresh Julia processes. It is opt-in: no CI job and
+no test suite runs it. It complements the synthetic
+[loading-policy tests](gram_loading_contract.md) and changes no loader. The
+maintained runtime benchmark uses these canonical package types; full benchmark
+startup and native-worker execution remain outside what this check qualifies.
 
-`test/smoke/gram_package_readiness.jl` is an opt-in diagnostic for already prepared
-package sources and dependencies. It complements the synthetic
-[loading-policy contracts](gram_loading_contract.md). It does not change an
-existing loader or consolidate the four consumer policies.
+## Running it
 
-## Run with a prepared environment
-
-Use a Julia version allowed by SpaceAGORA's `Project.toml` and a prepared wrapper
-whose source revision you have independently verified. The current CI runtime
-line is Julia 1.12; one successful invocation qualifies only the exact runtime
-and observed package sources in that report. Repeat the check for any additional
-runtime or wrapper combination being qualified.
-
-From the repository root:
+You need a Julia version that SpaceAGORA's `Project.toml` allows (CI uses 1.12)
+and a prepared `GRAMSuite.jl` wrapper whose source revision you have checked
+yourself. [GRAMSuite setup](../src/user/gramsuite_setup.md) describes
+`scripts/prepare_gram_loading_environment.py`, which builds such a directory
+offline. From the repository root:
 
 ```sh
 JULIA_PKG_PRECOMPILE_AUTO=0 JULIA_PKG_OFFLINE=true \
@@ -29,74 +26,86 @@ JULIA_PKG_PRECOMPILE_AUTO=0 JULIA_PKG_OFFLINE=true \
   --output /absolute/path/to/new/readiness-report
 ```
 
-`--space-project` can select another prepared SpaceAGORA checkout.
-`--timeout-seconds` bounds each child process. The output directory must be new,
-so reports from an earlier invocation cannot satisfy a new check. The diagnostic
-uses the existing depot for positive cases and does not activate, instantiate,
-resolve or install packages. Existing compiled images may be used; new compiled
-images are disabled because SpaceAGORA's precompile workload includes a short
-simulation.
+Options:
 
-The selected SpaceAGORA environment must initially leave GRAM undiscoverable for
-the fallback and absent-package cases. An environment that already exposes GRAM
-cannot demonstrate those boundaries; that condition is unmet acceptance, not a
-passing skip. Prepare the environment deliberately rather than modifying a
-working installation to satisfy this test.
+- `--gram-project` (required): the prepared wrapper.
+- `--output` (required): a directory that must not exist yet, so a report from
+  an earlier run cannot satisfy a new check.
+- `--space-project`: another prepared SpaceAGORA checkout (default: this one).
+- `--timeout-seconds`: the limit for each child process (default 300).
 
-## Case matrix
+Before starting any case, the script refuses a Julia version outside
+SpaceAGORA's or the wrapper's `julia` compat, and a wrapper version outside
+SpaceAGORA's `GRAMSuite` compat. It uses the existing depot for the positive
+cases and never activates, instantiates, resolves or installs packages. Each
+child runs with `JULIA_PKG_OFFLINE=true` and `JULIA_PKG_PRECOMPILE_AUTO=0`.
+Existing compiled images may be used, but no new ones are built, because
+SpaceAGORA's precompile workload runs a short simulation.
 
-Each case runs in a new Julia process with an explicit package search path.
+The SpaceAGORA environment you select must not already make GRAM discoverable;
+the fallback and absent-package cases depend on that. If it does, the run reports
+unmet acceptance, not a skip. Prepare a separate environment rather than altering
+a working installation to satisfy the check.
+
+## Cases
+
+Each case runs in a new Julia process with an explicit `JULIA_LOAD_PATH`.
 
 | Case | Required observation |
 | --- | --- |
-| Discoverable wrapper, SpaceAGORA first | Both packages resolve to the requested sources; the extension attaches to the canonical model types. |
-| Discoverable wrapper, GRAM first | The opposite import order reaches the same package, type and extension identities. |
-| Explicit fallback, SpaceAGORA first | GRAM is initially undiscoverable; explicitly prepending the prepared wrapper enables the intended package integration. |
-| Explicit fallback, GRAM first | The same explicit fallback works with the opposite import order. |
-| GRAM absent | SpaceAGORA loads, GRAM import fails specifically because GRAM is absent, and the extension remains absent. |
-| Wrapper dependency absent | The real wrapper is discoverable in an isolated empty depot, but import fails specifically because its StaticArrays dependency is absent. |
+| `discoverable_space_first` | Both packages resolve to the requested sources, and the extension attaches to the canonical model types. |
+| `discoverable_gram_first` | Importing in the opposite order reaches the same package, type and extension identities. |
+| `fallback_space_first` | GRAM is initially undiscoverable; prepending the prepared wrapper to the load path enables the integration. |
+| `fallback_gram_first` | The same fallback works with the opposite import order. |
+| `absent_gram` | SpaceAGORA loads, the GRAM import fails because GRAM is absent, and the extension stays absent. |
+| `absent_dependency` | The wrapper is discoverable in an empty depot, and its import fails because its StaticArrays dependency is absent. |
 
-The discoverable cases keep the selected SpaceAGORA environment ahead of the
-wrapper. The explicit fallback cases characterize the prepend policy used by
-examples and the package benchmark. The diagnostic restores its own deliberate
-search-path change. This is not proof of any production loader's project
-restoration, retry or installation behavior; those policies remain separate.
-The runtime benchmark's append order is not replaced by this diagnostic.
+In the discoverable cases the selected SpaceAGORA environment stays ahead of the
+wrapper. The fallback cases exercise the prepend policy that the examples and the
+parallelization benchmark use; the runtime benchmark's append policy is not
+exercised. The script undoes its own load-path change. It does not test any
+production loader's project restoration, retry or installation behavior.
 
-Positive cases inspect package UUIDs, source paths and hashes, versions, model
-parent modules, extension attachment, constructor method ownership, shared-lock
-and ephemeris hooks, repeated imports and preserved caller aliases. A harmless
-extension counter probe records direct older-frame behavior and checks the
-`invokelatest` path without constructing a model. It does not establish world-age
-correctness for native constructors or complete benchmark call chains.
+The positive cases record package UUIDs, source paths and hashes, versions, the
+parent modules of the model types, extension attachment, constructor method
+ownership, the shared lock and ephemeris hooks, repeated imports and preserved
+caller aliases. One extension function is called, a counter probe that reads two
+atomic counters. The script records what a direct call from the older frame does
+and requires the call through `invokelatest` to return zero; no model is
+constructed. This does not show world-age correctness for native
+constructors or for full benchmark call chains.
 
-Project, search-path, depot and working-directory observations are retained.
-Environment-variable preservation is checked without writing variable values to
-the report. StaticArrays' actual path and version identify which prepared
-dependency was selected. A Git revision is reported only when it belongs to the
-package directory itself. Source hashes identify source-only snapshots; a folder
-name or supplied path is not independent proof of a revision pin.
+Each report also records the active project, load path, depot path and working
+directory. It checks that the environment variables are unchanged without
+writing them to the report; the only values it records are `JULIA_LOAD_PATH`,
+`JULIA_DEPOT_PATH`, `JULIA_PKG_OFFLINE` and `JULIA_PKG_PRECOMPILE_AUTO`. StaticArrays' path and version show which prepared dependency was
+picked up. A Git revision is reported only when it belongs to the package
+directory itself; for a source-only snapshot, the source hashes identify the
+files. A folder name or a path you pass in is not proof of a revision.
 
-## Interpret the result
+## Reading the result
 
-All cases must pass their distinct expectations for overall diagnostic success.
-Negative cases validate failure boundaries; they do not count as successful
-package loading. Unexpected import errors, incorrect identities, missing reports,
-child failures and timeouts are failures or unmet acceptance, never passing skips.
+The run passes only when every case meets its own expectation; `summary.toml` in
+the output directory records each case. The two `absent_*` cases confirm failure
+boundaries and do not count as successful loading. Unexpected import errors,
+wrong identities, missing reports, failed children and timeouts are failures or
+unmet acceptance, never skips.
 
-An attached extension alone is insufficient: the positive cases also require
-canonical type and constructor-method ownership and unchanged repeated imports.
-The GRAM native-wrapper references must remain unused, and the extension's native
-construction accounting must remain zero. Ordinary package initialization may
-load native dependencies such as SPICE; this check promises no GRAM native model
-construction, native atmosphere queries, worker startup or simulation.
+An attached extension is not enough on its own. The positive cases also require
+canonical type and constructor-method ownership and unchanged repeated imports,
+the GRAM native-wrapper references to stay unset, and the extension's native
+construction counters to stay at zero. Loading the packages may load native
+dependencies such as SPICE, but the check constructs no GRAM model, queries no
+atmosphere, starts no worker and runs no simulation.
 
-The reports always leave native and worker readiness unverified. They do not
-qualify GRAM binaries/data, library architecture, kernel order, model construction,
-copy/serialization, reset/release behavior, scientific outputs, performance,
-clean-machine installation or full runtime benchmark/native-worker execution.
+The report always marks native and worker readiness as unverified. It does not
+qualify GRAM binaries or data, library architecture, kernel order, model
+construction, copying or serialization, reset and release, scientific outputs,
+installation on a clean machine, performance, or full runtime benchmark and
+native-worker execution. A pass
+covers the Julia version and the package sources it observed; repeat it for each
+other combination you want to qualify.
 
-This diagnostic is deliberately outside the default no-GRAM test suite. A future
-hosted job must supply independently prepared pinned wrapper inputs and retain
-its actual observations. Existing hosted checks or a successful local invocation
-must not be relabelled as that job having run.
+A hosted job that runs this check would need its own independently prepared,
+pinned wrapper inputs and would have to keep its observations. Neither the
+existing hosted checks nor a local run count as that job.

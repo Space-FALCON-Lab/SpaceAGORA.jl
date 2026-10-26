@@ -459,10 +459,13 @@ jobs:
       # Qualify the private Mars RAAN study once when a read credential is available.
       # Missing credentials explicitly skip native coverage; supplied credentials
       # make fetch/setup/native failures fatal. Existing licensed inputs are linked.
+      # Dependabot pull requests run with Dependabot's own copy of the secret,
+      # which cannot read the private study, so they take the documented skip;
+      # the check still runs on main after every merge.
       - name: Extracted pinned Mars RAAN native smoke
         if: matrix.shard == 'examples-1'
         env:
-          SPACEAGORA_RESEARCH_READ_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN }}
+          SPACEAGORA_RESEARCH_READ_TOKEN: ${{ github.event.pull_request.user.login != 'dependabot[bot]' && secrets.SPACEFALCON_REPO_READ_TOKEN || '' }}
         run: >-
           python3 -B scripts/ci/run_mission_native_smoke.py
           --workspace "$GITHUB_WORKSPACE"

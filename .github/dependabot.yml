@@ -15,6 +15,23 @@ updates:
       day: "monday"
       time: "06:15"
       timezone: "America/Detroit"
+    # Standard libraries ship with Julia, so their compat follows the `julia`
+    # entry; Dependabot's requirement updates for them only add churn.
+    ignore:
+      - dependency-name: "Artifacts"
+      - dependency-name: "Base64"
+      - dependency-name: "Dates"
+      - dependency-name: "Distributed"
+      - dependency-name: "LinearAlgebra"
+      - dependency-name: "Logging"
+      - dependency-name: "Pkg"
+      - dependency-name: "Printf"
+      - dependency-name: "Random"
+      - dependency-name: "SHA"
+      - dependency-name: "Serialization"
+      - dependency-name: "SparseArrays"
+      - dependency-name: "TOML"
+      - dependency-name: "Test"
 
   - package-ecosystem: "julia"
     directory: "/docs"
@@ -23,3 +40,5 @@ updates:
       day: "monday"
       time: "06:45"
       timezone: "America/Detroit"
+    ignore:
+      - dependency-name: "Dates"

@@ -1,0 +1,41 @@
+name: Shared companion support
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  canonical-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: companion
+          persist-credentials: false
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.12'
+      - name: Read immutable support source
+        id: source
+        run: |
+          julia --startup-file=no --project=@stdlib -e '
+            using TOML
+            pin = TOML.parsefile("companion/SharedSupport.toml")
+            pin["repository"] == "Space-FALCON-Lab/SpaceAGORA.jl" || error("Unexpected support owner")
+            occursin(r"^[0-9a-f]{40}$", pin["revision"]) || error("Support source must be a full commit SHA")
+            open(ENV["GITHUB_OUTPUT"], "a") do io
+                println(io, "revision=", pin["revision"])
+            end'
+      - uses: actions/checkout@v7
+        with:
+          repository: Space-FALCON-Lab/SpaceAGORA.jl
+          ref: ${{ steps.source.outputs.revision }}
+          path: canonical
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/companion_support
+            scripts/sync_companion_support.jl
+          sparse-checkout-cone-mode: false
+      - name: Check generated support against its owner
+        run: julia --startup-file=no --project=@stdlib canonical/scripts/sync_companion_support.jl companion

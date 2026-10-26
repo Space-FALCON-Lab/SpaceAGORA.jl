@@ -1,28 +1,29 @@
 # Optional packages
 
-This directory makes SpaceAGORA's optional integrations easy to find without
-making them required dependencies. The domain folders organize source checkouts;
-each external repository still owns its implementation, releases and tests.
-Loading SpaceAGORA alone does not activate these packages.
+The optional companions live in their own repositories, with their own
+releases and tests. This folder pins the revisions of them that this SpaceAGORA
+commit works with, as Git submodules grouped by domain, and records where the
+separate viewer comes from. `using SpaceAGORA` loads none of them.
 
-| Location | Role |
+| Location | What it holds |
 | --- | --- |
-| [robotics/](robotics/README.md) | Pinned HYPR and MuJoCo repositories for motion planning and mechanical scenes. HYPR supports both spacecraft RPO and robot-arm planning. |
-| [gnc/](gnc/README.md) | Pinned SpaceAGORAEDG repository for experimental energy-depletion guidance; core retains simulation lifecycle and actuation. |
-| [VisualizerSource.toml](VisualizerSource.toml) | Source pin for the separate SpaceAGORAVisualizer installer; the renderer is not stored in this tree. |
-| [HYPRSource.toml](HYPRSource.toml) | Immutable HYPR source pin for the standalone installer; it must agree with the external HYPR gitlink. |
+| [robotics/](robotics/README.md) | HYPR (motion planning for both spacecraft rendezvous and robot arms) and SpaceAGORAMuJoCo (contact scenes). |
+| [gnc/](gnc/README.md) | SpaceAGORAEDG, the energy-depletion guidance kernels. |
+| `OptionalPackages.toml` | Name, path, repository, UUID and version of the three companions above. Their revisions are the submodule gitlinks. |
+| `HYPRSource.toml` | HYPR's repository and revision for the standalone installer `scripts/setup_hypr.jl`. `scripts/optional_packages.jl` refuses to run if it differs from the HYPR gitlink. |
+| `VisualizerSource.toml` | The SpaceAGORAVisualizer revision that `scripts/setup_visualizer.jl` installs. The viewer is not a submodule here. |
 
-GRAMSuite keeps its submodule at `data/GRAMSuite.jl`. Browser rendering lives in
-[SpaceAGORAVisualizer.jl](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl),
-which retains the renderer's attribution and third-party notices. SpaceAGORA
-owns saved simulation data, scene metadata and portable viewer JSON; the
-companion turns that data into HTML. See the
-[mission workflow](../docs/src/user/mission_workflows.md) for a new run and the
-[visualization guide](../docs/src/user/visualization.md) for saved results.
+The GRAMSuite wrapper is a submodule too, at `data/GRAMSuite.jl`. SpaceAGORA
+writes the saved results, scene metadata and viewer JSON;
+[SpaceAGORAVisualizer.jl](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl)
+turns them into an HTML page and carries the renderer's attribution and
+third-party notices. See [Mission Workflows](../docs/src/user/mission_workflows.md)
+to set up a run and [Interactive Visualization](../docs/src/user/visualization.md)
+to view saved results.
 
-## Choose an integration
+## Install a companion
 
-Run these commands from a SpaceAGORA Git clone, with Julia 1.12 and Git available:
+From the root of a SpaceAGORA Git clone, with Julia 1.12 and Git:
 
 ```sh
 julia --startup-file=no scripts/optional_packages.jl status
@@ -31,37 +32,35 @@ julia --startup-file=no scripts/optional_packages.jl check hypr
 julia --startup-file=no scripts/optional_packages.jl setup hypr /path/to/hypr-env
 ```
 
-Replace `hypr` with `mujoco` or `edg` to select another companion. `status` reports the
-optional checkouts. `checkout` acquires only the selected repository at the
-recorded Git revision, without recursively initializing other submodules.
-`check` verifies its revision, package identity, version and clean state; it is
-a source check, not a simulation or native-library test. `setup` performs the
-selected checkout and verification, then delegates to that package's existing
-installer with this SpaceAGORA checkout. The destination must be a separate
-Julia environment, outside the source checkouts. Package installation may need
-network access.
+Use `mujoco` or `edg` in place of `hypr` for the other companions.
 
-The helper does not reset a modified or mismatched checkout. Inspect and preserve
-local work before changing it. Keep the source checkouts in place while using an
-environment that refers to their paths. See the [installation guide](../docs/src/user/installation_environment.md)
-for loading each integration and for standalone installation routes.
+- `status` lists each companion's path and pinned revision and says whether it
+  is checked out. It makes no network requests and writes nothing.
+- `checkout` initializes only the selected submodule, at its pinned revision,
+  without touching the others.
+- `check` confirms that the checkout is at the pinned revision, comes from the
+  declared repository, has the declared name, UUID and version, and has no local
+  changes. It does not run the package or its tests.
+- `setup` does `checkout` and `check`, then runs the companion's own installer
+  with this SpaceAGORA checkout: `scripts/setup_hypr.jl` for HYPR, the
+  companion's `scripts/setup_env.jl` for MuJoCo and EDG. The environment
+  directory must be outside the SpaceAGORA checkout. Installing can download
+  packages.
 
-## Pins and source archives
+The helper never resets a checkout with local changes or at another revision;
+it stops and asks you to sort that out. The environment it creates points at
+the checkout by path, so leave the checkout in place while you use it. The
+[installation guide](../docs/src/user/installation_environment.md) shows how to
+load each companion and the standalone installation routes.
 
-The source records serve different installation routes. `OptionalPackages.toml`
-describes the HYPR, MuJoCo and EDG checkouts; their Git revisions are recorded by
-gitlinks. `HYPRSource.toml` also supplies HYPR's revision to its
-standalone installer, while `VisualizerSource.toml` pins the separate
-visualizer installer. Keep these routes compatible when updating a companion.
-Combining the records requires migrating their readers and validating both clone
-and standalone installation; removing a record alone would break a supported
-route.
+## Moving a pin
 
-The parent Git commit records each external source revision as a submodule
-gitlink. Review updates to these pins together with the compatibility evidence;
-the helper does not follow a moving branch to choose a newer package.
+A companion moves to a new revision when its gitlink changes in a SpaceAGORA
+commit; for HYPR, `HYPRSource.toml` must change with it. Review such a change
+together with the companion's compatibility evidence. The helper never follows
+a branch to pick up a newer revision.
 
-GitHub's source ZIP does not contain submodule contents or the Git metadata used
-to verify these pins. Use a Git clone for the shared commands. Alternatively,
-follow a companion's standalone installation guide. A folder's presence alone
-does not mean that the package has been installed or loaded in Julia.
+GitHub's source ZIP leaves out submodule contents and the Git metadata needed
+to check these pins, so the commands above need a Git clone. Without one,
+follow a companion's own installation guide. A folder that exists here is not
+necessarily installed or loaded in your Julia environment.

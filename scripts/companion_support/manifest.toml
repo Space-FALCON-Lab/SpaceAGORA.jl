@@ -1,0 +1,41 @@
+format = 1
+
+[[files]]
+source = "installation.jl"
+destination = "scripts/support/installation.jl"
+packages = ["SpaceAGORAEDG", "SpaceAGORAMuJoCo"]
+
+[[files]]
+source = "installation_contract_tests.jl"
+destination = "test/support/installation_contract.jl"
+packages = ["SpaceAGORAEDG", "SpaceAGORAMuJoCo"]
+
+[[files]]
+source = "core_access.jl"
+destination = "test/core_access.jl"
+packages = ["HYPR", "SpaceAGORAEDG", "SpaceAGORAMuJoCo"]
+
+[[files]]
+source = "shared-support.yml"
+destination = ".github/workflows/shared-support.yml"
+packages = ["HYPR", "SpaceAGORAEDG", "SpaceAGORAMuJoCo", "SpaceAGORAVisualizer"]
+
+[[files]]
+source = "mission_history.jl"
+destination = "src/interfaces/analysis/visualization/scene/mission_history.jl"
+packages = ["SpaceAGORA"]
+
+[[files]]
+source = "mission_history.jl"
+destination = "src/mission_history.jl"
+packages = ["SpaceAGORAVisualizer"]
+
+[[files]]
+source = "mission_history_cases.jl"
+destination = "test/support/mission_history_cases.jl"
+packages = ["SpaceAGORA", "SpaceAGORAVisualizer"]
+
+[[files]]
+source = "mission_history_contract.jl"
+destination = "test/support/mission_history_contract.jl"
+packages = ["SpaceAGORA", "SpaceAGORAVisualizer"]

@@ -35,7 +35,7 @@ takes precedence; the vendored project is an append-only discovery fallback.
 The maintained runtime analysis uses package-loaded SpaceAGORA models and the
 canonical GRAM extension. Its native-backed results use a different numerical
 route from historical raw-loaded measurements; see the
-[migration evidence](../../quality/runtime_benchmark_loading_migration.md). GRAM-backed
+[migration evidence](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/blob/137b55d43066054ab9534c6d9123ce9b5dffd20d/docs/quality/runtime_benchmark_loading_migration.md). GRAM-backed
 cases also need the native GRAM library built. The CLI runs its child in the
 examples environment; prepare it with `julia --startup-file=no examples/setup.jl`
 before execution.

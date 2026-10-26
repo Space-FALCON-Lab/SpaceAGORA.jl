@@ -65,17 +65,17 @@ function load_definition(path::String, wanted::Symbol)
     error("Required plotting definition $wanted not found in $path")
 end
 
+include(joinpath(RUNTIME, "reporting", "RuntimeReports.jl"))
+using .RuntimeReports: ProfileSpec, summarize_per_orbit_results, summarize_entry_duration_results,
+    summarize_density_backend_breakdown
+using .RuntimeReports: _parse_bool_env
 const HELPERS = joinpath(RUNTIME, "case_catalog", "profile_types_and_helpers.jl")
-for name in (:ProfileSpec, :_parse_bool_env, :_safe_unique_join)
-    load_definition(HELPERS, name)
-end
 for name in (:_plot_label, :_plot_axis_label, :_plot_number)
-    load_definition(joinpath(RUNTIME, "reporting", "rollout_gates.jl"), name)
+    load_definition(joinpath(RUNTIME, "reporting", "plots_and_reporting.jl"), name)
 end
 struct BenchmarkCase end
 const PERF_BASELINE_SCENARIO = "baseline_fixture"
-include(joinpath(RUNTIME, "reporting", "summaries.jl"))
-load_definition(joinpath(@__DIR__, "benchmark_report_tests.jl"), :raw_row)
+include(joinpath(@__DIR__, "..", "..", "support", "runtime_report_fixtures.jl"))
 _plot_ready() = true
 const _runtime_plot_theme_applied = Ref(false)
 for name in (:_plot_wrapped_label, :_ensure_runtime_plot_theme!, :_plot_margins,

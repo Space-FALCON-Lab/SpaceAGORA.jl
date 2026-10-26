@@ -7,100 +7,18 @@ using Statistics
 
 const RUNTIME = normpath(joinpath(@__DIR__, "..", "..", "..", "benchmarks", "studies", "performance_runtime_analysis"))
 
-# Load actual small definitions without the catalog's process-policy state or
-# main.jl's unconditional GRAMSuite import. No simulation or plotting is run.
-function load_definition(file::String, wanted::Symbol)
-    for expr in Meta.parseall(read(file, String)).args
-        expr isa Expr || continue
-        node = expr.head == :macrocall ? expr.args[end] : expr
-        node isa Expr || continue
-        name = if node.head == :struct
-            node.args[2]
-        elseif node.head == :function
-            signature = node.args[1]
-            signature = signature.head == :(::) ? signature.args[1] : signature
-            signature.args[1]
-        else
-            nothing
-        end
-        if name == wanted
-            Core.eval(@__MODULE__, expr)
-            return
-        end
-    end
-    error("Required reporting definition $wanted not found in $file")
-end
-const HELPERS = joinpath(RUNTIME, "case_catalog", "profile_types_and_helpers.jl")
-load_definition(HELPERS, :ProfileSpec)
-load_definition(HELPERS, :_safe_unique_join)
-for name in (:_fmt, :_scenario_metric)
-    load_definition(joinpath(RUNTIME, "reporting", "plots_and_reporting.jl"), name)
-end
-
-# The summaries file declares an unused BenchmarkCase method. Its simulation
-# type is deliberately absent here. Host/settings providers are fixed context
-# so recorded provenance cannot accidentally equal the fallback machine.
-struct BenchmarkCase end
+include(joinpath(RUNTIME, "reporting", "RuntimeReports.jl"))
+using .RuntimeReports: ProfileSpec, summarize_per_orbit_results, summarize_entry_duration_results,
+    summarize_density_backend_breakdown
 const PERF_BASELINE_SCENARIO = "baseline_fixture"
 const FALLBACK = (hardware_class="fallback-class", machine_label="fallback-machine",
     host_name="fallback-host", cpu_name="fallback-cpu", cpu_threads=3,
     julia_threads=2, os="fallback-os", arch="fallback-arch")
-_runtime_hardware_snapshot() = FALLBACK
-_perf_default_solver_mode(::String) = "fixture-default"
-_perf_solver_mode_env(::String) = "fixture-effective"
-_split_rollout_enabled() = false
-_split_rollout_enforce() = false
-_split_rollout_case_names() = String[]
-_split_rollout_solver_variants() = String[]
-_multirate_rollout_enabled() = false
-_multirate_rollout_enforce() = false
-_multirate_rollout_case_names() = String[]
-_multirate_rollout_max_slowdown_ratio() = 1.0
-include(joinpath(RUNTIME, "reporting", "summaries.jl"))
-include(joinpath(RUNTIME, "reporting", "report_writing.jl"))
 const SPEC = ProfileSpec(name="quick", repeats=1, warmup=0, max_attempts=2,
     mission_short_s=120.0, mission_long_s=600.0, montecarlo_samples=0,
     montecarlo_mission_s=120.0)
 
-# Synthetic supplied attempt rows, following the existing copy-overhead gate's
-# schema. This checks reporting, not whether an upstream collector retains retries.
-function raw_row(; kwargs...)
-    return merge((category="baseline", scenario=PERF_BASELINE_SCENARIO,
-        description="Synthetic reporting fixture", satellites=1, orientation=false,
-        mission_time_s=120.0, outer_route="serial", outer_threads_safe=true,
-        density_parallel_mode="serial", control_parallel_mode="serial",
-        multibody_parallel_mode="serial", dt_max_orbit_s=10.0,
-        dynamic_effectors="fixture", control_effectors="none", solve_success=true,
-        total_time_s=2.0, solve_time_s=1.5, copy_time_s=0.5,
-        copy_compile_time_s=0.0, solve_compile_time_s=0.0,
-        copy_gctime_s=0.0, solve_gctime_s=0.0,
-        total_bytes_mb=12.0, copy_bytes_mb=3.0, solve_bytes_mb=9.0,
-        copy_alloc_calls=100, solve_alloc_calls=300, saved_points=10,
-        accepted_steps=20, rejected_steps=0, solver_mode="auto",
-        solver_sequence="Tsit5", solver_fallback_used=false,
-        solver_fallback_count=0, solver_fallback_trigger=missing,
-        policy_threads_enabled_total=0, policy_decisions_total=0,
-        policy_density_threads_enabled=0, policy_control_threads_enabled=0,
-        policy_multibody_threads_enabled=0, policy_other_threads_enabled=0,
-        sim_seconds_per_wall_second=60.0, satellite_sim_seconds_per_wall_second=60.0,
-        nbody_spkpos_runtime_calls=0, nbody_spkpos_cache_build_calls=0,
-        nbody_spkpos_total_calls=0, srp_spkpos_runtime_calls=0,
-        srp_spkpos_cache_build_calls=0, srp_spkpos_total_calls=0,
-        planet_pxform_runtime_calls=0, planet_pxform_cache_build_calls=0,
-        planet_pxform_total_calls=0, attempt=1), (; kwargs...))
-end
-function render_report(raw, summary=summarize_results(raw), entry=nothing; kwargs...)
-    # Writing must not reorder or alter any supplied table.
-    tables = Any[raw, summary, entry, values(kwargs)...]
-    before = deepcopy(tables)
-    text = mktempdir() do dir
-        path = joinpath(dir, "report.md")
-        write_report(path, SPEC, raw, summary, DataFrame(), entry; kwargs...)
-        read(path, String)
-    end
-    @test isequal(tables, before)
-    return text
-end
+include(joinpath(@__DIR__, "../../support", "runtime_report_fixtures.jl"))
 entry_section(text) = last(split(text, "## Entry-Duration Sweep Results"))
 
 @testset "recorded report provenance and optional stage columns" begin

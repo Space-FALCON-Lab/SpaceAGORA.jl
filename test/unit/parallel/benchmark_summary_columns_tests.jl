@@ -6,27 +6,9 @@ using Statistics
 
 const RUNTIME = normpath(joinpath(@__DIR__, "..", "..", "..", "benchmarks", "studies", "performance_runtime_analysis"))
 
-# Select the real formatting helper without the catalog's process-policy state.
-function load_definition(path::String, wanted::Symbol)
-    for expr in Meta.parseall(read(path, String)).args
-        expr isa Expr || continue
-        node = expr.head == :macrocall ? expr.args[end] : expr
-        node isa Expr && node.head == :function || continue
-        signature = node.args[1]
-        signature = signature.head == :(::) ? signature.args[1] : signature
-        if signature.args[1] == wanted
-            Core.eval(@__MODULE__, expr)
-            return
-        end
-    end
-    error("Required summary helper $wanted not found in $path")
-end
-load_definition(joinpath(RUNTIME, "case_catalog", "profile_types_and_helpers.jl"), :_safe_unique_join)
-
-# The source declares an unrelated BenchmarkCase method. None of its simulation
-# methods are invoked; all aggregation and statistics below are production code.
-struct BenchmarkCase end
-include(joinpath(RUNTIME, "reporting", "summaries.jl"))
+include(joinpath(RUNTIME, "reporting", "RuntimeReports.jl"))
+using .RuntimeReports: ProfileSpec, summarize_per_orbit_results, summarize_entry_duration_results,
+    summarize_density_backend_breakdown
 
 function captured_summary(f, raw)
     before = deepcopy(raw)

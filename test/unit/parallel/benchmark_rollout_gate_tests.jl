@@ -7,56 +7,27 @@ using LinearAlgebra
 
 const RUNTIME = normpath(joinpath(@__DIR__, "..", "..", "..", "benchmarks", "studies", "performance_runtime_analysis"))
 
-# Select actual definitions without main.jl's unconditional native imports or
-# the catalog's process-policy state. Decisions, thresholds and writers below
-# are production code; only warmup/simulation and their configuration are fake.
-function load_definition(file::String, wanted::Symbol)
-    for expr in Meta.parseall(read(file, String)).args
-        expr isa Expr || continue
-        node = expr.head == :macrocall ? expr.args[end] : expr
-        node isa Expr || continue
-        name = if node.head == :struct
-            node.args[2]
-        elseif node.head == :function
-            signature = node.args[1]
-            signature = signature.head == :(::) ? signature.args[1] : signature
-            signature.args[1]
-        else
-            nothing
-        end
-        if name == wanted
-            Core.eval(@__MODULE__, expr)
-            return
-        end
-    end
-    error("Required gate definition $wanted not found in $file")
-end
+include(joinpath(RUNTIME, "reporting", "RuntimeReports.jl"))
+using .RuntimeReports: ProfileSpec, summarize_per_orbit_results, summarize_entry_duration_results,
+    summarize_density_backend_breakdown
 struct SimulationConfiguration
     mission_configuration::NamedTuple
     dynamics_model::NamedTuple
 end
-const HELPERS = joinpath(RUNTIME, "case_catalog", "profile_types_and_helpers.jl")
-for name in (:ProfileSpec, :BenchmarkCase, :_parse_bool_env, :_parse_positive_int_env,
-             :_parse_nonnegative_float_env, :_perf_case_name_filter,
-             :_exclude_entry_scenarios, :_perf_smoke_mode,
-             :_multirate_env_float_or_missing, :_multirate_env_int_or_missing,
-             :_multirate_rollout_setting_snapshot, :_split_rollout_solver_variants)
-    load_definition(HELPERS, name)
+Base.@kwdef struct BenchmarkCase
+    name::String
+    category::String
+    description::String
+    args_template::SimulationConfiguration
+    run_in_quick::Bool = true
+    solver_mode_override::Union{Nothing, String} = nothing
+    split_imex_solver_override::Union{Nothing, String} = nothing
+    entry_target_count_override::Union{Nothing, Int} = nothing
+    env_overrides::Vector{Pair{String, String}} = Pair{String, String}[]
 end
-for kind in ("split", "multirate"), suffix in ("enforce", "case_names", "max_slowdown_ratio",
-        "pos_rel_tol", "vel_rel_tol", "q_angle_tol_rad", "omega_rel_tol", "sample_count")
-    load_definition(HELPERS, Symbol("_", kind, "_rollout_", suffix))
-end
-load_definition(joinpath(RUNTIME, "measurement", "montecarlo.jl"), :selected_cases)
-for name in (:_case_with_solver, :_solution_state_at, :_relative_vector_delta, :_quaternion_angle_delta_rad)
-    load_definition(joinpath(RUNTIME, "reporting", "summaries.jl"), name)
-end
-load_definition(joinpath(RUNTIME, "reporting", "plots_and_reporting.jl"), :_fmt)
-for name in (:_trajectory_delta_metrics, :_write_split_rollout_gate_report,
-             :_write_multirate_rollout_gate_report, :evaluate_split_rollout_gate,
-             :evaluate_multirate_rollout_gate)
-    load_definition(joinpath(RUNTIME, "reporting", "rollout_gates.jl"), name)
-end
+
+include(joinpath(RUNTIME, "reporting", "runtime_adapters.jl"))
+using .RuntimeReports: _trajectory_delta_metrics, _solution_state_at, _relative_vector_delta, _quaternion_angle_delta_rad
 const SPEC = ProfileSpec(name="quick", repeats=1, warmup=0, max_attempts=1,
     mission_short_s=120.0, mission_long_s=600.0, montecarlo_samples=0,
     montecarlo_mission_s=120.0)
@@ -231,6 +202,35 @@ end
 @testset "rollout fixture avoids simulation and native imports" begin
     for name in (:SpaceAGORA, :SimulationModel, :GRAMSuite, :SPICE, :Plots)
         @test !isdefined(@__MODULE__, name)
+    end
+end
+
+# Exercise the actual runtime adapter with deliberately distinct provenance and
+# environment settings. The numerical runner remains the fake callback above.
+_runtime_hardware_snapshot() = (machine_label="adapter-machine",)
+_perf_default_solver_mode(profile::String) = "default-" * profile
+_perf_solver_mode_env(profile::String) = "effective-" * profile
+@testset "runtime adapter captures report provenance and guardrails" begin
+    withenv("SPACEAGORA_PERF_SPLIT_ROLLOUT_GATE" => "1",
+            "SPACEAGORA_PERF_SPLIT_ROLLOUT_ENFORCE" => "0",
+            "SPACEAGORA_PERF_SPLIT_ROLLOUT_CASES" => "good,boundary",
+            "SPACEAGORA_PERF_SPLIT_ROLLOUT_SOLVERS" => "kencarp58,kencarp4",
+            "SPACEAGORA_PERF_MULTIRATE_ROLLOUT_GATE" => "0",
+            "SPACEAGORA_PERF_MULTIRATE_ROLLOUT_ENFORCE" => "1",
+            "SPACEAGORA_PERF_MULTIRATE_ROLLOUT_CASES" => "slow",
+            "SPACEAGORA_PERF_MULTIRATE_MAX_SLOWDOWN_RATIO" => "1.75") do
+        context = _runtime_report_context(SPEC)
+        @test context.hardware == (machine_label="adapter-machine",)
+        @test context.solver_mode_default == "default-quick"
+        @test context.solver_mode_effective == "effective-quick"
+        @test context.split_rollout_enabled
+        @test !context.split_rollout_enforce
+        @test context.split_rollout_case_names == ["good", "boundary"]
+        @test context.split_rollout_solver_variants == ["kencarp58", "kencarp4"]
+        @test !context.multirate_rollout_enabled
+        @test context.multirate_rollout_enforce
+        @test context.multirate_rollout_case_names == ["slow"]
+        @test context.multirate_rollout_max_slowdown_ratio == 1.75
     end
 end
 end # module

@@ -62,10 +62,12 @@ end
 const _PERF_OUTER_ROUTE_STATE = Ref(nothing)
 _outer_route_features(case; kwargs...) = case.name
 _outer_route_tuning() = nothing
+include(joinpath(RUNTIME, "reporting", "RuntimeReports.jl"))
+using .RuntimeReports: ProfileSpec, selected_cases, summarize_per_orbit_results, summarize_entry_duration_results,
+    summarize_density_backend_breakdown
+using .RuntimeReports: _perf_smoke_mode, _perf_case_name_filter, _exclude_entry_scenarios
 const HELPERS = joinpath(RUNTIME, "case_catalog", "profile_types_and_helpers.jl")
-for name in (:ProfileSpec, :BenchmarkCase, :ParallelPriorityPlan, :_safe_div,
-             :_safe_unique_join, :_parse_bool_env, :_perf_smoke_mode,
-             :_perf_case_name_filter, :_exclude_entry_scenarios)
+for name in (:BenchmarkCase, :ParallelPriorityPlan, :_safe_div)
     load_definition(HELPERS, name)
 end
 const BACKEND = Ref(:none)
@@ -125,7 +127,7 @@ end
 # Reuse the established synthetic report schema, not an independent accounting
 # implementation. These measurement values are deterministic and not timings.
 const PERF_BASELINE_SCENARIO = "baseline_fixture"
-load_definition(REPORT_FIXTURE, :raw_row)
+include(joinpath(@__DIR__, "..", "..", "support", "runtime_report_fixtures.jl"))
 function measure_case(case, profile, rep; seed=missing, attempt=1, plan=nothing, kwargs...)
     behavior = case.args_template.behavior
     success = behavior == :early || (behavior in (:retry, :metadata) && attempt == 2)
@@ -160,19 +162,8 @@ end
 include(joinpath(RUNTIME, "measurement", "montecarlo.jl"))
 include(joinpath(RUNTIME, "measurement", "per_orbit.jl"))
 include(joinpath(RUNTIME, "measurement", "entry_duration.jl"))
-include(joinpath(RUNTIME, "reporting", "summaries.jl"))
-for name in (:_fmt, :_scenario_metric)
-    load_definition(joinpath(RUNTIME, "reporting", "plots_and_reporting.jl"), name)
-end
 const FALLBACK = (hardware_class="fixture", machine_label="fixture", host_name="fixture",
     cpu_name="fixture", cpu_threads=2, julia_threads=2, os="fixture", arch="fixture")
-for name in (:_runtime_hardware_snapshot, :_perf_default_solver_mode, :_perf_solver_mode_env,
-    :_split_rollout_enabled, :_split_rollout_enforce, :_split_rollout_case_names,
-    :_split_rollout_solver_variants, :_multirate_rollout_enabled, :_multirate_rollout_enforce,
-    :_multirate_rollout_case_names, :_multirate_rollout_max_slowdown_ratio, :render_report)
-    load_definition(REPORT_FIXTURE, name)
-end
-include(joinpath(RUNTIME, "reporting", "report_writing.jl"))
 
 function reset!(backend=:none; mc=false)
     BACKEND[] = backend; MC_ENABLED[] = mc; WORKER_TRANSPORT[] = 0

@@ -3,7 +3,7 @@ using Test
 
 @testset "report module imports without simulation or process setup" begin
     source = normpath(joinpath(@__DIR__, "..", "..", "..", "benchmarks", "studies",
-        "performance_runtime_analysis", "reporting", "RuntimeReports.jl"))
+        "performance_runtime_analysis", "reporting", "runtime_reports.jl"))
     # A fresh process detects transitive native imports even when the enclosing
     # unit shard has already loaded SpaceAGORA or plotting packages.
     script = raw"""

@@ -27,7 +27,7 @@ end
 load_core_definition(:Plots)
 load_core_definition(:load_definition)
 
-include(joinpath(RUNTIME, "reporting", "RuntimeReports.jl"))
+include(joinpath(RUNTIME, "reporting", "runtime_reports.jl"))
 using .RuntimeReports: ProfileSpec, summarize_per_orbit_results, summarize_entry_duration_results,
     summarize_density_backend_breakdown
 using .RuntimeReports: _parse_bool_env, _safe_stat

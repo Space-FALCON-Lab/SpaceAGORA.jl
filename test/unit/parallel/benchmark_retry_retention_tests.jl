@@ -62,7 +62,7 @@ end
 const _PERF_OUTER_ROUTE_STATE = Ref(nothing)
 _outer_route_features(case; kwargs...) = case.name
 _outer_route_tuning() = nothing
-include(joinpath(RUNTIME, "reporting", "RuntimeReports.jl"))
+include(joinpath(RUNTIME, "reporting", "runtime_reports.jl"))
 using .RuntimeReports: ProfileSpec, selected_cases, summarize_per_orbit_results, summarize_entry_duration_results,
     summarize_density_backend_breakdown
 using .RuntimeReports: _perf_smoke_mode, _perf_case_name_filter, _exclude_entry_scenarios

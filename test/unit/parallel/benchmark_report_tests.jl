@@ -7,7 +7,7 @@ using Statistics
 
 const RUNTIME = normpath(joinpath(@__DIR__, "..", "..", "..", "benchmarks", "studies", "performance_runtime_analysis"))
 
-include(joinpath(RUNTIME, "reporting", "RuntimeReports.jl"))
+include(joinpath(RUNTIME, "reporting", "runtime_reports.jl"))
 using .RuntimeReports: ProfileSpec, summarize_per_orbit_results, summarize_entry_duration_results,
     summarize_density_backend_breakdown
 const PERF_BASELINE_SCENARIO = "baseline_fixture"

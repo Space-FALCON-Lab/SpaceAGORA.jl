@@ -17,7 +17,7 @@ const SM = SpaceAGORA.SimulationModel
 const C = SpaceAGORA.Conformance
 
 export force_torque_instances, force_torque_exemptions, spice_available, sensor_instances, sensor_exemptions,
-    gnc_instances, gnc_exemptions, algorithm_instances, algorithm_exemptions, family_instances
+    aerobraking_mpc_controls, gnc_instances, gnc_exemptions, algorithm_instances, algorithm_exemptions, family_instances
 
 const SPICE_PATH = joinpath(pkgdir(SpaceAGORA), "data", "GRAMSuite.jl", "GRAM Suite 2.0", "SPICE")
 spice_available() = isdir(SPICE_PATH)
@@ -69,6 +69,34 @@ const SPICE_REASON = "needs SPICE ephemerides (the engine refuses it under Simpl
 without_run(model) = (model=model, fixture=nothing, runs=false, reason=SPICE_REASON)
 
 """
+A maximum-depletion aerobraking MPC controller for spacecraft 1 and a campaign
+supervisor pairing it with an energy-targeting controller.
+"""
+function aerobraking_mpc_controls()
+    config(mode) = SpaceAGORA.AerobrakingMPCConfig(
+        mode=mode, bus_reference_area_m2=5.74, controllable_area_m2=5.7, mass_kg=650.0,
+        drag_coefficient=2.2, qdot_max_w_cm2=0.29, heat_load_max_j_cm2=40.0, drag_max_n=7.55,
+        area_slew_max_m2_s=0.2, use_constraints=true, use_slew_constraint=false,
+        use_qdot_constraint=true, use_heat_load_constraint=false, use_drag_constraint=true,
+        target_energy_mj_kg=-6.41, area_weight=1.0e-5, area_slew_weight=0.0, slack_weight=1.0e3,
+        target_energy_weight=5.0e-10, max_depletion_energy_weight=1.0, osqp_eps_abs=1.0e-5,
+        osqp_eps_rel=1.0e-5, osqp_max_iter=10_000)
+    controller(mode) = SpaceAGORA.AerobrakingMPCControlModel(
+        config=config(mode), spacecraft_index=1, controlled_panel_links=(2, 3),
+        min_alpha_rad=1.0e-4, max_alpha_rad=pi / 2, solve_interval_s=10.0,
+        build_reference_on_tick=true, qp_max_nodes=40,
+        reference=SpaceAGORA.AerobrakingMPCReferenceConfig(
+            h_cut_m=300.0e3, max_coast_steps=2_000_000, max_pass_steps=20_000),
+        fallback_area_m2=11.44, prediction_latitude_rad=0.0, prediction_longitude_rad=0.0,
+        prediction_wind=false, solve_trigger_altitude_m=300.0e3)
+    single = controller(SpaceAGORA.MaxEnergyDepletionMode())
+    campaign = SpaceAGORA.AerobrakingMPCCampaignControlModel(
+        maximum_depletion_control=controller(SpaceAGORA.MaxEnergyDepletionMode()),
+        targeting_control=controller(SpaceAGORA.TargetEnergyMode()))
+    return single, campaign
+end
+
+"""
 Fresh instances of the built-in force/torque models, each with its fixture.
 """
 function force_torque_instances()
@@ -79,6 +107,7 @@ function force_torque_instances()
         on_atmosphere(aero.AerodynamicCoefficientConstant()),
         on_atmosphere(mesh_surrogate_model()),
         on_atmosphere(aero.AerodynamicCoefficientNoBallisticFlight()),
+        on_atmosphere(SpaceAGORA.AerodynamicCommandedAreaDragModel()),
         on_atmosphere(SpaceAGORA.AerodynamicCoefficientfM()),
         on_atmosphere(SpaceAGORA.TelemetryVerification.ScaledAerodynamicCoefficientfM(SpaceAGORA.AerodynamicCoefficientfM(), 1.1)),
         on_fixture(gravity.ConstantGravityModel()),
@@ -161,6 +190,9 @@ function gnc_instances()
     edg_reason = "energy-depletion guidance and control need the optional SpaceAGORAEDG package, an atmosphere " *
         "and each other; checked without a run"
     apollo_reason = "a lunar descent law that needs its landing-site configuration and terrain; checked without a run"
+    mpc_reason = "the KS aerobraking MPC plans an atmospheric pass of a spacecraft with articulated panel links; " *
+        "checked without a run"
+    aerobraking_mpc, aerobraking_campaign = aerobraking_mpc_controls()
     return [
         full(:guidance_model, SM.GuidanceModels.AerobrakingCampaignPropulsiveManeuverGuidanceModel(
             maneuver_orbit_number=[2, 3], maneuver_Δv=[5.0, -3.0])),
@@ -174,6 +206,8 @@ function gnc_instances()
         full(:control_model, SM.ThrusterModels.BaseThrusterModel(thrust=[0.5], direction=[0.0], Δv=[0.1],
             start_burn_time=[5.0], stop_burn_time=[20.0], Isp=[300.0])),
         static(:control_model, SpaceAGORA.AerobrakingEnergyDepletionControlModel(edg, edg_state()), edg_reason),
+        static(:control_model, aerobraking_mpc, mpc_reason),
+        static(:control_model, aerobraking_campaign, mpc_reason),
         static(:control_model, SpaceAGORA.ApolloDescentControlModel(SpaceAGORA.ApolloDescentControlConfig(), apollo,
             SpaceAGORA.ApolloDescentState(1)), apollo_reason),
     ]

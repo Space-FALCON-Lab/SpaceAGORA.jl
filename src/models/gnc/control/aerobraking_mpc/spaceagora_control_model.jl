@@ -8,14 +8,19 @@ resulting exposed-area plan with the panels in `controlled_panel_links`,
 clamping each command to the runtime drag, heat-rate, heat-load and slew
 limits. With `solve_trigger_altitude_m` it solves once per pass, when the
 spacecraft descends through that altitude; otherwise at most every
-`solve_interval_s` seconds. Declare it in a `ControlModel` or on the spacecraft.
+`solve_interval_s` seconds, except while it climbs out inside the reference
+interface (`reference.h_cut_m`). The prediction runs in a non-rotating frame
+aligned with the planet-fixed frame at the solve time, so J2 and the
+co-rotating atmosphere act about the planet's pole, and the atmosphere is
+sampled at the run's time and planet-fixed position. The heat-load estimate
+restarts at each atmosphere entry. Declare it in a `ControlModel` or on the
+spacecraft.
 """
 Base.@kwdef mutable struct AerobrakingMPCControlModel <: AbstractControlEffectorModel
     config::AerobrakingMPCConfig
     state::AerobrakingMPCState = AerobrakingMPCState()
     spacecraft_index::Int
     controlled_panel_links::Tuple{Vararg{Int}}
-    control_dt_s::Float64
     min_alpha_rad::Float64
     max_alpha_rad::Float64
     solve_interval_s::Float64
@@ -79,16 +84,32 @@ function _mpc_interpolated_plan_area(model::AerobrakingMPCControlModel, t::Float
     return (1.0 - λ) * areas[idx] + λ * areas[idx + 1]
 end
 
-function _mpc_relative_speed(pos, vel, params::AerobrakingMPCParams)
-    return norm(vel - ks_rotation_cross_matrix(params) * pos)
+# Rotation from the inertial (J2000) frame to the planet-fixed frame at run time
+# `t`, as the engine uses for the atmosphere; identity outside a run.
+function _mpc_planet_frame_rotation(p, t::Float64)::SMatrix{3, 3, Float64, 9}
+    hasproperty(p, :shared_buffers) || return SMatrix{3, 3, Float64, 9}(I)
+    environment = p.args.environment_model
+    return ephemerides_frame_lpi(environment.ephemerides_model, environment.planet,
+        p.shared_buffers.et_start[] + t)
+end
+
+# The planet-fixed position and planet-relative velocity of an inertial state.
+function _mpc_planet_fixed_state(p, pos::SVector{3, Float64},
+    vel::SVector{3, Float64}, t::Float64)
+    rotation = _mpc_planet_frame_rotation(p, t)
+    omega = _planet_rotation_rate_rad_s(p.args.environment_model.planet)
+    pos_pf = rotation * pos
+    vel_pf = rotation * vel - cross(SVector{3, Float64}(0.0, 0.0, omega), pos_pf)
+    return pos_pf, vel_pf, rotation
 end
 
 function _mpc_runtime_atmosphere(model::AerobrakingMPCControlModel, p,
-    pos::SVector{3, Float64}, t::Float64)
+    pos::SVector{3, Float64}, vel::SVector{3, Float64}, t::Float64)
     density_model = p.args.environment_model.density_model
     wind = p.args.environment_model.wind
+    pos_pf, vel_pf, _ = _mpc_planet_fixed_state(p, pos, vel, t)
     altitude_m, latitude_rad, longitude_rad =
-        rtolatlong(pos, p.args.environment_model.planet)
+        rtolatlong(pos_pf, p.args.environment_model.planet)
     rho, temperature, _ = getDensity(
         density_model,
         altitude_m,
@@ -98,7 +119,7 @@ function _mpc_runtime_atmosphere(model::AerobrakingMPCControlModel, p,
         model.prediction_wind && wind,
         p,
     )
-    return max(0.0, Float64(rho)), max(Float64(temperature), eps(Float64))
+    return max(0.0, Float64(rho)), max(Float64(temperature), eps(Float64)), norm(vel_pf)
 end
 
 function _mpc_heat_rate_w_cm2(model::AerobrakingMPCControlModel, p,
@@ -177,8 +198,7 @@ function _mpc_area_command_from_constraints!(
     area_limit = max_area
     active_limit = :none
 
-    density, temperature = _mpc_runtime_atmosphere(model, p, pos, t)
-    speed = _mpc_relative_speed(pos, vel, params)
+    density, temperature, speed = _mpc_runtime_atmosphere(model, p, pos, vel, t)
     dynamic_pressure = 0.5 * density * speed^2
     desired_alpha = alpha_from_commanded_area(
         config,
@@ -312,7 +332,11 @@ function _mpc_update_plan!(
             return nothing
         end
     end
-    if t - model.state.last_solve_time_s < model.solve_interval_s
+    # A reference from inside the interface on the way out would coast to the next
+    # pass; keep following the current plan until the spacecraft has left.
+    outbound_inside = model.solve_trigger_altitude_m === nothing &&
+        norm(pos) - params.Re <= model.reference.h_cut_m && dot(pos, vel) >= 0.0
+    if outbound_inside || t - model.state.last_solve_time_s < model.solve_interval_s
         desired_area = _mpc_interpolated_plan_area(model, t)
         _mpc_area_command_from_constraints!(model, p, pos, vel, t, desired_area)
         return nothing
@@ -322,6 +346,7 @@ function _mpc_update_plan!(
         latitude=model.prediction_latitude_rad,
         longitude=model.prediction_longitude_rad,
         wind=model.prediction_wind,
+        epoch_s=t,
     )
     model.state.last_solve_time_s = t
     model.state.solve_armed = false
@@ -337,10 +362,12 @@ function _mpc_update_plan!(
     end
     try
         nominal_area = _mpc_desired_area(model)
+        # Prediction frame: inertial axes turned onto the planet-fixed axes at `t`.
+        rotation = _mpc_planet_frame_rotation(p, t)
         ref = build_reference_drag_pass(
             params,
-            pos,
-            vel;
+            rotation * pos,
+            rotation * vel;
             config=model.config,
             reference=model.reference,
             nominal_area_m2=nominal_area,
@@ -367,14 +394,14 @@ function _mpc_update_plan!(
                 t,
                 first(plan_area),
             )
-            model.state.plan_epoch_s = t
+            model.state.plan_epoch_s = t + first(problem.t)
             model.state.plan_time_s = plan_t
             model.state.plan_area_m2 = plan_area
             model.state.predicted_terminal_energy = solution.terminal_energy
             model.state.solver_status = solution.solver_status
         else
             area = _mpc_area_command_from_constraints!(model, p, pos, vel, t)
-            model.state.plan_epoch_s = t
+            model.state.plan_epoch_s = t + first(problem.t)
             model.state.plan_time_s = collect(problem.t .- first(problem.t))
             model.state.plan_area_m2 = fill(area, length(problem.t))
             model.state.predicted_terminal_energy = solution.terminal_energy
@@ -532,4 +559,15 @@ function SimulationLifecycle.bind_spacecraft(m::AerobrakingMPCControlModel, sat_
     b.spacecraft_index = sat_idx
     b.state = deepcopy(m.state)   # its own plan and held command, not the template's
     return b
+end
+
+# The heat-load estimate covers one pass: it restarts when the spacecraft enters
+# the atmosphere, as the QP's heat-load budget does.
+SimulationLifecycle.requires_atmosphere_events(::AerobrakingMPCControlModel) = true
+function SimulationLifecycle.atmosphere_transition!(
+    m::AerobrakingMPCControlModel, u, p, t, spacecraft_index, inside)
+    (inside && spacecraft_index == m.spacecraft_index) || return nothing
+    m.state.estimated_heat_load_j_cm2 = 0.0
+    m.state.last_command_time_s = Float64(t)
+    return nothing
 end

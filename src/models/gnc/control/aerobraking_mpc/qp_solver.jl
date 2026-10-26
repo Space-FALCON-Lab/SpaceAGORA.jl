@@ -36,7 +36,12 @@ end
     solve_mpc_qp(problem, config) -> AerobrakingMPCSolution
 
 Solve the condensed MPC quadratic program with OSQP for the objective of
-`config.mode` under the area bounds and the active limits of `config`.
+`config.mode` under the area bounds and the active limits of `config`. The
+heat-rate rows also bound the predicted heat rate below by zero. Slacks
+(weighted by `slack_weight`) soften the heat-rate upper bound, heat load and
+drag in [`TargetEnergyMode`](@ref), and only the drag limit in
+[`MaxEnergyDepletionMode`](@ref). `solution.slacks` always holds `N` heat-rate,
+one heat-load and `N` drag entries for the active limits, in that order.
 """
 function solve_mpc_qp(problem::AerobrakingMPCProblem, config::AerobrakingMPCConfig)
     N = problem.N
@@ -143,6 +148,11 @@ function solve_mpc_qp(problem::AerobrakingMPCProblem, config::AerobrakingMPCConf
         )
     end
 
+    # Slack coupling follows the two benchmark formulations: energy targeting
+    # softens the heat-rate upper bound, heat load and drag; maximum depletion
+    # keeps heat rate and heat load hard and softens drag only. The unused slack
+    # variables stay in the decision vector and are driven to zero by their cost.
+    soft_path_limits = config.mode isa TargetEnergyMode
     yoff = Mx * δX0 .+ vec(Ybar')
     if config.use_constraints && config.use_qdot_constraint
         S_qdot = build_output_selector(N, ny; yidx=3)
@@ -153,6 +163,7 @@ function solve_mpc_qp(problem::AerobrakingMPCProblem, config::AerobrakingMPCConf
 
         A = zeros(N, nz)
         A[:, 1:nU] .= Hq ./ qdot_limit
+        soft_path_limits && (A[:, qdot_range] .= -Matrix(I, N, N))
         _append_constraint_rows!(
             rows,
             lower,
@@ -184,6 +195,7 @@ function solve_mpc_qp(problem::AerobrakingMPCProblem, config::AerobrakingMPCConf
         # Normalize the accumulated-load row so OSQP's absolute feasibility
         # tolerance remains meaningful when heat-load and slew limits coexist.
         A[1, 1:nU] .= H_Q ./ heat_load_limit
+        soft_path_limits && (A[1, heat_load_idx] = -1.0)
         _append_constraint_rows!(
             rows, lower, upper, A, [-Inf], [rhs_Q / heat_load_limit])
     end
@@ -196,6 +208,7 @@ function solve_mpc_qp(problem::AerobrakingMPCProblem, config::AerobrakingMPCConf
         drag_limit = fill(config.drag_max_n, N)
         A = zeros(N, nz)
         A[:, 1:nU] .= H_drag ./ drag_limit
+        A[:, drag_range] .= -Matrix(I, N, N)
         _append_constraint_rows!(
             rows,
             lower,

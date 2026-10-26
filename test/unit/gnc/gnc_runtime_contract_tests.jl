@@ -15,9 +15,10 @@ import SpaceAGORA.TelemetryVerification: make_example_config
 const SM = SpaceAGORA.SimulationModel
 const C = SpaceAGORA.Conformance
 const L = SpaceAGORA.SimulationLifecycle
+const G = SpaceAGORA.GNCRuntime
 
 include(joinpath(@__DIR__, "..", "..", "fixtures", "conformance_instances.jl"))
-using .ConformanceInstances: gnc_instances, gnc_exemptions, sensor_instances
+using .ConformanceInstances: gnc_instances, gnc_exemptions, sensor_instances, aerobraking_mpc_controls
 
 const PLANET = SpaceAGORA.make_no_gram_planet(:earth)
 const Z3 = SVector(0.0, 0.0, 0.0)
@@ -34,7 +35,8 @@ rpo_configuration() = make_rpo_configuration(;
 # The built-in models that cannot run in the kit's fixture, one per type, with how
 # `bind_spacecraft` treats them: `:indexed` binds copies that share only the state
 # the model keeps per spacecraft; `:refused` is the scope fallback's refusal (the
-# model is declared at configuration level).
+# model is declared at configuration level); `:single` binds a copy for one other
+# spacecraft that shares no run state with the template.
 function contract_models()
     edg = SM.AerobrakingEnergyDepletionConfig()
     edg_state = SM.AerobrakingEnergyDepletionState(num_sats=1)
@@ -45,7 +47,10 @@ function contract_models()
     joint = AlgorithmGuidance(algorithm=QuinticJointPlanner(), spacecraft_index=1, link=RobotArmPlanBuffer(),
         settings=JointReferenceSettings(model=SM.default_robot_arm_model(), base_pose=SM.RobotArmBasePose([0.0, 0.0, 0.0]),
             target=(0.4, 0.1, 0.1)))
+    aerobraking_mpc, aerobraking_campaign = aerobraking_mpc_controls()
     return [
+        (model=aerobraking_mpc, bind=:single, shared=nothing),
+        (model=aerobraking_campaign, bind=:single, shared=nothing),
         (model=SM.ApolloDescentGuidanceModel(apollo_config(), apollo_state; spacecraft_indices=(1,)), bind=:indexed,
             shared=m -> (m.state,)),
         (model=SM.ApolloDescentControlModel(SM.ApolloDescentControlConfig(), apollo_config(), apollo_state;
@@ -189,6 +194,12 @@ end
                 foreach(x -> C._reachable_mutables(x, declared), entry.shared(model))
                 @test all(x -> haskey(declared, x), C._shared_mutables(one, two))
                 @test one.spacecraft_indices == (1,) && two.spacecraft_indices == (2,)
+            elseif entry.bind === :single
+                # A copy for another spacecraft acts on it alone and owns its run state.
+                two = bind(model, 2)
+                @test two !== model && isempty(C._shared_mutables(model, two))
+                @test G.spacecraft_scope(two) == G.BoundSpacecraft((2,))
+                @test bind(model, G.spacecraft_scope(model).indices[1]) === model
             end
         end
     end

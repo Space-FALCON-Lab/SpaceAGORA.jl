@@ -87,13 +87,28 @@ function ks_density_gradient(source, position, elapsed_time_s, params;
             Val(:gradient), position, elapsed_time_s))
     end
     step = max(abs(Float64(step_m)), 0.1)
+    center = ks_density_value(source, position, elapsed_time_s, params)
     return SVector{3,Float64}(ntuple(axis -> begin
         offset = SVector{3,Float64}(ntuple(
             index -> index == axis ? step : 0.0, 3))
-        (ks_density_value(source, position + offset, elapsed_time_s, params) -
-         ks_density_value(source, position - offset, elapsed_time_s, params)) /
-            (2.0 * step)
+        ks_density_difference(
+            ks_density_value(source, position + offset, elapsed_time_s, params),
+            center,
+            ks_density_value(source, position - offset, elapsed_time_s, params),
+            step)
     end, 3))
+end
+
+# Central difference, or a one-sided one when a neighbour lies past a density
+# cutoff (zero density next to a positive one, as at a model's top altitude),
+# where the central difference would report a spurious gradient.
+@inline function ks_density_difference(plus, center, minus, step)
+    if center > 0.0 && plus <= 0.0 && minus > 0.0
+        return (center - minus) / step
+    elseif center > 0.0 && minus <= 0.0 && plus > 0.0
+        return (plus - center) / step
+    end
+    return (plus - minus) / (2.0 * step)
 end
 
 """Return atmospheric density and its Cartesian position gradient."""

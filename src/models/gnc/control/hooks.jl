@@ -28,7 +28,8 @@ module ControlHooks
     using ..DynamicsKS: cartesian_to_ks_state, ks_state_to_cartesian, ks_position, ks_velocity
     using ..DynamicsKS: ks_rk4_step, ks_first_order_tangent_map
     using ..DynamicsKS: ks_kinematics_jacobians, ks_density_value_gradient, ks_rotation_cross_matrix
-    using ..EphemeridesModels: ephemerides_requires_spice
+    using ..DynamicsKS: ks_density_difference
+    using ..EphemeridesModels: ephemerides_requires_spice, ephemerides_frame_lpi
     using ..ReferenceSystems
     using ..LinearAlgebra
     using ..StaticArrays

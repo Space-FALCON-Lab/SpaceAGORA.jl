@@ -1,28 +1,40 @@
-# Public RPO planner pilot
+# RPO planner pilot
 
-From the repository root, prepare this separate environment once:
+A separate environment for running rendezvous and proximity operations (RPO)
+with interchangeable planners, including HYPR. From the repository root,
+prepare it once:
 
 ```sh
 julia --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
 ```
 
-Setup creates a local `Project.toml` from the tracked `Project.template.toml`
-and seeds `Manifest.toml` from the repository dependency manifest. It adds this
-checkout by path, plus HYPR at the
-immutable revision in `packages/HYPRSource.toml`. Resolution
-starts from the seeded manifest: the packages it records keep their versions,
-and the records of the libraries bundled with Julia, such as OpenSSL_jll,
-follow the installed Julia. Both generated installation files are ignored; the
-tracked template stays unchanged. Repeating setup reuses the local
-environment. After setup the run needs neither native assets nor network access:
+Setup copies the tracked `Project.template.toml` to a local `Project.toml`,
+starts `Manifest.toml` from the repository manifest, adds this checkout by
+path, and adds HYPR at the revision pinned in `packages/HYPRSource.toml`.
+Packages the repository manifest records keep their versions; only the
+libraries bundled with Julia, such as OpenSSL_jll, follow your Julia install.
+Git ignores both generated files, and running setup again reuses them. After
+setup the pilot needs no native assets and no network:
 
 ```sh
 JULIA_PKG_OFFLINE=true julia --project=examples/rpo_planner_env examples/rpo_planner_env/smoke.jl
 ```
 
-The HYPR RPO and compliant robot-arm examples start in this same environment.
-They load the companion, then continue in the examples environment for their
-other imports, so prepare that environment once as well. For example:
+`smoke.jl` loads `SpaceAGORA` and `HYPR` and uses only the public planner API.
+It runs the same two-second Earth case with `DirectRPOPlanner` and with
+`HYPRRPOPlanner`, then defines a small planner and a force of its own. It does
+not switch projects, include package source or reach into internal modules;
+the `Test` imports are only there to check the results. The run checks that
+the pieces fit together and that the controller outputs are finite and
+bounded. It does not finish the reference, prove collision avoidance or show
+that the tracking is good enough for any other mission. The
+[planner guide](../../docs/src/user/rpo_planner_pilot.md) explains the setup.
+
+The HYPR examples also start in this environment: `Earth_RPO_CubeSat_MPC.jl`
+and its batch, planner-comparison and replanning variants, and
+`Robot_Arm_Planner_Cloth_Demo.jl`, all under `examples/`. They load HYPR here,
+then continue in the examples environment for their other packages, so prepare
+that one too:
 
 ```sh
 julia --startup-file=no examples/setup.jl
@@ -30,16 +42,7 @@ julia --project=examples/rpo_planner_env examples/Earth_RPO_CubeSat_MPC.jl
 ```
 
 Without the examples environment they stop at once and print its setup command.
-Those research examples also require the assets described in the examples
-catalog. The smoke run above needs neither. Baseline examples use the examples
-environment without loading the companion.
-
-`smoke.jl` explicitly loads `SpaceAGORA` and `HYPR`, then uses the public SpaceAGORA planner surface and its declared dependencies.
-It runs the same two-second Earth corridor case with `DirectRPOPlanner` and
-`HYPRRPOPlanner`, then defines a small user-owned planner and force. It does not
-switch projects, include package source, or access internal modules. Test imports
-are verification tools, not part of the planner API.
-
-The short run checks integration and finite, bounded controller outputs. It does
-not finish the reference, certify collision avoidance or accept physical tracking
-for arbitrary missions. See the [planner guide](../../docs/src/user/rpo_planner_pilot.md).
+They also need the assets the
+[examples catalog](../../docs/src/user/examples_catalog.md) lists for them; the
+smoke run above needs none. Examples that do not use HYPR run in the examples
+environment alone.

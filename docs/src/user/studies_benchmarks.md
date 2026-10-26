@@ -30,7 +30,12 @@ julia --project=. src/interfaces/cli/main.jl benchmark runtime-analysis smoke --
 Benchmark `smoke` profiles execute workloads, including simulations. Executing
 the `runtime-analysis` or `smart-parallel-ladder` launcher needs the
 `data/GRAMSuite.jl` submodule ([GRAMSuite Setup](gramsuite_setup.md)) because
-both import the vendored package before parsing study options. GRAM-backed
+both import GRAMSuite before parsing study options. A prepared caller package
+takes precedence; the vendored project is an append-only discovery fallback.
+The maintained runtime analysis uses package-loaded SpaceAGORA models and the
+canonical GRAM extension. Its native-backed results use a different numerical
+route from historical raw-loaded measurements; see the
+[migration evidence](../../quality/runtime_benchmark_loading_migration.md). GRAM-backed
 cases also need the native GRAM library built. The CLI runs its child in the
 examples environment; prepare it with `julia --startup-file=no examples/setup.jl`
 before execution.

@@ -3,8 +3,8 @@
 The supported model route loads `SpaceAGORA` as a Julia package, imports
 `GRAMSuite`, and uses the canonical `SpaceAGORAGRAMSuiteExt` extension with
 `SpaceAGORA.SimulationModel` types. The extension owns the integration methods.
-The runtime benchmark's separately included types and local adapters are outside
-this package-loading check.
+The maintained runtime benchmark uses these canonical package types; its full
+startup and native-worker qualification are outside this package-loading check.
 
 `test/smoke/gram_package_readiness.jl` is an opt-in diagnostic for already prepared
 package sources and dependencies. It complements the synthetic
@@ -94,7 +94,7 @@ construction, native atmosphere queries, worker startup or simulation.
 The reports always leave native and worker readiness unverified. They do not
 qualify GRAM binaries/data, library architecture, kernel order, model construction,
 copy/serialization, reset/release behavior, scientific outputs, performance,
-clean-machine installation or the runtime benchmark's independent types.
+clean-machine installation or full runtime benchmark/native-worker execution.
 
 This diagnostic is deliberately outside the default no-GRAM test suite. A future
 hosted job must supply independently prepared pinned wrapper inputs and retain

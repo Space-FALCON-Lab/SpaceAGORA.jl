@@ -3,7 +3,7 @@
 GRAM consumers currently use different loading policies. The native-free fixture
 `test/unit/environment/gram_loading_contract_tests.jl` executes selected production
 loader definitions against a synthetic environment to keep these differences
-observable while adapter ownership and migration remain open.
+observable. The maintained runtime benchmark now loads the canonical package model and extension; native qualification is separate from this fixture.
 
 `RuntimeServices._prepare_gramsuite_load_path!(vendor; prepend)` shares only
 package discovery and conditional fallback-path insertion. The caller explicitly
@@ -15,7 +15,7 @@ worker transport, native resources and scientific settings remain caller-owned.
 | Consumer | Path and failure policy |
 | --- | --- |
 | `examples/common.jl` | Use a discoverable package first; otherwise prepend an existing vendored project. Wrap import errors. For recognized missing-dependency errors, instantiate the vendored project once, restore the previous project (or repository project), and retry once. `setup_gram_example!` installs aliases in its requested module without replacing existing bindings. |
-| `benchmarks/studies/performance_runtime_analysis/main.jl` | Append an existing vendored project when discovery fails. Import unconditionally at entrypoint load and propagate failure without loader-level installation or retry. The entrypoint raw-includes its own model modules and owns separate adapter methods. |
+| `benchmarks/studies/performance_runtime_analysis/main.jl` | Append an existing vendored project when discovery fails. Import unconditionally at entrypoint load and propagate failure without loader-level installation or retry. The entrypoint uses `SpaceAGORA.SimulationModel`, `SpaceAGORA.SimulationEngine` and the canonical `SpaceAGORAGRAMSuiteExt`; extension readiness is checked after import. |
 | `benchmarks/studies/parallelization_performance/cases.jl` | Use the package model modules; prepend an existing vendored project when discovery fails. Propagate import errors without installation or retry. The entrypoint invokes this loader only for selected GRAM cases. |
 | Core process workers | Prepend an existing vendored project inside the existing worker callback. Import separately into worker `Main`; warn on failure and continue to SPICE setup for non-GRAM campaigns. Worker project precedence, preload and warmup ordering are unchanged. |
 
@@ -65,8 +65,7 @@ The caller's prepared environment keeps precedence. A vendored wrapper remains
 an explicit fallback when discovery fails.
 
 The shared discovery mechanism does not change installation/retry policy, search
-order, the current package-binding guard, worker setup, SPICE ordering or the
-runtime benchmark's independent types.
+order, the current package-binding guard in the other consumers, worker setup or SPICE ordering.
 The real-package readiness diagnostic described in
 [GRAM package readiness](gram_package_readiness.md) adds a separate fresh-process
 acceptance boundary. The synthetic fixture above remains the loading-policy
@@ -88,8 +87,35 @@ not replace actual fresh-worker qualification.
 
 The canonical `SpaceAGORAGRAMSuiteExt` owns package-type constructors, native
 allocation and release accounting, construction recipes, copy/serialization,
-locking and ephemeris/cache hooks. The legacy runtime adapter targets independent
-types and does not provide the same lifecycle contract. Text-identical forwarding
-methods do not establish equivalent ownership. Agree on a supported route with
-the benchmark and native owners before changing these adapters or fallback
-policies. This fixture closes no native, scientific or performance acceptance.
+locking and ephemeris/cache hooks. The maintained runtime benchmark now delegates
+to that owner instead of raw-including separate model/engine modules and defining
+local GRAM adapters. Its file-backed offline surrogate remains a benchmark-specific
+model: it is not a second native adapter. Caller-project precedence, append fallback,
+worker project resolution, planet/kernel initialization, case definitions and report
+contracts are unchanged. This fixture alone closes no native, scientific or
+performance acceptance.
+
+## Runtime benchmark migration qualification
+
+The migration was checked in fresh processes with a prepared caller environment.
+The full entrypoint attaches the canonical extension and preserves exact package
+module identities. Real Earth/Mars models were constructed using the existing
+native library/data installation; model copies and serialized/worker-transported
+models have independent native resources and locks, produce matching sampled
+values, and participate in the canonical collection counters. The production
+worker initializer was exercised with its explicit project override. These checks
+require the full native assets and normal planet/kernel initialization; an import
+or synthetic fixture does not supply them.
+
+A bounded original-versus-canonical comparison preserves the short non-atmospheric
+simulation's columns, saved values and complete trajectory exactly, but does not
+preserve native atmospheric samples. In the recorded Mars sample, density changes
+by 1.4941291885%. A controlled old-adapter run with the canonical ephemeris hook
+matches the new Mars sample exactly and matches Earth density/temperature; Earth
+wind still differs because the canonical constructor also primes native static
+tables. See [migration evidence](runtime_benchmark_loading_migration.md).
+This is a numerical baseline change for native-backed benchmark cases, not a
+behavior-preserving cleanup. The owner explicitly accepted adoption as a new baseline on 2026-10-26; native
+lifecycle checks and that decision do not close broader scientific acceptance. Benchmark timings after this migration measure the supported package
+route and must record the source revision; historical independent-route timing
+records retain their original provenance.

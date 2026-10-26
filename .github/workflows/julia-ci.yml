@@ -1206,7 +1206,9 @@ jobs:
   optional-edg-installation:
     needs: depot
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # The standalone installer and isolated Pkg.test each compile their own
+    # compatible environment; retain both checks with a bounded cold-run budget.
+    timeout-minutes: 90
     env:
       JULIA_NUM_THREADS: "2"
       JULIA_LOAD_PATH: "@:@stdlib"

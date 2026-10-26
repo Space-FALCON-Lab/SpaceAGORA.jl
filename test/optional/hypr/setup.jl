@@ -9,4 +9,6 @@ OptionalPackages.setup("hypr", joinpath(directory, "hypr"))
 # environment that runs them adds PlotlyJS, as a user's project would.
 using Pkg
 Pkg.activate(joinpath(directory, "hypr"))
-Pkg.add("PlotlyJS"; preserve=Pkg.PRESERVE_ALL)
+# Keep direct package versions, but let transitive dependencies resolve with
+# the newly requested plotting extension in this fresh test environment.
+Pkg.add("PlotlyJS"; preserve=Pkg.PRESERVE_DIRECT)

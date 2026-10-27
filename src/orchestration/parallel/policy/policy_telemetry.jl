@@ -206,7 +206,13 @@ function policy_telemetry_snapshot()
             rhs_plan_sweep_ns=t.rhs_plan_sweep_ns,
             rhs_plan_sweeps_total=t.rhs_plan_sweeps_total,
             callback_width_density=t.callback_width_density,
-            callback_width_density_static=t.callback_width_density_static
+            callback_width_density_static=t.callback_width_density_static,
+            regret_guard_enabled=regret_guard_enabled(),
+            regret_guard_fired=t.regret_guard_fired,
+            regret_guard_reason=String(t.regret_guard_reason),
+            regret_guard_margin=t.regret_guard_margin,
+            regret_guard_count=t.regret_guard_count,
+            regret_guard_frozen=regret_guard_frozen()
         )
     end
 end

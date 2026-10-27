@@ -743,6 +743,8 @@ function ppc_policy_columns(snap)
         policy_decisions_total=0, policy_adaptive_decisions_total=0,
         policy_threads_enabled_total=0, policy_discarded_by_route_total=0,
         rhs_plan_sweep_s=0.0, rhs_plan_sweeps=0, policy_last_budget=0,
+        regret_guard_enabled=false, regret_guard_fired=false, regret_guard_reason="none",
+        regret_guard_margin=0.0, regret_guard_count=0, regret_guard_frozen=false,
     )
     snap === nothing && return empty
     g(k, d) = hasproperty(snap, k) ? getproperty(snap, k) : d
@@ -765,12 +767,25 @@ function ppc_policy_columns(snap)
         rhs_plan_sweep_s=Float64(g(:rhs_plan_sweep_ns, 0.0)) / 1.0e9,
         rhs_plan_sweeps=g(:rhs_plan_sweeps_total, 0),
         policy_last_budget=g(:last_budget, 0),
+        # policy_last_budget stays 0 unless thread_policy_decision ran in the
+        # solve (it is set only by _record_policy_decision!, i.e. density/control/
+        # multibody callback routing); policy_decisions_total == 0 explains a 0.
+        # Regret guard: `fired` is per solve (telemetry resets each solve);
+        # `frozen` is process-lifetime and stays true for later solves.
+        regret_guard_enabled=g(:regret_guard_enabled, false),
+        regret_guard_fired=g(:regret_guard_fired, false),
+        regret_guard_reason=string(g(:regret_guard_reason, "none")),
+        regret_guard_margin=g(:regret_guard_margin, 0.0),
+        regret_guard_count=g(:regret_guard_count, 0),
+        regret_guard_frozen=g(:regret_guard_frozen, false),
     )
 end
 
 # Column groups of ppc_policy_columns: the original block stays where it was in
 # the row, the telemetry added later is splatted after the last existing column.
-const PPC_POLICY_TAIL_KEYS = (:rhs_plan_sweep_s, :rhs_plan_sweeps, :policy_last_budget)
+const PPC_POLICY_TAIL_KEYS = (:rhs_plan_sweep_s, :rhs_plan_sweeps, :policy_last_budget,
+    :regret_guard_enabled, :regret_guard_fired, :regret_guard_reason,
+    :regret_guard_margin, :regret_guard_count, :regret_guard_frozen)
 ppc_policy_head(p) = p[Tuple(k for k in keys(p) if !(k in PPC_POLICY_TAIL_KEYS))]
 ppc_policy_tail(p) = p[PPC_POLICY_TAIL_KEYS]
 

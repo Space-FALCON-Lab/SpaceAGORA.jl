@@ -32,7 +32,10 @@ end
         @test PP.regret_guard_frozen()
         snap = PP.regret_guard_snapshot()
         @test snap.fired && snap.reason == "fire" && snap.margin == 0.1 && snap.count == 2
+        ts = PP.policy_telemetry_snapshot()    # the ppb CSV reads these
+        @test ts.regret_guard_enabled && ts.regret_guard_fired && ts.regret_guard_frozen && ts.regret_guard_count == 2
         PP.reset_policy_telemetry!()           # freeze survives telemetry reset
+        @test PP.policy_telemetry_snapshot().regret_guard_frozen && !PP.policy_telemetry_snapshot().regret_guard_fired
         @test PP.regret_guard_observe!("s", 1.0, 100.0) == true
     end
     PP.reset_regret_guard!()

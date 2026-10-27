@@ -1,4 +1,8 @@
 using Test
+if !isdefined(@__MODULE__, :RuntimeAnyGateFixtures)
+    include(joinpath(@__DIR__, "..", "..", "support", "runtime_any_gate_fixtures.jl"))
+end
+using .RuntimeAnyGateFixtures
 
 @testset "Runtime Any gate covers moved and nested owners" begin
     repo = normpath(joinpath(@__DIR__, "..", "..", ".."))
@@ -7,66 +11,17 @@ using Test
     root_line = "const REPO_ROOT = normpath(joinpath(@__DIR__, \"..\", \"..\"))"
     @test occursin(root_line, source)
     mktempdir() do fixture
-        paths = (
-            "src/orchestration/simulation/state/runtime_types.jl",
-            "src/orchestration/simulation/engine/setup.jl",
-            "src/models/dynamics/effectors/aerodynamic_wrench_models.jl",
-            "src/models/dynamics/effectors/perturbations.jl",
-            "src/orchestration/parallel/policy/multibody_routing.jl",
-            "src/models/dynamics/effectors/perturbations/gravity/nested/probe.jl",
-            "src/orchestration/simulation/callbacks/event_callbacks.jl",
-            "src/orchestration/simulation/callbacks/nested/probe.jl",
-        )
-        baseline = Dict(relative => "# valid fixture\n" for relative in paths)
-        baseline[paths[1]] = """
-            module ConfigTypes
-            mutable struct GramDensityPerturbationState
-                walk_models::Vector{Any}
-            end
-            @kwdef struct SharedBuffers
-                external_runtimes::Vector{Any} = Any[]
-            end
-            const SaveData = Dict{Symbol, Any}
-            end
-            """
-        baseline[paths[7]] = """
-            mutable struct TrajectoryRecorder
-                storage::Dict{Symbol, Any}
-                fallback::Dict{Symbol, Vector{Any}}
-            end
-            function TrajectoryRecorder(args)
-                storage = Dict{Symbol, Any}()
-                fallback = Dict{Symbol, Vector{Any}}()
-                for field in args
-                    fallback[field.name] = Vector{Any}(undef, cap)
-                end
-            end
-            function _grow_trajectory_recorder!(rec::TrajectoryRecorder)::Nothing
-                for (name, data) in rec.fallback
-                    grown = Vector{Any}(undef, new_cap)
-                end
-            end
-            """
-        for relative in paths
-            path = joinpath(fixture, relative)
+        p = _rah_fixture(fixture)
+        nested_gravity = joinpath(p.split, "gravity", "nested", "probe.jl")
+        nested_callback = joinpath(p.callbacks, "nested", "probe.jl")
+        for path in (nested_gravity, nested_callback)
             mkpath(dirname(path))
-            write(path, baseline[relative])
+            write(path, "# valid fixture\n")
         end
-        isolated_source = replace(source, root_line => "const REPO_ROOT = $(repr(fixture))"; count=1)
-        function run_gate()
-            target = Module(gensym(:RuntimeAnyGate))
-            failure = try
-                redirect_stdout(devnull) do
-                    Base.include_string(target, isolated_source, gate_path)
-                end
-                nothing
-            catch error
-                error
-            end
-            violations = Core.eval(target,
-                :(isdefined(@__MODULE__, :violations) ? copy(violations) : String[]))
-            return (; failure, violations)
-        end
+        paths = [_rah_relative_path(path, fixture) for path in
+            (p.files..., nested_gravity, p.event, nested_callback)]
+        baseline = Dict(relative => read(joinpath(fixture, relative), String) for relative in paths)
+        run_gate() = _rah_gate_result(fixture)
 
         @test run_gate().failure === nothing
         # A closing brace followed by a delimiter, whitespace or newline is

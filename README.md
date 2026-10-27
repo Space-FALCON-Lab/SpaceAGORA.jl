@@ -8,7 +8,7 @@
 SpaceAGORA is a Julia simulator for spacecraft that fly in or near a planet's
 atmosphere. It models aerobraking, entry, aerocapture and orbital flight around
 Earth, Mars, Venus, Titan and the Moon, with guidance and control in the loop.
-It is developed by the Space-FALCON Lab at the University of Michigan.
+The Space-FALCON Lab at the University of Michigan develops it.
 
 ![A simulated Mars aerobraking pass in the SpaceAGORA viewer: the Mars Odyssey spacecraft model coloured by its heating, with the Martian limb behind it and a panel listing altitude, density, heat rate and drag.](docs/src/assets/figures/viewer_heating_closeup.jpg)
 
@@ -31,18 +31,21 @@ julia --startup-file=no examples/setup.jl
 julia --project=examples examples/AGORA_Basic_Quickstart.jl
 ```
 
-The third line installs SpaceAGORA. The fourth prepares the examples
-environment, which adds the packages the examples use for plots and analysis,
-starting from the package versions SpaceAGORA's manifest records. The example
-flies an Earth orbit without atmosphere, GRAM or SPICE data, and writes its
-results and plots under `output/`. The clone options skip large data files that
-the first run does not need. On Windows, set `GIT_LFS_SKIP_SMUDGE` in its own
-command first; the
-[Quickstart](https://space-falcon-lab.github.io/SpaceAGORA.jl/user/quickstart/)
-shows both Windows shells, a setup check and what the run prints.
+The clone options skip large data files that the first run does not need. The
+third command installs SpaceAGORA with the package versions in the committed
+manifest; `julia_version_strict=true` makes it stop with a clear message if your
+Julia is not 1.12. The fourth prepares the examples environment, which adds the
+plotting and analysis packages the examples use and keeps the versions the root
+manifest records. The last one flies an Earth orbit that needs no atmosphere
+data, GRAM or SPICE kernels, and writes its results and plots under `output/`.
 
-For a short check run through the command-line tool, from the same directory
-(it runs the example in the examples environment):
+On Windows, set `GIT_LFS_SKIP_SMUDGE` in a command of its own before cloning.
+The [Quickstart](https://space-falcon-lab.github.io/SpaceAGORA.jl/user/quickstart/)
+gives the commands for PowerShell and Command Prompt, a check that the
+installation works, and what the run prints.
+
+The command-line tool can run the same example as a short check. It starts the
+example in the examples environment, so prepare that first:
 
 ```text
 julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --smoke
@@ -56,21 +59,36 @@ julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstar
 - **Gravity and perturbations**: point mass, J2, spherical harmonics, third
   bodies, solar radiation pressure and gravity-gradient torque.
 - **Vehicles**: rigid, articulated and compliant spacecraft carrying thrusters,
-  reaction wheels, torque rods, panel hinges, laser terminals or actuator kinds
-  of your own.
+  reaction wheels, control-moment gyros, torque rods, panel hinges, laser
+  terminals or actuator kinds of your own, plus sensors, a power budget and
+  onboard data storage.
 - **Guidance and control**: your own controllers in the loop, energy-depletion
   aerobraking guidance, rendezvous planning and powered lunar descent with
   plume-surface interaction.
 - **Missions and campaigns**: operational segments, phases and events within a
-  run, and Monte Carlo and constellation ensembles in parallel.
+  run; Monte Carlo and constellation ensembles in parallel; inter-satellite
+  links and ground stations.
 - **Results**: CSV and Feather tables with a manifest, plots, an interactive 3D
-  viewer and a packaged verification study against flight telemetry.
+  viewer, and a verification study that grades runs against reconstructed Mars
+  Odyssey and Venus Express trajectories and a GMAT Earth reference.
 
-Optional companion packages add HYPR motion planning, MuJoCo contact scenes,
-energy-depletion guidance and the 3D viewer. Each installs into its own Julia
-environment, as the
-[installation guide](https://space-falcon-lab.github.io/SpaceAGORA.jl/user/installation_environment/)
-describes.
+## What installs separately
+
+The core package above is everything the first run needs. These pieces are
+separate, each in a Julia environment of its own:
+
+- The HYPR motion planner, the MuJoCo contact-scene companion and the
+  energy-depletion guidance (EDG) kernels are companion repositories pinned
+  under `packages/`. `scripts/optional_packages.jl` checks one out and installs
+  it; see [packages/README.md](packages/README.md) and the
+  [installation guide](https://space-falcon-lab.github.io/SpaceAGORA.jl/user/installation_environment/).
+- The browser viewer is the SpaceAGORAVisualizer package, installed with
+  `scripts/setup_visualizer.jl`, as
+  [Interactive Visualization](https://space-falcon-lab.github.io/SpaceAGORA.jl/user/visualization/)
+  describes.
+- Native NASA GRAM is not distributed here. NASA grants access on request;
+  [GRAMSuite setup](https://space-falcon-lab.github.io/SpaceAGORA.jl/user/gramsuite_setup/)
+  covers the request and how to connect the files with SPICE kernels.
 
 ## Learn more
 
@@ -80,8 +98,6 @@ describes.
   a complete aerobraking exercise without licensed data.
 - [Interactive Visualization](https://space-falcon-lab.github.io/SpaceAGORA.jl/user/visualization/):
   open a run in the 3D viewer.
-- [GRAMSuite setup](https://space-falcon-lab.github.io/SpaceAGORA.jl/user/gramsuite_setup/):
-  the higher-fidelity path with NASA GRAM and SPICE.
 - [Extensibility](https://space-falcon-lab.github.io/SpaceAGORA.jl/extensibility/):
   add your own forces, atmospheres, actuators and controllers.
 
@@ -94,5 +110,6 @@ into BibTeX. Papers built on SpaceAGORA are listed on
 
 ## Contributing and license
 
-The [contributor guide](CONTRIBUTING.md) covers repository layout, ownership
-rules and release checks. SpaceAGORA is released under the [MIT License](LICENSE).
+The [contributor guide](CONTRIBUTING.md) covers the repository layout, source
+ownership and release checks. SpaceAGORA is released under the
+[MIT License](LICENSE).

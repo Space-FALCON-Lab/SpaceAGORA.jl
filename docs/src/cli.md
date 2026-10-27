@@ -1,70 +1,49 @@
 # CLI
 
-Use this page when you want the stable command-line surface instead of calling
-Julia scripts directly.
-
-This page is for users and operators who prefer packaged commands for examples,
-verification studies, benchmarks, and asset inspection.
-
-Shortest successful command:
+The command-line interface runs examples, verification studies and benchmark
+launchers, opens the viewer on saved results, and inspects assets, without
+writing a Julia script. Its entry point is a Julia file, so the same command
+works on Windows, Linux and macOS:
 
 ```text
 julia --project=. src/interfaces/cli/main.jl assets check
 ```
 
-What to read next:
+Two wrappers start it for you: `./bin/spaceagora` on Linux and macOS, and
+`bin\spaceagora.bat` on Windows. Each starts Julia with `--project` set to
+`JULIA_PROJECT`, or to the repository root when `JULIA_PROJECT` is unset.
+`help` (or `--help`, `-h`, or no arguments at all) prints the usage summary.
+From Julia, `SpaceAGORA.run_cli(args)` runs the same commands and returns the
+exit status.
 
-- [Quickstart](user/quickstart.md)
-- [Recipes](user/recipes.md)
-- [Assets and Modes](assets.md)
-
-SpaceAGORA exposes a package-owned CLI surface through:
-
-```text
-julia --project=. src/interfaces/cli/main.jl
-```
-
-This Julia entrypoint is the cross-platform command path for Windows, Linux,
-and macOS.
-
-Convenience wrappers:
-
-- Linux/macOS: `./bin/spaceagora`
-- Windows: `bin\spaceagora.bat`
+See also the [Quickstart](user/quickstart.md), the [Recipes](user/recipes.md)
+and [Assets & Modes](assets.md).
 
 ## What each command needs
 
-The CLI normally starts child processes (`run`, `telemetry`, `benchmark`) in
-the examples environment (`examples/Project.toml`), which provides this
-checkout's `SpaceAGORA` and the packages the examples and studies use beyond it,
-such as Plots. Prepare it once with `julia --startup-file=no examples/setup.jl`
+`run`, `telemetry` and `benchmark` start a child Julia process. Unless a command
+says otherwise below, the child runs in the examples environment
+(`examples/Project.toml`), which provides this checkout's `SpaceAGORA` and the
+packages the examples and studies use beyond it, such as Plots. Prepare it once
+with `julia --startup-file=no examples/setup.jl`
 ([Installation & Environment](user/installation_environment.md#Examples-environment));
-until then those commands stop and print that command. A `run --visualize`
-request instead uses the prepared visualizer project described below, and an
-example started there continues in the examples environment through
-`examples/common.jl`. `--print-only` prints the selected project on its
-`project=` line and the full command on its `cmd=` line without running
-anything.
+until you do, these commands stop with a message that names that command.
 
-What a command needs beyond `Pkg.instantiate()` and the examples setup depends
-on the script it starts, not on the CLI:
+The rest depends on the script the command starts, not on the CLI:
 
 | Command | Needs on top of the instantiated repository and the examples environment |
 |---|---|
 | `assets check`, `assets manifest`, `assets setup-open` | nothing |
 | `run --example=<no-GRAM example>` (`AGORA_Basic_Quickstart.jl`, `AGORA_Earth_NoGRAM.jl`, `AGORA_Earth_MonteCarlo.jl`, `Solar_Panel_Cloth_Deployment_Demo.jl`) | nothing |
-| `run --example=<GRAM-backed or SPICE-backed example>` (`AGORA_Earth_Aerobraking.jl`, `AGORA_Odyssey.jl`, `AGORA_Vex.jl`, `Earth_Thruster_Test.jl`, `AGORA_Keplerian.jl`) | the `data/GRAMSuite.jl` submodule ([GRAMSuite Setup](user/gramsuite_setup.md)); the GRAM-backed ones also need the native GRAM library built |
-| HYPR/RPO examples (direct script commands) | the prepared `examples/rpo_planner_env` companion environment; RPO cases also need SPICE kernels. Use the setup and direct commands in the [Examples Catalog](user/examples_catalog.md#RPO-and-robotics). |
-| `telemetry ...` | the `data/GRAMSuite.jl` submodule: the study loads the vendored `GRAMSuite` package before it reads any scenario, even for `--scenarios=odyssey`; the truth files it grades are in the repository |
-| `benchmark ...` | the `data/GRAMSuite.jl` submodule, and for the GRAM-backed cases the native GRAM library |
-
-The CLI does not automatically select the HYPR companion environment. An
-ordinary `run` launches the examples environment, even if the CLI itself was
-started with `--project=examples/rpo_planner_env`. Run HYPR examples directly
-with that companion project as shown in the catalog.
+| `run --example=<GRAM-backed or SPICE-backed example>` (`AGORA_Earth_Aerobraking.jl`, `AGORA_Odyssey.jl`, `AGORA_Vex.jl`, `Earth_Thruster_Test.jl`, `AGORA_Keplerian.jl`) | the `data/GRAMSuite.jl` submodule ([GRAMSuite Setup](user/gramsuite_setup.md)); the GRAM-backed examples also need the native GRAM library built |
+| `run --example=` an EDG example (`odyssey_surrogate.jl`, `AGORA_Odyssey_Energy_Depletion_Control_Test.jl`) | a prepared project that declares `SpaceAGORA` and `SpaceAGORAEDG`; see [Run an example](#Run-an-example) |
+| HYPR and RPO examples | the external environment prepared by `examples/rpo_planner_env/setup.jl`, and SPICE kernels for the RPO cases. Run them directly with the commands in the [Examples Catalog](user/examples_catalog.md#RPO-and-robotics); the CLI does not select that environment. |
+| `telemetry ...` | the `data/GRAMSuite.jl` submodule: the study loads the vendored `GRAMSuite` package before it reads any scenario, even with `--scenarios=odyssey`. The truth files it grades against are in the repository. |
+| `benchmark ...` | the `data/GRAMSuite.jl` submodule, and the native GRAM library for the GRAM-backed cases |
 
 Without the submodule, `telemetry` and `benchmark` stop with "Package
-GRAMSuite not found in current path"; that is the prerequisite, not the CLI.
+GRAMSuite not found in current path". That is the missing prerequisite, not a
+CLI fault.
 
 ## Commands
 
@@ -74,25 +53,31 @@ GRAMSuite not found in current path"; that is the prerequisite, not the CLI.
 julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --output-dir=output/cli_run
 ```
 
-Supported options:
-
 | Option | Effect |
 |---|---|
-| `--example=<file>` | Example filename under `examples/`, or a direct path |
-| `--output-dir=<dir>` | Sets `SPACEAGORA_CLI_OUTPUT_DIR` for the child process |
-| `--smoke` | Sets the example smoke-mode environment variables |
-| `--visualize` | Loads the optional renderer in the selected project and exports a page after the run |
-| `--print-only` | Prints the resolved launcher without running it |
+| `--example=<file>` | an example file name under `examples/` (the `.jl` may be left off), or a path to a script |
+| `--output-dir=<dir>` | sets `SPACEAGORA_CLI_OUTPUT_DIR` for the child process |
+| `--smoke` | sets `SPACEAGORA_EXAMPLE_SMOKE=1` and `SPACEAGORA_EXAMPLE_SMOKE_RESULTS=1`, the shortened mode that long examples support |
+| `--visualize` | sets `SPACEAGORA_VISUALIZATION=1`, loads the viewer in the selected project and exports a page after the run |
+| `--print-only` | prints the selected project, the script, the environment variables and the full command, then exits without running |
 
-Use `--smoke` for long examples that support
-`SPACEAGORA_EXAMPLE_SMOKE=1`.
+Without `--visualize`, the child runs in the examples environment, even if the
+CLI itself was started with another project. The two EDG examples are the
+exception: they run in the project named by `SPACEAGORA_EDG_ENV`, or else in the
+project the CLI was started with, and that project must declare both
+`SpaceAGORA` and `SpaceAGORAEDG` (with `--visualize`, the viewer project
+described below must declare `SpaceAGORAEDG` as well). The prepared
+`examples/odyssey_surrogate_env` from the
+[Odyssey tutorial](tutorials/odyssey_surrogate.md) qualifies:
 
-Without `--visualize`, the child runs in the examples environment.
-`--print-only` shows the selected project and the exact command.
+```text
+julia --project=examples/odyssey_surrogate_env src/interfaces/cli/main.jl run --example=odyssey_surrogate.jl
+```
 
 ### View saved results or export a page after a run
 
-Prepare the optional renderer once in a separate project:
+The viewer lives in a separate project. Prepare it once, then point the CLI at
+it:
 
 ```sh
 julia --startup-file=no scripts/setup_visualizer.jl ../spaceagora-viewer
@@ -100,67 +85,62 @@ julia --project=../spaceagora-viewer src/interfaces/cli/main.jl visualize --run=
 julia --project=../spaceagora-viewer src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --output-dir=output/cli_viewer --visualize
 ```
 
-`visualize` reads a saved scene and result bundle without repeating the
-simulation. `run --visualize` requests scene recording and HTML export from the
-example. The direct CLI entrypoint loads `SpaceAGORAVisualizer` for these
-commands only. When calling `run_cli` from Julia to view saved results, load both
-`SpaceAGORA` and `SpaceAGORAVisualizer` first.
+`visualize` reads a saved result bundle and its scene without running the
+simulation again. `run --visualize` asks the example to record its scene and
+export the HTML page. The entry point loads `SpaceAGORAVisualizer` for these two
+commands only; when you call `run_cli` from Julia to view saved results, load
+`SpaceAGORA` and `SpaceAGORAVisualizer` yourself first.
 
-A visualized child uses the active project unless `SPACEAGORA_VISUALIZER_ENV`
-explicitly selects another prepared project. The selected project must declare
-both packages. The child loads the renderer before the example starts, so an
-example can still activate the core project without losing viewer support.
-The script's `PROGRAM_FILE`, arguments, and main guard retain their usual
-meaning. A missing project or package declaration is rejected before launching
-the example, including in `--print-only` mode. If declarations exist but the
-renderer has not been installed, its preload fails before the example can
-create outputs. The CLI never installs packages.
+| `visualize` option | Effect |
+|---|---|
+| `--run=<path>` | required: a results directory holding `simulation_results.feather`, the bundle prefix itself, or with `--ensemble` a campaign directory of sample subdirectories |
+| `--out=<html>` | where to write the page |
+| `--max-frames=<n>` | the largest number of frames the page holds |
+| `--frame=inertial` or `--frame=planet_fixed` | the frame the scene is drawn in |
+| `--texture=best`, `4k` or `8k` | the planet texture resolution; `--no-textures` turns textures off |
+| `--trail-orbits=<n>` | trail length, in orbits |
+| `--title=<text>` | the page title |
+| `--model=<id>=<file>` | an STL, OBJ or GLB model for spacecraft `<id>`; repeat for more spacecraft. Not with `--ensemble`. |
+| `--model-scale=<m per unit>`, `--model-center=0` or `1` | the model's scale, and whether to center it on the spacecraft |
+| `--ensemble` | build the ensemble page for a campaign directory |
 
-For the convenience wrappers, which start under the core project, set
-`SPACEAGORA_VISUALIZER_ENV` to the prepared project directory. See
-[Visualization](user/visualization.md) for the saved-payload workflow and
-renderer options.
+The command prints `viewer=<path>` for the page it wrote.
+[Visualization](user/visualization.md) describes the saved payload and the
+viewer options in detail.
+
+A visualized `run` child uses the project the CLI was started with, unless
+`SPACEAGORA_VISUALIZER_ENV` names another prepared project. Either way the
+project must declare both `SpaceAGORA` and `SpaceAGORAVisualizer`; the CLI
+checks this before it launches anything, `--print-only` included. The child
+loads the viewer before the example starts, so an example that activates the
+core project keeps viewer support, and the script's `PROGRAM_FILE`, arguments
+and main guard behave as usual. If the project declares the packages but they
+are not installed, the preload fails before the example writes any output. The
+CLI never installs packages. With the wrappers, which start under
+`JULIA_PROJECT` or the repository root, set `SPACEAGORA_VISUALIZER_ENV` (or
+`JULIA_PROJECT`) to the prepared viewer project.
 
 ### Run telemetry verification
 
 ```text
 julia --project=. src/interfaces/cli/main.jl telemetry quick --output-dir=output/telemetry_cli --enforce=1
-```
-
-Profiles:
-
-| Profile | Effect |
-|---|---|
-| `quick` | Development-scale telemetry verification |
-| `full` | Full telemetry verification profile |
-| `smoke` | CLI smoke alias for the quick profile |
-
-The profile can also be set explicitly:
-
-```text
 julia --project=. src/interfaces/cli/main.jl telemetry --profile=full --output-dir=output/telemetry_full
 ```
 
-Supported options:
+The profile is `quick` (the default), `full`, or `smoke`, which is another name
+for `quick`. Give it as a bare word or as `--profile=<name>`.
 
 | Option | Effect |
 |---|---|
-| `--output-dir=<dir>` | Writes telemetry CSV outputs under this directory |
-| `--enforce=0|1` | Fails the command when verification thresholds fail |
-| `--plots=0|1` | Enables or disables telemetry plot generation |
-| `--scenarios=a,b` | Runs only the named manifest scenarios (default: all); unknown names are an error |
-| `--print-only` | Prints the resolved launcher without running it |
+| `--output-dir=<dir>` | where the CSV files go (default `output/telemetry`) |
+| `--enforce=0` or `1` | with `1`, the command fails when a verification threshold fails |
+| `--plots=0` or `1` | turns plot generation on or off; off by default |
+| `--scenarios=a,b` | runs only the named manifest scenarios (default: all); an unknown name is an error |
+| `--print-only` | prints the resolved command without running it |
 
-Plot generation is off by default in the CLI path so the telemetry command
-remains usable even when plotting assets/scripts are unavailable. Enable it
-explicitly with `--plots=1`.
-
-The telemetry CLI writes:
-
-```text
-telemetry_orbit_accuracy_summary.csv
-telemetry_orbit_accuracy_errors.csv
-```
+Plots are off by default so that the command still works where the plotting
+scripts are not available. The study writes `telemetry_orbit_accuracy_summary.csv`
+and `telemetry_orbit_accuracy_errors.csv` to the output directory.
 
 ### Run benchmark launchers
 
@@ -169,25 +149,16 @@ julia --project=. src/interfaces/cli/main.jl benchmark runtime-analysis smoke --
 julia --project=. src/interfaces/cli/main.jl benchmark smart-parallel-ladder smoke --output-dir=output/smart_ladder_cli
 ```
 
-Supported benchmark modes:
+| Mode | Launcher | Output directory variable (default) |
+|---|---|---|
+| `runtime-analysis` | `benchmarks/studies/performance_runtime_analysis.jl` | `SPACEAGORA_PERF_OUTDIR` (`output/performance`) |
+| `smart-parallel-ladder` | `benchmarks/studies/performance_smart_parallel_ladder.jl` | `SPACEAGORA_SMART_LADDER_OUTDIR` (`output/performance/smart_parallel_ladder`) |
 
-| Mode | Launcher |
-|---|---|
-| `runtime-analysis` | `benchmarks/studies/performance_runtime_analysis.jl` |
-| `smart-parallel-ladder` | `benchmarks/studies/performance_smart_parallel_ladder.jl` |
-
-Supported options:
-
-| Option | Effect |
-|---|---|
-| `--output-dir=<dir>` | Sets the launcher-specific output directory environment variable |
-| `--print-only` | Prints the resolved launcher without running it |
-
-Any other arguments after the benchmark mode are passed through to the study
-launcher. For example:
+`--output-dir=<dir>` sets that variable and `--print-only` prints the command
+without running it. Every other argument after the mode, such as the profile
+`quick`, `full` or `smoke`, goes to the launcher unchanged:
 
 ```text
-julia --project=. src/interfaces/cli/main.jl benchmark runtime-analysis quick --output-dir=output/perf_quick
 julia --project=. src/interfaces/cli/main.jl benchmark smart-parallel-ladder full --passes=3 --output-dir=output/smart_ladder_full
 ```
 
@@ -199,12 +170,19 @@ julia --project=. src/interfaces/cli/main.jl assets manifest
 julia --project=. src/interfaces/cli/main.jl assets setup-open
 ```
 
+`assets check` reports whether each asset root and catalog in this checkout is
+usable, missing, empty, an undownloaded Git LFS pointer or empty of payload,
+and exits with status 1 when a required entry is not usable. It confirms that
+payload bytes exist, not that a grid is valid. `assets manifest` prints
+`data/assets_manifest.toml`, and `assets setup-open` reports the open-asset
+setup. [Assets & Modes](assets.md) explains the states.
+
 ## Print-only mode
 
-Every execution command supports `--print-only` so you can inspect the resolved
-launcher, environment, and project without running the workload.
-
-Examples:
+`run`, `telemetry` and `benchmark` accept `--print-only`, which prints the
+project, the script, the environment variables the CLI would set and the exact
+command, on lines starting `project=`, `script=`, `env:` and `cmd=`, and runs
+nothing:
 
 ```text
 julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Earth_NoGRAM.jl --smoke --print-only
@@ -214,7 +192,7 @@ julia --project=. src/interfaces/cli/main.jl benchmark runtime-analysis smoke --
 
 ### Named surrogate data
 
-After [setting up the public Odyssey environment](tutorials/odyssey_surrogate.md):
+After [setting up the Odyssey environment](tutorials/odyssey_surrogate.md):
 
 ```sh
 julia --project=examples/odyssey_surrogate_env src/interfaces/cli/main.jl assets list
@@ -222,27 +200,29 @@ julia --project=examples/odyssey_surrogate_env src/interfaces/cli/main.jl assets
 julia --project=examples/odyssey_surrogate_env src/interfaces/cli/main.jl assets check --preset=odyssey_p20_frozen_v1 --version=1.0.0
 ```
 
-`list` reads the catalog without downloading. `fetch` downloads only the selected
-version and verifies its bytes. The same commands take
-`--preset=mars_global_upper_p20_frozen_v1 --version=1.0.0` for the global upper
-atmosphere preset and `--preset=mars_global_near_surface_p20_frozen_v1 --version=1.2.0`
-(or `--version=1.1.0` or `--version=1.0.0`) for the near-surface preset.
-`--preset=mars_global_descent_p20_frozen_v1 --version=1.0.0` selects the composite descent preset: `fetch` installs
-and verifies both of its components, `check` builds the composite from them, and it takes no `--file`, since it has
-no payload of its own. `check` uses installed data offline and validates
-the payload schema, coordinates or domain limits, and generation settings. `--file=<path>` selects
-an explicit exact-byte copy; an invalid path never falls back to retrieval.
-`fetch --offline` verifies an installed artifact without network access.
-Both `--preset=<id>` and `--preset <id>` forms are accepted, likewise `version`
-and `file`. An exact version is required.
+`list` reads the catalog without downloading anything. `fetch` downloads only
+the selected version and verifies its bytes; `fetch --offline` verifies an
+installed copy without network access. `check` works offline on installed data
+and validates the payload's schema, coordinates or domain limits and generation
+settings. `--file=<path>` selects an explicit copy, which must match the
+preset byte for byte; an invalid path is an error and never falls back to a
+download. Options can be written `--preset=<id>` or `--preset <id>`, and
+likewise for `--version` and `--file`. An exact version is always required.
 
-The native-free wrapper loads automatically for the preset `check` command.
-These commands do not build or initialize native GRAM. Normal Odyssey example
-startup performs preset retrieval itself, so the commands above are optional
-inspection/prefetch tools. The unqualified `assets check` reports the readiness
-of repository-local asset roots and catalogs (usable, missing, empty, Git LFS
-pointers, or empty payloads) and exits with status 1 when a required
-entry is not usable; it confirms that payload bytes exist, not that a grid is
-valid.
-The printed `runtime_wrapper_revision` is the GRAMSuite revision used when the
-preset was generated; the environment's own pin is in its `Project.toml`.
+The same commands take `--preset=mars_global_upper_p20_frozen_v1 --version=1.0.0`
+for the global upper atmosphere and
+`--preset=mars_global_near_surface_p20_frozen_v1 --version=1.2.0` (or
+`--version=1.1.0` or `--version=1.0.0`) for the near-surface atmosphere.
+`--preset=mars_global_descent_p20_frozen_v1 --version=1.0.0` selects the
+composite descent preset, which has no payload of its own: `fetch` installs and
+verifies both components, `check` builds the composite from them, and neither
+takes `--file`.
+
+A preset `check` loads the public `GRAMSuite` package (the Julia wrapper, not
+native GRAM) and refuses to run in a project that cannot load it; neither
+command builds or initializes native GRAM. The Odyssey example retrieves its
+preset itself when it starts, so these commands are only for inspecting or
+prefetching. The plain `assets check` above covers the repository's own asset
+roots, not preset contents. The `runtime_wrapper_revision` that `check` prints
+is the GRAMSuite revision the preset was generated with; the revision your
+environment runs is pinned in its `Project.toml`.

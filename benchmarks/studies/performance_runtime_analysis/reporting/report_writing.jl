@@ -5,6 +5,8 @@ function write_report(
     summary_df::DataFrame,
     orbit_summary_df::DataFrame,
     entry_duration_summary_df::Union{Nothing, DataFrame}=nothing;
+    context,
+    baseline_scenario::String="single_j2",
     plot_paths::Vector{String}=String[],
     split_gate_df::Union{Nothing, DataFrame}=nothing,
     split_gate_csv_path::Union{Nothing, String}=nothing,
@@ -22,9 +24,9 @@ function write_report(
     generated = string(now(UTC))
     julia_ver = string(VERSION)
     nthreads = Threads.nthreads()
-    solver_mode_default = _perf_default_solver_mode(spec.name)
-    solver_mode_effective = _perf_solver_mode_env(spec.name)
-    hw_default = _runtime_hardware_snapshot()
+    solver_mode_default = context.solver_mode_default
+    solver_mode_effective = context.solver_mode_effective
+    hw_default = context.hardware
 
     function _first_nonmissing(df::DataFrame, col::Symbol, fallback)
         if !(col in propertynames(df))
@@ -78,7 +80,7 @@ function write_report(
         slowest = summary_df[valid_rows[argmax(vals)], :]
     end
 
-    baseline = _scenario_metric(summary_df, PERF_BASELINE_SCENARIO, :total_time_mean_s)
+    baseline = _scenario_metric(summary_df, baseline_scenario, :total_time_mean_s)
     orientation = _scenario_metric(summary_df, "single_orientation_aero", :total_time_mean_s)
     multi4 = _scenario_metric(summary_df, "multi_4_gravity", :total_time_mean_s)
     multi8 = _scenario_metric(summary_df, "multi_8_gravity", :total_time_mean_s)
@@ -226,7 +228,7 @@ function write_report(
             println(io, "- Fastest successful scenario: `$(fastest.scenario)` with mean total time `$(round(fastest.total_time_mean_s; digits=3)) s`.")
         end
         if baseline !== nothing && orientation !== nothing && !ismissing(baseline) && !ismissing(orientation) && baseline > 0.0
-            println(io, "- Orientation + aerodynamic run vs `$(PERF_BASELINE_SCENARIO)`: `$(round(orientation / baseline; digits=2))x` runtime.")
+            println(io, "- Orientation + aerodynamic run vs `$(baseline_scenario)`: `$(round(orientation / baseline; digits=2))x` runtime.")
         end
         if multi4 !== nothing && multi8 !== nothing && multi16 !== nothing && multi32 !== nothing && multi64 !== nothing &&
            !ismissing(multi4) && !ismissing(multi8) && !ismissing(multi16) && !ismissing(multi32) && !ismissing(multi64) && multi4 > 0.0
@@ -391,10 +393,10 @@ function write_report(
 
         println(io, "## Fidelity Guardrails")
         println(io)
-        println(io, "- Split rollout gate enabled: `$(_split_rollout_enabled())`")
-        println(io, "- Split rollout enforce mode: `$(_split_rollout_enforce())`")
-        println(io, "- Split rollout cases: `$(join(_split_rollout_case_names(), ", "))`")
-        println(io, "- Split rollout solvers: `$(join(_split_rollout_solver_variants(), ", "))`")
+        println(io, "- Split rollout gate enabled: `$(context.split_rollout_enabled)`")
+        println(io, "- Split rollout enforce mode: `$(context.split_rollout_enforce)`")
+        println(io, "- Split rollout cases: `$(join(context.split_rollout_case_names, ", "))`")
+        println(io, "- Split rollout solvers: `$(join(context.split_rollout_solver_variants, ", "))`")
         if split_total > 0
             println(io, "- Gate pass count: `$(split_pass_count)/$(split_total)`")
             println(io, "- Any gate failure: `$(split_any_fail)`")
@@ -408,10 +410,10 @@ function write_report(
             println(io, "- Gate rows: none (gate disabled or no matching cases).")
         end
         println(io)
-        println(io, "- Multirate rollout gate enabled: `$(_multirate_rollout_enabled())`")
-        println(io, "- Multirate rollout enforce mode: `$(_multirate_rollout_enforce())`")
-        println(io, "- Multirate rollout cases: `$(join(_multirate_rollout_case_names(), ", "))`")
-        println(io, "- Multirate rollout max slowdown ratio: `$(_multirate_rollout_max_slowdown_ratio())`")
+        println(io, "- Multirate rollout gate enabled: `$(context.multirate_rollout_enabled)`")
+        println(io, "- Multirate rollout enforce mode: `$(context.multirate_rollout_enforce)`")
+        println(io, "- Multirate rollout cases: `$(join(context.multirate_rollout_case_names, ", "))`")
+        println(io, "- Multirate rollout max slowdown ratio: `$(context.multirate_rollout_max_slowdown_ratio)`")
         if multirate_total > 0
             println(io, "- Multirate gate pass count: `$(multirate_pass_count)/$(multirate_total)`")
             println(io, "- Multirate any gate failure: `$(multirate_any_fail)`")

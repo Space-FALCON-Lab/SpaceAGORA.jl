@@ -282,6 +282,34 @@ function rpo_rrt_star_add_node!(
     return new_idx
 end
 
+# Shared input conversion; search clocks and algorithm state stay in each planner.
+function _rpo_rrt_search_inputs(start_rtn, goal_rtn, bounds)
+    start = SVector{3, Float64}(start_rtn)
+    goal = SVector{3, Float64}(goal_rtn)
+    lo, hi = bounds
+    direct_path = hcat(collect(start), collect(goal))
+    return start, goal, lo, hi, direct_path
+end
+
+function _rpo_rrt_direct_result(direct_path, evaluate_components)
+    components = evaluate_components(direct_path)
+    return (
+        path=direct_path,
+        raw_path=direct_path,
+        cost=components.total,
+        raw_cost=components.total,
+        components=components,
+        raw_components=components,
+        adaptive=(enabled=false,),
+        refinement_improved=false,
+        cost_history=[components.total],
+        history=[direct_path],
+        iterations=0,
+        objective=components.total,
+        path_found=true,
+    )
+end
+
 """
 Plan an RPO path with bidirectional RRT-Connect.
 
@@ -316,31 +344,13 @@ function rpo_rrt_connect_plan_path(
     rng::Random.AbstractRNG,
     edge_is_safe=(a, b) -> rpo_rrt_segment_is_safe(a, b, geometry, settings; safe_distance_m=safe_distance_m),
 )
-    start = SVector{3, Float64}(start_rtn)
-    goal = SVector{3, Float64}(goal_rtn)
-    lo, hi = bounds
-    direct_path = hcat(collect(start), collect(goal))
+    start, goal, lo, hi, direct_path = _rpo_rrt_search_inputs(start_rtn, goal_rtn, bounds)
     iterations_completed = 0
     start_ns = time_ns()
     max_runtime = Float64(max_runtime_s)
 
     if edge_is_safe(start, goal)
-        components = evaluate_components(direct_path)
-        return (
-            path=direct_path,
-            raw_path=direct_path,
-            cost=components.total,
-            raw_cost=components.total,
-            components=components,
-            raw_components=components,
-            adaptive=(enabled=false,),
-            refinement_improved=false,
-            cost_history=[components.total],
-            history=[direct_path],
-            iterations=iterations_completed,
-            objective=components.total,
-            path_found=true,
-        )
+        return _rpo_rrt_direct_result(direct_path, evaluate_components)
     end
 
     start_tree = RPORRTConnectTree(start)
@@ -436,31 +446,13 @@ function rpo_rrt_star_plan_path(
     rng::Random.AbstractRNG,
     edge_is_safe=(a, b) -> rpo_rrt_segment_is_safe(a, b, geometry, settings; safe_distance_m=safe_distance_m),
 )
-    start = SVector{3, Float64}(start_rtn)
-    goal = SVector{3, Float64}(goal_rtn)
-    lo, hi = bounds
-    direct_path = hcat(collect(start), collect(goal))
+    start, goal, lo, hi, direct_path = _rpo_rrt_search_inputs(start_rtn, goal_rtn, bounds)
     iterations_completed = 0
     start_ns = time_ns()
     max_runtime = Float64(max_runtime_s)
 
     if edge_is_safe(start, goal)
-        components = evaluate_components(direct_path)
-        return (
-            path=direct_path,
-            raw_path=direct_path,
-            cost=components.total,
-            raw_cost=components.total,
-            components=components,
-            raw_components=components,
-            adaptive=(enabled=false,),
-            refinement_improved=false,
-            cost_history=[components.total],
-            history=[direct_path],
-            iterations=iterations_completed,
-            objective=components.total,
-            path_found=true,
-        )
+        return _rpo_rrt_direct_result(direct_path, evaluate_components)
     end
 
     tree = RPORRTConnectTree(start)

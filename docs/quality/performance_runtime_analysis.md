@@ -92,3 +92,45 @@ Primary outputs:
 5. `parallelization_performance_report_<profile>_<timestamp>.md`
 
 Headline speedup claims should use only rows whose matching serial baseline completed successfully and whose trajectory parity probe passed when a probe is configured for that scenario.
+
+
+## Reporting ownership and isolated tests
+
+`benchmarks/studies/performance_runtime_analysis/reporting/runtime_reports.jl`
+is the importable owner of the profile record, result summaries, text formatting,
+trajectory comparison and rollout decisions. Loading it requires CSV/DataFrames
+and standard libraries, but does not load SpaceAGORA, GRAMSuite, SPICE or Plots,
+start workers, activate a project, or change environment settings. Settings are
+read when their functions are called, rather than during import.
+
+The simulation entry point imports this module before building the case catalog.
+`reporting.jl` supplies the current machine/solver/guardrail context to the report
+writer and supplies warmup and simulation callbacks to the rollout evaluators.
+The native simulation runner lives in `measurement/rollout_solution.jl`; plotting
+remains a separate presentation component. Existing benchmark entry points and
+report columns retain their behavior. A standalone writer must supply its report
+context explicitly; historical recorded provenance still takes precedence over
+fallback machine fields.
+
+Reporting tests import the real module directly. Their shared synthetic row
+builder lives in `test/support/runtime_report_fixtures.jl`, while expected values,
+failure controls and CSV/Markdown assertions remain in the individual tests.
+A fresh-process test checks that module import leaves the environment, project,
+load path, working directory and worker list unchanged. These tests establish
+reporting contracts; they do not qualify simulation accuracy or runtime speed.
+
+### Shared benchmark support
+
+Artifact discovery is owned by `benchmarks/support/artifacts.jl`. Both the static
+comparison wrapper and smart ladder use its newest-mtime lookup; missing required
+artifacts still fail, while optional lookups return `nothing` only when the
+output directory exists but has no matching artifact.
+
+The entry-duration and per-orbit collectors share `measurement/routing.jl` for
+ordered route partitioning. Unsafe thread requests fall back to serial execution.
+Each collector retains its own execution, reference runs, row/log assembly and
+environment restoration. Importing these support modules starts no workers or
+simulation. Tests cover routing decisions, artifact failures and existing retry
+and output-order contracts. The runtime-Any gate tests share fixture construction
+under `test/support/runtime_any_gate_fixtures.jl`; their distinct negative controls
+remain in the individual test files.

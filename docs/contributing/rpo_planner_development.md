@@ -410,3 +410,21 @@ The required `tests` check also waits for the independent installation job.
 
 The service compatibility and loading checks are distinct from the planner-result
 contract.
+
+## Private result-assembly owners
+
+RRT-Connect and RRT-Star share input conversion and successful direct-path
+metadata in `src/models/gnc/planning/rpo/rrt.jl`. Their search trees, random
+streams, stopping rules, failure results and refinement policies remain owned
+by their respective algorithms. Direct results retain their path/history aliasing.
+
+CHOMP and STOMP share final refinement and result conversion through
+`_rpo_refined_optimizer_result` in `comparison/trajectory_optimizers.jl`.
+The helper retains raw paths, raw costs, component values, histories, iteration
+counts and objective values supplied by each search. It is a private implementation
+detail, not an additional planner interface. The optimizers retain separate update
+rules and termination checks.
+
+The standalone RRT boundary suite covers direct, blocked and unsuccessful searches
+without HYPR. The comparison-planner object suite exercises each supported
+algorithm and its refusal/metadata contracts independently.

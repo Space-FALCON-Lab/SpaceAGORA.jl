@@ -1,60 +1,74 @@
 # Default RHS execution plans for constellations
 
 `_rhs_execution_plan_uncached` in
-`src/orchestration/simulation/engine/setup.jl` supplies the heuristic plan.
-With `SPACEAGORA_RHS_CALIBRATE=auto`, the pre-solve calibration can instead
-pin a plan through the production calibration cache. Static profiles and the
-heuristic comparison in this study disable calibration so that the two choices
-can be examined separately.
+`src/orchestration/simulation/engine/setup.jl` supplies the heuristic plan for a
+constellation's right-hand side. With `SPACEAGORA_RHS_CALIBRATE=auto` (the
+default), the pre-solve calibration sweep can instead pin a plan through the
+production calibration store. Static profiles, and the heuristic arm of the
+study below, run with calibration off so that the two choices can be examined
+separately.
 
-Historical plan ladders and the derivation of shipped defaults are retained
-under the [research-record policy](../src/user/studies_benchmarks.md#research-records-and-generated-results).
-This page keeps the rule, its scope and the procedure for checking it.
+This page covers the rule, its scope and how to check it. The plan ladders and
+the derivation of the shipped defaults are kept in the lab's research records
+(see [Record a result](../src/user/studies_benchmarks.md#record-a-result)).
 
 ## Route admission and worker width
 
-The flat route has dispatch and reduction costs as well as the work performed
-inside its pre-passes. `SPACEAGORA_HARMONICS_BATCH_MIN_SATS_PER_WORKER` sizes a
-pre-pass slice; it is not the same decision as whether to open a flat worker
-team. `SPACEAGORA_HARMONICS_FLAT_MIN_SATS_PER_WORKER` supplies the latter heuristic
-floor, with a default of 64 spacecraft per worker.
+The flat route has dispatch and reduction costs on top of the work done in its
+pre-passes. Two settings answer different questions:
 
-The floor gates route admission rather than narrowing the flat team's width.
-The supported exceptions include a budget of one, an enclosing outer split,
-the generic branch's batchable pre-pass kernels and opt-in spin-barrier
-dispatch. These exceptions retain their own support checks. They do not make
-the heuristic a guarantee of the fastest route on every machine or workload.
+- `SPACEAGORA_HARMONICS_BATCH_MIN_SATS_PER_WORKER` (default 4) sizes a
+  harmonics pre-pass slice for SIMD and caps the pre-pass's worker count, for
+  any plan.
+- `SPACEAGORA_HARMONICS_FLAT_MIN_SATS_PER_WORKER` (default 64) is the heuristic
+  floor for opening a flat worker team at all: the default plan takes the flat
+  route at the full budget only when every worker gets at least this many
+  spacecraft.
 
-The generic flat branch also has
-`SPACEAGORA_EFFECTOR_FLAT_MIN_THREAD_BUDGET` (default 4, from
-`SPACEAGORA_AUTO_THREAD_MIN_BUDGET`) to amortize queue overhead. A stack whose
-effectors are all served by pre-passes does not build that queue and is exempt
-from this budget floor. It still passes the generic branch's work and
-satellites-per-worker admission checks. A stack containing queue-only
-effectors retains the floor.
+The second floor gates route admission; it does not narrow the flat team's
+width. It does not apply at a budget of one, under an enclosing outer split, to
+stacks with a batchable pre-pass kernel (n-body, SRP, inverse-square) on the
+generic branch, or when the opt-in spin-barrier dispatch is active
+(`SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER`). Those cases keep their own support
+checks. The floor is a heuristic, not a guarantee that the chosen route is the
+fastest on every machine or workload.
 
-At allotment one, supported pre-pass-only stacks can reuse batched kernels
-without spawning tasks. See [third-body and SRP paths](third_body_cost.md) and
-[aerodynamic batching](../../benchmarks/studies/aero_batch/FINDINGS.md) for the associated ownership constraints.
+The generic flat branch also requires `SPACEAGORA_EFFECTOR_FLAT_MIN_THREAD_BUDGET`
+threads (default `SPACEAGORA_AUTO_THREAD_MIN_BUDGET`, itself 4 by default), to
+amortize the overhead of its work queue. A stack whose effectors are all served
+by pre-passes (`_rhs_all_prepass_effectors`) never builds that queue and is
+exempt from this floor, though it still has to pass the generic branch's work
+and spacecraft-per-worker checks. A stack with any queue-only effector keeps
+the floor.
+
+At a budget of one, a supported pre-pass-only stack with at least
+`SPACEAGORA_EFFECTOR_FLAT_MIN_SATS` spacecraft (default 24) takes the flat route
+and runs the batched kernels inline, without spawning tasks. See
+[third-body and SRP paths](third_body_cost.md) and
+[aerodynamic batching](../../benchmarks/studies/aero_batch/FINDINGS.md) for the
+related ownership constraints.
 
 ## Comparing plans
 
 The [plan-ladder study](../../benchmarks/studies/rhs_heuristic_defaults/README.md)
-pins candidate plans through one-row production calibration stores. It records
-the applied source, mode, allotment and scheduler so a failed pin is visible.
+pins each candidate plan through a one-row production calibration store and
+records the plan the engine reports having applied (source, mode, allotment and
+scheduler), so a pin that failed is visible.
 
 ```bash
 julia --project=. --threads=8 benchmarks/studies/rhs_heuristic_defaults/plan_ladder.jl --sizes=16,32,64,128,256,512,1024,4096 --repeats=3
 ```
 
-Use `--case=vacuum|aero` for the L50 vacuum or analytic-exponential-aero
-configuration and `--dump-dir=<dir>` to save full state histories. Compare
-repeated plans within the same invocation and record host load, revision and
-thread budget. Re-measure on the target host before changing a default.
+`--case=vacuum` (the default) flies degree-50 harmonics in vacuum, and
+`--case=aero` adds an aerodynamic coefficient model over an analytic
+exponential atmosphere. `--dump-dir=<dir>` also saves full state histories.
+Compare plans within one invocation, and record the host load, revision and
+thread budget. Measure again on the target host before changing a default.
 
-Route changes must retain each spacecraft's accumulation order. Compare every
-saved time and state component, not just the final state or a rounded table.
+A route change must keep each spacecraft's accumulation order. Compare every
+saved time and state component, not only the final state or a rounded table.
 `test/unit/simulation/rhs_heuristic_defaults_tests.jl`,
-`harmonics_batch_parity_tests.jl` and `third_body_route_parity_tests.jl` retain
-regression coverage; archived state identity only qualifies its recorded
-revision and cases.
+`test/unit/simulation/harmonics_batch_parity_tests.jl` and
+`test/unit/simulation/third_body_route_parity_tests.jl` hold the regression
+coverage. A recorded state-identity result qualifies only its own revision and
+cases.

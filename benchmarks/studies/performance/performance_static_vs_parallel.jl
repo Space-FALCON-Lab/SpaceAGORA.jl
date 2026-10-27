@@ -1,3 +1,8 @@
+if !isdefined(@__MODULE__, :BenchmarkArtifacts)
+    include(joinpath(@__DIR__, "..", "..", "support", "artifacts.jl"))
+end
+using .BenchmarkArtifacts: _latest_artifact_path, _latest_artifact_path_optional
+
 const _WRAPPER_DIR = @__DIR__
 include(joinpath(_WRAPPER_DIR, "..", "..", "scripts", "performance_paper_pipeline.jl"))
 
@@ -256,32 +261,6 @@ function _arm_env_pairs(
         push!(pairs, "SPACEAGORA_PERF_PROCS" => string(arm.process_workers))
     end
     return pairs
-end
-
-function _latest_artifact_path(outdir::String, prefix::String, profile_name::String, suffix::String)::String
-    pattern = "$(prefix)_$(profile_name)_"
-    candidates = String[]
-    for entry in readdir(outdir)
-        if startswith(entry, pattern) && endswith(entry, suffix)
-            push!(candidates, joinpath(outdir, entry))
-        end
-    end
-    isempty(candidates) && error("No artifact found in '$outdir' for prefix='$prefix' profile='$(profile_name)' suffix='$suffix'")
-    sort!(candidates; by=path -> stat(path).mtime)
-    return last(candidates)
-end
-
-function _latest_artifact_path_optional(outdir::String, prefix::String, profile_name::String, suffix::String)::Union{Nothing, String}
-    pattern = "$(prefix)_$(profile_name)_"
-    candidates = String[]
-    for entry in readdir(outdir)
-        if startswith(entry, pattern) && endswith(entry, suffix)
-            push!(candidates, joinpath(outdir, entry))
-        end
-    end
-    isempty(candidates) && return nothing
-    sort!(candidates; by=path -> stat(path).mtime)
-    return last(candidates)
 end
 
 # Core runtime outputs share one stamp. Require that run's evidence instead of

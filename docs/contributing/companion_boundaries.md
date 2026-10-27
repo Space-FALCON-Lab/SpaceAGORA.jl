@@ -24,9 +24,9 @@ contracts. The release evidence for an adapter is described in
 A boundary change can start in either repository, so both test the pair:
 
 - Each companion's CI installs the companion with a released SpaceAGORA. Its
-  `core-release-pin` job checks that the pinned core commit (in HYPR's workflow
-  file, SpaceAGORAEDG's `CoreSource.toml` or SpaceAGORAMuJoCo's
-  `SpaceAGORASource.toml`) is the commit of a SpaceAGORA release tag inside the
+  `core-release-pin` job checks that the pinned core commit (in HYPR's and
+  SpaceAGORAMuJoCo's `SpaceAGORASource.toml`, or SpaceAGORAEDG's
+  `CoreSource.toml`) is the commit of a SpaceAGORA release tag inside the
   companion's compatibility range. While a contract change pins an unreleased core
   commit, that job fails until the release. A companion change that breaks the
   boundary fails in this CI.
@@ -239,14 +239,21 @@ shared file, regenerate it in every package the manifest lists for it and move e
 companion's `SharedSupport.toml` pin. Keep a companion's permitted names and its
 scientific test expectations in the companion.
 
-The shared installer, used by SpaceAGORAEDG and SpaceAGORAMuJoCo, refuses a
-destination inside either source checkout, also through a symlinked parent, and a
-nonempty destination that has no ownership marker or whose marker names another
-source pair. It writes the marker before it fetches the core, so an interrupted
-first installation can be retried. Before it changes any package environment it
-checks the destination again and verifies the fetched core checkout. An environment created by SpaceAGORAMuJoCo's
-earlier setup script has no marker, so the installer refuses it; install into a new
-directory.
+The shared installer is used by HYPR, SpaceAGORAEDG and SpaceAGORAMuJoCo.
+It supports companions that declare SpaceAGORA in either
+`[deps]` or `[weakdeps]`. It validates the canonical core UUID in every supplied
+declaration and checks the selected core source against it. The paired
+environment explicitly installs core; the companion can retain an optional
+core integration in its own package metadata. Only direct dependencies and test
+extras become auxiliary environment dependencies: unrelated weak dependencies,
+including HYPR's retired `SpaceAGORAHYPR` compatibility binding, are not installed.
+
+The common installer refuses unmanaged nonempty destinations and destinations
+inside either source checkout, including through symlinked parents. It records
+its source pair before acquisition so interrupted first installs can be retried;
+setup rechecks ownership before package-manager mutation. Existing MuJoCo
+environments without its ownership marker must use a new separate destination.
+This does not change previously published installer sources or release pins.
 
 ### Mission-history contract
 

@@ -8,8 +8,12 @@ and the CLI's `benchmark runtime-analysis` command starts the same launcher
 
 ## Run
 
-The study runs in the examples environment. The profile is `quick` (the
-default), `full`, or `smoke`, another name for `quick`:
+The study runs in the examples environment. Its profiles are `quick` (the
+default) and `full`. The positional argument `smoke` selects `quick` with
+smoke mode enabled, reducing cases, repetitions, warm-ups and Monte Carlo
+samples. It is a smaller workload, so its measurements are not interchangeable
+with ordinary `quick` results. `--profile` and `SPACEAGORA_PERF_PROFILE` accept
+`quick` or `full`, not `smoke`:
 
 ```bash
 julia --startup-file=no --project=examples benchmarks/studies/performance_runtime_analysis.jl quick

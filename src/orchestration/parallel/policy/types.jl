@@ -77,6 +77,13 @@ Base.@kwdef mutable struct PolicyTelemetry
     # against. Accounting only.
     callback_width_density::Int64 = 0
     callback_width_density_static::Int64 = 0
+    # --- regret guard (regret_guard.jl): set once when the guard freezes the
+    # process to the baseline plan. Accounting only. ---
+    regret_guard_fired::Bool = false
+    regret_guard_reason::Symbol = :none
+    regret_guard_margin::Float64 = 0.0
+    regret_guard_count::Int64 = 0
+    # --- end regret guard ---
 end
 
 Base.@kwdef mutable struct AdaptiveChoiceStats

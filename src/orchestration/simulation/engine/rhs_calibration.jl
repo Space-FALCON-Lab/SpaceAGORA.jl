@@ -18,6 +18,10 @@
 #   SPACEAGORA_RHS_CALIBRATE_N_TIMED  number of timed calls per candidate (default 10)
 #   SPACEAGORA_RHS_CALIBRATE_SCHEDULERS  static,dynamic (default) -- which inner
 #                                     schedulers the flat ladder is swept over
+#   SPACEAGORA_RHS_CALIBRATE_SKIP_RATIO  0 (default, off) -- when > 0, replaces the
+#                                     fixed MIN_SOLVE_S rule with: honour a cached
+#                                     verdict (skip the sweep) when the predicted
+#                                     solve time < ratio * the predicted sweep time
 #
 # The sweep covers (scheduler x allotment) for the flat route, not allotment
 # alone. The scheduler used to come from SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER
@@ -1497,16 +1501,68 @@ function _rhs_calib_reverify_due(sig::String)::Bool
     return honoured_ns * share >= sweep_ns
 end
 
+# Ratio of predicted solve time to predicted sweep time below which the sweep is
+# skipped and a cached verdict honoured. 0 (default) keeps the fixed MIN_SOLVE_S
+# rule. Dimensionless; there is no repo-sourced default, so it is opt-in only.
+@inline function _rhs_calibrate_skip_ratio()::Float64
+    raw = strip(_engine_env_get("SPACEAGORA_RHS_CALIBRATE_SKIP_RATIO", "0"))
+    v = try
+        parse(Float64, raw)
+    catch
+        throw(ArgumentError("SPACEAGORA_RHS_CALIBRATE_SKIP_RATIO must be a float, got '$raw'"))
+    end
+    return isfinite(v) ? max(0.0, v) : 0.0
+end
+
+# Predicted solve time (ns) for a cached entry, from existing records only: the
+# minimum measured solve_ns when there is one, otherwise the estimated RHS
+# evaluation count (`_rhs_estimated_evaluations`) times the per-call time the
+# sweep recorded for the heuristic's own plan. 0.0 = no usable prediction (a
+# first encounter has no entry at all, so it always sweeps).
+function _rhs_calib_predicted_solve_ns(entry, est_evals::Float64)::Float64
+    solve_ns = Float64(get(entry, "solve_ns", 0.0))
+    (isfinite(solve_ns) && solve_ns > 0.0) && return solve_ns
+    (isfinite(est_evals) && est_evals > 0.0) || return 0.0
+    timings = get(entry, "candidates", nothing)
+    timings isa AbstractVector || return 0.0
+    for t in timings
+        get(t, "default", false) === true || continue
+        ns = Float64(get(t, "ns", 0.0))
+        (isfinite(ns) && ns > 0.0) && return est_evals * ns
+    end
+    return 0.0
+end
+
+# Pure skip decision: `true` skip the sweep, `false` sweep, `nothing` no usable
+# prediction (or ratio off) so the caller keeps its fixed rule.
+function _rhs_calib_skip_by_prediction(ratio::Float64, predicted_solve_ns::Float64,
+                                       predicted_sweep_ns::Float64)::Union{Nothing, Bool}
+    ratio > 0.0 || return nothing
+    (isfinite(predicted_solve_ns) && predicted_solve_ns > 0.0) || return nothing
+    (isfinite(predicted_sweep_ns) && predicted_sweep_ns > 0.0) || return nothing
+    return predicted_solve_ns < ratio * predicted_sweep_ns
+end
+
 # True when this signature has been seen to solve for longer than the threshold,
 # i.e. we are in the always-sweep regime. An unmeasured signature answers TRUE:
 # the first encounter sweeps, which is also the only conservative choice, since
 # nothing is yet known about what the cache would be replaying into.
-function _rhs_calib_solve_exceeds_threshold(sig::String)::Bool
+function _rhs_calib_solve_exceeds_threshold(sig::String; est_evals::Float64 = 0.0)::Bool
     _rhs_calib_load!()
     entry = lock(_rhs_calib_lock) do
         get(_rhs_calib_cache, sig, nothing)
     end
     entry === nothing && return true
+    # Optional ratio rule (SPACEAGORA_RHS_CALIBRATE_SKIP_RATIO); when it has a
+    # prediction for both sides it replaces the fixed threshold below, otherwise
+    # the fixed threshold decides, exactly as with the ratio off.
+    ratio = _rhs_calibrate_skip_ratio()
+    if ratio > 0.0
+        skip = _rhs_calib_skip_by_prediction(
+            ratio, _rhs_calib_predicted_solve_ns(entry, est_evals),
+            Float64(get(entry, "sweep_ns", 0.0)))
+        skip === nothing || return !skip
+    end
     solve_ns = Float64(get(entry, "solve_ns", 0.0))
     (isfinite(solve_ns) && solve_ns > 0.0) || return true
     return solve_ns >= _rhs_calibrate_min_solve_seconds() * 1e9
@@ -1563,9 +1619,9 @@ end
 # +8%) carried rhs_plan_source=sweep with verdict heuristic on every repeat,
 # while the same cases at twelve threads hit a cached heuristic verdict and sat
 # within 3%. A cached PLAN still re-sweeps on a long solve either way.
-function _rhs_calib_cached_verdict(sig::String, honour_heuristic_verdict::Bool)
+function _rhs_calib_cached_verdict(sig::String, honour_heuristic_verdict::Bool; est_evals::Float64 = 0.0)
     _rhs_calibration_mode() == :force && return nothing
-    long_solve = _rhs_calib_solve_exceeds_threshold(sig)
+    long_solve = _rhs_calib_solve_exceeds_threshold(sig; est_evals = est_evals)
     (long_solve && !honour_heuristic_verdict) && return nothing
     cached = _rhs_calib_lookup(sig)
     cached === nothing && return nothing
@@ -1644,7 +1700,8 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
 
     penv = p.shared_buffers.policy_env_config[]
     honour_heuristic_verdict = penv !== nothing && penv.policy_v2
-    cached = _rhs_calib_cached_verdict(sig, honour_heuristic_verdict)
+    est_evals = _rhs_calibrate_skip_ratio() > 0.0 ? _rhs_estimated_evaluations(p) : 0.0
+    cached = _rhs_calib_cached_verdict(sig, honour_heuristic_verdict; est_evals = est_evals)
     if cached !== nothing
         lock(_rhs_calib_lock) do
             _rhs_calib_solve_honoured[sig] = true

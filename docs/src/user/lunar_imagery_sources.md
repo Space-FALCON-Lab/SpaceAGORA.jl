@@ -1,159 +1,170 @@
 # Building lunar terrain and imagery
 
-The optional Python tools in `scripts/dev/terrain/` prepare a local terrain
-bundle for the viewer and the lunar terrain loader. Ordinary simulations do
-not need these tools, Python packages, or network downloads.
+The optional Python tools in `scripts/dev/terrain/` build a local terrain
+bundle for the viewer and the lunar terrain loader. Ordinary simulations need
+neither these tools nor their Python packages or downloads.
 
-Run commands from the repository root. Use a separate Python environment if
-NumPy and Pillow are not already available:
+Run the commands from the repository root. The tools need Python 3.9 or later
+with NumPy and Pillow; if those are not installed, use a separate environment:
 
 ```text
 python3 -m venv .venv-terrain
 .venv-terrain/bin/python -m pip install -r scripts/dev/terrain/requirements.txt
 ```
 
-The commands below use `python3`; substitute that environment's Python when
+The commands below call `python3`; substitute that environment's Python when
 needed. On Windows its executable is `.venv-terrain\Scripts\python.exe`.
-Python 3.9 or later is required.
 
 ## Start with elevation data
 
-This example requests LOLA elevation data around the configured Apollo 11 site
-and skips the optional NAC raster and imagery:
+This command requests LOLA elevation data around the configured Apollo 11
+site and skips the optional NAC terrain model and the imagery:
 
 ```text
 python3 scripts/dev/terrain/fetch_moon_site.py --site 0.67416 23.47314 --name apollo11 --out output/terrain/moon/apollo11 --no-nac --no-imagery
 ```
 
-`--lola-half-deg` controls the local elevation window. A second, coarser LOLA
-window covers the configured descent corridor. Its extent depends on
+`--lola-half-deg` sets the half-width of the local elevation window in
+degrees. A second, coarser LOLA window covers the whole imagery root, which is
+sized to contain the descent corridor, so its extent depends on
 `--root-zoom`, `--uprange-km`, `--approach-azimuth` and the altitude profile.
-`--profile` accepts a JSON list of `[distance_to_go_km, height_above_site_km]`
-pairs. The built-in profile is a visualization coverage template, not a new
-validation of Apollo flight reconstruction.
+`--profile` takes a JSON file holding a list of
+`[distance_to_go_km, height_above_site_km]` pairs; the tool rescales the
+distances so that the longest equals `--uprange-km`. Without `--profile` it
+uses the built-in Apollo 11 descent profile. That profile is a template for
+visualization coverage, not a new validation of the Apollo flight
+reconstruction.
 
-To request imagery as well, omit `--no-imagery`. To request the registered
-Apollo 11 NAC DTM, omit `--no-nac`. NAC download reads the complete source TIFF,
-which is larger than a local subset. LOLA and the tiled PDS imagery use bounded
-HTTP range reads. Source availability and rate limits can stop a download;
-partial caches are retained for later reuse.
+To request imagery as well, leave out `--no-imagery`; to request the
+registered Apollo 11 NAC DTM, leave out `--no-nac`. The NAC download fetches
+the complete source TIFF, which is larger than the local subset it keeps.
+LOLA and the tiled PDS imagery are read with bounded HTTP range requests.
+Source availability and rate limits can stop a download; whatever was already
+cached is kept for the next run.
 
-The supplied NAC registry covers Apollo 11. Another site needs its own
-verified product entry or `--no-nac`. The reader supports the explicitly
-validated lunar sphere and north-up equirectangular GeoTIFF layout; an
-unsupported layout is rejected rather than interpreted approximately.
+The NAC registry in the tool covers only Apollo 11. Another site needs its
+own verified product entry there. Without one, pass `--no-nac`, or give the
+site its own `--name`, which the tool reports as unregistered and builds
+without a NAC terrain model. The NAC reader accepts only the layout it was
+written for: a north-up equirectangular GeoTIFF on the lunar sphere with a
+2 m grid. It rejects any other layout rather than interpret it approximately.
 
 ## Files and height convention
 
-`site.json` lists the DEMs and optional imagery index. Each DEM has a JSON
-header and a `.f32` binary array. Values are **elevations in metres above a
-1,737,400 m sphere**, not planet-centred radii. The coordinates are
-planetocentric latitude and east-positive longitude. Columns run west to east;
-rows run north to south. Float32 values are little-endian and row-major.
+`site.json` lists the DEMs, finest first, and the imagery index when imagery
+was built. Each DEM (`dem_nac`, `dem_lola` and `dem_lola_wide`) is a JSON
+header plus a `.f32` binary array. The values are elevations in meters above
+a 1,737,400 m sphere, not radii from the Moon's center. Coordinates are
+planetocentric latitude and east-positive longitude. Columns run west to east
+and rows north to south; the values are little-endian Float32, stored
+row-major.
 
-Header latitude and longitude limits are the outer edges of the cells. Samples
-lie at cell centres. Regional longitude bounds may extend beyond the usual
-longitude interval to keep a region crossing the seam continuous. Use the
-same reference radius when connecting the grid to guidance, touchdown, or
-plume models.
+The header's latitude and longitude limits are the outer edges of the cells,
+and the samples lie at cell centers. A regional window that crosses the
+longitude seam keeps continuous bounds, so they may fall outside the usual
+longitude interval. Use the same reference radius when you connect the grid to
+guidance, touchdown or plume models.
 
-The coarse LOLA producer averages source columns and a bounded number of evenly
-spaced rows inside each output cell. This is a stratified approximation, not a
-full two-dimensional area mean. The NAC stride preserves the coordinates of
-the selected source centres. Invalid or missing elevations are rejected;
-the producer does not replace them with invented terrain.
+The coarse LOLA window averages the source columns and up to four evenly
+spaced source rows inside each output cell. This is a stratified
+approximation, not a full two-dimensional area mean. The NAC stride keeps the
+coordinates of the source cell centers it selects. Invalid or missing
+elevations are rejected; the tool does not fill them with invented terrain.
 
 ## Reusing and rebuilding results
 
-DEM reuse requires the same request, producer version, datum, shape and binary
-checksum. A mismatched bundle must be regenerated in a fresh output directory.
-`--reuse DIR` can borrow matching DEMs and source caches from another bundle.
-Exported DEM files are copied into the new bundle so it remains self-contained;
-raw download caches may be linked to avoid duplicating large source rasters.
-Borrowed DEM pairs are validated before copying. A mismatched source leaves a
-fresh output directory unchanged, so retrying without `--reuse` can build the DEM.
+A DEM is reused only when the request, producer version, datum, shape and
+binary checksum all match. A bundle that does not match must be regenerated in
+a fresh output directory. `--reuse DIR` borrows matching DEMs and source
+caches from another bundle. Borrowed DEM files are copied, so the new bundle
+stays self-contained; raw download caches may be linked instead, to avoid
+duplicating large source rasters. A borrowed DEM pair is validated before it
+is copied, and a mismatched source leaves the fresh output directory
+untouched, so a retry without `--reuse` can still build the DEM.
 
-Trek tiles must decode completely at the expected size before cache reuse;
-archive tiles must have the byte count declared by the raster index. Invalid
-entries are skipped and refetched into the current output's cache without
-modifying a borrowed cache. Cache writes publish complete files atomically.
-An explicit marker remembers a Trek HTTP 404; legacy empty files are refetched
-because they could be interrupted writes. Invalid image responses raise an
-error rather than silently creating missing imagery.
+Moon Trek tiles are reused only if they decode completely at the expected
+size, and archive tiles only if they have the byte count that the raster index
+declares. Invalid entries are skipped and fetched again into the current
+output's cache, without modifying a borrowed cache. Cache writes publish
+complete files atomically. A marker file records a Trek HTTP 404; empty files
+left by older versions of the tool are fetched again, because they could be
+interrupted writes. An invalid image response raises an error instead of
+leaving imagery silently missing.
 
-Imagery is stored in `imagery/tiles.json` and JPEG tiles. Reuse checks the build
-request, including the track, source registry, registration corrections,
-texture and image settings, and checks every referenced tile's checksum.
-Changing those inputs requires `--retile` or a fresh output directory.
-`--retile` builds a replacement in a temporary directory and keeps the previous
-imagery if building fails. It does not delete the reusable source caches.
+Imagery goes into `imagery/tiles.json` and JPEG tiles. Reuse checks the whole
+build request, including the track, the source registry, the registration
+corrections, the texture and the image settings, and it checks every
+referenced tile's checksum. If any of those inputs change, pass `--retile` or
+use a fresh output directory. `--retile` builds the replacement in a
+temporary directory and keeps the previous imagery if the build fails. It does
+not delete the reusable source caches.
 
-The stub tool, `stub_quadtree_site.py`, is for **older nested-square bundles**
-with `imagery/imagery.json`, or for a development fixture made from a local
-global texture. It does not convert the current producer's quadtree again.
-It refuses to overwrite existing nonempty tile output or use the source site
-as its output directory. Both producers require a root image. If the stub
-reports that its source is too coarse, enlarge `--root-deg`, reduce
-`--tile-px`, or supply a finer source covering the root.
+The stub tool, `stub_quadtree_site.py`, is for older bundles made of nested
+squares (`imagery/imagery.json`), or for a development fixture cut from a
+local global texture. It does not re-cut a bundle that the current tool has
+already written as a quadtree. It refuses to write into existing nonempty tile
+output or to use the source site as its output directory. Both tools require
+imagery for the root tile. If the stub reports that its source is too coarse,
+enlarge `--root-deg`, reduce `--tile-px`, or supply a finer source that covers
+the root.
 
 ## Registration and resolution
 
-`check_site_registration.py` compares archive imagery with a DEM hillshade,
-optional Moon Trek imagery, and a bright-object heuristic near the supplied
-site coordinate. The example below requires `dem_nac.json`, which the first
-LOLA-only command does not create. For the configured Apollo 11 site, first
-rerun `fetch_moon_site.py` without `--no-nac` to produce the optional NAC DEM;
-you can keep `--no-imagery`. Then run:
+`check_site_registration.py` compares archive imagery with a hillshade of a
+DEM, optionally with Moon Trek imagery, and with a bright-object heuristic
+near the given site coordinate. The example below needs `dem_nac.json`, which
+the LOLA-only command above does not create. For the configured Apollo 11
+site, first rerun `fetch_moon_site.py` without `--no-nac` to produce the NAC
+DEM (you can keep `--no-imagery`), then run:
 
 ```text
 python3 scripts/dev/terrain/check_site_registration.py --site 0.67416 23.47314 --dem output/terrain/moon/apollo11/dem_nac.json --cache output/terrain/moon/apollo11/pds_cache
 ```
 
-It can fetch missing archive data. Reported shifts are metres north and east,
-with separate latitude and longitude spacings. Correlation peaks and the
-bright-object heuristic are diagnostics, not proof that one product is an
-absolute position reference. Recheck registration after changing a product,
-site, or datum before treating the imagery as aligned.
+The tool can fetch archive data that is not cached yet. It reports shifts in
+meters north and east, computed with separate latitude and longitude
+spacings. Correlation peaks and the bright-object heuristic are diagnostics;
+they do not show that either product is an absolute position reference. Check
+the registration again after changing a product, the site or the datum,
+before you treat the imagery as aligned.
 
-The inherited `LAYER_REGISTRATION` constants describe the original Apollo 11
-study. They are retained as configured inputs, not independently remeasured
-acceptance results for this extraction. The deepest imagery level may sample
-more finely than the source resolves. Viewer texture sharpness is not evidence
-of terrain accuracy, and image tone/detail processing does not improve the
-physical DEM.
+The `LAYER_REGISTRATION` offsets in `fetch_moon_site.py` come from the
+original Apollo 11 study. They are configured inputs, not results remeasured
+for this repository. The deepest imagery level may be sampled more finely than
+its source resolves. A sharp texture in the viewer is not evidence of terrain
+accuracy, and the tone and detail processing applied to the imagery does not
+improve the physical DEM.
 
 ## Sources and attribution
 
-The producer's named registries record product URLs and source metadata:
+The tool's source registries record the product URLs and source metadata:
 
-- [LOLA elevation convention](https://pds-geosciences.wustl.edu/missions/lro/lola_faq.htm): each integer sample is multiplied by 0.5 to obtain metres above the 1,737,400 m sphere.
+- [LOLA elevation convention](https://pds-geosciences.wustl.edu/missions/lro/lola_faq.htm): each integer sample times 0.5 gives meters above the 1,737,400 m sphere.
 - [LOLA GDR archive](https://pds-geosciences.wustl.edu/lro/lro-l-lola-3-rdr-v1/lrolol_1xxx/data/lola_gdr/): the `LDEM_128` cylindrical elevation raster.
-- [NASA PDS cloud archive](https://pds.mcp.nasa.gov/), LROC PDS4 products under `data/store/img/lunar_reconnaissance_orbiter/pds4/lroc/` (the directory itself does not serve a listing): the Apollo 11 NAC DTM and `NAC_PHO_E010N0230_M175124932R` browse imagery.
+- [NASA PDS cloud archive](https://pds.mcp.nasa.gov/), LROC PDS4 products under `data/store/img/lunar_reconnaissance_orbiter/pds4/lroc/` (the directory itself serves no listing): the Apollo 11 NAC DTM and the `NAC_PHO_E010N0230_M175124932R` browse imagery.
 - [NASA Moon Trek](https://trek.nasa.gov/moon/): the configured WAC, Kaguya and Apollo 11 imagery layers.
-- [LROC terms and attribution](https://lroc.im-ldi.com/about/terms): consult the applicable product terms before redistributing an imagery bundle. Preserve the producer's product URLs, credits and citations.
+- [LROC terms and attribution](https://lroc.im-ldi.com/about/terms): read the terms for each product before you redistribute an imagery bundle, and keep the product URLs, credits and citations that the tool records.
 
-The Apollo 11 coordinate is inherited from the original study's use of
+The Apollo 11 coordinate comes from the original study, which used
 Wagner et al. (2017), *Icarus* 283, 92–103,
 [doi:10.1016/j.icarus.2016.05.011](https://doi.org/10.1016/j.icarus.2016.05.011).
-LROC imagery metadata retains the NASA/GSFC/Arizona State University credit and
-Robinson et al. (2010), *Space Science Reviews* 150, 81–124.
+The LROC imagery metadata keeps the NASA/GSFC/Arizona State University credit
+and the citation Robinson et al. (2010), *Space Science Reviews* 150, 81–124.
 
 ## What is tested
 
-Run the deterministic Python tests without downloads:
+Run the deterministic Python tests, which download nothing:
 
 ```text
 python3 -m unittest discover -s test/scripts -p test_terrain_pipeline.py -v
 ```
 
-They exercise synthetic raster geometry, cell-centre preservation, longitude
-seams, HTTP range rejection, cache identity, failed-rebuild preservation,
-registration distance units, and legacy-stub output. A bounded real 4×4 LOLA
-subset was also read from the current default WUSTL endpoint with TLS
-verification enabled. Its 16 elevations match the earlier MIT-mirror sample
-and checksum. This is a source-subset check, not a complete live CLI run.
+They cover synthetic raster geometry, cell-center preservation, longitude
+seams, rejection of bad HTTP range responses, cache identity, preservation of
+the previous output when a rebuild fails, registration distance units and
+legacy-stub output. One test runs the LOLA-only command end to end against a
+small synthetic raster in place of the network.
 
-Live NAC download, current source registration and browser appearance require
-separate acceptance with real assets. Passing the synthetic tests does not
-establish those results. No new live product measurements or physical
-calibration are claimed by this guide.
+Because nothing is downloaded, the tests do not cover a live NAC download, the
+registration of the current source products, or how the imagery looks in the
+viewer. Those need a separate check with the real assets.

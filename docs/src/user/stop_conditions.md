@@ -4,53 +4,50 @@ Use this page when a run should end as soon as something happens, rather than
 after a fixed time or a fixed number of orbits: an altitude is reached, a
 quantity crosses a limit, a state you are looking for appears.
 
-This page is for a student who has run the [Quickstart](quickstart.md). It
-uses the solver's callback mechanism as it exists today, without changes to
-SpaceAGORA.
+The page assumes you have run the [Quickstart](quickstart.md). It uses the
+solver's callback mechanism, so no change to SpaceAGORA is needed. You attach
+a *callback* to a simulation: a small function the solver calls after every
+step, which checks a condition on the state and, when the condition holds,
+tells the solver to stop. Then you check that the run stopped at the right
+moment, against a hand calculation and against the results file.
 
-Shortest successful command (the complete example below saved as a file):
+Saved as `stop_at_altitude.jl`, the complete example below runs with:
 
 ```text
 julia --project=. stop_at_altitude.jl
 ```
 
-What to read next:
+Related pages:
 
 - [The Integrated State](integrated_state.md) (what `u` contains)
 - [Adding a Force or Torque of Your Own](custom_effector.md)
-- [Simulation Configuration](simulation_configuration.md)
-
-## What you will accomplish
-
-You will attach a *callback* to a simulation: a small function the solver
-calls after every step, which checks a condition on the state and, when it
-holds, tells the solver to stop. You will verify that the run stopped at the
-right moment by comparing the stop time with a hand calculation and by looking
-at the results file.
+- [Configuring a Simulation](simulation_configuration.md)
 
 ## The built-in stops first
 
 Before writing a callback, check whether the mission configuration already
 does what you need:
 
-- `mission_type = SM.MissionTime` stops at `mission_time` seconds;
-- `mission_type = SM.MissionOrbits` stops after `number_of_orbits` orbits
-  (counted at apoapsis passages) and prints `termination_cause=orbit_count`;
-- a spacecraft that descends to 50 km above a sphere of the planet's
-  equatorial radius is deactivated: it stops being propagated, and its
-  guidance, navigation and control models stop ticking for it, unless a model
+- `mission_type = SM.MissionTime` stops at `mission_time` seconds.
+- `mission_type = SM.MissionOrbits` stops once every active spacecraft has
+  completed `number_of_orbits` orbits (counted at apoapsis passages) and
+  prints `termination_cause=orbit_count`.
+- A spacecraft that descends to 50 km above a sphere of the planet's
+  equatorial radius is deactivated: it is no longer propagated, and its
+  guidance, navigation and control models stop ticking for it unless a model
   declares `skip_inactive(model) = false` (see
-  [Writing a GNC Algorithm](gnc_algorithm.md#Declarations)); when every
-  spacecraft in the run is inactive the run ends and prints
-  `termination_cause=impact`.
+  [Declarations](gnc_feedback.md#Declarations)). When every spacecraft in the
+  run is inactive, the run ends and prints `termination_cause=impact`.
 
-A landing controller can instead opt selected spacecraft into the terrain-contact
-stop described below. Other conditions use a callback of your own.
+A landing controller can instead opt selected spacecraft into the
+terrain-contact stop described [below](#Terrain-contact-for-a-landing-controller).
+Any other condition needs a callback of your own.
 
-## The lines that teach the new action
+## The callback in brief
 
 A stop condition is two functions and one callback object, handed to
-`run_simulation`:
+`run_simulation`. These lines are excerpts of the complete script below, which
+defines `planet`, `stop_altitude_m` and `config`:
 
 ```julia
 using OrdinaryDiffEq: DiscreteCallback, terminate!
@@ -63,24 +60,23 @@ stop_callback = DiscreteCallback(condition, stop!)
 sol = run_simulation(config; return_solution=true, extra_callbacks=(stop_callback,))
 ```
 
-`condition` is called after every accepted step with the current state `u`
-(the labelled vector described on [The Integrated State](integrated_state.md)),
-the time `t`, and the *integrator*, the solver's own object that carries the
-current state (`integrator.u`), time (`integrator.t`) and settings.
+The solver calls `condition` after every accepted step with the current state
+`u` (the labeled vector described on [The Integrated State](integrated_state.md)),
+the time `t`, and the *integrator*, the solver's own object, which carries the
+current state (`integrator.u`), the time (`integrator.t`) and the settings.
 `terminate!` acts on the integrator and ends the solve cleanly. These names
-come from the differential-equation solver SpaceAGORA is built on, which is
-why they are imported from `OrdinaryDiffEq`, a dependency of the repository
-environment.
+come from the differential-equation solver SpaceAGORA is built on, so they are
+imported from `OrdinaryDiffEq`, a dependency of the repository environment.
 
 ## The complete script
 
 The spacecraft starts at the periapsis of a 400 km by 2000 km orbit and
-climbs. The mission is configured for two hours, but the callback stops it in
-about twenty minutes, when the altitude first exceeds 1000 km. The time of
-that crossing follows from Kepler's equation, which is the check. Save as
-`stop_at_altitude.jl` in the repository root and run with `--project=.`. The
-spacecraft and the configuration block are the standard ones from
-[Simulation Configuration](simulation_configuration.md).
+climbs. The mission is configured for two hours, but the callback stops it
+after about twenty minutes of simulated time, when the altitude first exceeds
+1000 km. Kepler's equation gives the time of that crossing, which is the
+check. Save the script as `stop_at_altitude.jl` in the repository root and run
+it with `--project=.`. The spacecraft and the configuration block are the
+standard ones from [Configuring a Simulation](simulation_configuration.md).
 
 ```julia
 using SpaceAGORA
@@ -88,7 +84,6 @@ using LinearAlgebra
 using CSV, DataFrames
 using OrdinaryDiffEq: DiscreteCallback, terminate!
 const SM = SpaceAGORA.SimulationModel
-import SpaceAGORA.TelemetryVerification: make_three_body_spacecraft
 
 planet = SM.make_no_gram_planet(:earth)
 rp = planet.Rp_e + 400e3          # periapsis radius, m
@@ -148,57 +143,53 @@ println("last saved row: t = $(last.time) s; spherical altitude $(round(spherica
 println("rows in the results file: $(nrow(df)) (the two-hour mission would have written $(Int(2 * 3600.0 / 10.0) + 1))")
 ```
 
-## The important choices, in plain language
+## Choices in the script
 
-**Attaching it.** `run_simulation` accepts a tuple of extra callbacks; they
-are added to the callbacks the engine selects for the configuration (orbit
-counting, impact, the atmosphere and thermal samplers when the configuration
-needs them) and do not replace them. `return_solution=true` makes
+`run_simulation` accepts a tuple of extra callbacks. They are added to the
+callbacks the engine selects for the configuration (orbit counting, impact,
+the atmosphere and thermal samplers when the configuration needs them) and do
+not replace them. `return_solution=true` makes
 `run_simulation` return the solver's solution object, so the script can read
 the return code, the final time `sol.t[end]` and the final state
-`sol.u[end]`; the results file is written either way.
+`sol.u[end]`. The results file is written either way.
 
-**Reading the state, and which altitude.** `u.sc[1].pos` is the position of
-spacecraft 1 in metres in the inertial frame, so `norm(u.sc[1].pos) -
-planet.Rp_e` is the height above a **sphere** of the planet's equatorial
-radius. The `sc1_altitude` column in the results is the height above the
-planet's **ellipsoid**, which is what a map or a navigation solution would
-call altitude. Neither is the right stop criterion in general; choose the
-surface your condition is meant to refer to. Earth's equatorial and polar
-radii differ by about 21.4 km, so the two heights can differ by that much at
-high latitude.
+Which altitude the condition tests is a choice. `u.sc[1].pos` is the position
+of spacecraft 1 in meters in the inertial frame, so `norm(u.sc[1].pos) -
+planet.Rp_e` is the height above a sphere of the planet's equatorial radius.
+The `sc1_altitude` column in the results is the height above the planet's
+ellipsoid, which is what a map or a navigation solution would call altitude.
+Neither is the right stop criterion in general; choose the surface your
+condition is meant to refer to. Earth's equatorial and polar radii differ by
+about 21.4 km, so the two heights can differ by that much at high latitude.
 
-**Why a clean stop matters.** `terminate!` lets the solver finish the current
-step and return normally with the return code `Terminated`, so the script can
-go on to read the solution. An error thrown inside the callback also ends the
-run, but as a failure: the engine still writes the rows saved so far
-(checked: the same 130 rows), then re-raises the error, so nothing after
-`run_simulation` in your script executes.
+`terminate!` gives a clean stop: it lets the solver finish the current step
+and return normally with the return code `Terminated`, so the script can go on
+to read the solution. An error thrown inside the callback also ends the
+run, but as a failure: the engine still writes the rows saved so far and then
+re-raises the error, so nothing after `run_simulation` in your script runs.
 
 ## Three times and two altitudes
 
 The output below shows three different times and two altitude measures, and
 they are meant to differ:
 
-- **The expected crossing** from Kepler's equation is when the spherical
-  altitude passes 1000 km exactly.
-- **The solver's stop time** is later: a `DiscreteCallback` checks its
-  condition only at the end of each step, so the run stops at the end of the
-  first step in which the condition holds. The overshoot is bounded by the
-  step size, which the orbit regime caps at `dt_max_orbit = 30 s` by default.
-- **The last saved row** is earlier than the stop: rows are written every
+- The expected crossing from Kepler's equation is when the spherical altitude
+  passes 1000 km exactly.
+- The solver's stop time is later. A `DiscreteCallback` checks its condition
+  only at the end of each step, so the run stops at the end of the first step
+  in which the condition holds. The overshoot is bounded by the step size,
+  which the orbit regime caps at `dt_max_orbit`, 30 s by default.
+- The last saved row is earlier than the stop. Rows are written every
   `data_rate` seconds of simulated time (10 s here), and `terminate!` keeps
-  the rows written so far without adding one at the stop instant. The stop
-  state itself is in `sol.u[end]`.
-- The **spherical altitude** printed by the callback and computed from the
-  row's position is the quantity the condition tested; the **geodetic**
-  `sc1_altitude` of the same row is higher, by an amount that grows with
-  latitude.
+  the rows written so far without adding one at the stop. The stop state
+  itself is in `sol.u[end]`.
+- The spherical altitude, printed by the callback and computed from the row's
+  position, is the quantity the condition tested. The geodetic `sc1_altitude`
+  of the same row is higher, by an amount that grows with latitude.
 
 ## Expected result
 
-Tested on `main` at commit `80240c2b` (September 2026), fresh clone, no GRAM
-or SPICE. The script runs for under a minute and printed:
+On a fresh clone with no GRAM or SPICE data, the script prints:
 
 ```text
 stop condition met at t = 1292.7 s, altitude 1016.9 km
@@ -208,17 +199,17 @@ last saved row: t = 1290.0 s; spherical altitude 1014.9 km; geodetic column sc1_
 rows in the results file: 130 (the two-hour mission would have written 721)
 ```
 
-These are the recorded numbers for this configuration. What to look for in
-your own run: the return code is `Terminated` rather than `Success`; the stop
-time is a little after the expected crossing (here 22 s, within one 30 s
-step); the results file is much shorter than the mission time would give (here
-130 rows instead of 721); and the last row's geodetic altitude is above its
-spherical altitude (here by 13 km at 51 degrees latitude).
+These numbers belong to this configuration. What to look for in your own run:
+the return code is `Terminated` rather than `Success`; the stop time is a
+little after the expected crossing (here 22 s, within one 30 s step); the
+results file is much shorter than the mission time would give (here 130 rows
+instead of 721); and the last row's geodetic altitude is above its spherical
+altitude (here by 13 km at 51 degrees latitude).
 
-## What you can change next
+## Variations
 
 - **Stop exactly at the crossing.** Replace the callback with a *continuous*
-  callback, which hands the solver a function that crosses zero at the event
+  callback, which gives the solver a function that crosses zero at the event
   and lets it locate the crossing by root-finding:
 
   ```julia
@@ -227,23 +218,22 @@ spherical altitude (here by 13 km at 51 degrees latitude).
   stop_callback = ContinuousCallback(crossing, stop!)
   ```
 
-  Tested on the same commit, this stopped at `t = 1270.5 s` and spherical
-  altitude `1000.0 km`, matching the hand calculation to the printed
-  precision.
+  This variant stops at `t = 1270.5 s` and a spherical altitude of
+  `1000.0 km`, matching the hand calculation to the printed precision.
 - **Stop on anything you can compute from the state.** Speed is
   `norm(u.sc[1].vel)`; mass is `u.sc[1].mass`; a body rate needs
   `orientation_sim=true` and is `u.sc[1].ω`. A condition on time alone is what
   `mission_time` already does.
 - **Do something other than stopping.** `stop!` can do anything with the
-  integrator: record the time in a global, print a state, or change the state
-  (then call `derivative_discontinuity!(integrator, true)`, imported from
-  `OrdinaryDiffEq` like `terminate!`, so the solver knows). The engine's
-  own scheduled state anchors, described on
+  integrator: record the time in a global, print a state, or change the state.
+  After changing the state, call `derivative_discontinuity!(integrator, true)`,
+  imported from `OrdinaryDiffEq` like `terminate!`, so the solver knows. The
+  engine's own scheduled state anchors, described on
   [Verification Study](verification_study.md), are built this way.
-- **Several spacecraft.** All spacecraft in a run share one integration. A
-  user callback that calls `terminate!` therefore stops the whole run for all
-  of them, whatever the others are doing, whereas the engine's own impact
-  handling only deactivates the spacecraft that reached 50 km and ends the
+- **Several spacecraft.** All spacecraft in a run share one integration, so a
+  user callback that calls `terminate!` stops the run for all of them,
+  whatever the others are doing. The engine's own impact handling, by
+  contrast, deactivates only the spacecraft that reached 50 km and ends the
   run once none is left. Loop over `u.sc[i]` in the condition if the stop
   should depend on several spacecraft.
 
@@ -258,37 +248,30 @@ spherical altitude (here by 13 km at 51 degrees latitude).
   `terminate!` from any callback, including the engine's own orbit-count and
   impact stops.
 - `ContinuousCallback(crossing, stop!)` fires on crossings in both
-  directions; `ContinuousCallback(crossing, stop!, nothing)` only when the
-  function crosses upward, `(crossing, nothing, stop!)` only downward.
+  directions; `ContinuousCallback(crossing, stop!, nothing)` fires only when
+  the function crosses upward, and `(crossing, nothing, stop!)` only downward.
 - A `DiscreteCallback` saves the state before and after its action by default
-  (`save_positions=(true, true)`); that only affects the solver's own solution
+  (`save_positions=(true, true)`). That affects only the solver's own solution
   object, not the results file, and is harmless for a stop. Pass
   `save_positions=(false, false)` for a callback that fires every step and
   changes nothing.
-- The engine assembles its own callbacks from the configuration: the impact
-  callback and the planet-frame update are always present on the default
-  solver path; the orbit counter, the atmosphere and thermal samplers, the
-  entry-interface counter and the drag-state tracker are added only when the
-  mission type, the atmosphere model or the effectors call for them. Extra
-  callbacks supplement that set; they cannot remove any of it, and a user
-  `terminate!` ends the run regardless of it.
-
-## What was tested and what was inspected
-
-Tested on `main` at `80240c2b`: the script above (output as printed), the
-`ContinuousCallback` variant, and the error-inside-a-callback behaviour.
-Inspected in the source, not run: the built-in stops (impact deactivation
-and termination, orbit counting, the mission-time end), the conditional
-assembly of the engine's callbacks, the multi-spacecraft behaviour, and the
-`save_positions` default.
+- The engine assembles its own callbacks from the configuration. On the
+  default solver path the impact callback and the planet-frame update are
+  always present. Others are added only when the mission type, the atmosphere
+  model, the effectors or the GNC models call for them; among them are the
+  orbit counter, the atmosphere and thermal samplers, the entry-interface
+  counter and the drag-state tracker. Extra callbacks supplement that set and
+  cannot remove any of it, and a user `terminate!` ends the run regardless of
+  it.
 
 ## Terrain contact for a landing controller
 
 Terrain queries alone do not change propagation. A custom control effector can
 opt individual spacecraft into touchdown by extending
-`SpaceAGORA.SimulationModel.touchdown_spec(controller, spacecraft_index)`.
-Return `nothing` for every unselected spacecraft. For a selected spacecraft,
-return these named fields:
+`SpaceAGORA.touchdown_spec(controller, spacecraft_index)`. Return `nothing`
+for every spacecraft it does not select. For a selected spacecraft, return a
+named tuple with these fields; in this fragment `my_terrain`,
+`my_reference_radius_m` and `record_contact!` stand for your own code:
 
 ```julia
 (terrain = my_terrain,
@@ -297,62 +280,74 @@ return these named fields:
  on_touchdown = (t, r_p, v_p, i) -> record_contact!(controller, t, r_p, v_p, i))
 ```
 
-This is an interface example for your controller: `my_terrain` and
-`record_contact!` are supplied by your code. The index `i` is the spacecraft's
-position in the run's spacecraft vector, not its user-defined ID. Only one
-controller may provide a touchdown specification for each index.
+The index `i` is the spacecraft's position in the run's spacecraft vector, not
+its user-defined ID. Only one controller may provide a touchdown specification
+for each index; a second one is refused with an `ArgumentError`.
 
-Use the same explicit reference-sphere radius as the terrain model. `height_m`
-is a finite, nonnegative radial clearance above that terrain, in metres.
-Queries use planetocentric latitude and east-positive longitude in the
-planet-fixed frame, as described in [Terrain Queries](concepts.md#Query-a-regional-terrain-map). This is not
-geodetic altitude above an ellipsoid. No default planetary radius is assumed.
+`terrain` must be an `AbstractTerrainModel`. Use the same explicit
+reference-sphere radius as the terrain model: a DEM terrain whose declared
+radius differs is refused. `height_m` is a finite, nonnegative radial
+clearance above that terrain, in meters. Queries use planetocentric latitude
+and east-positive longitude in the planet-fixed frame, as described in
+[Query a regional terrain map](concepts.md#Query-a-regional-terrain-map). This
+is not geodetic altitude above an ellipsoid, and no default planetary radius
+is assumed.
 
-The spacecraft must start above the requested clearance. The solver locates the
-first downward crossing, calls `on_touchdown` with time in seconds, planet-fixed
-position in metres and ground-relative velocity in metres per second, then
-stops propagating that spacecraft. Use the hook to record contact or clear your
-controller's actuators; it does not model a bounce, ground forces or a landing
-controller. Other spacecraft continue until their own stop condition. The run
-prints `termination_cause=touchdown` if the last active spacecraft touches down.
+The spacecraft must start above the requested clearance. The solver locates
+the first downward crossing and calls `on_touchdown` with the time in seconds,
+the planet-fixed position in meters and the ground-relative velocity in meters
+per second, then stops propagating that spacecraft. Use the hook to record
+contact or clear your controller's actuators; it does not model a bounce,
+ground forces or a landing controller. Other spacecraft continue until their
+own stop condition. The run prints `termination_cause=touchdown` if the last
+active spacecraft touches down.
 
-A selected spacecraft can descend below the usual 50 km impact threshold. Every
-unselected spacecraft retains that threshold. Configuration defaults, solver
-selection and runs without a touchdown specification keep their existing
-behaviour. The usual `run_simulation` state isolation also applies to your
-controller: by default, recorded controller state belongs to the returned
-solution's configuration, while the input configuration is unchanged.
+A selected spacecraft can descend below the usual 50 km impact threshold;
+every spacecraft that is not selected keeps that threshold. The usual
+`run_simulation` state isolation also applies to your controller: by default
+the controller state recorded during the run is in the configuration that ran
+(`results.configuration` with `return_results=true`), and the configuration
+you passed in is unchanged.
 
 ## Apollo-style powered descent
 
 The optional [`ApolloDescentGuidanceModel`](@ref) and [`ApolloDescentControlModel`](@ref)
-provide a quadratic braking/approach law followed by a vertical descent-rate
-controller. They require `orientation_sim=true`, positive spacecraft mass and
-an explicitly selected reference-sphere radius. They are a configurable model
-inspired by Apollo descent, not a validated reproduction of a particular flight.
+provide a quadratic braking and approach law followed by a vertical
+descent-rate controller. They require `orientation_sim=true`, a positive
+spacecraft mass and an explicitly chosen reference-sphere radius. They are a
+configurable model inspired by the Apollo descent, not a validated
+reproduction of a particular flight.
 
-Construct one [`ApolloDescentState`](@ref)`(number_of_spacecraft)` and pass that same
-state, the same [`ApolloDescentConfig`](@ref), and the same terrain to both models.
-Both constructors accept `spacecraft_indices=(2,)`, for example, to guide and
-stop only the second spacecraft. The default selects every state index. Use
-identical selections for the paired models and matching guidance/control rates
-in `GuidanceModel` and `ControlModel`. The configuration's required
-`reference_radius_m` must equal the DEM datum; with `NoTerrainModel`, it defines
-the spherical ground surface explicitly.
+Construct one [`ApolloDescentState`](@ref)`(number_of_spacecraft)` and pass
+that same state, the same [`ApolloDescentConfig`](@ref) and the same terrain to
+both models. Both constructors accept `spacecraft_indices`, for example
+`spacecraft_indices=(2,)` to guide and stop only the second spacecraft; the
+default selects every index of the state. Use identical selections for the
+paired models, and matching guidance and control rates in `GuidanceModel` and
+`ControlModel`. The configuration's required `reference_radius_m` must equal
+the DEM datum; with `NoTerrainModel`, it defines the spherical ground surface.
 
-[`apollo11_descent_targets`](@ref)`()` supplies starting braking and approach targets
-that you should adapt to the vehicle and scenario. The guidance subtracts a
-central-gravity prediction and rotating-frame terms from the requested
-acceleration, then commands engine direction and throttle. The control effector
-applies thrust along the actual body minus-z engine axis, limits thrust slew
-and body torque, and accounts for engine and approximate RCS propellant use.
-The RCS model applies bounded body torque directly. Its per-jet firing levels
-are an approximate visualization allocation, not individual simulated jet forces. Their geometry must be expressed in the spacecraft body frame.
+[`apollo11_descent_targets`](@ref)`()` supplies starting braking and approach
+targets, which you should adapt to the vehicle and scenario. The guidance
+subtracts a central-gravity prediction and rotating-frame terms from the
+requested acceleration, then commands the engine direction and throttle. The
+control effector limits thrust slew and body torque. With the default
+`actuation=:ideal`, it applies the thrust along the body minus-z engine axis
+and the clamped torque directly, and accounts for engine and approximate RCS
+propellant use; the per-jet firing levels it records are then an approximate
+allocation for visualization, not simulated jet forces. With
+`actuation=:mounted`, it drives the vehicle's mounted thrusters instead: the
+engine at the slewed thrust and the RCS jets at a least-norm allocation of the
+clamped torque, so torque, force and propellant use follow from the jets'
+geometry, clipping and specific impulses. In both modes the jets' locations
+and directions are read in the frame of the link they are mounted on and
+brought into the body frame.
 
-The state records phases, commands, site-relative motion and contact. The
-existing `radar_altitude_m` field is radial terrain clearance, not a slant-range
-radar measurement. The shared touchdown hook records ground-relative velocity
-and lateral miss, clears actuator commands and deactivates the selected craft.
-Default state isolation preserves the shared guidance/control state inside the
-copied run configuration; inspect it through a returned solution, or explicitly
-choose `isolate_state=false` to retain diagnostics in your input models.
+The state records phases, commands, site-relative motion and contact. Its
+`radar_altitude_m` field is radial terrain clearance, not a slant-range radar
+measurement. The shared touchdown hook records the ground-relative velocity
+and lateral miss, clears the actuator commands and deactivates the selected
+spacecraft. Default state isolation keeps the shared guidance and control
+state inside the copied run configuration: inspect it through the returned
+results, or choose `isolate_state=false` explicitly to keep the diagnostics in
+your input models.

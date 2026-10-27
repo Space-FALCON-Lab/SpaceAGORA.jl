@@ -191,5 +191,12 @@ end
         @test Set(summarize(mixed).budget_condition) == Set(["legacy_unrecorded", "equal_core"])
     end
 
+@testset "warm-up columns" begin
+    c = ppc_warmup_columns(2.5, [(rhs_plan_source=:sweep, rhs_plan_sweeps_total=1, rhs_plan_sweep_ns=3.0e9), nothing])
+    @test c.warmup_wall_time_s == 2.5 && c.warmup_rhs_plan_sweeps == 1
+    @test c.warmup_rhs_plan_sweep_s == 3.0 && c.warmup_rhs_plan_source == "sweep|none"
+    @test ppc_warmup_columns(0.0, ()).warmup_rhs_plan_source == "none"
+end
+
 end
 end # module

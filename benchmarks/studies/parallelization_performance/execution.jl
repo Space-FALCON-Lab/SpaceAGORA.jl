@@ -361,6 +361,8 @@ function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSp
     else
         1
     end
+    warmup_wall = 0.0
+    warmup_snaps = Any[]
     withenv(ppc_mode_env_pairs(mode, cfg; outer_tasks=outer_tasks)...) do
         for warmup_idx in 1:cfg.warmup
             # Short warm-ups (SPACEAGORA_PPB_WARMUP_SPAN): see _ppc_warmup_span.
@@ -376,10 +378,13 @@ function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSp
             finally
                 _PPC_MISSION_SCALE[] = 1.0
             end
+            t0 = time()
             try
-                ppc_solve_once(warmup_args, cfg)
+                wres = ppc_solve_once(warmup_args, cfg)
+                push!(warmup_snaps, get(wres, :parallel_policy, nothing))
             catch
             end
+            warmup_wall += time() - t0
         end
     end
     # Provision and warm the Distributed pool *before* the clock starts. Both
@@ -473,6 +478,7 @@ function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSp
         mode=mode,
         env_extra=Pair{String, String}[],
         adaptive_allocation="",
+        warmup=ppc_warmup_columns(warmup_wall, warmup_snaps),
         policy=ppc_policy_columns(
             isempty(results) ? nothing :
                 (results[end] isa NamedTuple && haskey(results[end], :policy) ? results[end].policy : nothing)
@@ -735,6 +741,21 @@ end
 # rather than missing -- the controller process genuinely made no routing
 # decision -- but it means the selected-route columns are only meaningful for the
 # in-process (serial/threads) routes.
+# Warm-up solves are untimed, but the calibration sweep happens in them, so the
+# row records their wall time and policy telemetry (appended tail columns). Pure.
+# Only the in-process warm-up solves are covered; process-pool warm-ups are not.
+function ppc_warmup_columns(wall_s::Real, snaps)
+    g(sn, k, d) = (sn !== nothing && hasproperty(sn, k)) ? getproperty(sn, k) : d
+    srcs = unique(string(g(sn, :rhs_plan_source, "none")) for sn in snaps)
+    return (
+        warmup_wall_time_s=Float64(wall_s),
+        warmup_rhs_plan_sweeps=sum(Int(g(sn, :rhs_plan_sweeps_total, 0)) for sn in snaps; init=0),
+        warmup_rhs_plan_sweep_s=sum(Float64(g(sn, :rhs_plan_sweep_ns, 0.0)) for sn in snaps; init=0.0) / 1.0e9,
+        warmup_rhs_plan_source=isempty(srcs) ? "none" : join(srcs, "|"),
+    )
+end
+const PPC_NO_WARMUP = ppc_warmup_columns(0.0, ())
+
 function ppc_policy_columns(snap)
     empty = (
         rhs_plan_source="none", rhs_plan_mode="none", rhs_plan_allotment=0,
@@ -906,7 +927,8 @@ function ppc_run_worker_performance(cfg::PPCConfig)
         final_primary_vel_norm_mps=final_terminal.vel_norm_mps,
         final_primary_mass_kg=final_terminal.mass_kg,
         effective_env=env_string,
-        ppc_policy_tail(batch.policy)...
+        ppc_policy_tail(batch.policy)...,
+        get(batch, :warmup, PPC_NO_WARMUP)...
     ))
     end
     ppc_write_rows(cfg.worker_outfile, rows)

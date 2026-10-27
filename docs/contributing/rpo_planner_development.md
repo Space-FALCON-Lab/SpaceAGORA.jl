@@ -1,430 +1,347 @@
-# RPO planner development record
+# RPO planner development
 
-This record preserves staged implementation notes, including historical next
-steps. For current supported use, see the [planner contract](../src/reference/rpo_planner_contract.md)
-and [pilot guide](../src/user/rpo_planner_pilot.md).
+These notes say where the RPO planner interface lives in the source, which module
+owns each part, and what the tests check. The interface itself is documented
+elsewhere: the [RPO planner contract](../src/reference/rpo_planner_contract.md)
+gives the request and reference types, the validation rules, the extension
+methods, the built-in planners and the planning headroom, and the
+[RPO pilot guide](../src/user/rpo_planner_pilot.md) covers running a case and
+installing HYPR. When the code changes, keep those pages and this one consistent.
 
-The public opt-in [RPO pilot](../src/user/rpo_planner_pilot.md) connects neutral requests,
-references and results to simulation initialization and accepted guidance updates.
-The contract and direct baseline load with standard libraries without HYPR source.
-This contract-level separation does not yet make the installed package independent
-of HYPR. Buffer layouts and controller mathematics retain their compatibility
-route.
+## Modules
 
-The internal modules, described in their source header comments:
+`src/SpaceAGORA.jl` loads five modules for the planner interface:
 
-- `SpaceAGORA.RPOPlannerInterfaces`: RPO planner contracts. This module loads
-  with Julia standard libraries alone. The opt-in public RPO pilot connects
-  them to accepted simulation updates.
-- `SpaceAGORA.DirectRPOPlanning`: internal direct-path baseline. Loads with the
-  neutral contract and standard libraries only.
-- `SpaceAGORA.HYPRRPOPlanning`: opt-in contract adapter for existing HYPR
-  planning and configured retiming.
-- `SpaceAGORA.RPOPlannerLifecycle`: run ownership and accepted-update
-  installation for opt-in RPO planners.
+- `SpaceAGORA.RPOPlannerInterfaces`
+  (`src/models/gnc/planning/rpo/contract/rpo_planner.jl`, which includes
+  `rpo_reference_validation.jl` and `rpo_planning_headroom.jl`): the request,
+  reference, result and capability types, the extension methods,
+  `validate_rpo_result` and `RPOPlanningHeadroom`. Apart from Julia standard
+  libraries it needs only the general algorithm contract, `GNCAlgorithms`
+  (`src/models/gnc/contracts/gnc_algorithms.jl`).
+- `SpaceAGORA.DirectRPOPlanning` (`src/models/gnc/planning/rpo/direct_planner.jl`):
+  `DirectRPOPlanner`, the direct-segment baseline. It needs only the contract.
+- `SpaceAGORA.HYPRRPOPlanning`
+  (`src/models/gnc/companions/hypr/rpo_planner_adapter.jl`): `HYPRRPOPlanner`
+  and `RetainedPathRPOPlanner`, the adapters to HYPR planning and configured
+  retiming.
+- `SpaceAGORA.RPOComparisonPlanning`
+  (`src/models/gnc/planning/rpo/comparison/planner_contract.jl`): the contract
+  methods of the seven comparison planners.
+- `SpaceAGORA.RPOPlannerLifecycle` (`src/models/gnc/planning/rpo/lifecycle.jl`):
+  the run binding and `make_rpo_configuration`.
 
-## Data and ownership
+The contract loads before `SimulationModel`, because the comparison planner types
+in `GuidanceHooks` subtype `AbstractRPOPlanner`;
+`src/orchestration/simulation/composition/simulation_model.jl` includes the
+contract itself when `SimulationModel` is loaded on its own. The other four
+modules load after `SimulationModel`.
 
-`RPOPlanningRequest` carries stable spacecraft IDs, an epoch and simulation
-time, truth state in target RTN coordinates, a position goal, copied geometry,
-explicit constraints and reference timing. RTN velocities mean derivatives in
-the rotating target frame, including its transport term. Geometry must be
-static within a request and aligned with that frame. The epoch and geometry representation are
-opaque copied data; assembly is responsible for their meaning and provenance.
+## Validation limits and planning headroom
 
-A request owns its geometry and epoch copies and stores state vectors as
-immutable tuples. The lifecycle must retain its validation request and pass a
-separate deep copy to the planner. A Julia struct does not make its contained
-arrays immutable. `RPOReference` copies its arrays, and `RPOPlanningResult`
-copies its reference and diagnostics. These boundaries prevent input-array
-aliasing; they are not a sandbox for arbitrary plugin code. Integration must also
-copy the result into lifecycle-owned storage before validation and install that
-same validated copy. Later edits through a planner-held handle must not alter the
-active reference. The lifecycle tests cover mutation at both boundaries.
+The contract page lists the rules for
+[data and ownership](../src/reference/rpo_planner_contract.md#data-and-ownership),
+[validation](../src/reference/rpo_planner_contract.md#validation-and-explicit-failures)
+and [extension methods](../src/reference/rpo_planner_contract.md#extension-methods).
+One of them shapes most of the adapter code: `validate_rpo_result` checks every
+reference against the request's physical limits, and the only allowance on its
+speed and acceleration limits is `limit_roundoff_rtol`, whose default is also its
+ceiling, `128eps(Float64)`. No
+planner may loosen the validator to make its output pass. The adapters instead
+reserve [planning headroom](../src/reference/rpo_planner_contract.md#adapter-planning-headroom)
+before they plan, and reject a reference that still fails rather than retrying
+with a larger reserve.
 
-References use uniformly spaced relative times beginning at zero, with 3 by N
-position and velocity matrices. Their origin is simulation time. The existing
-controller indexes columns using its control interval, so this contract rejects
-nonuniform grids rather than resampling them. The sole initial terminal policy,
-`:repeat_last_sample`, repeats both position and velocity. It does not imply a
-stationary physical hold.
+The reason is a difference of definitions. HYPR's acceleration-limited retimer
+bounds the acceleration along the path and, through the curvature, the turning,
+each on its own. The validator measures the norm of successive velocity-vector
+differences per control interval, which combines the two. A HYPR reference timed
+to the full limit can therefore exceed the common limit, and the compatibility
+tests keep such a case.
 
-## Validation and explicit failures
+## Tests
 
-`validate_rpo_result(request, result; clearance_at, time_s)` returns an
-`RPOValidationResult` with acceptance, a reason symbol and available metrics.
-It never installs a reference or advances a random stream. Checks include:
+- `test/unit/gnc/rpo_planner_contract_tests.jl` and
+  `test/unit/gnc/direct_rpo_planner_tests.jl` include only `gnc_algorithms.jl`,
+  the contract source and, for the baseline, `direct_planner.jl` in standalone
+  modules, so they run with `--project=@stdlib`. The contract tests cover the rejection cases, the
+  copying at each ownership boundary and the roundoff rule: at a 0.1 m/s² limit,
+  an acceleration `8eps` above the limit is accepted and 0.10000004817916151 m/s²
+  is rejected.
+- `test/unit/gnc/rpo_planner_compatibility_tests.jl` runs seeded HYPR planning
+  through the full package, without the adapter, for three cases: seed 741
+  (`:legacy` mode, legacy retimer), seed 742 (`:legacy`, acceleration-limited
+  retimer) and seed 743 (`:manuscript`, acceleration-limited retimer). It repeats
+  each call, compares fingerprints of the paths, costs and references, and
+  validates each reference against the physical request limits. Seeds 741 and 743
+  pass. Seed 742 is rejected with `:acceleration_limit`: its acceleration exceeds
+  the 0.1 m/s² limit by more than a relative 1e-8, far beyond the roundoff
+  allowance. The fingerprints are compared within one Julia and dependency
+  environment; they are not golden values across versions or platforms.
+- `rpo_planner_adapter_tests.jl`, `rpo_planner_lifecycle_tests.jl`,
+  `rpo_planner_extensions_tests.jl` and `rpo_comparison_planner_object_tests.jl`,
+  all in `test/unit/gnc/`, need the package and HYPR. The lifecycle tests check
+  matched-input parity: each installed HYPR reference must equal a direct HYPR
+  call made with the adapter's recorded `input_config`. The adapter plans within
+  reduced limits, so compare it with direct HYPR calls only at those mapped
+  settings.
 
-- request, spacecraft, frame and geometry-revision identity;
-- finite values, dimensions, origin and uniform timing;
-- position endpoints, declared and position-implied speed, and velocity-vector
-  difference acceleration;
-- reference lifetime, including every requested controller-preview time;
-- clearance sampled along the reference polyline, including points between
-  stored reference knots.
+All of these run in the unit driver, `test/unit/runtests.jl`.
 
-The trusted assembly supplies `clearance_at(point, geometry)` independently of
-the planner. That query must return finite signed clearance with the declared
-station/chaser approximation. Missing queries, nonfinite answers and excessive
-validation work reject the candidate. Unexpected query exceptions propagate.
-An algorithm's diagnostic path may be a control polygon; the validator never
-uses it as an executable trajectory.
+## Planner implementation notes
 
-The default software tolerances are 1e-9 m for endpoints and 1e-10 s for time,
-with clearance sampling at most every 0.05 m and at most 100,000 samples. These
-are explicit validation settings, not newly accepted physical mission limits.
-The time tolerance must remain smaller than half a sample interval. A caller
-must prospectively select the settings appropriate to its fixture.
+`DirectRPOPlanner` sets the velocity to zero at both ends of its reference; it
+does not use the request's initial velocity as a boundary condition. It checks
+the direct segment with an analytic `segment_clearance_at` query, which
+`make_rpo_configuration` supplies (`station_segment_clearance`) when the planner
+has none. The lifecycle then validates its reference with the trusted point query
+`clearance_at`, as it does for every planner.
 
-The speed limit checks both `max_declared_speed_mps` (velocity norms) and
-`max_implied_speed_mps` (successive position displacements divided by the control
-interval). `max_speed_mps` is their maximum. A reference that moves 100 m in
-one second cannot pass a 1 m/s limit by declaring zero velocity. This does not
-require the two velocity representations to be exact derivatives of each other.
+`HYPRRPOPlanner`'s `plan_rpo!` checks that HYPR is loaded
+(`HYPRSupport.require_hypr()`) and calls `_plan_hypr_rpo!`, which HYPR's
+extension implements in `ext/rpo_planner_execution.jl`. That method maps the
+request onto the planner's copy of the configuration, passes the caller's random
+stream to the optimizer, and times the path with the configuration the optimizer
+returns, adaptive changes included, never with the original one. With the
+acceleration-limited retimer it builds the timing profile with the same sampling
+and profile helpers as the configured retimer, and checks the profile's duration
+against the sample budget and the request lifetime before it allocates the
+uniform arrays. With the legacy retimer the step cap is the configured
+`retime_max_steps`, lowered to the sample budget, and the end of the produced
+reference is checked against the lifetime before a candidate is built. The
+unchanged validator runs last. Optimizer exceptions propagate.
 
-Speed and acceleration comparisons allow only a bounded floating-point allowance:
-`limit_roundoff_rtol` defaults to `128eps(Float64)` (about 2.84e-14), can be reduced
-to zero for exact comparisons, and cannot exceed that ceiling. There is no
-absolute allowance in SI units. An excess is rejected when it exceeds this
-fraction of the enabled limit; measured values and the allowance are recorded.
-This is a conservative software comparison rule, not an error bound for arbitrary
-planner calculations or permission to loosen physical acceptance limits.
+`HYPRRPOPlanner`'s `retime_rpo!` and `RetainedPathRPOPlanner` time a fixed path
+and draw no random numbers. Both are in core and share `timed_candidate`, in
+`rpo_planner_adapter.jl`, which applies the same request mapping and checks.
+`_plan_hypr_rpo!` does not call it and has its own copy of that code, so keep
+the two in step.
 
-Common acceleration is the norm of successive velocity-vector differences per
-control interval, including changes of direction. HYPR's tangential retiming
-limit has a different meaning. The adapter must select and report any planning
-headroom prospectively and still validate the returned reference against the
-unchanged common limit. Increasing numerical tolerance to hide this distinction
-is not permitted. The existing seed-742 fixture remains rejected at 0.1 m/s²;
-its measured 0.10000004817916151 m/s² is beyond the roundoff allowance.
+## Comparison planners
 
-Only candidates terminated by completion or an iteration limit are eligible
-by default. Wall-clock-budget candidates additionally require
-`allow_time_budget_candidate=true` and all normal validation checks. This
-permission does not make time-budgeted planning reproducible.
+The seven comparison planner types (`HYPRComparisonPlanner` to `STOMPPlanner`)
+are defined in `GuidanceHooks`, in
+`src/models/gnc/planning/rpo/comparison/planner_objects.jl`, next to the
+comparison harness in `planner_comparison.jl`, so that
+`RPOPlannerComparisonConfig` can hold them in its `planners` field and build its
+default list of all seven. Their contract methods are in `RPOComparisonPlanning`,
+which loads after `SimulationModel`, as `HYPRRPOPlanning` does.
 
-These are discrete reference checks, not continuous collision certification,
-kinematic-consistency proof, actuator feasibility or physical tracking
-acceptance. A reference can pass them and still require further validation in
-its declared application.
+Each mode has one method of `_rpo_comparison_planner_path`, and both routes use
+it: the harness with the comparison's fixed safety distance
+(`RPO_PLANNER_COMPARISON_SAFE_DISTANCE_M`, 0.5 m), and `plan_rpo!` with the
+request's mapped settings. The two routes therefore share kernels, settings and
+the order of random draws. Both take planner objects; selecting a mode by name
+was removed in SpaceAGORA 0.5.0. `normalize_rpo_comparison_planner_type` and
+`rpo_comparison_planner_label` still accept names and aliases, but only to give
+report rows their canonical identifiers and labels.
 
-## Extension methods
+### Shared result assembly
 
-A planner can subtype `AbstractRPOPlanner` and implement `planner_capabilities`,
-`initialize_planner`, `plan_rpo!` and optionally `retime_rpo!`. Planning methods
-require an explicit `AbstractRNG`; there is no default global random stream.
-The initial defaults report unsupported planning/retiming and consume no RNG.
-Capabilities default to empty support. A retiming refusal does not silently
-invoke full replanning.
+RRT-Connect and RRT* share their input conversion (`_rpo_rrt_search_inputs`) and
+the result for a direct path that is already safe (`_rpo_rrt_direct_result`), in
+`src/models/gnc/planning/rpo/rrt.jl`. Each algorithm keeps its own search tree,
+random draws, stopping rule, failure result and refinement. In the direct result,
+`path`, `raw_path` and the single `history` entry are the same array.
 
-Capability checks describe the algorithm only. They are not a claim that
-simulation startup, isolation or checkpoint/restart has been implemented for
-this interface. The later opt-in pilot must reject checkpoint/resume until its
-complete run-owned state can be restored. Existing checkpoint behavior remains
-unchanged in this contract-only change.
+CHOMP and STOMP share the final refinement and result conversion through
+`_rpo_refined_optimizer_result` in
+`src/models/gnc/planning/rpo/comparison/trajectory_optimizers.jl`. It keeps the
+raw path and cost, the component values, the histories, the iteration count and
+the objective value that each search supplies. It is a private helper, not
+another planner interface, and the two optimizers keep separate update rules and
+termination checks.
 
-## Tests and next integration
-
-`test/unit/gnc/rpo_planner_contract_tests.jl` loads only the contract source in a
-standalone module and tests rejection cases and ownership. It can run with
-`--project=@stdlib`. `rpo_planner_compatibility_tests.jl` captures repeated
-seeded legacy/manuscript HYPR calls and both existing retiming policies using
-the complete package, and validates each real reference against its physical
-request limits. Two rounding-only cases pass; the tangential/total acceleration
-mismatch remains an explicit rejection. Both are included in the unit driver and therefore in
-the PR shard plan. Compatibility fingerprints are compared on the same Julia
-and dependency environment; they are not portable golden values across
-versions or platforms.
-
-The adapters below preserve HYPR's returned effective settings. Next, add
-an opt-in lifecycle, supported external constructor and run-report accessor.
-Their acceptance must include callback ordering, initialization, failure,
-expiry, multiple controlled spacecraft and repeated/concurrent runs. Publish
-top-level names only with the corresponding public API inventory, docstrings
-and external example. Optional package extraction follows that pilot.
-
-
-## Adapter planning headroom
-
-`RPOPlanningHeadroom(fraction=0.01)` prospectively reserves one percent of each
-enabled request speed/acceleration limit for the new adapters. It changes the
-planning target, never the physical request or the shared validator. The fraction
-must be strictly between zero and one and is recorded with the result. A configured
-HYPR cap that is already lower is preserved.
-
-The adapters estimate output resolution using `32eps(Float64)*position_scale/dt`
-for implied speed and `32eps(Float64)*velocity_scale/dt` for acceleration. Each
-estimate must fit within one quarter of its reserved physical-limit budget.
-They check request scales before planning and actual output scales before
-returning a reference. Inadequate resolution yields
-`:insufficient_reference_precision`; it never increases validation tolerance.
-These conservative screening estimates are not a proof for arbitrary floating
-point algorithms. Large coordinates or very small time steps may require a
-better representation or different sampling, not permission to exceed a limit.
-
-The fixed `128eps(Float64)` validator allowance does not cover arbitrary
-finite-difference storage error. The earlier rounding-only fixtures pass at their
-fixture scale. The adapter reserve covers a wider tested range of distances and
-steps while retaining strict validation, including exact comparisons when the
-caller selects zero allowance.
-
-One percent is a declared pilot policy, not a guarantee of total-vector
-acceleration. HYPR's tangential acceleration and curvature constraints can still
-produce a larger vector difference. The adapter rejects a reference that fails
-the unchanged physical checks; it does not retry with relaxed tolerances or choose
-a larger reserve after seeing a failure. Replacing this policy requires a new
-prospective setting and its own validation.
-
-For a smooth path with orthogonal tangential and normal acceleration, saturating
-its tangential part at `(1-f)*a_max` leaves at most
-`a_max*sqrt(1-(1-f)^2)` for turning. At the default `f=0.01`, this is about
-14.1 percent of the physical acceleration limit. This geometric estimate is
-not a guarantee for sampled velocity differences; the unchanged discrete
-validator still decides whether each candidate is admissible.
-
-## Internal planner implementations
-
-`SpaceAGORA.DirectRPOPlanning.DirectRPOPlanner` builds a straight segment with
-`s(q)=3q²-2q³`, sampled uniformly through the first grid time at or beyond its
-chosen duration. Its analytic maxima are `1.5*distance/duration` for speed and
-`6*distance/duration²` for acceleration; endpoints are at rest. The duration is
-chosen from the reduced limits, rounded up to the request grid, and bounded by
-`max_reference_samples` and request lifetime before allocation. A stationary
-request receives two identical samples. This reference does not impose the
-request's initial velocity as a boundary condition.
-
-The baseline requires an assembly-owned analytic
-`segment_clearance_at(start, goal, geometry)` query. It explicitly refuses missing
-queries, nonfinite clearance and blocked segments. This checks a direct segment
-against the declared geometry approximation, not an exact vehicle mesh or a
-search for an alternate route. Independently validate the result with the trusted
-point-clearance query before installing it.
-
-`SpaceAGORA.HYPRRPOPlanning.HYPRRPOPlanner` copies its HYPR configuration, then
-maps request clearance and sampling interval explicitly. Request limits with
-headroom cap configured retiming limits. Conflicting configured minimum/initial
-speeds reject. A requested acceleration limit requires the configured
-acceleration-limited retimer; the adapter does not silently select another
-retiming algorithm. `rrt_on_replan=true` explicitly enables the existing RRT warm
-start for a `:replan` request.
-
-The optimizer receives the caller's RNG and mapped configuration. Its returned
-effective configuration, including adaptive changes, is retained and used for
-retiming. For acceleration-limited retiming the adapter calls the same profile
-construction and evaluation helpers, checking the profile duration before uniform
-array allocation. Legacy retiming retains its configured step cap and checks
-the produced duration before constructing a candidate. Both policies report
-`:infeasible/:insufficient_reference_lifetime` when the absolute reference end
-exceeds the request lifetime, without adding a time tolerance to this planning
-budget. Equality is allowed. The adapter then applies the unchanged validator
-and returns `:failed/:reference_rejected` with the validation record for other
-output failures. Optimizer exceptions propagate.
-A `:candidate` is still subject to lifecycle-owned validation before installation.
-
-Diagnostics distinguish requested, mapped and optimizer-returned configurations;
-include the planning budget, path representation, deterministic cost/history and
-termination. Matched-input parity means comparing direct HYPR calls with the
-adapter's mapped settings. The opt-in reserve can change reference timing from a
-legacy call that uses unreduced limits. The old route and its fingerprints remain
-unchanged.
-
-Both planners support truth observations in target RTN and use the common
-`initialize_planner`, `plan_rpo!` and capability interface. Neither advertises
-restart; `HYPRRPOPlanner` advertises retiming (`retime_rpo!`), `DirectRPOPlanner`
-does not. `RetainedPathRPOPlanner`, in the same adapter module, replays a saved
-path with the same request mapping and HYPR retimer as `HYPRRPOPlanner`, through
-one shared timing function, and searches nothing. A separate test implementation loads through
-the same extension methods. Contract and baseline tests run using standard
-libraries with no HYPR source. The public pilot adds callback integration,
-lifecycle ownership/expiry, restart refusal at run preparation and external
-assembly. Optional-package installation remains a later acceptance gate.
-
-The seven comparison planners (`HYPRComparisonPlanner` to `STOMPPlanner`) live
-with the comparison harness in `GuidanceHooks`, so that `RPOPlannerComparisonConfig`
-can hold them and build its default list; their contract methods live in the
-top-level `RPOComparisonPlanning` module, after `SimulationModel`, as the HYPR
-adapter's do. One function per mode, `_rpo_comparison_planner_path`, runs the
-kernels for both the harness (with the fixed 0.5 m safety distance) and
-`plan_rpo!` (with the request's mapped settings), so the two routes share kernels,
-settings and draw order. Both entries take planner objects only (selection by
-name was removed in 0.5.0). The identifier and label helpers stay pure. Report
-rows, keys and labels keep the canonical identifiers.
+`test/unit/gnc/rrt_boundary_tests.jl` covers direct, detoured and failed searches
+without HYPR, and `rpo_comparison_planner_object_tests.jl` exercises each mode
+with its refusals and metadata.
 
 ## Lifecycle source ownership
 
-`gnc/guidance/rpo/rpo_planner_module.jl` aggregates the opt-in lifecycle and
-bounded public configuration builder. It owns no calculations. The include-chain
-and source-completeness gates enforce this separation. `planner_lifecycle.jl`
-owns run state, trusted validation/installation, events, failures and expiry;
-`planner_configuration.jl` owns the pilot assembly. The engine and controller call
-the neutral `SimulationLifecycle` hooks; neither dispatches on a HYPR type.
+`src/models/gnc/planning/rpo/lifecycle.jl` defines `RPOPlannerLifecycle`, imports
+what it needs and includes its two files, nothing more. The source completeness gate
+(`test/gates/ci_src_completeness_contract_gate.jl`) requires its
+`# Canonical aggregator: no behavior ownership.` header and refuses any function
+or type definition in it.
 
-## Shared metric inputs
+`planner_lifecycle.jl` owns the binding, `PlannerGuidance`: its run state,
+planning events and triggers, failures (`RPOPlanningError`), reference expiry,
+checkpoint state, installation into the plan buffer, and `rpo_run_report`. Each
+request goes through the shared driver `run_algorithm_request!`
+(`src/models/gnc/contracts/gnc_algorithms.jl`), which validates the planner's
+result before it is installed. `configuration.jl` owns the pilot assembly,
+`make_rpo_configuration`, and the `RPOReplanningSpheres` geometry provider. The
+engine calls the binding through neutral hooks (`SimulationLifecycle`,
+`GNCRuntime` and `GuidanceHooks.update_guidance!`), and the LQ-MPC controller
+(`RPOMPCControlModel`) reads the plan buffer; neither dispatches on a HYPR type.
 
-The shared path-normalization and finite-difference fuel kernels take required
-numeric keyword inputs. Distances are metres, times and specific impulse are
-seconds, mass is kilograms, and reference gravity is m/s². They do not own HYPR
-defaults or require its configuration type. The existing configuration-based
-methods remain in the same defining module through HYPR-owned forwarding in
-metric_adapters.jl, preserving current callers and calculations.
+## Shared calculations and HYPR policies
 
-Only these two kernels are independently exercised in the minimal shared-module
-test. Other metrics retain their geometry/profile dependencies. Comparison
-planners, RRT policy and configured retiming still need further separation before
-a HYPR-free installation is demonstrated. This internal change adds no root
-public API and makes no new physical fuel-model or numeric-type support claim.
+Core keeps the RPO path calculations that do not depend on HYPR's configuration
+in `GuidanceHooks`, with explicit inputs. HYPR's extension adds the configured
+methods that read an `RPOPSOConfig` and forward to them. The calculations keep
+`GuidanceHooks` as their owner, so qualified names such as
+`SimulationModel.GuidanceHooks.rpo_retime_samples` keep working
+(`test/optional/hypr/optional.jl` checks these identities). None of them is
+exported from `SpaceAGORA`.
 
+### Metrics
 
-### RRT search and HYPR policy ownership
+`src/models/gnc/planning/rpo/path_metrics.jl` holds
+`rpo_path_cost_normalization_refs(points; cost_ref_distance_m, sample_ds_m, tf_s, mass_kg, isp_s, g0_mps2)`
+and the finite-difference fuel proxy
+`rpo_fuel_proxy_from_samples(samples; tf_s, mass_kg, isp_s, g0_mps2)`. All the
+keywords are required: distances in metres, times and specific impulse in
+seconds, mass in kilograms and reference gravity in m/s². HYPR's
+`ext/rpo/metric_adapters.jl` adds the methods that take an `RPOPSOConfig` and
+pass its fields. `test/unit/gnc/shared_metrics_tests.jl` loads `path_metrics.jl`
+alone and tests only these two kernels; the file's other metrics still depend on
+geometry and profile code. The kernels compute in `Float64` and are not a
+physical fuel model.
 
-RRT-Connect and RRT* have three-argument internal entry points in
-`GuidanceHooks` that accept explicit `bounds`, `evaluate_components` and
-`evaluate_cost` keywords. `evaluate_components(path)` must return a named result
-with `total`. `refine_path` is optional and returns `(path, cost, improved)`;
-`nothing` skips refinement. `edge_is_safe(a, b)` supplies the collision contract
-for direct paths, extensions, connections, rewiring and shortcuts. It must be
-symmetric because RRT-Connect reverses the goal-tree path when joining. The
-legacy default uses the existing shared RPO geometry, clearance and sampling
-settings. Adaptive samples depend on traversal direction, so the default is not
-guaranteed to give the same answer in reverse. This pre-existing limitation is
-preserved here; `path_found` alone does not certify collision clearance in
-traversal order. Consumers needing that guarantee must supply a symmetric
-predicate and validate the returned path against their collision policy. A
-change to the default sampling or goal-tree validation requires separate numerical
-review.
+### RRT search
 
-The search still uses geometric edge length for tree costs and RRT* rewiring.
-The objective callback scores output paths and RRT* history. Callbacks must
-agree on constraints and objective, preserve caller-owned input, and avoid
-hidden random draws. Explicit `rng` controls search randomness. Failed search
-retains the legacy direct-path diagnostic with `path_found=false`; callers must
-check that flag before accepting a path. Direct safe paths bypass refinement,
-as before. A runtime budget is best-effort wall-clock termination, so seeded
-numerical comparisons use an infinite budget and fixed iteration counts.
+`rpo_rrt_connect_plan_path` and `rpo_rrt_star_plan_path` in
+`src/models/gnc/planning/rpo/rrt.jl` take three positional arguments (start, goal
+and geometry) and explicit keywords: `bounds`, the search box;
+`evaluate_components(path)`, which returns a named result with `total`;
+`evaluate_cost(path)`, the scalar score; an optional `refine_path(path)` returning
+`(path, cost, improved)`, where `nothing` skips refinement; a required `rng`; and
+`edge_is_safe(a, b)`, the collision test for the direct path, extensions,
+connections, rewiring and shortcuts.
 
-HYPR's `ext/rpo/rrt_adapters.jl` retains the existing four-argument configuration
-methods and result fields, including `config`. HYPR owns its search-box policy,
-objective, optional refinement, Bezier fitting, and the decision to request an
-RRT warm start. Existing public access and comparison callers remain intact.
-The three-argument core omits `config`. Standalone tests load shared geometry,
-sampling and tree operations plus RRT, without loading HYPR. The historical
-`hypr_` names on shared helpers remain for compatibility with robot-arm users.
-This separation does not establish optional HYPR package installation; that
-also requires the configured retiming and package-loading work.
+`edge_is_safe` must be symmetric, because RRT-Connect reverses the goal-tree path
+when it joins the two trees. The default predicate uses the shared RPO geometry,
+clearance and adaptive sampling settings, and its samples depend on the direction
+of traversal, so it is not guaranteed to give the same answer in reverse.
+`path_found` alone therefore does not certify clearance in traversal order; a
+caller that needs that guarantee must supply a symmetric predicate and validate
+the returned path against its own collision policy. A change to the default
+sampling or to the goal-tree validation needs its own numerical check.
 
+The trees grow, and RRT* rewires, by geometric edge length; the objective
+callbacks score the output paths and the RRT* cost history. Callbacks must agree
+on constraints and objective, leave caller-owned inputs unchanged and make no
+hidden random draws; `rng` owns the search's draws. A failed search returns the
+direct path as a diagnostic with `path_found=false`, and callers must check that
+flag before using the path. A direct path that is already safe is returned
+without refinement. The `max_runtime_s` budget is checked between iterations, so
+it ends a search only approximately; seeded numerical comparisons use an infinite
+budget and fixed iteration counts.
 
-### Configured retiming ownership
+HYPR's `ext/rpo/rrt_adapters.jl` adds the four-argument methods that take an
+`RPOPSOConfig` and return the result with its `config` field. HYPR supplies the
+search box (`rpo_pso_bounds`), the objective, the refinement and the Bezier
+fitting, and decides when to request an RRT warm start.
+`test/unit/gnc/rrt_boundary_tests.jl` loads the shared geometry, sampling and
+tree operations and `rrt.jl` without HYPR. The shared helpers that still carry a
+`hypr_` prefix, in `src/models/gnc/planning/common/path_geometry.jl` and
+`rrt_tree_operations.jl`, are used by RPO and robot-arm planning alike and keep
+their names for qualified access through `HYPRUtils`.
 
-`src/models/gnc/planning/rpo/path_retiming.jl` owns two internal calculations in the
-existing `GuidanceHooks` module. `rpo_retime_samples(raw_samples, geometry; ...)`
-advances along an already sampled path. The five-argument
+### Retiming
+
+`src/models/gnc/planning/rpo/path_retiming.jl` holds two retiming calculations.
+`rpo_retime_samples(raw_samples, geometry; ...)` advances along an already
+sampled path, and the five-argument
 `rpo_retime_profile(curve, samples, params, clearances, geometry; ...)` builds
-the acceleration-limited profile. They require explicit numeric inputs and two
-policies: `available_distance(clearance, distance, safe_distance)` and
-`pointwise_speed(available_distance, curvature)`. Distances are metres, speed
-is m/s, curvature is 1/m, time is seconds and acceleration is m/s². Production geometry is
-`RPOReferenceGeometry`. `NavigationHooks` owns the clearance queries, whose
-production methods require this type. The sampled-path kernel passes the signed
-surface clearance and nearest-station-point distance to `available_distance`.
-The profile kernel passes clearance and clearance plus the body margin, computed
-from `geometry.station.keepout_radius_m` plus the maximum component of
-`geometry.chaser.half_extents_body`. These are the same geometric distance in
-exact arithmetic, with different floating-point constructions. The third argument
-is the supplied safe distance. `pointwise_speed` receives the resulting available
-distance and the sample curvature.
+the acceleration-limited profile. Both take explicit numeric limits and two
+policy callbacks, `available_distance(clearance, distance, safe_distance)` and
+`pointwise_speed(available_distance, curvature)`. Distances are in metres, speeds
+in m/s, curvature in 1/m, times in seconds and acceleration in m/s².
 
-HYPR retains the legacy/manuscript policy distinction, reaction-time and speed
-scaling rules, collision-sampling selection, and the choice between the two
-retiming routes. Its existing configured methods forward those values and
-policies to the shared calculations. The configured reference builder and the
-sampling calls remain with HYPR. Existing qualified access, return fields and
-module identities are preserved; these internal overloads add no root public API.
+The production geometry is `RPOReferenceGeometry`. The clearance queries belong
+to `NavigationHooks` (`src/models/gnc/planning/rpo/geometry/clearance.jl`), and
+their methods are defined for that type. `rpo_retime_samples` passes `available_distance`
+the signed surface clearance and the distance to the nearest station point.
+`rpo_retime_profile` passes the clearance and the clearance plus a body margin,
+`geometry.station.keepout_radius_m` plus the largest component of
+`geometry.chaser.half_extents_body`. In exact arithmetic the two second arguments
+are the same distance; in floating point they are computed differently. The third
+argument is the supplied safe distance, and `pointwise_speed` receives the
+resulting available distance and the sample's curvature.
 
-A supplied pointwise policy owns the physical speed cap and its order relative
-to scaling. `max_speed_mps` in the shared calculation preserves the existing
-fallback-speed handling; it does not impose an additional cap on policy output.
-The shared calculation preserves minimum-speed floors, near-duplicate handling,
-endpoint splitting, Bezier quadrature, forward/backward acceleration passes,
-terminal rest and the legacy step-count limit. Warning levels, messages and
-values are preserved. The step-cap and invalid-step warnings have different
-source-derived tuple-field labels (`max_steps` and `dt_s` now name explicit
-inputs instead of configuration expressions). Callbacks must agree with the caller's limits, preserve inputs and avoid hidden random draws.
-Existing fallback paths are not a collision-free or feasibility certificate.
+The pointwise policy owns the physical speed cap and where it applies relative to
+the speed scaling. The `max_speed_mps` keyword of the shared calculations caps
+only the fallback speed and puts no further cap on the policy's output. The shared
+calculations hold the minimum-speed floor, near-duplicate removal, the split of a
+two-point path, Bezier quadrature, the forward and backward acceleration passes,
+the terminal rest and, in `rpo_retime_samples`, the `max_steps` limit. Callbacks
+must agree with the caller's limits, leave inputs unchanged and make no hidden
+random draws. The fallback paths are not a certificate of clearance or
+feasibility.
 
-The shared geometry and profile-evaluation helpers remain shared and unchanged,
-including the general helpers whose present consumers are HYPR-only. Independent
-shared-module tests exercise retiming without HYPR definitions. Configured-call
-comparisons and existing lifecycle/consumer tests cover compatibility. This
-boundary alone does not prove an optional HYPR installation: the package load
-chain and dependency declarations still need their separate acceptance work.
-
+HYPR's `ext/rpo/path_retiming.jl` keeps the configured side: the `:legacy` and
+`:manuscript` policies (`rpo_retime_available_distance`,
+`rpo_retime_pointwise_speed`), the reaction-time and speed-scaling rules, and the
+collision-sampling spacing (`rpo_retime_sampling_ds_m`). Its
+`ext/rpo/rpo_reference_trajectory.jl` chooses between the two retiming routes
+(`rpo_reference_from_path`). `test/unit/gnc/shared_retiming_tests.jl` loads the
+shared files without any HYPR definitions and runs both calculations.
 
 ## Optional HYPR package boundary
 
-The separate `HYPR` package owns the optimizer; its `HYPRSpaceAGORAExt`
-extension owns configured objectives, refinement, RRT/retiming adapters and
-robot-arm HYPR execution. HYPR's core has no SpaceAGORA dependency. The extension
-uses SpaceAGORA's [versioned service contract](../src/reference/hypr_services.md).
-Load `SpaceAGORA` and `HYPR` directly to activate the extension. The retired
-loader is not installed. SpaceAGORA's core has no required HYPR dependency. OSQP remains a core dependency because
-LQ-MPC uses it independently of HYPR.
+HYPR is a separate package, pinned under `packages/robotics/HYPR.jl`, that owns
+the swarm optimizer. Its `HYPRSpaceAGORAExt` extension, which Julia loads once
+both `SpaceAGORA` and `HYPR` are loaded, holds the configured objectives,
+refinement, sampling, RRT and retiming adapters, the planner execution
+`_plan_hypr_rpo!` and robot-arm HYPR planning. SpaceAGORA is only a weak
+dependency of HYPR, and SpaceAGORA's `Project.toml` does not list HYPR at all.
+The extension reaches core code through the versioned
+[HYPR services](../src/reference/hypr_services.md) facade,
+`SpaceAGORA.HYPRServices`. It includes only its own files and evaluates nothing
+inside SpaceAGORA's modules. OSQP stays a core dependency because the LQ-MPC
+controller uses it, with or without HYPR.
 
-Core retains configuration/result types, historical compatibility function
-bindings and shared mathematical implementations in their original modules.
-The HYPR extension imports these explicitly and supplies their configured methods.
-The public `HYPRRPOPlanner` type remains in `HYPRRPOPlanning`; its execution delegates
-to an extension-provided internal method after checking availability. This is a
-coordinated extension of the package family's own contracts. No source is late
-included or evaluated inside another package's module.
+Core keeps the configuration and result types (`RPOPSOConfig`,
+`RobotArmHYPRConfig`, `RobotArmHYPRResult`), the function bindings that qualified
+callers use, and the shared calculations, all in their original modules; the
+extension adds the configured methods to those functions. A configuration can be
+built and inspected without HYPR. `HYPRRPOPlanner` lives in `HYPRRPOPlanning`, and
+its `plan_rpo!` checks availability before delegating to the extension.
+Comparison planning configured with HYPR's policies needs the companion; the
+explicit-policy RRT entry points and the shared scalar kernels do not. The
+compatibility bindings kept for qualified research callers are not a general
+plugin API, and internal helpers are not promised to stay stable.
 
-The HYPR extension registers availability in `__init__`. Planner preflight
-checks that activation succeeded; precompilation alone does not activate HYPR.
-`require_planner_support` is a baseline no-op that the built-in
-HYPR adapter specializes. The public configuration builder and execution preflight
-call it, keeping missing-support errors ahead of run output creation. Third-party
-planners retain their existing behavior. Do not add a silent fallback planner.
+The extension's `__init__` calls `HYPRServices.activate!`, which checks HYPR's
+version and the service contract version before recording HYPR as available
+(`hypr_available()`); precompiling HYPR does not activate it.
+`require_planner_support` does nothing for a planner by default.
+`HYPRRPOPlanner`, `RetainedPathRPOPlanner` and the comparison planners specialize
+it to raise `HYPRUnavailableError` when HYPR is not loaded.
+`make_rpo_configuration` and the binding's `preflight_guidance` call it, so the
+error comes before the run creates any output. Other planners keep the default.
+Do not add a silent fallback planner.
 
-Pure robot-arm path sampling, length, smoothness, segment distance and clearance
-remain core-owned in `gnc/shared/robot_arm_geometry.jl`. The HYPR extension's compliant-arm wrench
-bridge explicitly addresses `SpaceAGORA.SimulationModel`, preserving the dynamics
-owner that the historical parent-module lookup reached. The mixed replanning file
-stays in its original location. The seven general retiming helpers stay shared.
+Robot-arm path sampling, length, smoothness, segment distance and clearance stay
+in core, in `src/models/gnc/planning/robot_arm/path_geometry.jl`. The extension's
+cloth-coupled base-wrench estimate reaches `SimulationModel.ClothRobotArmDynamics`
+and `SimulationModel.ClothMultibody` through `HYPRServices.Cloth`, and falls back
+to the rigid-base estimate when they are not defined.
+`src/models/gnc/companions/hypr/replanning.jl`, which mixes the neutral
+replanning geometry and decisions with HYPR-configured replanning, stays in core,
+as do the retimer's helpers in `path_geometry.jl` and `profile_evaluation.jl`
+under `src/models/gnc/planning/rpo/`.
 
-The configured comparison APIs intentionally still use HYPR policies. They require
-the companion; the underlying explicit-policy RRT and shared scalar functions do
-not. Configuration types can be constructed and inspected without loading execution.
-Private compatibility bindings remain for existing qualified research consumers;
-they are not a new general plugin API or a promise that every internal helper is
-stable forever.
+The HYPR service contract has its own version (`HYPRServices.CONTRACT_VERSION`),
+separate from the planner contract.
 
-`test/optional/hypr/setup.jl <scratch-directory>` creates separate installation
-projects. `core.jl` verifies the dependency graph, absence of the companion, baseline
-simulation, shared planners and robot-arm use. `optional.jl core-first` and
-`optional.jl hypr-first` run in fresh processes with `JULIA_LOAD_PATH=@:@stdlib`.
-The full-feature test harness opts into the local companion explicitly; this
-bootstrap is never used by the independent installation proof.
+### Installation tests
 
-Architecture checks cover the core and service boundary.
-HYPR's coverage checks include the extracted core and extension implementation.
-The required `tests` check also waits for the independent installation job.
+`test/optional/hypr/setup.jl <scratch-directory>` builds two projects in that
+directory: `core`, without HYPR, and `hypr`, with it. `test/optional/hypr/core.jl`,
+run in `core`, checks that neither HYPR nor the retired `SpaceAGORAHYPR` loader is
+installed or loaded, that selecting HYPR raises `HYPRUnavailableError` before a
+run writes output, and that the baseline simulation, the shared planners and the
+quintic robot-arm planner work. `test/optional/hypr/optional.jl core-first` and
+`optional.jl hypr-first`, run in `hypr`, load the two packages in each order and
+check that type and function identities are kept. The
+`optional-hypr-installation` job in `.github/workflows/julia-ci.yml` runs each in
+its own process with `JULIA_LOAD_PATH=@:@stdlib`, and the required `tests` job
+waits for it.
 
-The service compatibility and loading checks are distinct from the planner-result
-contract.
-
-## Private result-assembly owners
-
-RRT-Connect and RRT-Star share input conversion and successful direct-path
-metadata in `src/models/gnc/planning/rpo/rrt.jl`. Their search trees, random
-streams, stopping rules, failure results and refinement policies remain owned
-by their respective algorithms. Direct results retain their path/history aliasing.
-
-CHOMP and STOMP share final refinement and result conversion through
-`_rpo_refined_optimizer_result` in `comparison/trajectory_optimizers.jl`.
-The helper retains raw paths, raw costs, component values, histories, iteration
-counts and objective values supplied by each search. It is a private implementation
-detail, not an additional planner interface. The optimizers retain separate update
-rules and termination checks.
-
-The standalone RRT boundary suite covers direct, blocked and unsuccessful searches
-without HYPR. The comparison-planner object suite exercises each supported
-algorithm and its refusal/metadata contracts independently.
+The unit and integration suites load HYPR differently, through
+`test/helpers/load_hypr.jl`, which the installation tests do not use.
+`test/unit/gnc/hypr_services_tests.jl` checks the service facade, and HYPR's own
+CI measures coverage of both its core and its SpaceAGORA extension.

@@ -1,6 +1,10 @@
 ENV["GKSwstype"] = get(ENV, "GKSwstype", "100")
-using Plots
-using Plots.PlotMeasures: mm
+# SPACEAGORA_PPB_NO_PLOTS=1: data-only run (remote hosts); Plots is not loaded, plots are made locally from the CSVs.
+const PPB_NO_PLOTS = get(ENV, "SPACEAGORA_PPB_NO_PLOTS", "0") == "1"
+if !PPB_NO_PLOTS
+    using Plots
+    using Plots.PlotMeasures: mm
+end
 
 function ppc_hardware_snapshot()
     return (
@@ -354,6 +358,7 @@ end
 
 function ppc_write_plots(outdir::String, summary::DataFrame, parity::DataFrame)::Vector{String}
     paths = String[]
+    PPB_NO_PLOTS && return paths
     try
         ENV["GKSwstype"] = get(ENV, "GKSwstype", "100")
         @eval using Plots

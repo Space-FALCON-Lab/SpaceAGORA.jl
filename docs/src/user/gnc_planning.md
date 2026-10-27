@@ -1,79 +1,88 @@
 # Planning Algorithms
 
-Start here when your algorithm proposes a product for an existing family to check
-and install. For a controller or estimator that updates a held value at each tick,
-use [Feedback Controllers and Estimators](gnc_feedback.md).
-Both profiles follow the [shared house rules](gnc_algorithm.md#House-rules-for-both-profiles).
-Defining a new trusted family is a separate [core contribution](gnc_algorithm.md#The-family-side).
+This guide is for algorithms that propose a product for an existing family to
+check and install. A controller or estimator that updates a held value at each
+tick belongs in [Feedback Controllers and Estimators](gnc_feedback.md). Both
+kinds follow the [shared house rules](gnc_algorithm.md#House-rules-for-both-profiles).
+Defining a new trusted family is a separate
+[contribution to SpaceAGORA](gnc_algorithm.md#The-family-side).
 
 The examples are complete scripts in `examples/gnc_algorithm_env/`, a separate
-project that uses only the public API. CI runs them; the excerpt gate keeps the
-code blocks below identical to those scripts. From the SpaceAGORA checkout:
+project that uses only the public API. CI runs them, and a docs check fails when
+a code block on this page differs from the matching region of its script. From
+the SpaceAGORA checkout:
 
 ```bash
 julia --startup-file=no --compiled-modules=existing --project=examples/gnc_algorithm_env examples/gnc_algorithm_env/setup.jl
 julia --startup-file=no --compiled-modules=existing --depwarn=error --threads=2 --project=examples/gnc_algorithm_env examples/gnc_algorithm_env/rpo_planner.jl
 ```
 
-Run a complete script, including its imports, before changing its snippets.
+Run a whole script, imports included, before you change any of its excerpts.
+Each script loads `SpaceAGORA`, `Test` and the conformance functions it calls
+from `SpaceAGORA.Conformance`. The RPO and joint-reference scripts also import
+`norm` from `LinearAlgebra`, and the RPO script imports `AbstractRNG` from
+`Random`.
 
 ## The planning profile
 
-A planning algorithm proposes; its *family* decides. A family is trusted,
-core-owned code that defines one problem: what a request contains, what product
-an algorithm proposes, how a proposal is validated, where an accepted product is
+A planning algorithm proposes and its family decides. A family is trusted code
+in SpaceAGORA that defines one problem: what a request contains, what product an
+algorithm proposes, how a proposal is validated, where an accepted product is
 installed, when it stops being current, and what happens on rejection. Your
 algorithm never validates or installs its own result.
 
-Each request runs through the same steps, in `run_algorithm_request!`:
+`run_algorithm_request!` takes every request through the same steps:
 
-1. Trusted code builds an owned request snapshot of the state, the goal, the
-   limits and the request's validity, and the binding records a copy.
+1. Trusted code builds an owned snapshot of what the algorithm needs, such as
+   the state, the goal, the limits and how long the request stays valid. The
+   binding records a copy of it.
 2. The family checks the algorithm's declared capabilities against the request.
-3. The algorithm proposes, from its own copy of the request: `propose!(state,
-   algorithm, request, rng)`, or `propose_revision!(state, algorithm, request,
-   active_product, rng)` when the request asks to revise the installed product.
-4. The family validates a copy of the proposal against its retained request.
-5. An accepted product is installed into the link it shares with its consumer,
-   with nothing running between validation and installation.
+3. The algorithm proposes from its own copy of the request:
+   `propose!(state, algorithm, request, rng)`, or
+   `propose_revision!(state, algorithm, request, active_product, rng)` when the
+   request asks for a revision of the installed product.
+4. The family validates a copy of the proposal against the request it kept.
+5. An accepted product is installed into the link the family shares with the
+   product's consumer. Nothing else runs between validation and installation.
 6. The binding records the outcome.
 
-When the capability check or the validation refuses, the family's
-`on_rejection` policy applies: `:fail` stops the run with a `GNCAlgorithmError`
-that carries the run report, `:keep_previous` keeps the installed product and
-records the refusal, and `:install_fallback` installs the family's
+If the capability check or the validation refuses, the family's `on_rejection`
+policy decides what happens. `:fail` stops the run with a `GNCAlgorithmError`
+that carries the run report. `:keep_previous` keeps the installed product and
+records the refusal. `:install_fallback` installs the family's
 `fallback_product`, such as a hold.
 
-What you implement for an algorithm:
+An algorithm implements these functions:
 
 | Function | Required | What it does |
 |---|---|---|
 | `algorithm_family(algorithm)` | yes, usually inherited from the family's abstract type | the family whose rules govern the algorithm |
-| `propose!(state, algorithm, request, rng)` | yes | a result for the request: a `:candidate` with a product, or `:infeasible`, `:unsupported` or `:failed` with a reason |
-| `propose_revision!(state, algorithm, request, active_product, rng)` | no | a revision of the installed product; unsupported by default, never a silent full proposal |
+| `propose!(state, algorithm, request, rng)` | yes | a result for the request: a `:candidate` with a product, or `:infeasible`, `:unsupported` or `:failed` with a termination reason |
+| `propose_revision!(state, algorithm, request, active_product, rng)` | no | a revision of the installed product; by default an `:unsupported` result, never a full proposal in its place |
 | `algorithm_capabilities(algorithm)` | no | what it supports, in the family's capability type; by default nothing (`default_capabilities(family)`) |
 | `initialize_algorithm(algorithm, run_context)` | no | fresh run state for each run; `nothing` by default |
 | `require_algorithm_support(algorithm)` | no | throw before the run if something it needs, such as an optional package, is missing |
 | `consumes_rng(algorithm)` | no | `false` for an algorithm that draws nothing from `rng`; the default is `true` |
 
-The families:
+The existing families:
 
 | Family | Request and product | Validation | Installed into | On rejection | Algorithms | Runs in a simulation through |
 |---|---|---|---|---|---|---|
-| RPO reference, `RPOReferenceFamily` | `RPOPlanningRequest`, `RPOReference` | `validate_rpo_result`: identity, timing, endpoints, speed and acceleration limits, sampled clearance | the RPO plan buffer, read by the MPC controller | `:fail`, or `:install_fallback` (a hold) when configured | `DirectRPOPlanner`, `HYPRRPOPlanner` (with `using SpaceAGORA, HYPR`), the seven comparison planners | `make_rpo_configuration(planner=...)` |
+| RPO reference, `RPOReferenceFamily` | `RPOPlanningRequest`, `RPOReference` | `validate_rpo_result`: identity, timing, endpoints, speed and acceleration limits, sampled clearance | the `RPOPlanBuffer`, read by the `RPOMPCControlModel` | `:fail`, or `:install_fallback` (a hold) when configured | `DirectRPOPlanner`, `HYPRRPOPlanner` (with `using SpaceAGORA, HYPR`), the seven comparison planners | `make_rpo_configuration(planner=...)` |
 | Burn plan, `BurnPlanFamily` | `BurnPlanRequest`, a `PropulsiveBurnPlan` | `validate_burn_plan`: the burn scheduler's own size check (`burn_plan_sizing`), thrust, specific impulse and window | the spacecraft's slot in the burn scheduler's plan buffer, `BurnPlanSlot` | `:keep_previous` | `ApoapsisBurnPlanner` | `AlgorithmGuidance` |
 | Joint reference, `JointReferenceFamily` | `JointReferenceRequest`, a `RobotArmPlan` | `validate_joint_reference`: the arm and its base, the sample grid, the start joints, joint limits, the goal and obstacle clearance | the `RobotArmPlanBuffer` the arm's `RobotArmControlEffector` reads | `:fail` | `QuinticJointPlanner` | `AlgorithmGuidance` |
 | EDG guidance, `EDGGuidanceFamily` | `EDGGuidanceRequest`, an `EDGGuidanceDecision` | `validate_edg_guidance_decision`: the request's spacecraft, a mode the configuration allows, a consistent targeting plan and switch time, a bracketing count that has not decreased | the run's `AerobrakingEnergyDepletionState`, read by the EDG control model | `:fail` | `EDGGuidanceAlgorithm`, with `using SpaceAGORAEDG` | `AlgorithmGuidance`, in place of the EDG guidance model |
 
 ### Worked example C: an RPO planner
 
-For the RPO family the RPO names are the supported way to write a planner:
-subtype `AbstractRPOPlanner` and implement `planner_capabilities` and
-`plan_rpo!`, and optionally `initialize_planner` and `retime_rpo!`. They forward
-to the general names (`algorithm_capabilities`, `propose!`,
-`initialize_algorithm`, `propose_revision!`); the
+The RPO names are the supported way to write an RPO planner: subtype
+`AbstractRPOPlanner`, implement `planner_capabilities` and `plan_rpo!`, and
+optionally `initialize_planner` and `retime_rpo!`. These forward to the general
+names (`algorithm_capabilities`, `propose!`, `initialize_algorithm`,
+`propose_revision!`); the
 [RPO planner contract](../reference/rpo_planner_contract.md#The-general-algorithm-contract)
-maps one to the other. The script is `examples/gnc_algorithm_env/rpo_planner.jl`.
+maps one set to the other. The script is
+`examples/gnc_algorithm_env/rpo_planner.jl`.
 
 ```julia
 # A reference along the straight line to the goal, in the target's RTN frame: it
@@ -137,41 +146,50 @@ println("installed request ", installed.request_id, ": ", installed.validation.r
 @test installed.validation.accepted
 ```
 
-The important choices:
+A planner that cannot plan returns a result with a status and a termination
+reason; it does not throw. Under the RPO family's default `:fail` policy the run
+then stops with an `RPOPlanningError` whose reason is that status, and the
+failure record in the run report keeps the termination reason.
 
-- **A reason, not an exception.** A planner that cannot plan returns a result
-  with a status and a termination reason. Under the RPO family's `:fail` policy
-  the run then stops with an `RPOPlanningError` that names it.
-- **Declared capabilities.** `LinePlanner` declares truth states in the target's
-  RTN frame and no retiming. The family checks every request against them before
-  asking the planner, and refuses one that needs more.
-- **No randomness, declared.** `consumes_rng = false` lets the checks confirm
-  that the stream is left untouched. A planner that does draw uses only `rng`,
-  the stream the binding derives from the run's seed and the spacecraft IDs.
+`LinePlanner` declares that it plans from truth states in the target's RTN frame
+and does not retime. The family checks every request against these capabilities
+before asking the planner, and refuses a request that needs more.
 
-[Run an RPO case with interchangeable planners](rpo_planner_pilot.md) covers the
-pilot's replanning, holds, retiming and inspection.
+`consumes_rng = false` declares that the planner draws no random numbers, and
+the conformance checks confirm that it leaves the stream untouched. A planner
+that does draw uses only `rng`, the stream the binding derives from the run's
+seed and the spacecraft IDs.
+
+[Run an RPO case with interchangeable planners](rpo_planner_pilot.md) covers
+replanning, holds, retiming and inspection in the pilot.
 
 ### Other families
 
 A planner of another family runs through `AlgorithmGuidance`, the generic
-binding, among the guidance effectors.
+binding, which you add among the guidance effectors.
 `AlgorithmGuidance(; algorithm, spacecraft_index, settings, link, seed, events,
-replan_interval_s)` makes a request at each `AlgorithmEvent` and, with a finite
-`replan_interval_s`, at that interval, at its guidance ticks. `settings` are the
-family's request settings and `link` its install target, for a family that does
-not find its own in the run. The binding's random stream comes from `seed`, the
-family and the spacecraft's ID. `algorithm_run_report(solution)`, on a run made
-with `return_solution=true`, returns every binding's records: each request,
+replan_interval_s)` makes a request at each `AlgorithmEvent`. When
+`replan_interval_s` is finite it also makes one at the run's start and then
+whenever that many seconds have passed since the last request. Requests are
+made at the binding's guidance ticks. `settings` holds the family's request
+settings, and `link` is the install target, for a family that does not find its
+own in the run. The binding's random stream is derived from `seed`, the family
+and the spacecraft's ID.
+
+A configuration may hold only one binding per install target. `AlgorithmGuidance`
+refuses checkpoint writing and resume, because its run state is not
+checkpointed. On a run made with `return_solution=true`,
+`algorithm_run_report(solution)` returns every binding's records: each request,
 installation, rejection and failure, in order.
 
 #### Worked example D: a burn planner
 
 A planner of the burn-plan family subtypes `AbstractBurnPlanner` and proposes a
-`PropulsiveBurnPlan`: a constant-thrust burn on a window `[start, stop)`. The
-family checks it with the burn scheduler's own size rule, `burn_plan_sizing`, so
-the planner states the propellant, the impulse and a window of the duration that
-rule gives. The script is `examples/gnc_algorithm_env/burn_planner.jl`.
+`PropulsiveBurnPlan`: a constant-thrust burn over a window `[start, stop)`. The
+family checks it with the burn scheduler's own sizing rule, `burn_plan_sizing`,
+so the planner states the propellant and impulse that rule gives and a window
+as long as the burn duration it gives. The script is
+`examples/gnc_algorithm_env/burn_planner.jl`.
 
 ```julia
 # A prograde burn of a set Δv that starts a set time after the request.
@@ -198,12 +216,13 @@ function SpaceAGORA.propose!(state, planner::BurnSoonPlanner, request::BurnPlanR
 end
 ```
 
-The family installs into the burn scheduler, `BaseThrusterModel`: the
-configuration needs exactly one, planning no burn of its own for that
-spacecraft, and no thruster guidance model beside the binding. The scheduler
-takes up an installed plan at the end of the step it was installed in and fires
-the engine inside the plan's window. The family takes no `settings` and finds
-its own install target, so the binding needs neither.
+The family installs plans into the burn scheduler, `BaseThrusterModel`. The
+configuration needs exactly one scheduler, with zero `Δv` and no burn window of
+its own for the binding's spacecraft, and no guidance model that commands the
+scheduler's own burns. The scheduler takes up an installed plan at the end of
+the step it was installed in and fires the engine inside the plan's window. The
+family takes no `settings` and finds its own install target, so the binding
+needs neither.
 
 ```julia
 # The family installs into the burn scheduler, which plans no burn of its own here
@@ -293,12 +312,13 @@ function SpaceAGORA.propose!(state, planner::SmoothStepJointPlanner, request::Jo
 end
 ```
 
-The plan buffer, `RobotArmPlanBuffer`, is a link: the binding produces it and the
-arm's `RobotArmControlEffector` consumes it, and before the run the engine checks
-that one controller reads it, for the binding's spacecraft and arm. The binding
-gets the buffer as its `link` and `JointReferenceSettings` as its `settings`:
-the arm, its base pose, the target, the obstacles and the reference's grid. Each
-request starts from the arm's measured joints.
+The plan buffer, `RobotArmPlanBuffer`, is a link. The binding produces it and
+the arm's `RobotArmControlEffector` consumes it, and before the run the engine
+checks that exactly one controller reads it, for the binding's spacecraft and
+arm. The binding takes the buffer as its `link` and a `JointReferenceSettings`
+as its `settings`: the arm, its base pose, the target, the obstacles and the
+clearance from them, the goal tolerance, and the reference's time step and
+duration. Each request starts from the arm's measured joints.
 
 ```julia
 # The default arm on a spacecraft's bus. The plan buffer is the link between the
@@ -346,40 +366,57 @@ println("installed request ", installed.request_id, ": ", installed.validation.r
 ```
 
 The family's rejection policy is `:fail`: a refused proposal stops the run with
-an `AlgorithmGuidanceError` that names the validation's reason, such as
+an `AlgorithmGuidanceError` whose reason is the validation's, such as
 `:insufficient_clearance` for a path through an obstacle.
 
 #### The EDG guidance family
 
-The energy-depletion guidance decision is an algorithm of the EDG guidance
+The energy-depletion guidance decision runs as an algorithm of the EDG guidance
 family, `EDGGuidanceAlgorithm()`. It is the `guidance_decision!` of the optional
-`SpaceAGORAEDG` companion, served through the versioned `EDGServices` facade, so
-the family's contract version (`family_contract_version`) is the facade's
-contract, 2.0.0. The algorithm decides on a copy of the run's EDG state, the
-family validates the decision and installs it in that state, and the EDG control
-model reads it there. It draws no random numbers.
+`SpaceAGORAEDG` companion, reached through the versioned `EDGServices` facade,
+so the family's contract version (`family_contract_version`) is the facade's
+contract version, 3.0.0. The algorithm decides on a copy of the run's EDG state;
+the family validates the decision and installs it in that state, where the EDG
+control model reads it. The algorithm draws no random numbers.
 
-`AlgorithmGuidance` runs it in place of `AerobrakingEnergyDepletionGuidanceModel`,
-with `EDGGuidanceSettings(config=..., state=...)` holding the same configuration
-and state as the `AerobrakingEnergyDepletionControlModel`, and no `link`. The
-binding runs one spacecraft; a run with several uses the EDG guidance model. The
+`AlgorithmGuidance` runs it in place of `AerobrakingEnergyDepletionGuidanceModel`.
+Its settings are `EDGGuidanceSettings(config=..., state=...)`, holding the same
+configuration and state as the `AerobrakingEnergyDepletionControlModel`, and it
+has no `link`. The binding handles one spacecraft; a run with several uses the
+EDG guidance model. The
 [EDG Service Contract](../reference/edg_adapter_boundary.md#The-EDG-guidance-family)
 shows the configuration, and [Energy Depletion Guidance](edg_guidance.md) covers
 installing the companion and the guidance itself.
 
 ## Test your algorithm
 
-`SpaceAGORA.Conformance` runs the engine's own machinery on your model or
-algorithm: the pre-run hook check, short runs repeated sequentially, after a
-`deepcopy`, with the global random stream reseeded, on two threads and twice on
-one configuration with `isolate_state=false` (the reset at the run's start),
-and, for planners, the family's request driver. Each `check_*` function returns a report;
-with `using Test`, each `test_*` function records the same checks as tests. Each
-example script ends with them:
+`SpaceAGORA.Conformance` checks a planner against its family with
+`check_algorithm(algorithm, requests; trusted, simulation)`, which returns a
+report; with `using Test` loaded, `test_algorithm` records the same checks as
+tests. The planner proposes for the family's representative requests in order,
+from a fresh state, and the checks are:
 
-A planner is checked against its family's representative requests, which
-include one the family refuses, and a short simulation through the family's
-binding:
+| Check | What it requires |
+|---|---|
+| `family_resolves`, `family_trusted` | `algorithm_family` returns a family, and the family is defined in SpaceAGORA, not in the algorithm's package |
+| `result_contract` | every result has the family's result type, a known status and the request's `request_id`, and carries a product exactly when it is a `:candidate` |
+| `stream_untouched_if_declared` | an algorithm that declares `consumes_rng = false` leaves the stream unchanged |
+| `deterministic_given_stream` | two passes through the requests with equal streams give equal results, with Julia's global random stream seeded differently |
+| `request_not_mutated` | the algorithm leaves its copy of each request unchanged |
+| `initialize_independent` | two states from `initialize_algorithm` share no mutable object |
+| `refuses_explicitly` | a revision request that the capability check refuses gets an `:unsupported` result from `propose_revision!` |
+| `driver_round_trip` | the requests run through `run_algorithm_request!`: an accepted product is installed and current, and a refusal follows the family's `on_rejection` |
+| `simulation_run` | `simulation(algorithm)`, a short simulation through the family's binding, installs a product and records no failure. Skipped without a `simulation` |
+
+The RPO, burn-plan and joint-reference families each supply representative
+requests and a short simulation for these checks. Each simulation function runs
+its case twice in sequence and, with two or more threads, twice at the same
+time, and fails when the runs differ. The requests include one the family can
+refuse: a retiming request for the RPO family, which a planner that does not
+retime cannot serve; a request made during a burn for the burn-plan family;
+and, for the joint-reference family, a request with an obstacle on the straight
+joint-space path, which a planner that ignores obstacles proposes through. Each
+example script ends with these checks:
 
 ```julia
 # The family's representative requests, its trusted validation queries and a short
@@ -404,11 +441,11 @@ end
 end
 ```
 
-Run the checks with two or more threads,
-so that concurrent runs are compared with sequential ones. A pass certifies
-interface behaviour only: the method, its parameters and the claims made from it
-stay with you.
+Run the checks with two or more threads so that the simulation check compares
+concurrent runs with sequential ones. A pass certifies interface behavior only.
+The method, its parameters and any claims made from it remain your
+responsibility.
 
 To keep your algorithm in a repository of your own, tested against a recorded
-SpaceAGORA commit, start from a contributor starter: see
+SpaceAGORA commit, start from a contributor starter; see
 [Building Your Own Research Repository](research_repository.md).

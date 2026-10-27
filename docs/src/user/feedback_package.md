@@ -1,31 +1,34 @@
 # Your First Controller Package
 
-Use the **`package` starter** to keep a reusable feedback controller in its own
-Julia package. The starter's RPO planner is an example to replace: a controller
-implements `AbstractControlEffectorModel` directly and needs no planning family,
-service facade or change to SpaceAGORA.
+The `package` starter gives a reusable feedback controller a Julia package of
+its own. The starter's example is an RPO planner, which you replace: a
+controller subtypes `AbstractControlEffectorModel` directly and needs no
+planning family, service facade or change to SpaceAGORA.
 
 This recipe packages the `RateDamper` from
-[Feedback Controllers and Estimators](gnc_feedback.md#Worked-example-A:-a-rate-damper) as
-`RateDamperDemo`. It keeps the controller, the simulation setup and the tests in
-separate files. The example uses an ideal body torque, with no propellant use or
-mounted hardware; it needs no optional companion, native GRAM or SPICE data.
+[Feedback Controllers and Estimators](gnc_feedback.md#Worked-example-A:-a-rate-damper)
+as `RateDamperDemo`, with the controller, the simulation setup and the tests in
+separate files. The controller applies an ideal body torque, with no propellant
+use or mounted hardware, and the package needs no optional companion, native
+GRAM or SPICE data.
 
 ## Generate the package
 
-From a clean SpaceAGORA checkout named `SpaceAGORA.jl`, at the commit you intend
-to use:
+Start in a clean SpaceAGORA checkout named `SpaceAGORA.jl`, at the commit you
+intend to use, and run:
 
 ```sh
 julia --startup-file=no --compiled-modules=existing scripts/new_contributor_repository.jl package ../RateDamperDemo --name RateDamperDemo
 cd ../RateDamperDemo
 ```
 
-The generator creates the files and a new package UUID. The directory must be
-outside SpaceAGORA and new or empty. Keep the generated `SpaceAGORASource.toml`
-and `.github/workflows/ci.yml`: their core revision and workflow revision agree.
-Keep the generated package name, UUID, version and SpaceAGORA compatibility
-entry in `Project.toml`.
+The generator writes the starter's files with a new package UUID and pins the
+checkout's commit. The target directory must be outside SpaceAGORA and either
+new or empty, and the generator refuses a checkout with uncommitted changes to
+tracked files. Keep the generated `SpaceAGORASource.toml` and
+`.github/workflows/ci.yml`, which name the same core commit, and keep the
+generated package name, UUID, version and SpaceAGORA compatibility entry in
+`Project.toml`.
 
 Replace the planner example in these files:
 
@@ -38,9 +41,11 @@ Replace the planner example in these files:
 | `test/method_tests.jl` | checks of the damping law |
 | `README.md` | what the controller does, its units, scope and setup commands |
 
-Update `CITATION.cff` and the copyright holder in `LICENSE` for your package.
-Keep the generated `.gitignore`. A package does not commit the separate test
-environment or its Manifest.
+Put your own details in `CITATION.cff` and the copyright holder in `LICENSE`.
+The generator writes the holder into `LICENSE` for you when you pass it
+`--holder "<name>"`. Keep the generated `.gitignore`: a package commits no
+Manifest, and the test environment you build below lives outside the
+repository.
 
 ## Declare the dependencies
 
@@ -55,18 +60,19 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 StaticArrays = "1"
 ```
 
-Keep the existing `SpaceAGORA` dependency and compatibility entry. Remove
-`LinearAlgebra` and `Random` from `[deps]` and `[compat]` after replacing the
-planner code, since this recipe does not import them. Keep `Test` in `[extras]`
-and the test target: it belongs to tests and the checked example, not the
-controller's imports.
+Keep the existing `SpaceAGORA` dependency and compatibility entry. Once the
+planner code is gone, remove `LinearAlgebra` and `Random` from `[deps]` and
+`[compat]`, since this recipe does not import them. Keep `Test` in `[extras]`
+and in the test target: the tests and the example use it, the controller does
+not.
 
-Do not add a `[sources]` entry for SpaceAGORA. The separate environment below
-loads the core checkout at the recorded revision by path.
+Do not add a `[sources]` entry for SpaceAGORA; the environment script refuses
+one. The separate environment built below loads the core checkout at the
+recorded commit by path.
 
 ## Move the controller into its module
 
-Replace `src/RateDamperDemo.jl`. Begin it with:
+Replace `src/RateDamperDemo.jl`, starting with this header:
 
 ```julia
 module RateDamperDemo
@@ -77,38 +83,41 @@ using StaticArrays
 export RateDamper
 ```
 
-Immediately after that header, copy the **complete controller code block** from
-“Worked example A: a rate damper” in
-[Feedback Controllers and Estimators](gnc_feedback.md#Worked-example-A:-a-rate-damper). In the matching
-source, `examples/gnc_algorithm_env/feedback_controller.jl`, this is the region
-between `# snippet: controller` and its `# end snippet`; omit the marker lines.
-Copy the type and every method in that block, including the run-start reset,
-fresh binding, inactive-command release, `checkpoint_state` and
-`restore_checkpoint_state!`. Finish the file with:
+Right after the header, paste the whole controller code block from
+[Worked example A: a rate damper](gnc_feedback.md#Worked-example-A:-a-rate-damper).
+In its source, `examples/gnc_algorithm_env/feedback_controller.jl`, that block
+is the region between `# snippet: controller` and its `# end snippet`; leave out
+the marker lines. Copy the type and every method in the block, including the
+reset at the run's start (`initialize_control!`), `bind_spacecraft`,
+`release_command!`, `checkpoint_state` and `restore_checkpoint_state!`. End the
+file with:
 
 ```julia
 end # module RateDamperDemo
 ```
 
-Keep the simulation and `using Test` out of this module. Extending methods as
-`SpaceAGORA.update_control!`, `SpaceAGORA.control_wrench` and the other public
-names requires no import from an internal module.
+Keep the simulation and `using Test` out of this module. The methods extend
+public names with qualified definitions, such as `SpaceAGORA.update_control!`
+and `SpaceAGORA.control_wrench`, so nothing has to be imported from an internal
+module.
 
-The gain, torque limit, period and spacecraft scope are configuration: the
-initializer and binding preserve them. `torque_body` and `tick_s` are owned run
-state, not settings for an initial command. A fresh run resets those two fields;
-set the gain or limit to configure the law rather than editing its held output.
+The gain, torque limit, period and spacecraft index are configuration. The
+initializer leaves them alone, and `bind_spacecraft` copies the gain, limit and
+period into the copy it makes for a spacecraft. `torque_body` and `tick_s` are
+run state the model owns, not settings for an initial command. Every run starts by
+resetting them, so configure the law through the gain or the limit rather than
+by editing its held output.
 
-The tick computes and holds the torque. The output hook reads that held value
+The tick computes and holds the torque. The output hook returns that held value
 and checks `x.spacecraft_index`. The two checkpoint methods save `torque_body`
 and `tick_s` and restore them after initialization, so a resumed run holds the
-same command until the next tick. Preserve this state handling when changing
-the law.
+same command until the next tick. Keep this state handling when you change the
+law.
 
 ## Share one nonzero-spin simulation setup
 
-Create `examples/configuration.jl`. Assemble it from this header, the existing
-example's configuration block, and the footer below:
+Create `examples/configuration.jl` from three parts: the header below, the
+configuration code of the worked example, and the footer that follows.
 
 ```julia
 using SpaceAGORA, StaticArrays, RateDamperDemo
@@ -117,16 +126,17 @@ function rate_damper_case(; damper=RateDamper(), duration_s=12.0,
                          initial_rate_rad_s=0.05)
 ```
 
-Inside the function, copy the `run` code block from the rate-damper example,
-starting at `root = Link(...)` and ending at the closing parenthesis of
-`config = SimulationConfiguration(...)`. Do **not** copy
-`solution = run_simulation(...)`. Make these three changes to the copied block:
+Inside the function, paste the worked example's code block that builds the run,
+from `root = Link(...)` through the closing parenthesis of
+`config = SimulationConfiguration(...)`. Leave out
+`solution = run_simulation(...)`. Then make three changes to the pasted code:
 
 1. Replace `ω0 = 0.05` with `ω0 = Float64(initial_rate_rad_s)`.
-2. Remove `damper = RateDamper()`: use the function's `damper` argument.
+2. Delete `damper = RateDamper()`, so the code uses the function's `damper`
+   argument.
 3. Replace `mission_s = 120.0` with `mission_s = Float64(duration_s)`.
 
-Keep the `ControlModel` containing that same `damper` object, with
+The `ControlModel` keeps that same `damper` object, with
 `control_rates=[damper.period_s]`. Then append:
 
 ```julia
@@ -141,12 +151,12 @@ expected_final_rate(case) = case.initial_rate_rad_s *
     (floor(Int, case.duration_s / case.damper.period_s) - 1)
 ```
 
-This is the same public setup as the worked example, shortened for tests. Its
-nonzero initial spin matters: a controller checked only while its command stays
-zero can conceal a missing checkpoint state. The analytic expression here is
-for the default controller and a duration that is a whole number of control
-periods; changing the initial command, saturating the torque or changing the
-physical case needs a corresponding method check.
+This is the worked example's public setup, shortened for tests. The nonzero
+initial spin matters: a controller checked only while its command stays zero
+can hide a missing checkpoint state. The closed-form expression holds for the
+default controller and a duration of a whole number of control periods. If you
+change the initial command, let the torque saturate or change the physical
+case, write a method check to match.
 
 ## Test the interface and the method
 
@@ -170,11 +180,12 @@ include(joinpath(@__DIR__, "..", "examples", "configuration.jl"))
 end
 ```
 
-The fixture must contain the exact controller passed to `test_control_model`,
-not a second equal-looking instance. Run with at least two threads so the
-concurrent-run check applies. Read any skipped or advisory checks in the report;
-the explicit assertion above requires a successful checkpoint round trip even
-when the pinned core reports that check as advisory.
+The fixture must hold the very controller object passed to
+`test_control_model`, not a second instance that looks the same, because the
+check finds the model by identity. Run with at least two threads so that the
+concurrent-run check applies. Read any skipped or advisory checks in the
+report. The explicit assertion above requires the checkpoint round trip to pass
+even if the pinned core reports that check as advisory.
 
 Replace `test/method_tests.jl` with:
 
@@ -196,10 +207,13 @@ using Test, SpaceAGORA, StaticArrays, RateDamperDemo
 end
 ```
 
-Conformance checks scheduling, state ownership, reset, binding and continuation.
-The separate method test checks the torque limit and the expected physical
-result. Add the scientific checks your own law needs; interface conformance does
-not establish its accuracy or suitability for a mission.
+Conformance checks the interface: the hooks; repeated runs, runs after a
+`deepcopy` and concurrent runs; the reset at a run's start; pure output hooks;
+the copies `bind_spacecraft` makes; the checkpoint round trip; and the outputs
+for spacecraft outside the model's scope. The method test checks the torque limit
+and the expected physical result. Add the scientific checks your own law needs;
+interface conformance says nothing about its accuracy or its fitness for a
+mission.
 
 Replace `examples/run_in_simulation.jl` with:
 
@@ -215,11 +229,11 @@ final_rate = solution.u[end].sc[1].ω[3]
 println("Body-rate damping agrees with the sampled-control analytic result.")
 ```
 
-This preserves the example path already named in the generated CI workflow.
+The generated CI workflow already names this example path.
 
 ## Build the environment and run the checks
 
-After editing the dependency declarations, from `RateDamperDemo/`:
+After editing the dependency declarations, run these from `RateDamperDemo/`:
 
 ```sh
 julia --startup-file=no --compiled-modules=existing --project=@stdlib ../SpaceAGORA.jl/scripts/contributor_environment.jl check package .
@@ -229,52 +243,58 @@ julia --startup-file=no --compiled-modules=existing --threads=2 --depwarn=error 
 julia --startup-file=no --compiled-modules=existing --threads=2 --depwarn=error --project=../RateDamperDemo-env examples/run_in_simulation.jl
 ```
 
-The fourth line, `Pkg.test`, is quoted for bash or zsh (on Windows, Git Bash). In
+The first line checks the repository and its core pin, the second scans the
+package for internal names, and the third builds the separate environment. The
+fourth line, `Pkg.test`, is quoted for bash or zsh (on Windows, Git Bash). In
 PowerShell or Command Prompt, start Julia with the same options,
 `julia --startup-file=no --compiled-modules=existing --threads=2 --depwarn=error --project=../RateDamperDemo-env`,
 and enter the code between the single quotes at the `julia>` prompt; the other
-lines run there as written.
+four lines run there as written.
 
 The environment directory must be new or empty and outside both repositories.
-Setup may download dependencies missing from the Julia depot. Once prepared,
+Building it may download dependencies missing from the Julia depot; after that,
 these examples need no external simulation data. The core checkout must still
-be clean and match `SpaceAGORASource.toml`; tests run from the separate environment,
-not by activating the package directory alone.
+be clean and at the commit in `SpaceAGORASource.toml`. The tests run in the
+separate environment, not by activating the package directory alone.
 
 The generated workflow calls SpaceAGORA's reusable contributor CI. Keep
-`kind: package` and `examples: examples/run_in_simulation.jl`. It checks the pin,
-scans for internal names, builds the environment, precompiles, and runs the tests
-and example with strict deprecation handling and two threads.
+`kind: package` and `examples: examples/run_in_simulation.jl`. The workflow
+checks the pin, scans for internal names, builds the environment, precompiles,
+and runs the tests and the example with `--depwarn=error` and two threads.
 
-To adopt a newer core, use a clean sibling checkout of the chosen commit and,
-from `RateDamperDemo/`, run:
+To move to a newer core, use a clean sibling checkout of the chosen commit and
+run, from `RateDamperDemo/`:
 
 ```sh
 julia --startup-file=no --compiled-modules=existing --project=@stdlib ../SpaceAGORA.jl/scripts/contributor_environment.jl repin package .
 ```
 
-`repin` updates the recorded revision, workflow call and SpaceAGORA compatibility
-entry together. Build a new separate environment, then rerun the checks before
-committing the pin change. Keep the full commit pin; do not replace it with a
-moving branch name.
+`repin` updates the commit and version in `SpaceAGORASource.toml`, the commit in
+the workflow call and, when it does not admit the new core, the SpaceAGORA
+compatibility entry. Build a new separate environment and rerun the checks
+before you commit the change. Keep the full commit in the pin; a branch name is
+not a pin.
 
 ## Before your first pull request
 
-Open this pull request in your new package repository. Using the existing
-feedback hooks does not require a pull request to SpaceAGORA.
+Open this pull request in your new package's repository. Using the existing
+feedback hooks needs no pull request to SpaceAGORA.
 
 - [ ] The package source imports public SpaceAGORA names only; the internal-name
       scan passes.
-- [ ] The planner implementation, planner tests and planner claims have been
-      replaced, including the README and configured example.
+- [ ] The planner code, planner tests and planner claims are gone, from the
+      README and the example too.
 - [ ] Units, frames, torque limits, tick period and intended use are documented.
-- [ ] Run state resets correctly, bound copies own their state, and inactive
-      spacecraft receive the controller's off command.
+- [ ] Run state resets at a run's start, bound copies own their state, and
+      inactive spacecraft receive the controller's off command.
 - [ ] Conformance has run on a nonzero-spin case with two threads, and
-      `checkpoint_round_trip` is `:pass`; skipped and advisory checks have been read.
-- [ ] Method tests check the physical result as well as the interface, and both
-      local test and example commands succeed.
-- [ ] The core pin, workflow revision and compatibility entry agree; the tested
-      environment is separate and no generated environment files are committed.
-- [ ] The README has the setup commands, license and citation details are yours,
-      and the PR states what the controller implements and which checks ran.
+      `checkpoint_round_trip` is `:pass`; skipped and advisory checks have been
+      read.
+- [ ] Method tests check the physical result as well as the interface, and the
+      local test and example commands both succeed.
+- [ ] The core pin, the workflow's commit and the compatibility entry agree; the
+      tested environment is separate, and no generated environment files are
+      committed.
+- [ ] The README has the setup commands, the license and citation details are
+      yours, and the pull request states what the controller implements and
+      which checks ran.

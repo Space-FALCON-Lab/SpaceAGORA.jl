@@ -5,36 +5,33 @@ SpaceAGORA does not already model: a thruster with your own throttle law, a
 drag model from a paper, a tether, a magnetic torquer with your own field
 model, or a disturbance you want to study in isolation.
 
-This page is for a student who has run the [Quickstart](quickstart.md) and can
-read a short Julia script. You do not need to have read SpaceAGORA's source.
+You will write a *dynamic effector*: a small Julia type that the engine hands
+the spacecraft's current state at every evaluation of the equations of
+motion, and that returns the force and the torque it exerts. You attach it to
+a simulation, run the simulation with and without it, and compare its effect
+on the orbit with a hand calculation. The page assumes you have run the
+[Quickstart](quickstart.md) and can read a short Julia script; you do not need
+to have read SpaceAGORA's source. The example needs no GRAM or SPICE data, so
+it runs on a fresh clone.
 
-Shortest successful command (the complete example below saved as a file):
+Saved as `my_effector.jl`, the complete example below runs with:
 
 ```text
 julia --project=. my_effector.jl
 ```
 
-What to read next:
+Related pages:
 
 - [The Integrated State](integrated_state.md)
 - [Stopping a Simulation on a Condition](stop_conditions.md)
-- [Simulation Configuration](simulation_configuration.md)
+- [Configuring a Simulation](simulation_configuration.md)
 - [Extensibility](../extensibility.md) (the full interface reference)
 
-## What you will accomplish
-
-You will write a *dynamic effector*: a small Julia type that, at every
-evaluation of the equations of motion, is handed the spacecraft's current
-state and returns the force and the torque it exerts. You will attach it to a
-simulation, run the simulation with and without it, and check that its effect
-on the orbit matches a hand calculation. The whole example runs on a fresh
-clone with no GRAM or SPICE data.
-
-## The lines that teach the new action
+## The effector in brief
 
 An effector is a type with one method. This one is a thrust that always
-points along the velocity, which is the simplest effector whose effect can be
-predicted by hand: it does work on the spacecraft, so the orbit's energy rises
+points along the velocity. It is the simplest effector whose effect can be
+predicted by hand: it does work on the spacecraft, so the orbital energy rises
 at a known rate.
 
 ```julia
@@ -51,27 +48,29 @@ function SpaceAGORA.wrench(model::AlongTrackThrust, x::SpaceAGORA.StateSample,
 end
 ```
 
-It is attached by listing it with the other effectors of the simulation;
-gravity is an effector too:
+To attach it, list it with the simulation's other effectors in the
+`DynamicsModel`; gravity is an effector too. This line is a fragment of the
+script below, where `spacecraft` is defined:
 
 ```julia
 DynamicsModel([spacecraft], (InverseSquaredGravityModel(), AlongTrackThrust(0.052)))
 ```
 
-Everything else in the script below is the standard setup of a simulation.
+Everything else in the script is the standard setup of a simulation.
 
 ## The complete script
 
-Save it as `my_effector.jl` in the repository root or in the
-[separate user project](installation_environment.md#Your-own-project), and run it
-with that project's environment. The script uses the documented root exports:
-`make_three_body_spacecraft` builds the bus-plus-two-panels spacecraft, and the
-configuration types come from `using SpaceAGORA`. No private module import or
-package-source include is needed. Everything between `build_config`'s parentheses
-is the standard configuration explained on the
-[Simulation Configuration](simulation_configuration.md) page. CI runs this script,
-`examples/walkthrough_env/my_effector.jl`, from a separate project on every pull
-request, and a gate keeps the code on this page identical to it.
+Save it as `my_effector.jl` in the repository root or in a
+[separate user project](installation_environment.md#Your-own-project), and run
+it with that project's environment. It uses only names that `using SpaceAGORA`
+exports: `make_three_body_spacecraft` builds the bus with its two panels, and
+the configuration types come from the same import, so no internal module or
+package source file is loaded. Everything between `build_config`'s parentheses
+is the standard configuration described on
+[Configuring a Simulation](simulation_configuration.md). The same script is
+`examples/walkthrough_env/my_effector.jl`. CI runs it from that separate
+project on every pull request, and a docs gate checks that the code on this
+page matches it character for character.
 
 ```julia
 using SpaceAGORA
@@ -157,73 +156,74 @@ println("semi-major axis after one orbit with thrust:    $(round(a_with / 1e3, d
 println("expected rise: $(round(expected_da, digits=1)) m, observed rise: $(round(observed_da, digits=1)) m, ratio $(round(observed_da / expected_da, digits=3))")
 ```
 
-## The important choices, in plain language
+## Choices in the script
 
-**A type and one method.** An effector is a Julia `struct` that is a subtype
-of `SpaceAGORA.AbstractForceTorqueModel` and carries its own parameters (here
-the thrust magnitude). What makes it an effector is one method of the function
-`SpaceAGORA.wrench`. The engine calls that method with four arguments:
+**A type and one method.** An effector is a Julia `struct` that subtypes
+`SpaceAGORA.AbstractForceTorqueModel` and carries its own parameters, here the
+thrust magnitude. What makes it an effector is a method of the function
+`SpaceAGORA.wrench`, which the engine calls with four arguments:
 
 - `model`, your struct;
 - `x`, a *state sample*: the spacecraft's position `x.pos_ii` and velocity
-  `x.vel_ii` (metres and metres per second, in the planet-centred inertial
+  `x.vel_ii` (meters and meters per second, in the planet-centered inertial
   frame), its current mass `x.mass_kg`, and, when attitude is propagated, its
   attitude quaternion `x.q_ib` and body angular velocity `x.ω_body` (both
   `nothing` otherwise);
-- `env`, an *environment sample* with the planet model and, on request, the
+- `env`, an *environment sample*: the planet model and, on request, the
   atmosphere, the planet-fixed frame, the Sun and third bodies (see the
   reference below);
 - `t`, the elapsed simulation time in seconds.
 
-It returns a pair: the **force in newtons in the inertial frame**, and the
-**torque in newton-metres in the bus-fixed frame**. Return zero vectors for
-the part you do not model.
+The method returns a pair: the force in newtons in the inertial frame, and the
+torque in newton-meters in the bus-fixed frame. Return a zero vector for the
+part you do not model.
 
 **Force, not acceleration.** The engine sums the forces of all effectors and
 divides by the spacecraft's current mass itself. If your physics is naturally
 an acceleration (a gravity model, a perturbation from a paper), multiply by
-`x.mass_kg` before returning, which is what the built-in solar-radiation model
-does. Returning an acceleration where a force is expected under-drives the
-spacecraft by a factor of its mass.
+`x.mass_kg` before returning it, as the built-in gravity and solar-radiation
+models do. An acceleration returned where a force is expected under-drives the
+spacecraft by a factor equal to its mass.
 
 **Frames.** The subscript `ii` on `pos_ii`, `vel_ii` and `force_ii` means
-"inertial frame, inertial components": the non-rotating frame centred on the
+"inertial frame, inertial components": the non-rotating frame centered on the
 planet in which the orbit is integrated. Torque is expressed in the frame
-fixed to the spacecraft bus, the same frame in which the spacecraft's inertia
+fixed to the spacecraft bus, the frame in which the spacecraft's inertia
 tensor is given, so the two enter the attitude equations together. If your
 force is known in the bus frame, rotate it into the inertial frame with the
 attitude quaternion first. With `orientation_sim=false` no attitude is
-propagated and `x.q_ib` is `nothing`; the spacecraft's configured geometry and
-the fixed orientations of its links still exist and are what the built-in
-aerodynamic models use in that mode.
+propagated and `x.q_ib` is `nothing`. The spacecraft's configured geometry and
+the fixed orientations of its links still exist, and the built-in aerodynamic
+models use them in that mode.
 
-**Which method the engine uses.** The engine asks whether a method of
-`wrench` accepts the argument types `(YourType, StateSample,
+**Which method the engine uses.** Before integration starts, the engine checks
+that a method of `wrench` accepts the argument types `(YourType, StateSample,
 EnvironmentSample, Float64)`. Annotating the model argument with your type is
-what makes the method yours. The other three arguments may be left untyped, or
-annotated with the types above or with types that contain them (`t::Real`
-works); all three forms were checked. A method annotated with a type that does
-not accept the argument (say `x::AbstractVector`) is not a match, so the run
-stops before integration with an `ArgumentError` saying the effector has no
-`wrench` method that accepts the arguments the run passes.
+what makes the method yours. The other three arguments can be left untyped,
+annotated with those types, or annotated with wider types that contain them
+(`t::Real` works). A method whose annotation does not accept the argument, say
+`x::AbstractVector`, does not match. The run then stops before integration
+with an `ArgumentError` that names the effector and says it has methods of
+`wrench`, but none that accepts the arguments the run passes.
 
-**Attaching it.** Effectors are passed as a tuple to `DynamicsModel` (or to
-`make_example_config`'s `dynamic_effectors`). Order does not matter for the
-physics: the forces are summed. Gravity is an effector like any other, so
-`InverseSquaredGravityModel()` is listed explicitly. An entry
-`scoped(effector, scope)` acts on some spacecraft only: see
+**Attaching it.** Effectors are passed as a tuple to `DynamicsModel`, or to
+`make_example_config` as `dynamic_effectors`. Their order does not matter for
+the physics, because the forces are summed. Gravity is an effector like any
+other, so `InverseSquaredGravityModel()` is listed explicitly; a tuple passed
+to `make_example_config` replaces its default of J2 gravity alone, so it must
+include gravity too. An entry `scoped(effector, scope)` acts on some
+spacecraft only: see
 [Effectors on part of a constellation](constellations.md#Effectors-on-part-of-a-constellation).
 
-**Two runs, not one.** The cleanest way to see what an effector does is to run
+**Two runs, not one.** The clearest way to see what an effector does is to run
 the same configuration with and without it and compare the results files. The
-example uses two-body gravity, so without thrust the orbit's semi-major axis
-stays constant to the metre over one orbit and every change with thrust is the
-effector's.
+example uses two-body gravity, so without thrust the semi-major axis stays
+constant to the meter over one orbit, and every change in the run with thrust
+comes from the effector.
 
 ## Expected result
 
-Tested on `main` at commit `80240c2b` (September 2026), on a fresh clone with
-no GRAM or SPICE data. The script runs for about a minute and printed:
+On a fresh clone with no GRAM or SPICE data, the script prints:
 
 ```text
 mass used by the engine: 520.0 kg, thrust acceleration: 9.999999999999999e-5 m/s^2
@@ -232,42 +232,46 @@ semi-major axis after one orbit with thrust:    6779.118 km
 expected rise: 981.8 m, observed rise: 981.9 m, ratio 1.0
 ```
 
-These are the recorded numbers for this configuration, not universal values.
-The mass is the bus plus two panels. The expected rise comes from the rate at
-which a tangential acceleration raises a near-circular orbit,
-`da/dt = 2 a² a_t v / μ`, integrated over one period; the observed rise is
+These numbers belong to this configuration; they are not universal values.
+The mass is the bus plus its two panels. The expected rise comes from the rate
+at which a tangential acceleration raises a near-circular orbit,
+`da/dt = 2 a² a_t v / μ`, integrated over one period. The observed rise is
 read from the final rows of the two results files, with the semi-major axis
 computed from position and velocity through the orbital energy. The estimate
-holds the initial semi-major axis and circular speed fixed, while the simulated
-orbit evolves. The ratio is a diagnostic comparison with this first-order
-estimate, not a numerical pass/fail criterion or a bound on physical accuracy.
-The displayed `1.0` is rounded to three decimal places and does not imply exact
-agreement.
+holds the initial semi-major axis and circular speed fixed while the simulated
+orbit evolves, so the ratio is a diagnostic comparison with a first-order
+estimate. It is not a pass/fail criterion or a bound on physical accuracy, and
+the printed `1.0` is rounded to three decimal places, not a claim of exact
+agreement. CI checks that both runs reach the end of the orbit, that the
+engine uses the 520 kg vehicle and that the thrust raises the orbit; it does
+not test the ratio.
 
-For this configuration, a ratio near `1/520` is a clue that acceleration was
-returned instead of force, and a negative rise is a clue that the force points
-against the velocity. Inspect the force units and direction when the comparison
-is unexpected. An `ArgumentError` before the run saying the effector has no
-`wrench` method means the method was not matched (check its annotations).
+For this configuration, a ratio near `1/520` suggests that the method returned
+an acceleration instead of a force, and a negative rise suggests that the
+force points against the velocity. Check the force's units and direction when
+the comparison looks wrong. An `ArgumentError` before the run saying the
+effector has no matching `wrench` method means the method's annotations do not
+accept the arguments the run passes.
 
-Both runs write the standard three files under `output/effector_walkthrough`
-beside the script, with a separate directory per arm; see
-[Simulation Outputs](outputs.md). The thrust does not appear as a column of
-its own: only the built-in aerodynamic model writes per-force diagnostics.
+Each run writes the standard three files to its own directory under
+`output/effector_walkthrough` beside the script; see
+[Simulation Outputs](outputs.md). The thrust does not get a column of its own:
+of the built-in models, only the aerodynamic ones write per-force
+diagnostics.
 
-## What you can change next
+## Variations
 
-- **Point the thrust somewhere else.** Cross-track (`cross(pos, vel)`
-  normalised) changes the inclination; radial (`x.pos_ii / norm(x.pos_ii)`)
+- **Point the thrust somewhere else.** Cross-track (`cross(pos, vel)`,
+  normalized) changes the inclination; radial (`x.pos_ii / norm(x.pos_ii)`)
   changes the eccentricity. The two-run comparison still works.
-- **Make it depend on time or position.** `t` is elapsed seconds; a burn
-  window is one `if`. `norm(x.pos_ii) - env.planet.Rp_e` is the height above
-  a sphere of the planet's equatorial radius, which is not the same as the
-  ellipsoidal altitude saved in the results column `sc1_altitude` (see
+- **Make it depend on time or position.** `t` is elapsed seconds, so a burn
+  window is one `if`. `norm(x.pos_ii) - env.planet.Rp_e` is the height above a
+  sphere of the planet's equatorial radius. That is not the ellipsoidal
+  altitude saved in the results column `sc1_altitude` (see
   [The Integrated State](integrated_state.md)); choose the surface your
   condition is meant to refer to.
 - **Use the atmosphere.** Declare what your effector needs and the engine
-  samples it for you at every evaluation:
+  samples it at every evaluation:
 
   ```julia
   SpaceAGORA.environment_requirements(::MyDrag) =
@@ -275,37 +279,71 @@ its own: only the built-in aerodynamic model writes per-force diagnostics.
   ```
 
   Then `env.atmosphere.rho_kg_m3` is the density at the current position and
-  `env.planet_frame.vel_pp` is the velocity expressed in the planet-fixed
-  (rotating) frame. That is the air-relative velocity only when the wind is
-  zero; a drag model must subtract the wind, `env.atmosphere.wind_pp`, after
-  bringing it into the same frame (the engine's thermal callback shows the
-  conversion from the wind's east, north and up components, in that order). With
+  `env.planet_frame.vel_pp` is the velocity in the planet-fixed (rotating)
+  frame. That is the air-relative velocity only when the wind is zero. A drag
+  model must subtract the wind, `env.atmosphere.wind_pp`, after bringing it
+  into the same frame: the field holds the east, north and up components, in
+  that order, and the engine's thermal callback shows the conversion. With
   `NoAtmosphereModel()` the density is zero; `ExponentialAtmosphereModel(planet)`
-  gives a simple open-data profile with zero wind.
-- **Add a torque.** Return a non-zero second element and run with
-  `orientation_sim=true`; the attitude columns `sc1_q_*` then appear in the
+  gives a simple analytic profile with zero wind.
+- **Add a torque.** Return a nonzero second element and run with
+  `orientation_sim=true`. The attitude columns `sc1_q_*` then appear in the
   results, and `x.q_ib` and `x.ω_body` are available inside `wrench`.
-- **Give it state of its own.** Keep parameters in the struct fields. If the
+- **Give it state of its own.** Keep parameters in the struct's fields. If the
   effector must remember something between evaluations (an integrator of its
-  own, a mode), prefer a control effector (see [Extensibility](../extensibility.md)):
-  `wrench` is meant to be a pure function of its four arguments, because the
-  solver evaluates it at trial points it later rejects.
+  own, a mode), use a control effector instead (see
+  [Extensibility](../extensibility.md)). `wrench` is meant to be a pure
+  function of its four arguments, because the solver also evaluates it at
+  trial points that it later rejects.
 
-## Advanced internal-model examples
+## Reference: the interface
 
-The following gravity-gradient and wheel-history examples use the internal
-`SimulationModel` namespace. They are advanced, revision-specific examples and
-are outside the stable root-only extension walkthrough above. Their presence
-here does not make those model names part of the public API policy.
+This section names the types and functions that the walkthrough used without
+naming them. The field lists below are read from the source.
 
-## Add gravity-gradient torque without another gravity force
+| Symbol | Role |
+|---|---|
+| `SpaceAGORA.AbstractForceTorqueModel` | Supertype of every dynamic effector. |
+| `SpaceAGORA.wrench(model, x::StateSample, env::EnvironmentSample, t::Float64)` | The hook. Returns `(force_ii::SVector{3}, torque_body::SVector{3})`, SI units, force inertial, torque bus-fixed. Must be pure. |
+| `SpaceAGORA.StateSample` | Fields `pos_ii`, `vel_ii` (m, m/s, inertial), `mass_kg`, `q_ib` (inertial-to-body quaternion, scalar-last `[x, y, z, w]`, or `nothing`), `ω_body` (rad/s, or `nothing`), `spacecraft` (the typed spacecraft model, for geometry and inertia), `spacecraft_index` (the spacecraft's position in the run, from 1; 0 for a sample built outside a run). |
+| `SpaceAGORA.EnvironmentSample` | Fields `planet` (always), `planet_frame` (`alt_m`, `lat_rad`, `lon_rad`, `pos_pp`, `vel_pp`, `l_pi`: position and velocity in the planet-fixed frame and the inertial-to-planet-fixed rotation matrix), `atmosphere` (`rho_kg_m3`, `temperature_k`, `wind_pp` as east, north, up components, in that order), `solar` (`sun_pos_ii`), `third_bodies` (`names` as declared and `positions_ii`, each body's position relative to the run's planet in meters along the J2000 axes, in the declared order; a run with third bodies needs `SpiceEphemeridesModel()`). Each optional field is `nothing` unless requested. |
+| `SpaceAGORA.environment_requirements(model)` | Returns `EffectorEnvironmentRequirements(planet_frame=, atmosphere=, solar=, third_body_names=)`; the default requests nothing. |
+| `SpaceAGORA.is_gravitational(model)` | `true` for a model of gravity, whose force an accelerometer does not feel; the default is `false`, and the built-in gravity models return `true`. A gravity model of your own adds a method returning `true`. |
+| `SpaceAGORA.solver_partition(model)` | `:explicit` (default) or `:implicit`; only matters under the `split_imex` solver mode. |
+| `DynamicsModel([spacecraft], effectors)` | Where the effector tuple is attached. |
+
+The rules every hook follows, such as the argument order, the frames, the units
+and the signs, are on [Extension Conventions](../reference/extension_conventions.md),
+and the [Extension Hook Reference](../generated/extension_hook_reference.md) lists
+when the engine calls each hook. A model written for `calcForceTorque`, the
+force hook that `wrench` replaced, does not run: SpaceAGORA 0.5.0 removed that
+hook, and [Migrating Extension Hooks](../reference/migrating_extension_hooks.md)
+shows how to move it.
+
+The engine sums the forces of all effectors per spacecraft and divides by the
+current mass to get the translational acceleration. It sums the torques in the
+bus-fixed frame; they drive the attitude equations when `orientation_sim=true`
+and are ignored otherwise. Solver modes other than the default are described
+on [Solver Configuration](solver_configuration.md). The gravity-backbone hooks
+listed on the Extensibility page are for effectors that take part in that
+special mode; an ordinary force does not need them.
+
+## Advanced examples with internal models
+
+The two examples below, a gravity-gradient torque and replayed reaction-wheel
+speeds, use models from the internal `SpaceAGORA.SimulationModel` namespace.
+They are not part of the root-level interface the walkthrough above uses, and
+the [public API policy](../public_api_policy.md) does not cover their names,
+so they can change between releases.
+
+### Add gravity-gradient torque without another gravity force
 
 `SM.GravityGradientTorqueModel()` supplies the central body's gravity-gradient
-attitude torque. This is useful when a separate model already supplies the
-orbital gravity, such as `SM.GravitationalHarmonicsModel`.
+attitude torque on its own, which is what you need when a separate model
+already supplies the orbital gravity, such as `SM.GravitationalHarmonicsModel`.
 
-For example, these effectors apply inverse-squared gravity and its attitude
-torque as separate terms:
+These effectors apply inverse-squared gravity and its attitude torque as
+separate terms:
 
 ```julia
 using SpaceAGORA
@@ -315,63 +353,27 @@ effectors = (SM.InverseSquaredGravityModel(), SM.GravityGradientTorqueModel())
 # Pass effectors to SM.DynamicsModel and set orientation_sim=true.
 ```
 
-The new effector returns zero force and the body-frame torque
+The model returns zero force and the body-frame torque
 `3μ/r³ (r̂ × J r̂)`. Here `J` is the spacecraft's body-frame inertia tensor,
-`r̂` points from the central body to the spacecraft, expressed in the spacecraft
-body frame, and `μ` is the body's gravitational parameter. Torque is in N m.
-The effector uses the existing central-field calculation; pairing it with
-harmonic gravity does not add nonspherical corrections to this torque law.
+`r̂` is the unit vector from the central body to the spacecraft, expressed in
+the spacecraft body frame, and `μ` is the body's gravitational parameter. The
+torque is in N m. The model uses the central-field calculation, so pairing it
+with harmonic gravity does not add nonspherical corrections to the torque.
+Without a propagated attitude it returns zero torque, and
+`GravityGradientTorqueModel(gravity_gradient=false)` turns it off.
 
 Enable attitude propagation with `orientation_sim=true`. Do not also set
 `gravity_gradient=true` on an analytic gravity model in the same run, because
-that would apply the torque twice. When using only an analytic gravity model,
-its existing `gravity_gradient=true` option is an equivalent way to request the
-same central-field torque.
+the torque would then be applied twice. When the run uses only an analytic
+gravity model, that model's `gravity_gradient=true` option requests the same
+central-field torque.
 
-## Reference: the interface as it exists today
-
-This section names the types and functions; the walkthrough above did not
-need them by name. Tested on the walkthrough commit: the `wrench` method
-matching (untyped arguments, the exact annotations, `t::Real`, and the
-fallback on a non-matching annotation) and the force-to-acceleration
-behaviour (through the expected rise). Inspected in the source, not run: the
-field lists of the sample types, the harmonics exception, `solver_partition`,
-and the gravity-backbone hooks.
-
-| Symbol | Role |
-|---|---|
-| `SpaceAGORA.AbstractForceTorqueModel` | Supertype of every dynamic effector. |
-| `SpaceAGORA.wrench(model, x::StateSample, env::EnvironmentSample, t::Float64)` | The hook. Returns `(force_ii::SVector{3}, torque_body::SVector{3})`, SI units, force inertial, torque bus-fixed. Must be pure. |
-| `SpaceAGORA.StateSample` | Fields `pos_ii`, `vel_ii` (m, m/s, inertial), `mass_kg`, `q_ib` (inertial-to-body quaternion, scalar-last `[x, y, z, w]`, or `nothing`), `ω_body` (rad/s, or `nothing`), `spacecraft` (the typed spacecraft model, for geometry and inertia), `spacecraft_index` (the spacecraft's position in the run, from 1; 0 for a sample built outside a run). |
-| `SpaceAGORA.EnvironmentSample` | Fields `planet` (always), `planet_frame` (`alt_m`, `lat_rad`, `lon_rad`, `pos_pp`, `vel_pp`, `l_pi`: position and velocity in the planet-fixed frame and the inertial-to-planet-fixed rotation matrix), `atmosphere` (`rho_kg_m3`, `temperature_k`, `wind_pp` as east, north, up components, in that order), `solar` (`sun_pos_ii`), `third_bodies` (`names` as declared and `positions_ii`, each body's position relative to the run's planet in metres along the J2000 axes, in the declared order; a run with third bodies needs `SpiceEphemeridesModel()`). Each optional field is `nothing` unless requested. |
-| `SpaceAGORA.environment_requirements(model)` | Returns `EffectorEnvironmentRequirements(planet_frame=, atmosphere=, solar=, third_body_names=)`; the default requests nothing. |
-| `SpaceAGORA.is_gravitational(model)` | `true` for a model of gravity, whose force an accelerometer does not feel; the default is `false`, and the built-in gravity models return `true`. A gravity model of your own adds a method returning `true`. |
-| `SpaceAGORA.solver_partition(model)` | `:explicit` (default) or `:implicit`; only matters under the `split_imex` solver mode. |
-| `DynamicsModel([spacecraft], effectors)` | Where the effector tuple is attached. |
-
-The rules every hook follows, such as the argument order, the frames, the units
-and the signs, are on [Extension Conventions](../reference/extension_conventions.md),
-and the [Extension Hook Reference](../generated/extension_hook_reference.md) lists
-when the engine calls each hook. A model written for the force hook that
-`wrench` replaced, `calcForceTorque`, no longer runs: SpaceAGORA 0.5.0 removed
-that hook, and [Migrating Extension Hooks](../reference/migrating_extension_hooks.md)
-shows how to move it.
-
-How the engine uses the result: the forces of all effectors are summed per
-spacecraft and divided by the current mass to give the translational
-acceleration; the torques are summed in the bus-fixed frame and drive the
-attitude equations when `orientation_sim=true`, and are ignored otherwise.
-Solver modes other than the default are described on
-[Solver Configuration](solver_configuration.md); the gravity-backbone hooks
-listed on the Extensibility page are for effectors that take part in that
-special mode and are not needed for an ordinary force.
-
-## Replaying reaction-wheel speeds
+### Replaying reaction-wheel speeds
 
 For recorded or prescribed wheel-speed histories, use
-`SpaceAGORA.SimulationModel.ReactionWheelMomentumModel`. It supplies the reaction
-torque on the spacecraft body, including the gyroscopic contribution. It needs
-no atmosphere, GRAM, SPICE, or additional package.
+`SM.ReactionWheelMomentumModel`. It supplies the reaction torque the wheels
+put on the spacecraft body, including the gyroscopic term, and needs no
+atmosphere, GRAM, SPICE or additional package.
 
 ```julia
 using SpaceAGORA
@@ -386,19 +388,23 @@ wheels = SM.ReactionWheelMomentumModel(times, speeds, Matrix{Float64}(I, 3, 3), 
 ```
 
 Include `wheels` in the configuration's `DynamicsModel` effector tuple and set
-`orientation_sim=true`. The index selects a spacecraft's position in the run's
-array, not its ID. Keep the same physical wheels out of the commanded
-`rw_assembly`, or their momentum would be counted twice. This model replays a
-history; it does not enforce actuator torque or momentum limits.
+`orientation_sim=true`. `spacecraft_index` is the spacecraft's position in the
+run's spacecraft vector, not its ID. Keep the same physical wheels out of the
+commanded `rw_assembly`, or their momentum is counted twice. The model replays
+a history; it does not enforce actuator torque or momentum limits. When the
+table's clock differs from the run's, the `time_offset_s` keyword gives the
+table time minus the run time.
 
-`SM.wheel_momentum_body(wheels, t)` evaluates wheel momentum at a requested run
-time. Speeds use a natural cubic spline and hold their endpoint value outside
-the recorded interval; their derivative is zero outside. The derivative can jump
-at either endpoint. Choose a table covering the run when endpoint transitions
-are not part of the intended forcing.
+`SM.wheel_momentum_body(wheels, t)` evaluates the wheel momentum at a run time.
+Speeds follow a natural cubic spline through the samples and hold their end
+values outside the recorded interval, where their derivative is zero, so the
+derivative can jump at either end. Choose a table that covers the run unless
+those end transitions are part of the forcing you intend.
 
-Default state isolation leaves the input diagnostic state unchanged. With
-`isolate_state=false`, `wheels.state` records the last evaluated solver stage,
-which may be a rejected trial. Use the query functions at saved times for
-analysis. Direct `SpaceAGORA.wrench` is pure; the engine's indexed hook owns
-spacecraft selection and diagnostic updates.
+With the default state isolation, the `wheels` object you pass keeps its
+diagnostic state unchanged. With `isolate_state=false`, `wheels.state` records
+the last solver stage evaluated, which may be a rejected trial, so use the
+query functions at saved times for analysis. Calling `SpaceAGORA.wrench` on
+the model directly is pure and applies to whatever sample you pass; selecting
+the spacecraft by `spacecraft_index` and updating `wheels.state` happen only in
+the engine's own evaluation.

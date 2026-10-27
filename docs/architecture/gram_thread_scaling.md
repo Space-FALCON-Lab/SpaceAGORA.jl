@@ -1,137 +1,147 @@
 # Native GRAM under threads: the global lock and the isolated pool
 
-The original investigation, including its measurements and limitations, is
-preserved at this same relative path in the private archive described by the
-[research-record policy](../src/user/studies_benchmarks.md#research-records-and-generated-results).
-This page keeps current methods and configuration; historical results do not
-qualify performance or scientific equivalence at a later revision.
+Native GRAM calls normally serialize on `RuntimeServices.GRAM_LOCK`, which is
+the same object as `SPICE_LOCK`; the shared lock protects the native GRAM and
+CSPICE state. The isolated pool instead evaluates an eligible density batch
+across workers, each with its own model copy and its own lock.
 
-Native GRAM calls normally serialize on `RuntimeServices.GRAM_LOCK`, the same
-object as `SPICE_LOCK`. The shared lock protects the native GRAM/CSPICE state.
-The isolated pool instead uses independent model copies, each with its own
-lock, to evaluate an eligible density batch across workers.
+This page covers the current controls and how to test them. The original
+measurements, and their limits, are kept in the lab's research records (see
+[Record a result](../src/user/studies_benchmarks.md#record-a-result)). A
+historical result does not establish performance or scientific equivalence at a
+later revision.
 
 ## Configuration and eligibility
 
-The settings live in `src/orchestration/simulation/callbacks/density_callbacks/config.jl`.
+The settings are read in
+`src/orchestration/simulation/callbacks/density_callbacks/config.jl`.
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `SPACEAGORA_GRAM_ISOLATED_POOL` | `auto` | Use the pool only when its batch, width and wind-history guards allow it. `off` retains the locked route; explicit `on` opts into independent instance histories. |
-| `SPACEAGORA_GRAM_ISOLATED_POOL_THRESHOLD` | `1024` | Minimum number of items that actually reach native GRAM in an automatic batch. |
-| `SPACEAGORA_GRAM_ISOLATED_POOL_MAX_WORKERS` | `min(4, Threads.nthreads())` | Maximum number of worker instances; at least two are required to use the pool. |
+| `SPACEAGORA_GRAM_ISOLATED_POOL` | `auto` | `auto` uses the pool only when the batch size, pool width and wind-history checks allow it and Julia has more than one thread. `off` keeps the locked route. `on` accepts independent instance histories. |
+| `SPACEAGORA_GRAM_ISOLATED_POOL_THRESHOLD` | `1024` | Minimum number of items in one callback batch that actually reach native GRAM before `auto` pools them. |
+| `SPACEAGORA_GRAM_ISOLATED_POOL_MAX_WORKERS` | `min(4, Threads.nthreads())` | Maximum number of worker instances; the pool needs at least two. |
 
-These defaults came from the archived nominal-wind study, not a general speedup
-guarantee. The threshold counts native calls rather than configured spacecraft:
-items that return vacuum or use the above-interface density approximation do
-not justify constructing a native pool. The pooled native call applies the same
-`-30.0` m altitude floor as the locked scalar path.
+These defaults came from a nominal-wind study and do not promise a speedup
+elsewhere; each extra instance also holds its own native memory. The threshold
+counts native calls, not configured spacecraft: items that return vacuum or use
+the above-interface density approximation do not justify building a native
+pool. The pooled native call applies the same `-30.0` m altitude floor as the
+locked scalar path.
 
-The density callback requests its pool width with `lock_free=true`. This avoids
-the shared-lock path's default 16-thread budget floor
-(`SPACEAGORA_DENSITY_CALLBACK_AUTO_THREAD_MIN_BUDGET`); the pool remains subject
-to the available thread budget, worker cap and its other eligibility checks.
-The earlier claim that the isolated pool is unreachable below 16 threads
-applies to the historical implementation, not this path.
+The density callback asks for the pool's width with `lock_free=true`. That
+skips the 16-thread minimum budget the shared-lock path uses for native GRAM
+(`SPACEAGORA_DENSITY_CALLBACK_AUTO_THREAD_MIN_BUDGET`), so the pool is
+reachable with fewer than 16 threads. It is still bounded by the available
+thread budget, the worker cap and its other eligibility checks.
 
 ## Wind history and identity
 
-Automatic pooling declines a wind-requesting batch when the native core reports
-history-dependent winds, before constructing or warming workers. Unknown cores
-are treated conservatively. The pinned wrapper's `auto` wind mode resolves to
-`perturbed`, so nominal winds must be selected explicitly for automatic pooling
-of wind queries. Calls with `wind=false` remain eligible. The guard also applies
-when winds are requested for diagnostics but not used by the force model.
+Under `auto`, the pool declines a batch that requests winds when the native core
+reports history-dependent winds, before it builds or warms any worker. Unknown
+cores are treated as history-dependent. The pinned GRAM wrapper's default wind
+mode is perturbed, so wind queries reach the automatic pool only when nominal
+winds are selected explicitly. Calls with `wind=false` stay eligible. The check
+applies even when winds are requested only for diagnostics and the force model
+does not use them.
 
-Explicit `SPACEAGORA_GRAM_ISOLATED_POOL=on` bypasses this wind-history guard.
-Separate instances then follow separate stochastic histories; winds and
-trajectories can depend on pool width or thread count. It is not a
-reproducibility-preserving speed switch for perturbed winds. Routing does not
-change an atmosphere mode or seed.
+`SPACEAGORA_GRAM_ISOLATED_POOL=on` bypasses the wind-history check. Separate
+instances then follow separate stochastic histories, and winds and trajectories
+can depend on pool width or thread count. It is not a speed switch that keeps
+perturbed-wind runs reproducible. Routing never changes an atmosphere mode or
+seed.
 
-The archived bit-identity comparisons cover specific nominal-wind cases only.
-They do not qualify perturbed winds, other model versions or the current code
-without a fresh comparison. `density_grid_parity.jl` compares exact floating-point
-bits on a grid; `dump_states.jl` writes saved times and full spacecraft states
-for byte comparison. Both are in `benchmarks/studies/gram_thread_scaling/`.
+The recorded bit-identity comparisons cover specific nominal-wind cases. They
+do not qualify perturbed winds, other model versions or later code without a
+fresh comparison. Two tools in `benchmarks/studies/gram_thread_scaling/` support
+one: `density_grid_parity.jl` compares exact floating-point bits on a density
+grid, and `dump_states.jl` writes saved times and full spacecraft states for a
+byte comparison.
 
 ## Which paths the pool can reach
 
 | Path | Relationship to the pool |
 |---|---|
-| Density callback batch (`density_callbacks/runtime.jl`) | Evaluates eligible batches through the isolated pool, with a locked fallback. |
-| Vacuum-predicted look-ahead cache (`SPACEAGORA_VACUUM_GRAM_CACHE`) | Its own knot construction uses scalar calls on the shared model. The callback's staged density batch is a separate operation. |
-| GRAM track cache (`SPACEAGORA_GRAM_TRACK_CACHE`) | Its fallback can use the pool when the driver lacks native `generate_trajectory`; the native trajectory path is a locked call. |
-| Constellation RHS aero sampling | Uses the model selected by `_density_model_for_sat`, not this callback pool. |
+| Density callback batch (`density_callbacks/runtime.jl`) | Evaluates eligible batches through the isolated pool, falling back to the locked route. |
+| Vacuum-predicted look-ahead cache (`SPACEAGORA_VACUUM_GRAM_CACHE`) | Builds its own knots with scalar calls on the shared model. The callback's staged density batch is a separate operation. |
+| GRAM track cache (`SPACEAGORA_GRAM_TRACK_CACHE`) | Its fallback can use the pool when the GRAM driver lacks a native `generate_trajectory`; the native trajectory path is a locked call. |
+| Constellation RHS aerodynamic sampling | Uses the model chosen by `_density_model_for_sat`, not this pool. |
 
-The other instance-isolation controls serve different callers:
+Two other instance-isolation controls serve different callers:
 
-- `SPACEAGORA_GRAM_PER_SAT_INSTANCES` supplies per-spacecraft models for RHS
-  sampling. Initialization includes serial warm-up of fresh native instances.
-- `SPACEAGORA_GRAM_LOCK_SCOPE=model` selects the wrapper's instance lock for
-  scalar calls. One shared model still serializes on one instance lock. The
-  isolated pool supplies its own locks and does not use this selector.
+- `SPACEAGORA_GRAM_PER_SAT_INSTANCES` gives each spacecraft its own model for
+  RHS sampling. Setup warms the fresh native instances one at a time.
+- `SPACEAGORA_GRAM_LOCK_SCOPE=model` makes scalar calls take the wrapper
+  instance's lock instead of the global one. A single shared model still
+  serializes on its one instance lock. The isolated pool supplies its own locks
+  and ignores this setting.
 
-Model-scoped scalar locks are not recorded in the shared native-lock counters.
-A small shared-lock total therefore does not, by itself, demonstrate a speedup.
+Model-scoped scalar locks are not counted in the shared native-lock counters,
+so a small shared-lock total does not by itself show a speedup.
 
 ## Benchmark configuration and interpretation
 
 Before timing a GRAM case, check how many members actually call native GRAM,
 whether they are inside the entry interface, and whether the intended cache is
-built. A large constellation can otherwise mostly measure vacuum or a density
-approximation while retaining a GRAM case name.
+built. Otherwise a large constellation can mostly measure vacuum or a density
+approximation while keeping a GRAM case name.
 
-Current P6 density traces use `ppc_p6_gram_constellation` in
-`benchmarks/studies/parallelization_performance/cases.jl`: a 300–480 km band
-inside the 600 km entry interface. Traces 4, 5 and 6 share that constellation;
-trace 6's individual samples correspond to members of trace 5. The
-`p6_case_audit.jl` tool checks the case definitions. Historical rows predating
-the trace 5/6 redefinition at `917ab6aa7`, or the trace 4 redefinition at
-`be774d5b6`, must not be pooled with measurements of the current definitions.
-Their case names alone do not identify equivalent work.
+The density traces of the parallelization benchmark (traces 4, 5 and 6) fly
+`ppc_p6_gram_constellation` from
+`benchmarks/studies/parallelization_performance/cases.jl`: members in a
+300–480 km band, below the 600 km entry interface `PPC_P6_GRAM_EI_KM`, so every
+member is inside the atmosphere from the first step. The three traces share that
+constellation and differ only in the density model and its access path; trace
+6 flies trace 5's members as one-spacecraft samples. Rows measured before
+traces 4, 5 and 6 moved to this shared constellation describe different work and
+must not be pooled with current rows; a case name alone does not identify
+equivalent work.
 
-For a new comparison, record the revision, wrapper and data versions, wind
-mode, seed, density path, actual native-item count and pool width, including `SPACEAGORA_DENSITY_FREEZE_PER_STEP`. Alternate the
-locked and pooled arms, separate compilation and setup from the timed region,
-and compare repeated timings alongside exact state dumps. Run a one-thread
-control, where the pool must decline. Distinguish serial native work from lock
-wait: reducing lock acquisitions does not prove that contention was the limiting
-cost. Retain the raw rows and machine details with the resulting study.
+For a new comparison, record the revision, wrapper and data versions, wind mode,
+seed, density path (including `SPACEAGORA_DENSITY_FREEZE_PER_STEP`), the actual
+number of native items and the pool width. Alternate the locked and pooled arms,
+keep compilation and setup out of the timed region, and compare repeated
+timings together with exact state dumps. Include a one-thread control, where
+the pool must decline. Separate serial native work from lock wait: fewer lock
+acquisitions do not prove that contention was the limiting cost. Keep the raw
+rows and machine details with the study's record.
 
 ## Refresh de-phasing: not available
 
-Cache horizons determine the locations of interpolation knots. Jittering those
-horizons changes the positions and times queried from GRAM, hence the spline and
-the densities read by the RHS. It is a scientific change, not a scheduling-only
-optimization. Staggered refreshes are not implemented or qualified here.
-Batching or prefetching would need separate validation that the sampled points
-and state ownership remain unchanged.
+Cache horizons set where the interpolation knots fall. Jittering them changes
+the positions and times queried from GRAM, and so the spline and the densities
+the RHS reads; it is a scientific change, not a scheduling-only optimization.
+Staggered refreshes are neither implemented nor qualified. Batching or
+prefetching would need its own validation that the sampled points and state
+ownership stay the same.
 
 ## Pool-worker memory growth
 
 A Julia heap-size hint does not bound memory owned by a native atmosphere.
-Changing the epoch or copying a GRAM model can construct a native image; releasing
-the small Julia wrapper does not release that image until its finalizer runs.
-A sequence of discarded models can therefore grow native memory without a
-comparable increase in the Julia heap.
+Changing the epoch of a GRAM model, or copying one, can build a new native image,
+and dropping the small Julia wrapper does not free that image until its
+finalizer runs. A sequence of discarded models can therefore grow native memory
+with no comparable growth in the Julia heap.
 
-The benchmark harness caches its model at `ppc_initial_time()`, shared with its
-configuration builder, to avoid rebuilding it solely for epoch alignment.
-The GRAM extension also counts native atmospheres created and finalized.
-`collect_unreferenced_gram_atmospheres!()` runs after successful or failed solves
-and requests a full collection when the count of additional live atmospheres
-reaches `SPACEAGORA_GRAM_NATIVE_COLLECT_LIMIT` (default `8`; `0` or `off`
-disables it). This is a collection trigger, not a hard resident-memory limit.
-Live models remain owned by their callers, and allocator behavior can keep
-resident memory high after objects are freed.
+The parallelization benchmark caches its GRAM model at `ppc_initial_time()`,
+the epoch its configuration builder also uses, so the run's epoch alignment
+returns the same model instead of rebuilding it. The GRAM extension
+(`ext/SpaceAGORAGRAMSuiteExt.jl`) counts the native atmospheres it creates and
+finalizes. `run_simulation` calls `collect_unreferenced_gram_atmospheres!()`
+after every run, successful or not, and the extension requests a full
+collection once the number of additional live atmospheres reaches
+`SPACEAGORA_GRAM_NATIVE_COLLECT_LIMIT` (default `8`; `0` or `off` disables it).
+This triggers a collection; it is not a hard limit on resident memory. Live
+models stay owned by their callers, and the allocator can keep resident memory
+high after objects are freed.
 
-Use `worker_growth.jl` to distinguish Julia allocations, native growth, model
-construction and finalization. Its state dumps also support forward/reverse
-sample-order comparisons. `worker_rss.jl` includes explicit collections, which
-must be accounted for when interpreting its measurements. The tests in
+`worker_growth.jl` separates Julia allocations, native growth, model
+construction and finalization, and its state dumps support forward and reverse
+sample-order comparisons. `worker_rss.jl` runs explicit collections, which you
+must account for when reading its numbers. The tests in
 `test/unit/environment/gram_native_collect_tests.jl` and
-`gram_isolated_pool_tests.jl` cover the corresponding contracts; native memory
-and trajectory claims require the actual wrapper, inputs and scenarios under
-test. See [Collector settings](../../benchmarks/studies/heap_contention/FINDINGS.md#collector-settings) for the
-separate Julia heap controls.
+`test/unit/environment/gram_isolated_pool_tests.jl` cover these contracts;
+claims about native memory or trajectories still need the actual wrapper,
+inputs and scenarios. See
+[Collector settings](../../benchmarks/studies/heap_contention/FINDINGS.md#collector-settings)
+for the separate Julia heap controls.

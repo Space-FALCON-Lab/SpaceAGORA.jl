@@ -69,64 +69,6 @@ function _trajectory_delta_metrics(
     )
 end
 
-function _run_split_gate_solution(
-    case::BenchmarkCase,
-    profile_name::String;
-    solver_mode::String,
-    split_solver::Union{Nothing, String}=nothing
-)
-    GC.gc()
-    args_run = deepcopy(case.args_template)
-    started_ns = time_ns()
-    try
-        run_once = () -> _run_perf_simulation(
-            args_run;
-            return_solution=true,
-            return_solver_metadata=true,
-            profile_name=profile_name,
-            solver_mode_override=solver_mode,
-            split_imex_solver_override=split_solver,
-            entry_target_count_override=case.entry_target_count_override
-        )
-        result = isempty(case.env_overrides) ? run_once() : withenv(case.env_overrides...) do
-            run_once()
-        end
-        elapsed_s = (time_ns() - started_ns) / 1e9
-        sol = result.solution
-        solver_trace = result.solver_trace
-        solver_sequence = isempty(solver_trace) ? missing : join([meta.solver for meta in solver_trace], "->")
-        return (
-            ok=true,
-            elapsed_s=elapsed_s,
-            success=_solve_success_for_case(sol, case),
-            retcode=string(sol.retcode),
-            solver_mode=result.solver_mode,
-            solver_sequence=solver_sequence,
-            solution=sol,
-            error_text=missing
-        )
-    catch err
-        if err isa InterruptException
-            rethrow()
-        end
-        elapsed_s = (time_ns() - started_ns) / 1e9
-        retcode = _solve_retcode_from_error(err)
-        if ismissing(retcode)
-            retcode = "Exception"
-        end
-        return (
-            ok=false,
-            elapsed_s=elapsed_s,
-            success=false,
-            retcode=String(retcode),
-            solver_mode=missing,
-            solver_sequence=missing,
-            solution=nothing,
-            error_text=_perf_error_text(err)
-        )
-    end
-end
-
 function _write_split_rollout_gate_report(
     path::String,
     spec::ProfileSpec,
@@ -169,8 +111,10 @@ end
 
 function evaluate_split_rollout_gate(
     spec::ProfileSpec,
-    cases::Vector{BenchmarkCase},
-    outdir::String
+    cases::AbstractVector,
+    outdir::String;
+    run_warmup,
+    run_solution
 )
     requested_names = _split_rollout_case_names()
     split_solvers = _split_rollout_solver_variants()
@@ -198,13 +142,13 @@ function evaluate_split_rollout_gate(
             split_case = _case_with_solver(case; solver_mode_override="split_imex", split_imex_solver_override=split_solver)
             run_warmup(split_case, 1, spec.name)
 
-            baseline_run = _run_split_gate_solution(
+            baseline_run = run_solution(
                 baseline_case,
                 spec.name;
                 solver_mode="auto_stiff",
                 split_solver=nothing
             )
-            split_run = _run_split_gate_solution(
+            split_run = run_solution(
                 split_case,
                 spec.name;
                 solver_mode="split_imex",
@@ -351,8 +295,10 @@ end
 
 function evaluate_multirate_rollout_gate(
     spec::ProfileSpec,
-    cases::Vector{BenchmarkCase},
-    outdir::String
+    cases::AbstractVector,
+    outdir::String;
+    run_warmup,
+    run_solution
 )
     requested_names = _multirate_rollout_case_names()
     case_pool = selected_cases(spec, cases)
@@ -379,13 +325,13 @@ function evaluate_multirate_rollout_gate(
         run_warmup(baseline_case, 1, spec.name)
         run_warmup(multirate_case, 1, spec.name)
 
-        baseline_run = _run_split_gate_solution(
+        baseline_run = run_solution(
             baseline_case,
             spec.name;
             solver_mode="auto_stiff",
             split_solver=nothing
         )
-        multirate_run = _run_split_gate_solution(
+        multirate_run = run_solution(
             multirate_case,
             spec.name;
             solver_mode="multirate",
@@ -487,8 +433,4 @@ function evaluate_multirate_rollout_gate(
 
     return (df=gate_df, csv_path=gate_csv_path, report_path=gate_report_path)
 end
-
-@inline _plot_label(name::AbstractString) = replace(name, "_" => " ")
-@inline _plot_axis_label(name::AbstractString) = replace(name, "_" => "\n")
-@inline _plot_number(v) = v isa Missing ? NaN : Float64(v)
 

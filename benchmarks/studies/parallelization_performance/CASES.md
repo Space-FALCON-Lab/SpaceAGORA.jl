@@ -1,11 +1,13 @@
-# Parallelization Performance Cases
+# Parallelization performance cases
 
-This study defines its case catalog in `cases.jl` and selects default run sets in
-`cli.jl`. Cases are grouped by the kind of parallel work they are meant to
-exercise: simple gravity, higher-fidelity single/few-spacecraft dynamics,
-larger constellations, and Monte Carlo sweeps.
+This study defines its case catalog in `cases.jl` (`ppc_case_catalog`) and the
+default run sets of its profiles in `cli.jl`. The tables below cover the cases
+those profiles run: simple gravity, higher-fidelity runs of one or a few
+spacecraft, larger constellations and Monte Carlo sweeps. The catalog holds
+more families than these (GRAM, heavy scaling, atmosphere and effector ladders,
+coupling modes and others); `cases.jl` lists them all.
 
-## Run Commands
+## Run commands
 
 Run the minimal integration test with:
 
@@ -32,10 +34,10 @@ machine-scaled defaults:
 bash benchmarks/studies/parallelization_performance/protocol.sh
 ```
 
-The protocol wrapper changes into the repo root, defaults to the `full` profile,
-creates a timestamped output directory under `output/performance/`, sets
-`OPENBLAS_NUM_THREADS=1` and `GKSwstype=100`, and then launches the Julia study
-entrypoint.
+The protocol wrapper changes to the repository root, defaults to the `full`
+profile, creates a time-stamped output folder under `output/performance/`, sets
+`OPENBLAS_NUM_THREADS=1` and `GKSwstype=100`, and then starts the Julia study
+script.
 
 To override the thread ladder explicitly, pass `--threads`:
 
@@ -49,22 +51,24 @@ Or set the protocol wrapper's thread ladder through the environment:
 SPACEAGORA_PPC_THREADS=1,2,4,8,12,16,24 bash benchmarks/studies/parallelization_performance/protocol.sh
 ```
 
-## Default Profiles
+## Default profiles
 
 ### Test
 
-The test profile is a fast execution-path check, not a performance-valid study.
-It runs `montecarlo_multi_sat` for two 10-second samples with one repeat, no
-warmup, 16 trajectory parity samples, one process worker, and at most two Julia
-threads. It covers `serial`, `outer_threads`, `outer_process`, `inner_only`, and
-`full_smart`.
+The test profile is a quick check of the execution paths, not a valid
+performance study. It runs `montecarlo_multi_sat` for two 10-second samples
+with one repeat, no warm-up, 16 trajectory parity samples, the default two
+process workers (`SPACEAGORA_PPC_PROCESS_WORKERS`) and at most two Julia
+threads, in the modes `serial`, `outer_threads`, `outer_process`, `inner_only`
+and `full_smart`.
 
-Its pass criteria are successful routing, solves, parity, and artifact
-generation. Speedup values from this profile should not be used in reports.
+It passes when routing, the solves, parity and the output files all succeed.
+Do not use speedups from this profile in reports.
 
 ### Smoke
 
-The smoke profile is a short correctness and wiring check. It runs:
+The smoke profile is a short check that the pieces are wired correctly. It
+runs:
 
 | Case | Purpose |
 | --- | --- |
@@ -82,8 +86,9 @@ Smoke trajectory parity checks run:
 
 ### Full
 
-The full profile runs all cataloged performance cases by default and runs parity
-on a representative subset:
+The full profile runs a fixed list of 24 cases (in `_ppc_defaults` in
+`cli.jl`): every case in the tables below. It runs parity on a representative
+subset:
 
 | Parity Case | Purpose |
 | --- | --- |
@@ -95,9 +100,9 @@ on a representative subset:
 | `montecarlo_multi_sat` | Multi-spacecraft Monte Carlo correctness. |
 | `montecarlo_mars_aerobraking` | Mars aerobraking Monte Carlo correctness. |
 
-## Case Catalog
+## Cases
 
-### Gravity-Only Cases
+### Gravity only
 
 These cases use Earth-centered trajectories with no atmosphere. They isolate
 gravity/RHS costs and constellation scaling without aero or attitude coupling.
@@ -110,17 +115,19 @@ gravity/RHS costs and constellation scaling without aero or attitude coupling.
 | `gravity_64sat_inverse_square_vacuum` | 64 | Inverse-square gravity | Large constellation scaling case. |
 | `gravity_256sat_inverse_square_vacuum` | 256 | Inverse-square gravity | Very large constellation scaling case. |
 | `gravity_1024sat_inverse_square_vacuum` | 1024 | Inverse-square gravity | Extreme constellation overhead and scheduling case. |
+| `gravity_2048sat_inverse_square_vacuum` | 2048 | Inverse-square gravity | Largest constellation in the full profile. |
 | `single_harmonics_l20_vacuum` | 1 | L20 gravity harmonics | Single high-cost gravity model. |
 | `gravity_4sat_l20_vacuum` | 4 | L20 gravity harmonics | Small constellation with expensive gravity. |
 | `gravity_16sat_l20_vacuum` | 16 | L20 gravity harmonics | Medium constellation with expensive gravity. |
 | `gravity_64sat_l20_vacuum` | 64 | L20 gravity harmonics | Large constellation with expensive gravity. |
 | `gravity_256sat_l20_vacuum` | 256 | L20 gravity harmonics | Very large constellation with expensive gravity. |
 | `gravity_1024sat_l20_vacuum` | 1024 | L20 gravity harmonics | Extreme expensive-gravity scheduling case. |
+| `gravity_2048sat_l20_vacuum` | 2048 | L20 gravity harmonics | Largest expensive-gravity constellation in the full profile. |
 
 The harmonics cases use `data/planets/gravity/EarthGGM05C.csv` when it is
 available. If that file is missing, the builder falls back to J2 gravity.
 
-### Few-Spacecraft High-Fidelity Cases
+### One or a few spacecraft, higher fidelity
 
 These cases keep spacecraft count low and increase per-spacecraft physics cost.
 
@@ -130,7 +137,7 @@ These cases keep spacecraft count low and increase per-spacecraft physics cost.
 | `srp_heavy_high_area` | 1 | Inverse-square gravity plus two SRP models | On | High-area articulated spacecraft with stacked SRP work. |
 | `articulated_1sat_fullstack` | 1 | L20 harmonics plus aero | On | Includes analytic atmosphere, attitude, thermal path, and many panels. |
 
-### Many-Spacecraft High-Fidelity Cases
+### Many spacecraft, higher fidelity
 
 These cases combine constellation size with more expensive environmental models.
 
@@ -138,12 +145,14 @@ These cases combine constellation size with more expensive environmental models.
 | --- | ---: | --- | --- | --- |
 | `multi_16_aero_surrogate_cached` | 16 | Inverse-square gravity plus aero | Exponential Earth atmosphere | Exercises multi-spacecraft aero and density-cache behavior. |
 | `multi_64_high_fidelity` | 64 | L20 harmonics, SRP, and aero | Exponential Earth atmosphere | Stresses mixed expensive effectors across a larger constellation. |
+| `multi_128_high_fidelity` | 128 | L20 harmonics, SRP, and aero | Exponential Earth atmosphere | The same stack on twice as many spacecraft. |
+| `callback_128_aero_thermal` | 128 | Inverse-square gravity plus aero | Exponential Earth atmosphere | Callback-heavy aerodynamic and thermal stress, with a short maximum step. |
 
-### Monte Carlo Cases
+### Monte Carlo
 
-Monte Carlo cases run multiple seeded samples when `--mc-samples` is greater
-than one. Each sample perturbs the initial conditions while keeping the case
-structure fixed.
+Monte Carlo cases run several seeded samples when `--mc-samples` is greater
+than one. Each sample perturbs the initial conditions and keeps the rest of the
+case fixed.
 
 | Case | Spacecraft | Effectors | Randomized Inputs | Notes |
 | --- | ---: | --- | --- | --- |
@@ -151,7 +160,7 @@ structure fixed.
 | `montecarlo_multi_sat` | 4 | L20 gravity harmonics | Per-spacecraft altitude and true-anomaly jitter | Multi-spacecraft Monte Carlo gravity sweep. |
 | `montecarlo_mars_aerobraking` | 1 | Mars inverse-square gravity plus aero | Apoapsis, periapsis, and true-anomaly jitter | Mars aerobraking-style Monte Carlo case with exponential atmosphere. |
 
-## Shared Setup
+## Shared setup
 
 Test-profile missions are 10 s. Most Earth cases use a 120 s smoke mission and
 a 1800 s full mission. The
@@ -162,12 +171,14 @@ full-stack, aero-surrogate, and high-fidelity constellation cases use shorter
 The default solver mode is `auto_stiff`, unless overridden through
 `--solver-mode` or `SPACEAGORA_PPC_SOLVER_MODE`.
 
-The full-profile thread ladder is scaled to the machine's `Sys.CPU_THREADS`.
-On a 24-thread machine, the default ladder is `1,2,4,8,12,16,24`. Machines with
-64 or more threads keep the original `1,2,4,8,16,32,64` ladder. Smaller
-machines use fewer unique thread points rather than oversubscribing by default.
+The full-profile thread ladder follows the machine's physical core count: on
+Linux the harness counts physical cores from `/proc/cpuinfo` (SMT siblings
+count once), elsewhere it uses `Sys.CPU_THREADS`, and
+`SPACEAGORA_PPC_PHYSICAL_CORES` overrides either. With 24 cores the ladder is
+`1,2,4,8,12,16,24`; with 64 or more it is `1,2,4,8,16,32,64`. Smaller machines
+get fewer thread counts rather than being oversubscribed.
 
-## Mode Coverage
+## Modes
 
 Test runs `serial`, `outer_threads`, `outer_process`, `inner_only`, and
 `full_smart`. Smoke runs `serial` and `full_smart`.
@@ -181,22 +192,22 @@ Full runs:
 | `outer_process` | Outer process-based route with inner parallelism disabled. |
 | `inner_only` | Inner RHS/callback/effector parallelism without outer parallelism. |
 | `outer_inner_static` | Outer threaded plus inner parallelism with static policy. |
-| `outer_inner_adaptive` | Outer threaded plus inner parallelism with adaptive policy. |
-| `full_smart` | Adaptive threaded route with persistent policy hints and thermal parallelism enabled. |
+| `outer_inner_adaptive` | Outer plus inner parallelism with the adaptive policy; the outer backend is chosen automatically. |
+| `full_smart` | The adaptive route with persistent policy hints; the outer backend and thermal parallelism are chosen automatically. |
 
 ## Budget provenance and resume
 
 The equal-core experiment (`SPACEAGORA_PPC_EQUAL_CORE_BUDGET=1`) records a
-`budget_condition` shared by its serial, static and predictive arms. This identity
-includes the controller's resolved core budget, hardware class and CPU-pinning
-request. Each performance row and hardware snapshot separately records the
-worker's effective `core_budget` and `hardware_class`; `effective_env` retains
-the literal launch overrides. Aggregation and serial comparisons keep different
-conditions separate, including the paper harness's aggregate CSVs.
+`budget_condition` shared by its serial, static and predictive arms. It includes
+the controller's resolved core budget, hardware class and CPU-pinning request.
+Each performance row and hardware snapshot also records the worker's own
+`core_budget` and `hardware_class`, and `effective_env` keeps the launch
+overrides as given. Aggregation and serial comparisons keep different
+conditions apart, including in the paper harness's aggregate CSVs.
 
-A resume checks every successful performance point before launching new work.
-Changing the equal-core flag, controller budget, hardware class or pinning
-requires a fresh output directory. Historical CSVs without this provenance can
-still be analyzed as `legacy_unrecorded`, but cannot safely be resumed: older
-capped and uncapped files have the same filenames and neither records the cap.
-The flag-off execution policy is unchanged.
+A resume checks every completed performance point before it starts new work.
+Changing the equal-core flag, the controller budget, the hardware class or the
+pinning needs a new output folder. Older CSVs without this provenance can still
+be analyzed as `legacy_unrecorded`, but cannot be resumed safely: older capped
+and uncapped files share file names and neither records the cap. With the flag
+off, execution is unchanged.

@@ -1427,18 +1427,6 @@ function generate_runtime_plots(
     return plot_artifacts
 end
 
-@inline function _fmt(v; digits::Int=3)
-    if v isa Missing
-        return "n/a"
-    elseif v isa AbstractFloat
-        return isfinite(v) ? string(round(v; digits=digits)) : "n/a"
-    else
-        return string(v)
-    end
-end
-
-function _scenario_metric(summary_df::DataFrame, scenario::String, metric::Symbol)
-    idx = findfirst(==(scenario), summary_df.scenario)
-    idx === nothing && return nothing
-    return summary_df[idx, metric]
-end
+@inline _plot_label(name::AbstractString) = replace(name, "_" => " ")
+@inline _plot_axis_label(name::AbstractString) = replace(name, "_" => "\n")
+@inline _plot_number(v) = v isa Missing ? NaN : Float64(v)

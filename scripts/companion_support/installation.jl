@@ -47,7 +47,15 @@ function installation_plan(package_root::AbstractString, directory::AbstractStri
     pin = TOML.parsefile(joinpath(package_root, pin_file))
     get(pin, "url", "") == "https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git" ||
         throw(ArgumentError("Unexpected core source repository"))
-    get(pin, "uuid", "") == project["deps"]["SpaceAGORA"] ||
+    # A standalone companion may integrate with core through an optional extension.
+    # Validate both declarations without making optional packages direct dependencies.
+    core_uuids = [section["SpaceAGORA"] for section in
+        (get(project, "deps", Dict()), get(project, "weakdeps", Dict()))
+        if haskey(section, "SpaceAGORA")]
+    !isempty(core_uuids) && all(==("afbfb69f-5c0b-4832-b760-43725dff8540"), core_uuids) ||
+        throw(ArgumentError("Declare the SpaceAGORA UUID consistently in deps or weakdeps"))
+    core_uuid = first(core_uuids)
+    get(pin, "uuid", "") == core_uuid ||
         throw(ArgumentError("Core pin UUID does not match the companion dependency"))
     if isempty(core_path)
         revision = lowercase(isempty(core_revision) ? get(pin, "rev", "") : String(core_revision))
@@ -59,14 +67,14 @@ function installation_plan(package_root::AbstractString, directory::AbstractStri
         path = realpath(path)
         core_project = TOML.parsefile(joinpath(path, "Project.toml"))
         get(core_project, "name", "") == "SpaceAGORA" &&
-            get(core_project, "uuid", "") == project["deps"]["SpaceAGORA"] ||
+            get(core_project, "uuid", "") == core_uuid ||
             throw(ArgumentError("SPACEAGORA_CORE_PATH is not the SpaceAGORA package"))
         core = (; path, url=nothing, revision=nothing)
     end
     validate_destination(destination, package_root, core, marker_name)
     # Direct test and benchmark imports must resolve from the independent project,
     # with JULIA_LOAD_PATH=@:@stdlib and without an ambient developer environment.
-    dependencies = merge(project["deps"], get(project, "extras", Dict{String,Any}()))
+    dependencies = merge(get(project, "deps", Dict{String,Any}()), get(project, "extras", Dict{String,Any}()))
     delete!(dependencies, "SpaceAGORA")
     return (; destination, core, dependencies, companion=package_root)
 end
@@ -148,10 +156,21 @@ function setup(plan; marker_name::AbstractString, package_name::AbstractString, 
             Pkg.activate(plan.destination)
             # Explicit core installation is intentional: dependency [sources]
             # propagation is not assumed, including on Julia 1.12.
-            Pkg.develop(Pkg.PackageSpec(path=core_path))
-            Pkg.develop(Pkg.PackageSpec(path=plan.companion); preserve=Pkg.PRESERVE_ALL)
+            # A migrated project may still name removed historical source paths.
+            # Select both members before the first resolution; resolving one at a
+            # time could try to load the other member from its stale location.
+            project_path = joinpath(plan.destination, "Project.toml")
+            if isfile(project_path)
+                project = TOML.parsefile(project_path)
+                sources = get!(project, "sources", Dict{String,Any}())
+                sources["SpaceAGORA"] = Dict("path" => core_path)
+                sources[package_name] = Dict("path" => plan.companion)
+                open(io -> TOML.print(io, project; sorted=true), project_path, "w")
+            end
+            Pkg.develop([Pkg.PackageSpec(path=core_path), Pkg.PackageSpec(path=plan.companion)];
+                preserve=Pkg.PRESERVE_ALL)
             direct = [Pkg.PackageSpec(name=name, uuid=uuid) for (name, uuid) in sort!(collect(plan.dependencies))]
-            Pkg.add(direct; preserve=Pkg.PRESERVE_ALL)
+            isempty(direct) || Pkg.add(direct; preserve=Pkg.PRESERVE_ALL)
             Pkg.instantiate()
             precompile && Pkg.precompile(["SpaceAGORA", package_name]; strict=true)
         end

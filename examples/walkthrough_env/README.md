@@ -1,7 +1,7 @@
 # Extension walkthrough scripts
 
-The complete scripts of the two extension walkthroughs, run by CI from this
-separate project with the public `SpaceAGORA` surface only:
+The complete scripts of the two extension walkthroughs. CI runs them from this
+separate project, which uses only the public `SpaceAGORA` API.
 
 | Script | Page |
 |---|---|
@@ -14,22 +14,21 @@ From the repository root, prepare the environment once:
 julia --project=examples/walkthrough_env examples/walkthrough_env/setup.jl
 ```
 
-Setup creates a local `Project.toml` from the tracked `Project.template.toml`,
-seeds `Manifest.toml` from the repository manifest and adds this checkout by
-path, keeping the recorded dependency versions. Both generated files, and the
-`output/` folder the scripts write their results to, are ignored. Setup
-downloads any of those versions your Julia depot does not hold yet, so on a
-fresh depot it needs network access. After setup the scripts run offline, as CI
-runs them, and need no optional package, native GRAM or SPICE kernels. Then run
-one, or both as CI does:
+Setup copies the tracked `Project.template.toml` to a local `Project.toml`,
+starts `Manifest.toml` from the repository manifest so the recorded package
+versions are kept, and adds this checkout by path. Git ignores both generated
+files and the `output/` folder the scripts write their results to. On a fresh
+Julia depot setup downloads the packages it lacks, so it needs network access
+the first time. After that the scripts run offline, as in CI, with no optional
+package, native GRAM or SPICE kernels. Run one script, or both as CI does:
 
 ```sh
 julia --project=examples/walkthrough_env --depwarn=error examples/walkthrough_env/my_effector.jl
 julia --project=examples/walkthrough_env --depwarn=error examples/walkthrough_env/smoke.jl
 ```
 
-Each page shows its script between the `# snippet: script` and `# end snippet`
-lines, and its shorter excerpts from the nested regions, without the marker
-lines; `test/gates/ci_hpc_extensibility_docs_gate.jl` compares them, so change
-the page and the script together. The checks after the region test what the
-page states about the result.
+Each page shows its whole script, the region between `# snippet: script` and
+its `# end snippet`, and quotes shorter excerpts from the regions nested inside
+it, all without the marker lines. `test/gates/ci_hpc_extensibility_docs_gate.jl`
+compares the pages with the scripts, so change both together. The checks after
+the script region test what the page says about the result.

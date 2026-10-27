@@ -2,13 +2,11 @@
 
 Every extension hook follows the same rules: one argument order, one name for
 each kind of state, stated frames, SI units and positive consumption. This page
-states each rule once. The [Extension Hook Reference](../generated/extension_hook_reference.md)
+states each rule once, for writing a method of a hook and for reviewing a new
+public name. The [Extension Hook Reference](../generated/extension_hook_reference.md)
 lists every hook with its shape, signature and fallback, and
 [Migrating Extension Hooks](migrating_extension_hooks.md) maps the old names
 to their replacements.
-
-Use these rules when you write a method of a hook, and when you review a new
-public name.
 
 ## Hook shapes
 
@@ -32,32 +30,34 @@ order of its arguments.
 name(mutated, model, state, context, t, spacecraft_index, flags...; keywords...)
 ```
 
-1. **The mutated argument first:** output buffers (`getDensityBatch!`) or run
+1. The mutated argument comes first: output buffers (`getDensityBatch!`) or run
    state that is not the model (a planner's `state`). When the model itself
    changes, as in a tick, the model is first.
-2. **The model:** the object whose type your method dispatches on.
-3. **The state:** `u` (all spacecraft) or `x` (one spacecraft). See below.
-4. **The context:** `p` for GNC hooks, `env` for physical effectors, `ctx` for
+2. The model: the object whose type your method dispatches on.
+3. The state: `u` (all spacecraft) or `x` (one spacecraft); see below.
+4. The context: `p` for GNC hooks, `env` for physical effectors, `ctx` for
    hardware. A query carries its query inputs here and keeps an optional `p`
    last.
-5. **The time `t`.**
-6. **The spacecraft index `spacecraft_index`,** only when the state is `u`.
-7. **Flags** such as `wind::Bool`, then keywords.
+5. The time `t`.
+6. The spacecraft index `spacecraft_index`, only when the state is `u`.
+7. Flags such as `wind::Bool`, then keywords.
 
-**Time before index** is the part to remember. A hook whose order changes always
-gets a new name, so an old method never receives its arguments in a new order.
-Inside a versioned facade, a major contract version stands in for the new name.
+The rule to remember is time before index. A hook whose argument order changes
+always gets a new name, so an old method never receives its arguments in a new
+order. Inside a versioned facade, a new major contract version stands in for the
+new name.
 
 ## The state a hook receives
 
-- **`u`** is the whole integrated state. `u.sc[spacecraft_index]` selects one
-  spacecraft, with `pos` (m), `vel` (m/s) and `mass` (kg), and with attitude
-  propagation `q` and `ω`. Among the model hooks, only the GNC ticks receive
-  `u`. A GNC algorithm binding also receives it, in
-  `build_algorithm_request(binding, u, p, t, reason, request_id)`: the binding's
-  tick passes it on, so that the request is built from the state at that tick.
-- **`x::StateSample`** is one spacecraft's state, for every right-hand-side
-  hook:
+- `u` is the whole integrated state. `u.sc[spacecraft_index]` selects one
+  spacecraft, with `pos` (m), `vel` (m/s) and `mass` (kg) and, with attitude
+  propagation, `q` and `ω`. Among the model hooks, the GNC ticks and the GNC
+  run-start hooks (`initialize_control!`, `link_initialize!` and the like)
+  receive `u`; the right-hand-side hooks never do. A GNC algorithm binding also
+  receives it, in `build_algorithm_request(binding, u, p, t, reason, request_id)`:
+  the binding's tick passes it on, so that the request is built from the state at
+  that tick.
+- `x::StateSample` is one spacecraft's state, for every right-hand-side hook:
 
   | Field | Meaning |
   |---|---|
@@ -68,22 +68,22 @@ Inside a versioned facade, a major contract version stands in for the new name.
   | `spacecraft` | the spacecraft model, for its geometry and inertia |
   | `spacecraft_index` | the spacecraft's position in the run; 0 for a sample built outside a run |
 
-- The raw per-spacecraft view `u.sc[i]` is not passed to any new hook.
+- No new hook receives the raw per-spacecraft view `u.sc[i]`.
 
 ### The supported sample argument
 
 Type the sample argument `x::StateSample`, or leave it untyped; the same holds
-for `env::EnvironmentSample`. The engine looks your method up with these
-abstract types. A method typed on a concrete `StateSample{S}`, for example
-`x::StateSample{SpacecraftModel}`, is not routed to. The pre-run check then
-refuses the run: it names the hook, and says that the model has methods of that
+for `env::EnvironmentSample`. The engine looks your method up with these abstract
+types, so a method typed on a concrete `StateSample{S}`, for example
+`x::StateSample{SpacecraftModel}`, is never called. The pre-run check then
+refuses the run: it names the hook and says that the model has methods of that
 function, but none accepts the arguments the run passes. The templates and the
 walkthroughs use the supported form.
 
 Ticks are looked up with the run's own state and parameter types. Type `u` as
 `u`, `u::AbstractVector` or `u::ComponentVector`; a method typed
-`u::Vector{Float64}` misses the state the engine passes and is refused before
-the run in the same way.
+`u::Vector{Float64}` misses the state the engine passes and is refused before the
+run in the same way.
 
 ## The spacecraft index
 
@@ -96,31 +96,32 @@ the run in the same way.
 - Models that select their vehicle by a field use the same words. The built-in
   models' fields `sat_idx`, `spacecraft_idx`, `chaser_idx` and `target_idx`
   became `spacecraft_index`, `chaser_index` and `target_index` in 0.3.0, and the
-  `spacecraft_idx` of `RobotArmReactionEffector` in 0.3.1; the old names were
-  removed in 0.5.0, and the engine reads only the new ones on a model of your
-  own. `StateAnchor`'s `sat_idx` and the `sat_idx` keyword of
-  `get_periapsis_pulse_callback` became `spacecraft_index` in 0.5.0, with a
-  warning for the old name until 1.0. `SchedulingPolicyModel`'s `target_idx` and
-  `target_idxs` became `target_index` and `target_indices` in 0.5.0, and all four
-  were removed in 0.6.0 with the scheduling policies chosen by a symbol: a policy
-  type holds its own targets (see the [migration page](migrating_extension_hooks.md)).
-- In the external-propagation facade the owner-local position of a spacecraft is
-  called `slot`, because it counts within the owner's list, not the run.
+  `spacecraft_idx` of `RobotArmReactionEffector` in 0.3.1. The old names were
+  removed in 0.5.0, and on a model of your own the engine reads only the new
+  ones. `StateAnchor`'s `sat_idx` and the `sat_idx` keyword of
+  `get_periapsis_pulse_callback` became `spacecraft_index` in 0.5.0, and the old
+  names warn until 1.0. `SchedulingPolicyModel`'s `target_idx` and `target_idxs`
+  became `target_index` and `target_indices` in 0.5.0; all four were removed in
+  0.6.0, when the scheduling policies chosen by a symbol gave way to policy
+  types that hold their own targets (see the
+  [migration page](migrating_extension_hooks.md)).
+- In the external-propagation facade, the position of a spacecraft in its
+  owner's list is called `slot`, because it counts within that list, not the run.
 
 ## Context
 
-- **GNC hooks** (ticks and control outputs) take `p`, the run's parameters;
+- GNC hooks (ticks and control outputs) take `p`, the run's parameters;
   `p.args` is the `SimulationConfiguration`. There is no separate GNC context
   object.
-- **Physical effectors** take `env::EnvironmentSample`: the planet, the
-  planet-fixed frame, the atmosphere, the Sun and the third bodies, each filled
-  when the model's `environment_requirements` asks for it.
-- **Actuators** take `ctx::ActuatorContext`: the mounting link's pose in the body
+- Physical effectors take `env::EnvironmentSample`: the planet, the planet-fixed
+  frame, the atmosphere, the Sun and the third bodies, each filled when the
+  model's `environment_requirements` asks for it.
+- Actuators take `ctx::ActuatorContext`: the mounting link's pose in the body
   frame, the vehicle's mass, attitude and rate, the magnetic field and the
   sampled environment the kind requests.
-- **Sensors** take `truth::SensorTruth` (inertial position and velocity,
-  attitude, rate, mass, time and the field) and `ctx`.
-- **Planners and algorithms** take a `request` and an `rng`.
+- Sensors take `truth::SensorTruth` (inertial position and velocity, attitude,
+  rate, mass, time, and the further quantities the sensor requests) and `ctx`.
+- Planners and algorithms take a `request` and an `rng`.
 
 ## Time
 
@@ -162,16 +163,16 @@ Three documented exceptions stay until 1.0 or later:
 
 ## Signs
 
-- **Consumption is positive.** `control_propellant_rate` returns the propellant
-  used in kg/s, and `actuator_consumption` the mass rate and power used. The
-  engine owns the sign of the mass derivative.
-- A thruster's direction is the force it puts on the vehicle.
+- Consumption is positive. `control_propellant_rate` returns the propellant used
+  in kg/s, and `actuator_consumption` the mass rate and power used. The engine
+  owns the sign of the mass derivative.
+- A thruster's direction is the direction of the force it puts on the vehicle.
 - Wind is the air's velocity relative to the rotating planet, as east, north and
   up components.
-- **The sign trap.** `calcControlMassFlowRate`, removed in 0.5.0, returned the
-  mass derivative, negative while propellant is used. A method renamed to
-  `control_propellant_rate` without flipping its sign makes the vehicle gain
-  mass.
+- Watch the sign when migrating: `calcControlMassFlowRate`, removed in 0.5.0,
+  returned the mass derivative, negative while propellant is used. A method
+  renamed to `control_propellant_rate` without flipping its sign makes the
+  vehicle gain mass.
 
 ## Naming
 
@@ -193,7 +194,7 @@ Three documented exceptions stay until 1.0 or later:
 
 - A hook's default method types nothing, or only the model, with an abstract type
   you subtype. A method you write for your own model type is therefore more
-  specific and never ambiguous with the default.
+  specific than the default and never ambiguous with it.
 - A method you write never needs a type annotation only to avoid an ambiguity.
 - The ticks and the right-hand-side hooks have no catch-all method, except
   `control_propellant_rate` and `control_wheel_torque`, whose untyped defaults
@@ -206,31 +207,30 @@ Three documented exceptions stay until 1.0 or later:
 When a hook is renamed or retired, its old name keeps working for a deprecation
 window:
 
-- **Before the run.** The pre-run check warns once per model type and old name,
-  before integration, never during the solve, and names the replacement.
-
-- **Direct calls.** Calling an old name on a model that implements the new hook
-  runs the new hook and warns once per type.
-- **As an error.** Under `julia --depwarn=error` these warnings are errors: the
-  run stops before integration, and a direct call throws. CI runs the examples
-  and the probe scripts this way.
-- **Removal.** A deprecated name is removed in a later release, and not before a
-  tagged release has carried the warnings and the companion packages have moved
-  to the new names. SpaceAGORA 0.5.0 removed the hook names 0.3.0 deprecated.
-- **Version numbers** follow `version` in `Project.toml`. The older `v1.0.0` and
+- Before the run, the pre-run check warns once per model type and old name, and
+  names the replacement. It warns before integration, never during the solve.
+- Calling an old name directly on a model that implements the new hook runs the
+  new hook and warns once per type.
+- Under `julia --depwarn=error` these warnings are errors: the run stops before
+  integration, and a direct call throws. Several CI jobs run this way, among them
+  the GNC and walkthrough example scripts.
+- A deprecated name is removed in a later release, and only after a tagged
+  release has carried the warnings and the companion packages have moved to the
+  new names. SpaceAGORA 0.5.0 removed the hook names that 0.3.0 deprecated.
+- Version numbers follow `version` in `Project.toml`. The older `v1.0.0` and
   `v2.0.0` git tags predate it.
 
-The other deprecations of the 0.3.0 cycle, the old index field names,
-`RPOGuidanceModel` and selecting a comparison planner by name, were removed in
-0.5.0. [Migrating Extension Hooks](migrating_extension_hooks.md) has the full
-table and the schedule.
+The other deprecations of the 0.3.0 cycle (the old index field names,
+`RPOGuidanceModel`, and selecting a comparison planner by name) were removed in
+0.5.0 as well. [Migrating Extension Hooks](migrating_extension_hooks.md) has the
+full table and the schedule.
 
 ## Versioned facades
 
 `EDGServices`, `ExternalPropagationServices` and `HYPRServices` are named,
 versioned boundaries for optional packages. A companion checks the facade's
-`CONTRACT_VERSION` exactly, and a major version marks a change of any
-signature. `EDGServices` and `HYPRServices` are at contract 3.0.0 and
+`CONTRACT_VERSION` exactly, and a change to any signature needs a new major
+version. `EDGServices` and `HYPRServices` are at contract 3.0.0 and
 `ExternalPropagationServices` at 2.0.0; all three follow these conventions.
 Names in a facade's inventory keep their exact spelling, underscores included.
 See the [Optional Adapter Standard](adapter_contract.md) and each facade's page.

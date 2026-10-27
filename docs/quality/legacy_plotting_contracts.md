@@ -1,99 +1,107 @@
 # Legacy plotting saved-data contracts
 
-The maintained raw-quaternion and body-rate helpers are explicit saved-result
-consumers. They do not replace the full legacy plotting dispatcher. All 19
-functions in `scripts/plotting/plot_data.jl` remain retained. A replacement for
-one set of traces does not establish that an untracked legacy consumer can be
-retired.
+`scripts/plotting/plot_data.jl` holds the legacy plotting dispatcher `plots` and
+18 individual renderers; all 19 functions are still in the file. Two maintained
+helpers now read current saved results directly: the raw-quaternion plot and the
+body-rate plot, in `examples/support/aerobraking_result_tables.jl` and
+`examples/support/aerobraking_mission_plot_utils.jl`. They do not replace the
+legacy dispatcher, and covering some of its traces does not mean any legacy
+renderer can be retired. This page states what each saved quantity means, which
+code produces it, and what the plots may assume about it.
 
-## Supported body-rate input
+The tests are under `test/unit/`: `quaternion_history_plot_tests.jl`,
+`body_rate_history_plot_tests.jl`, `legacy_euler_contract_tests.jl`,
+`legacy_wheel_contract_tests.jl` and `legacy_guidance_diagnostic_contract_tests.jl`.
+
+## Body-rate input
 
 `_body_rate_history_samples(df; spacecraft_index)` and
-`_save_body_rate_history_plot(csv_path; spacecraft_index, output_path)` consume
-`time` in seconds and exactly `scN_body_rate_1`, `scN_body_rate_2`,
-`scN_body_rate_3` in radians per second. The components are angular velocity
-expressed in the spacecraft body frame. `N` is the one-based position in the
-spacecraft list, not `SpacecraftModel.id`.
+`_save_body_rate_history_plot(csv_path; spacecraft_index, output_path)` read
+`time` in seconds and exactly `scN_body_rate_1`, `scN_body_rate_2` and
+`scN_body_rate_3` in rad/s: the angular velocity in the spacecraft body frame. `N`
+is the one-based position in the spacecraft list, not `SpacecraftModel.id`.
 
-This schema has a tracked producer: `slew_save_fields` in
-the CYGNSS slew study (SpaceAGORAMissionReconstructions) records `u.sc[1].ω` through
-`SaveField(:body_rate_rad_s, ...; per_satellite=true, column_prefix="body_rate")`.
-The same script reads `sc1_body_rate_1..3` and labels them `rad/s`.
-`_assign_orientation_rhs!` in `src/orchestration/simulation/engine/dynamics_rhs.jl` uses
-`sc_view.ω` as `omega_body`; the external-propagator state contract also states
-body angular velocity in rad/s. The result writer in
-`src/interfaces/io/outputs/io_outputs.jl` expands these saved three-vectors in component
-order and names spacecraft by list position.
+These are custom save fields. `default_save_fields` saves the quaternion when
+`orientation_sim=true` but saves no body rate. A run gets these columns from a
+field such as
+`SaveField(:body_rate_rad_s, …; per_satellite=true, column_prefix="body_rate")`
+that saves `u.sc[i].ω`. The CYGNSS slew study in SpaceAGORAMissionReconstructions
+uses that field; a copy of its save fields, `slew_save_fields` in
+`test/fixtures/research_contracts/save_field_recipes.jl`, is what the body-rate
+and wheel tests run. The engine's orientation RHS (`_assign_orientation_rhs!` in
+`src/orchestration/simulation/engine/dynamics_rhs.jl`) treats `sc_view.ω` as the
+body angular velocity. The result writer in
+`src/interfaces/io/outputs/io_outputs.jl` expands each saved three-vector in
+component order and names spacecraft by list position.
 
-These are **custom, opt-in fields**. `default_save_fields` saves quaternions
-when `orientation_sim=true`, but does not save body rates. The `:omega` fields
-in several dynamics tests use a different explicit prefix. The plotting helper
-does not silently accept `scN_omega_*`, unprefixed legacy `omega_*`, telemetry
-names, or a quaternion-only table. Column names alone cannot certify an
-external file's units or provenance; callers must supply the stated schema.
+The helper does not accept `scN_omega_*`, the unprefixed legacy `omega_*`,
+telemetry names or a quaternion-only table as substitutes. The `:omega` fields in
+several dynamics tests use a different prefix. Column names cannot certify an
+external file's units or origin; the caller must supply the stated schema.
 
-The maintained plot preserves the legacy angular-velocity plot's operation
-order: `time / 60`, then `rad2deg.(rates) .* 60`. Its labels are `ω1`, `ω2`,
-`ω3`, with red, green and blue traces, `Time [min]` and
-`Angular Velocity (deg/min)` axes. It preserves row order, repeated/nonmonotone
-times and rate signs. It copies raw rates into `rates_rad_s` without Float64
-coercion and returns displayed arrays as `components`. No frame rotation,
-smoothing, normalization, Euler conversion or quaternion differentiation occurs.
+The plot keeps the legacy angular-velocity plot's arithmetic: `time / 60`, then
+`rad2deg.(rates) .* 60`. Its traces are labelled `ω1`, `ω2` and `ω3` in red,
+green and blue, with axes `Time [min]` and `Angular Velocity (deg/min)`. Row
+order, repeated or non-monotone times and signs are kept. The raw rates are
+copied into `rates_rad_s` without conversion to Float64, and the displayed arrays
+are returned as `components`. There is no frame rotation, smoothing,
+normalization, Euler conversion or differentiation of quaternions.
 
-All selected columns must be present, nonempty, finite and real; Boolean values
-are rejected. Unselected spacecraft columns are not validated. Singleton input
-is valid. Nonfinite converted values are rejected before rendering. The facade
-requires an explicit output extension, retains the established same-file guard
-including hard links, symbolic links and `~` expansion, and never opens a plot
-window. The raw-quaternion helper's behavior is unchanged.
+The selected columns must be present and non-empty, and every value must be a
+finite real number; Boolean values are rejected. Columns of other spacecraft are
+not checked, and a single row is valid. Values that become non-finite after
+conversion are rejected before plotting. `output_path` must have a file
+extension and must not be the input CSV, including through hard links, symbolic
+links or `~` expansion. The helper never opens a plot window. The raw-quaternion
+helper, `_quaternion_history_samples` and `_save_quaternion_history_plot`, applies
+the same input and output-path rules to `scN_q_1..4`.
 
-## Euler compatibility contract
+## Euler angles
 
-The default saved quaternion is scalar-last `[x, y, z, w]`, with the
-inertial-to-body rotation convention. `_save_quaternion` and the result writer
-preserve its four stored components. They do not save Euler angles.
+The default saved quaternion is scalar-last `[x, y, z, w]` and describes the
+inertial-to-body rotation. `_save_quaternion` and the result writer keep its four
+components as stored; no Euler angles are saved.
 
-The retained `attitude_plot` consumes **unprefixed** `q_1..4`, not the current
-`scN_q_1..4` schema, and calls the actual `qToEulerAngles` helper for every row.
-That helper normalizes each quaternion with `LinearAlgebra.normalize`. It has
-neither the canonical near-zero identity fallback nor input validation. A tiny
-nonzero quaternion is normalized; zero and nonfinite inputs can yield NaN
-angles. It does not clamp the pitch intermediate to its mathematical domain,
-so rounding near gimbal lock can cause a `DomainError` even for finite input.
+The legacy `attitude_plot` reads the unprefixed `q_1..4`, not the current
+`scN_q_1..4`, and calls `qToEulerAngles` (in
+`src/foundation/core/numerics/quaternion_utils.jl`) on every row. That function
+normalizes each quaternion with `LinearAlgebra.normalize`, without the canonical
+near-zero identity fallback or any input validation. A tiny non-zero quaternion
+is normalized; zero or non-finite input can give NaN angles. It does not clamp
+the pitch intermediate to its domain, so rounding near gimbal lock can raise a
+`DomainError` even for finite input.
 
-Its returned triple is a **legacy conversion**, not a certified roll/pitch/yaw
-convention. In particular, the identity quaternion returns `[pi/2, 0, pi/2]`:
-the two `atan(y, x)` calls exchange the arguments expected for conventional
-roll and yaw, and the pitch expression has the opposite sign. Ordinary finite
-rescaling and quaternion sign reversal preserve the represented result, but
-there is no branch unwrapping, singularity stabilization or continuity promise.
-The legacy renderer preserves sample order and plots these values in degrees
-against minutes, using the labels `Roll`, `Pitch`, `Yaw` and red, green, blue.
-Those labels do not establish a conventional Euler interpretation.
+The triple it returns is a legacy conversion, not a certified roll-pitch-yaw
+convention. The identity quaternion gives `[pi/2, 0, pi/2]`: both `atan(y, x)`
+calls take their arguments in the opposite order to the usual roll and yaw
+formulas, and the pitch expression has the opposite sign. Rescaling a quaternion
+or reversing its sign leaves the result unchanged, but there is no branch
+unwrapping, singularity handling or continuity guarantee. The renderer keeps
+sample order and plots the values in degrees against minutes, labelled `Roll`,
+`Pitch` and `Yaw` in red, green and blue. The labels do not make the angles a
+conventional Euler sequence.
 
-**Disposition:** keep this behavior as a tested compatibility boundary. Use the
-maintained raw-quaternion plot when inspecting current saved orientation.
-A conventional Euler plot requires a separately named, explicitly chosen axis
-sequence, frame direction, active/passive convention, branch interval and
-singularity policy. Correcting `qToEulerAngles` in place would change numerical
-behavior outside plotting and is not part of this cleanup contract. No matching
-maintained quaternion-to-Euler alternative has been established.
+Keep this behavior as a tested compatibility boundary, and use the raw-quaternion
+plot to inspect saved orientation. A conventional Euler plot would need a
+separately named function with an explicit axis sequence, frame direction,
+active or passive convention, branch interval and singularity policy. Changing
+`qToEulerAngles` in place would change numbers outside plotting. No maintained
+quaternion-to-Euler alternative exists yet.
 
-## Wheel momentum and torque contracts
+## Wheel momentum and torque
 
 ### Integrated per-wheel momentum
 
-The root reaction-wheel assembly's integrated state is `u.sc[i].h_wheels` in
-N m s (equivalently kg m^2/s). Component `j` follows column `j` of that root
-assembly's `J_rw` matrix. It does not follow `SpacecraftModel.id`, a physical
-wheel identifier, or the total wheel count summed across child links. Persist
-physical wheel names and the axis matrix separately when those identities
-matter. This is the root assembly contract; it does not establish support for
-integrating wheels on every articulated link.
+The root reaction-wheel assembly's integrated state is `u.sc[i].h_wheels`, in
+N m s (kg m²/s). Component `j` follows column `j` of that assembly's `J_rw`
+matrix. It does not follow `SpacecraftModel.id`, a physical wheel identifier, or
+a wheel count summed over child links. Store physical wheel names and the axis
+matrix separately when they matter. This describes the root assembly only; it
+does not establish support for integrating wheels on every articulated link.
 
-A caller can opt in to a saved per-wheel history using the existing `SaveField`
-interface after checking that each spacecraft in the run has orientation enabled
-and a root assembly with the expected wheel count, fixed across saved rows:
+A caller can save a per-wheel history with the existing `SaveField` interface,
+after checking that every spacecraft in the run has orientation enabled and a
+root assembly with the expected wheel count, fixed for the whole run:
 
 ```julia
 wheel_h_field = SpaceAGORA.SimulationModel.SaveField(
@@ -107,124 +115,122 @@ wheel_h_field = SpaceAGORA.SimulationModel.SaveField(
 )
 ```
 
-Include this field in the run's configured save fields. The writer produces
-`scN_wheel_h_nms_1..K` at the saved `time` in seconds; `N` is list position and
-`K` is that spacecraft's root wheel count. The copy protects earlier snapshots
-from subsequent state mutation. This opt-in schema is exercised through the
-actual snapshot collector and table writer, including unequal/nonconsecutive
-spacecraft IDs. It is not a default field or a new plotting facade. A future
-consumer must receive the expected wheel order/count explicitly and must not
-infer per-wheel semantics merely because a vector has three components.
+Add it to the run's save fields. The writer then produces
+`scN_wheel_h_nms_1..K` at each saved `time` in seconds, where `N` is the list
+position and `K` that spacecraft's root wheel count. The `copy` keeps earlier
+snapshots from changing with the state. `legacy_wheel_contract_tests.jl` runs this
+field through the snapshot collector and the table writer, with unequal,
+non-consecutive spacecraft IDs. It is not a default field, and no plot uses it
+yet. A future consumer must be given the wheel order and count explicitly; a
+vector with three components does not imply three wheels.
 
-The engine computes body-frame aggregate momentum as `J_rw * h_wheels` and
-integrated wheel momentum rate as `J_rw_pinv * (-rw_torque_body)`. Thus wheel
-momentum rate has the opposite reaction sign to the requested wheel body torque.
-For a redundant assembly, the pseudoinverse gives the engine's allocation;
-for a rank-deficient assembly, multiplication back by `J_rw` can project the
-requested vector. A plot must not silently turn a command into a claim about
-realized torque, limits or actuator feasibility.
+The engine computes the body-frame aggregate momentum as `J_rw * h_wheels` and
+the integrated wheel momentum rate as `J_rw_pinv * (-rw_torque_body)`, so the
+wheel momentum rate has the opposite sign to the requested wheel body torque. For
+a redundant assembly the pseudoinverse is the engine's allocation; for a
+rank-deficient one, multiplying back by `J_rw` can project the requested vector. A
+plot must not present a command as realized torque or as a statement about limits
+or feasibility.
 
-### Other wheel quantities are separate
+### Other wheel quantities
 
-The test field named `:wheel_h` in `reaction_wheel_momentum_tests.jl` evaluates
-`wheel_momentum_body(model, t)`. It is an **aggregate body-frame three-vector**,
-not the integrated per-wheel state. The CYGNSS demo's
-`scN_wheel_momentum_nms_1..3` has the same aggregate interpretation. The
-prescribed-wheel model computes signed speed/inertia/axis contributions in its
-input column order and returns their sum in the body frame; its reaction torque
-includes both the negative momentum derivative and `-cross(omega_body, H)`.
-The magnetic momentum manager's `h_wheels` is another body-frame three-vector
-accumulator. Similar field names do not make these histories interchangeable.
+The test field `:wheel_h` in `test/unit/dynamics/reaction_wheel_momentum_tests.jl`
+evaluates `wheel_momentum_body(model, t)`: the aggregate body-frame momentum
+vector, not the integrated per-wheel state. The slew recipe's
+`scN_wheel_momentum_nms_1..3` means the same. The prescribed-wheel model sums
+signed speed, inertia and axis contributions in its input column order and returns
+the sum in the body frame. Its reaction torque, `wheel_reaction_torque`, is
+`-Ḣ_w - ω × H_w`. The magnetic momentum manager's `h_wheels` is yet another
+body-frame accumulator. Similar names do not make these histories interchangeable.
 
-| Quantity | Actual boundary | Decision for plotting |
+| Quantity | Where it comes from | What a plot may do with it |
 | --- | --- | --- |
-| Integrated per-wheel momentum | `u.sc[i].h_wheels`, opt-in field above | Usable producer with explicit root wheel ordering; preserve signs and saved sample order. |
-| Prescribed aggregate momentum | `wheel_momentum_body(model, t)` | Body-frame vector; never label its three components as three wheels. |
-| Per-wheel torque or momentum rate | Engine computes `du.sc[i].h_wheels` during RHS evaluation | No corresponding generic save-time producer is established. Do not read stale assembly `h_dot_wheels` as an output history. |
-| Requested reaction-wheel body torque | `rw_torque_body` passed from control readout to the orientation RHS | May itself be an RPO held command; it is the pre-pseudoinverse request, not proof of realized/allocated torque or total spacecraft torque. |
-| Prescribed reaction torque | Prescribed model's actual force/torque boundary | Includes transport term; not interchangeable with a wheel motor torque vector. |
-| Demo reaction-torque magnitude | Scalar norm in CYGNSS demo | Magnitude only; cannot supply signed components or a frame transformation. |
-| RPO held control torque | `rpo_control_torque_body` | Held control command, not total inertial torque. |
-| Total torque / inertial inertia | Legacy `tau_ii_1..3`, `rw_torque_ii_1..3`, `J_ii_1..9` | No matching generic time-aligned saved producer or tensor flattening contract is established. Do not substitute static model inertia, body components or zeros. |
+| Integrated per-wheel momentum | `u.sc[i].h_wheels`, through the opt-in field above | Plot per wheel in root-assembly order; keep signs and sample order. |
+| Prescribed aggregate momentum | `wheel_momentum_body(model, t)` | A body-frame vector; never label its components as three wheels. |
+| Per-wheel torque or momentum rate | `du.sc[i].h_wheels`, computed during RHS evaluation | No save-time producer exists. Do not read the assembly's stale `h_dot_wheels` as a history. |
+| Requested wheel body torque | `rw_torque_body`, passed from the control readout to the orientation RHS | May be an RPO held command (`RPOHeldActuation.rw_torque_body`). It is the request before the pseudoinverse, not realized, allocated or total spacecraft torque. |
+| Prescribed reaction torque | The prescribed model's force and torque | Includes the transport term; not a wheel motor torque vector. |
+| Wheel torque magnitude in the slew recipe | `scN_wheel_torque_nm`, the norm of the prescribed reaction torque | A magnitude only; it cannot supply signed components or a frame. |
+| RPO held control torque | `RPOHeldActuation.torque_body` on `RPOMPCControlModel.held` (thruster torque plus requested wheel torque) | A held command, not total inertial torque. |
+| Total torque, inertial inertia | Legacy `tau_ii_1..3`, `rw_torque_ii_1..3`, `J_ii_1..9` | No current producer saves them with matching times, and there is no agreed tensor flattening. Do not substitute static model inertia, body components or zeros. |
 
-The retained wheel momentum renderer expects nested
-`solution.physical_properties.rw_h` with one history per wheel. The retained
-per-wheel torque renderer expects unprefixed `rw_tau_i` columns and the legacy
-model's wheel count. Both use seconds and preserve trace order and signs. Their
-nine-entry palette indexes zero on the ninth wheel, so nine-wheel input is a
-known compatibility failure, not supported by the retained renderer. The total
-torque and inertia renderers also take their unprefixed legacy columns directly;
-their names and labels alone do not prove a producer's frame or matrix ordering.
+The legacy `reaction_wheel_h_plot` expects a nested
+`solution.physical_properties.rw_h` with one history per wheel.
+`reaction_wheel_torque_plot` expects unprefixed `rw_tau_i` columns and the legacy
+model's wheel count. Both use seconds and keep trace order and signs. Both pick
+colours with `i % 9` from a nine-entry palette, which gives index zero for the
+ninth wheel, so nine-wheel input throws a `BoundsError`; the test records this.
+`total_reaction_wheel_torque_plot`, `torque_plot` and `inertia_plot` also read
+their unprefixed legacy columns directly, and their names and labels do not prove
+a producer's frame or matrix order.
 
-**Disposition:** the opt-in integrated momentum schema and existing prescribed
-aggregate schema are separately usable. A maintained wheel plot can follow this
-contract in a later bounded packet. Per-wheel torque and inertial torque/inertia
-plots need save-time producers and explicit frame/tensor metadata first. This
-packet preserves the allocator, dynamics and retained renderers.
+The opt-in per-wheel momentum field and the prescribed aggregate momentum can each
+be plotted on their own terms. Per-wheel torque and inertial torque or inertia
+plots first need save-time producers and explicit frame and tensor metadata. The
+allocator, the dynamics and the legacy renderers are unchanged.
 
-## Costate and switching contracts
+## Costates and switching times
 
-The retained `lambda_plot` draws two independent trace pairs directly from
-runtime configuration: `time_switch_list` / `lambda_switch_list` and
-`time_list` / `lamv_list`. Its seconds and lambda labels perform no conversion,
-shape checking, sorting, normalization or passage segmentation. Lambda units
-and scaling are producer-specific; the labels alone do not establish them. The
-removed legacy T-EDG formula kept the sign of `CD_slope`, while the typed
-threshold uses its absolute value, so histories from the two cannot be silently
-aliased. The runtime constructor initializes all four as empty `Float64` vectors.
+The legacy `lambda_plot(name, cnf, args)` draws two trace pairs straight from the
+runtime configuration: `time_switch_list` against `lambda_switch_list`, and
+`time_list` against `lamv_list`. It labels them in seconds and as lambda, and does
+no conversion, shape checking, sorting, normalization or splitting by passage.
+Lambda units and scaling depend on the producer; the labels do not establish them.
+`src/orchestration/simulation/state/runtime_types.jl` initializes all four as
+empty `Float64` vectors.
 
-On the inspected main revision, no tracked code writes or resets any of the four
-arrays. Empty arrays are absence of recorded costates, not a zero costate
-solution. The two legacy producers, the T-EDG plotting producer and the
-constraint-tracking producer, were removed with the older E-EDG/T-EDG strategy
-routes. Neither had a tracked caller, and the second failed on its own pushes. Their arrays carried no spacecraft or
-passage identity, so a history recorded by older code is an unsegmented append
-log in elapsed simulation seconds.
+No code in this repository writes or resets these arrays, so empty arrays mean
+that no costates were recorded, not a zero costate. The code that used to fill
+them was removed with the older E-EDG/T-EDG strategy routes. Those arrays carried
+no spacecraft or passage identity, so a history saved by older code is an
+unsegmented log in elapsed simulation seconds.
 
-The typed EDG strategy has separate, call-local predicted lambda/alpha data and
-an optional saved targeting switch time. The Odyssey example's
-`targeting_switch_save_field` records `state.targeting_switch_s` in
-`scN_edg_targeting_switch_s`, with `time` giving the saved simulation sample time and `N` the spacecraft list
-position. Targeting brackets candidate switch times between the current elapsed
-simulation time and that time plus the predicted duration (with its existing
-one-second upper margin). Separately, typed heat-load prediction tracks use
-relative times, and SpaceAGORAEDG's `_edg_low_alpha_switch_window` adds the current simulation
-time to its selected track times. That heat-load window is not the saved
-targeting field's producer.
-The field is a **predicted switch timestamp in elapsed simulation seconds**, not lambda, time-to-go, an actual
-switch event or a costate history. Nonfinite reset/no-prediction sentinels must
-remain distinguishable from finite predictions; never replace them with zero.
-A downstream diagnostic should label those samples unavailable and use a
-step/held-prediction interpretation only when that matches its actual update
-lifecycle. On pass reset, `_edg_reset_pass!` resets the affected spacecraft
-`targeting_switch_s` to `Inf`, `heat_load_switches_s` to `(Inf, Inf)` and
-`last_switch_solve_t` to `-Inf`; it retains cumulative solve counts and last
-telemetry. `_edg_initialize_state!` resets the whole state, including those
-counts and telemetry. These lifetimes are exercised through the actual reset
-functions and saver. An explicit passage and spacecraft mapping is still needed
-before combining legacy solver samples with typed targeting predictions.
+Typed EDG keeps its predicted lambda and alpha data local to each call, and can
+save a predicted targeting switch time. The Odyssey example
+`examples/AGORA_Odyssey_Energy_Depletion_Control_Test.jl` defines
+`targeting_switch_save_field`, which saves `state.targeting_switch_s` as
+`scN_edg_targeting_switch_s`; `time` is the saved sample time and `N` the
+spacecraft list position. Targeting brackets candidate switch times between the
+current elapsed simulation time and that time plus the predicted duration, with a
+one-second upper margin. Separately, the typed heat-load prediction tracks use
+relative times, and SpaceAGORAEDG's `_edg_low_alpha_switch_window` adds the
+current simulation time to the selected track times; that heat-load window does
+not produce the saved targeting field.
 
-**Disposition:** retain the legacy lambda renderer and explicitly classify its
-costate input as unpopulated on main. Use the typed targeting-switch saved field
-only for its documented prediction diagnostic. Reconstructing a costate history
-requires a supported producer, costate definition/scaling, independent variable,
-passage identity and reset policy. Existing active EDG owner work remains the
-place for those scientific decisions; this cleanup does not synthesize histories
-or change targeting behavior.
+The field is a predicted switch time in elapsed simulation seconds. It is not
+lambda, a time-to-go, an actual switch event or a costate history. The non-finite
+values written on reset or when there is no prediction must stay distinguishable
+from finite predictions; never replace them with zero. A diagnostic should label
+those samples unavailable and treat the values as a held prediction only if that
+matches how they are updated. On a pass reset, `_edg_reset_pass!` sets that
+spacecraft's `targeting_switch_s` to `Inf`, `heat_load_switches_s` to
+`(Inf, Inf)` and `last_switch_solve_t` to `-Inf`, and keeps the cumulative solve
+counts and the last telemetry. `_edg_initialize_state!` resets the whole state,
+counts and telemetry included. `legacy_guidance_diagnostic_contract_tests.jl`
+exercises both through the reset functions and the saver. Combining old solver
+samples with typed targeting predictions would need an explicit passage and
+spacecraft mapping.
 
-## Other retained capabilities
+Keep the legacy lambda renderer, and treat its input as unpopulated. Use the
+typed targeting-switch field only as the prediction diagnostic described above.
+Rebuilding a costate history needs a supported producer, a costate definition and
+scaling, an independent variable, passage identity and a reset policy; those are
+scientific decisions for the EDG owners, and no plot should synthesize the
+history.
 
-| Legacy diagnostic | Located producer or input | Remaining capability boundary |
+## Other legacy renderers
+
+| Legacy renderer | Producer or input found | What is still missing |
 | --- | --- | --- |
-| `quaternion_plot` | Default `scN_q_1..4` for orientation runs; maintained raw-quaternion helper | Replacement traces are available; legacy retirement still requires a consumer decision. |
-| `angular_velocity_plot` | Explicit `scN_body_rate_1..3` above; maintained body-rate helper | Default runs do not contain these fields; no schema guessing. |
-| `drag_passage_plot`, `performance_plots` | Modern heat maxima, orbit and mission plots cover only some panels | Per-link heat histories, limits, energy/fuel and orbit grouping are not equivalent to maxima. |
-| `angle_of_attack_plot`, `wind_relative_attitude_plot` | Some mission-specific control/link fields | Generic per-link AoA/sideslip and normalized-orbit schemas remain undecided; wind-relative code also references free variable `m`. |
-| `closed_form_solution_plot` | Nested guidance histories | Numerical/closed-form pairing, free `args`, units and passage segmentation need a separate guidance contract. |
-| `traj_2D`, `traj_3D`, `ABM_periapsis`, `ground_track` | Maintained trajectory, geography and extrema plots cover parts | Orbital-plane transforms, passage surfaces, maneuver-magnitude axes and time-versus-orbit traces retain distinct capabilities. |
-| `plots` | Legacy model/options/nested-solution dispatcher | No complete supported replacement dispatcher is established. |
+| `quaternion_plot` | The default `scN_q_1..4` of orientation runs; the maintained raw-quaternion helper | The replacement traces exist; retiring the renderer still needs a decision from its users. |
+| `angular_velocity_plot` | The explicit `scN_body_rate_1..3` above; the maintained body-rate helper | Default runs do not contain these fields, and the helper does not guess a schema. |
+| `drag_passage_plot`, `performance_plots` | Current heat-maximum, orbit and mission plots cover some panels | Per-link heat histories, limits, energy and fuel, and orbit grouping are not the same as maxima. |
+| `angle_of_attack_plot`, `wind_relative_attitude_plot` | Some mission-specific control and link fields | Generic per-link angle of attack and sideslip, and normalized-orbit schemas, are undecided; `wind_relative_attitude_plot` also uses an undefined variable `m`. |
+| `closed_form_solution_plot` | Nested guidance histories | Pairing numerical with closed-form results, its use of an undefined `args`, units and passage splitting need a separate guidance contract. |
+| `traj_2D`, `traj_3D`, `ABM_periapsis`, `ground_track` | Current trajectory, geography and extrema plots cover parts | Orbital-plane transforms, passage surfaces, maneuver-magnitude axes and time-versus-orbit traces have no replacement. |
+| `plots` | The legacy dispatcher over model, options and nested solution | No complete supported replacement exists. |
 
-These contracts distinguish current producer behavior from an approved
-mathematical correction or a maintained plotting replacement. They resolve the
-Euler, wheel/torque and costate/switching ownership questions without declaring
-all legacy diagnostics supported or retiring any of the 19 functions.
+These contracts separate what the producers do today from any approved
+mathematical correction or maintained replacement. They settle what the Euler,
+wheel and torque, and costate and switching data mean, without declaring the
+legacy diagnostics supported and without retiring any of the 19 functions.

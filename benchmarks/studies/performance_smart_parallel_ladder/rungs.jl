@@ -1,3 +1,8 @@
+if !isdefined(@__MODULE__, :BenchmarkArtifacts)
+    include(joinpath(@__DIR__, "..", "..", "support", "artifacts.jl"))
+end
+using .BenchmarkArtifacts: _latest_artifact_path, _latest_artifact_path_optional
+
 function _ladder_rungs(config::SmartLadderConfig)::Vector{LadderRungSpec}
     rungs = LadderRungSpec[
         LadderRungSpec(
@@ -262,32 +267,6 @@ end
     variants = _solver_variants(config)
     isempty(variants) && error("No solver variants resolved for solver-axis '$(config.solver_axis)'.")
     return first(variants)
-end
-
-function _latest_artifact_path(outdir::String, prefix::String, profile_name::String, suffix::String)::String
-    pattern = "$(prefix)_$(profile_name)_"
-    candidates = String[]
-    for entry in readdir(outdir)
-        if startswith(entry, pattern) && endswith(entry, suffix)
-            push!(candidates, joinpath(outdir, entry))
-        end
-    end
-    isempty(candidates) && error("No artifact found in '$outdir' for prefix='$prefix' profile='$(profile_name)' suffix='$suffix'")
-    sort!(candidates; by=path -> stat(path).mtime)
-    return last(candidates)
-end
-
-function _latest_artifact_path_optional(outdir::String, prefix::String, profile_name::String, suffix::String)::Union{Nothing, String}
-    pattern = "$(prefix)_$(profile_name)_"
-    candidates = String[]
-    for entry in readdir(outdir)
-        if startswith(entry, pattern) && endswith(entry, suffix)
-            push!(candidates, joinpath(outdir, entry))
-        end
-    end
-    isempty(candidates) && return nothing
-    sort!(candidates; by=path -> stat(path).mtime)
-    return last(candidates)
 end
 
 @inline function _git_head_commit(repo_root::String)::String

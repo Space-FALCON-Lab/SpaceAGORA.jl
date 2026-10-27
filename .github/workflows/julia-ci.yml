@@ -451,7 +451,7 @@ jobs:
         run: julia --startup-file=no examples/setup.jl
 
       - name: Prepare documented HYPR example environment
-        run: julia --startup-file=no --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
+        run: julia --startup-file=no examples/rpo_planner_env/setup.jl
 
       - name: Example suite smoke shard
         run: julia --startup-file=no --project=. .github/scripts/ci_example_shard.jl
@@ -543,9 +543,10 @@ jobs:
           persist-credentials: false
 
       # No shared package depot: project dependencies still start from nothing.
-      # Keep compilation outside setup so a timeout identifies the failing phase.
-      - name: Setup (instantiate in clean depot)
-        timeout-minutes: 10
+      # The standalone EDG installer strictly precompiles its managed environment.
+      # Allow cold compilation here; root diagnostics below reuse this same depot.
+      - name: Setup core and compile EDG in clean depot
+        timeout-minutes: 35
         uses: ./.github/actions/setup
         with:
           depot: "false"
@@ -843,11 +844,11 @@ jobs:
       - name: Prepare separate public project with preserved dependency versions
         env:
           JULIA_PKG_PRECOMPILE_AUTO: "0"
-        run: julia --startup-file=no --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
+        run: julia --startup-file=no examples/rpo_planner_env/setup.jl
       - name: Public planner and custom component smoke without package downloads
         env:
           JULIA_PKG_OFFLINE: "true"
-        run: julia --startup-file=no --project=examples/rpo_planner_env examples/rpo_planner_env/smoke.jl
+        run: julia --startup-file=no examples/rpo_planner_env/run.jl
       # The worked examples of docs/src/user/gnc_algorithm.md, in a project of their
       # own; the HPC and extensibility docs gate keeps the page's code equal to them.
       - name: Prepare separate GNC algorithm example project
@@ -980,7 +981,9 @@ jobs:
   optional-hypr-installation:
     needs: depot
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Independent environments need cold compilation before the full campaign
+    # and both compiled load orders; keep every check within a bounded budget.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1205,7 +1208,9 @@ jobs:
   optional-edg-installation:
     needs: depot
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # The standalone installer and isolated Pkg.test each compile their own
+    # compatible environment; retain both checks with a bounded cold-run budget.
+    timeout-minutes: 90
     env:
       JULIA_NUM_THREADS: "2"
       JULIA_LOAD_PATH: "@:@stdlib"

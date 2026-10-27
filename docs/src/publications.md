@@ -1,9 +1,8 @@
 # Publications
 
-Use this page to find papers that are directly connected to SpaceAGORA.jl.
-The project citation metadata remains in the repository `CITATION.cff` file;
-the papers below document SpaceAGORA-based analyses, verification, and guidance
-studies.
+These papers are built on SpaceAGORA.jl or describe methods implemented in it.
+To cite the software itself, use the metadata in the repository's
+`CITATION.cff` file.
 
 ## Direct SpaceAGORA papers
 
@@ -11,17 +10,17 @@ studies.
   Aerobraking Dynamics Across Celestial Bodies Using SpaceAGORA," AIAA SCITECH
   2026 Forum, Orlando, FL, 2026. DOI: [10.2514/6.2026-1692](https://doi.org/10.2514/6.2026-1692).
 
-  This paper uses SpaceAGORA.jl for comparative aerobraking perturbation
-  analysis across Mars, Venus, Earth, and Titan, including atmosphere, gravity,
-  third-body, and solar-radiation-pressure effects.
+  The paper uses SpaceAGORA.jl to compare aerobraking perturbations at Mars,
+  Venus, Earth and Titan: atmosphere, gravity, third-body and
+  solar-radiation-pressure effects.
 
 - Evan Yu, James Cutler, and Giusy Falcone, "Verification of SpaceAGORA.jl
   6-DoF Dynamics Using University of Michigan SmallSats Telemetry," 2026 IEEE
   Aerospace Conference, Big Sky, MT, 2026, pp. 1-14. DOI:
   [10.1109/AERO66936.2026.11520056](https://doi.org/10.1109/AERO66936.2026.11520056).
 
-  This paper validates SpaceAGORA.jl translational and attitude dynamics
-  against University of Michigan SmallSat telemetry and Basilisk comparisons.
+  The paper checks SpaceAGORA.jl's translational and attitude dynamics against
+  University of Michigan SmallSat telemetry and against Basilisk.
 
 ## Closely connected implementation papers
 
@@ -30,22 +29,22 @@ studies.
   IEEE International Conference on Space Robotics (iSpaRo), 2026.
   [Lab publication record](https://www.spacefalconlab.com/publications/).
 
-  This study develops a planner for spacecraft motion near obstacles, combining
-  an RRT-Connect warm start, particle-swarm refinement of Bézier paths, retiming,
-  and LQ-MPC tracking. It reports static and replanning comparisons. The
-  [HYPR guide](user/hypr_planning.md) explains the method's connection to
-  SpaceAGORA and distinguishes its reported results from the current examples.
-  The citation records acceptance; a DOI and proceedings pages are not yet
-  established by the cited record.
+  This study develops a planner for spacecraft motion near obstacles that
+  combines an RRT-Connect warm start, particle-swarm refinement of Bézier paths,
+  retiming and LQ-MPC tracking, and reports static and replanning comparisons.
+  The [HYPR guide](user/hypr_planning.md) explains how the method connects to
+  SpaceAGORA and how the paper's results differ from what the current examples
+  run. The citation records the paper's acceptance only; it has no DOI or
+  page numbers yet.
 
 - Nihal Simha, Evan Yu, and Giusy Falcone, "Generalized Energy Depletion
   Guidance for Aerobraking at Mars, Venus, Earth, and Titan," AIAA SCITECH
   2026 Forum, Orlando, FL, 2026. DOI: [10.2514/6.2026-1378](https://doi.org/10.2514/6.2026-1378).
 
-  This paper implements and exercises the generalized Energy Depletion Guidance
-  framework in SpaceAGORA.jl for drag passages at Mars, Venus, Earth, and Titan.
-  The [EDG guide](user/edg_guidance.md) describes the current configuration,
-  physical quantities and limits of that implementation.
+  The paper implements the generalized Energy Depletion Guidance framework in
+  SpaceAGORA.jl and exercises it on drag passages at Mars, Venus, Earth and
+  Titan. The [EDG guide](user/edg_guidance.md) describes the current
+  configuration, physical quantities and limits of that implementation.
 
 ## Foundational guidance paper
 
@@ -54,10 +53,10 @@ studies.
   No. 4, 2022, pp. 651–668. DOI:
   [10.2514/1.G006171](https://doi.org/10.2514/1.G006171).
 
-  This paper develops the original EDG formulation for atmospheric passes with
-  articulating panels. It provides the foundation for the generalized guidance
-  study above; it should not be cited as validation of every later software
-  option or adapter.
+  The paper develops the original EDG formulation for atmospheric passes with
+  articulating panels, the basis of the generalized guidance study above. It
+  does not validate the later software options or adapters, so don't cite it
+  for them.
 
 ## BibTeX
 

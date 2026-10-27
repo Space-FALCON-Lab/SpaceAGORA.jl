@@ -2,23 +2,22 @@
 
 SpaceAGORA's extension hooks follow one set of [conventions](extension_conventions.md):
 time before the spacecraft index, a state sample for right-hand-side hooks, and
-positive consumption. Ten hook names, and one form of the plume model's
-`wrench`, did not. SpaceAGORA 0.3.0 deprecated them and 0.5.0 removed them.
-In 0.3.0 and 0.4.0, the pre-run check warned about a model's method of an old
-name once per process for each model type and name, a direct call of an old
-name warned too, and the five-argument plume form warned only when called
-directly. This page lists each name with its replacement.
+positive consumption. Ten hook names, and one form of the plume model's `wrench`,
+did not. SpaceAGORA 0.3.0 deprecated them and 0.5.0 removed them. In 0.3.0 and
+0.4.0 the pre-run check warned once per process about each model type's method of
+an old name, a direct call of an old name warned too, and the five-argument plume
+form warned only when called directly. This page lists each name with its
+replacement, and the later changes to how the hooks are called.
 
 A method of a removed name no longer runs. One that names the package, such as
 `SpaceAGORA.calcForceTorque(...) = ...`, fails when its file loads, because the
 name is gone. The pre-run check refuses a model left without a method of a
-required replacement, a tick, `control_wrench` (unless the effector's actuation
-is `:mounted`) or `wrench`, and names the hook it needs. `control_propellant_rate`
-and `control_wheel_torque` are optional: without a method of its own, an
-effector gets `0.0` and `nothing`, and the check does not refuse it. An
-ephemerides model without the model-first hooks stops with a `MethodError`
-naming the hook when the run first asks it for its epoch or frame. To find the
-old names in your code:
+required replacement (a tick, `control_wrench` unless the effector's actuation is
+`:mounted`, or `wrench`) and names the hook it needs. `control_propellant_rate`
+and `control_wheel_torque` are optional: without a method of its own, an effector
+gets `0.0` and `nothing`, and the check does not refuse it. An ephemerides model
+without the model-first hooks stops with a `MethodError` naming the hook when the
+run first asks it for its epoch or frame. To find the old names in your code:
 
 ```bash
 grep -rnE "calcForceTorque|calcControl(ForceTorque|MassFlowRate|Effect!)|calcReactionWheelTorque|calc(Guidance|Navigation)Effect!|planet_frame_lpi|ephemerides_(sun_direction_ii|time_seconds)" src test
@@ -31,7 +30,7 @@ grep -rnE "calcForceTorque|calcControl(ForceTorque|MassFlowRate|Effect!)|calcRea
 | `calcForceTorque(model, x, p, i)` | `wrench(model, x::StateSample, env::EnvironmentSample, t::Float64)` | a state sample instead of the raw view; the environment the engine sampled instead of `p`; the time as an argument and the index in `x.spacecraft_index` |
 | `wrench(model::PlumeSurfaceInteractionModel, x, env, t, i)` | `wrench(model, x, env, t)` | the index in `x.spacecraft_index` instead of an argument |
 | `calcControlForceTorque(model, u, p, i, t)` | `control_wrench(model, x::StateSample, p, t::Float64)` | a state sample instead of the raw view, the time before the index, the index in `x.spacecraft_index` |
-| `calcControlMassFlowRate(model, u, p, i, t)` | `control_propellant_rate(model, x::StateSample, p, t::Float64)` | the same, and **the sign** |
+| `calcControlMassFlowRate(model, u, p, i, t)` | `control_propellant_rate(model, x::StateSample, p, t::Float64)` | the same, and the sign (see below) |
 | `calcReactionWheelTorque(model, u, p, i, t)` | `control_wheel_torque(model, x::StateSample, p, t::Float64)` | the same as for the wrench |
 | `calcControlEffect!(model, u, p, t, i)` | `update_control!(model, u, p, t, spacecraft_index)` | the name only |
 | `calcGuidanceEffect!(model, u, p, t, i)` | `update_guidance!(model, u, p, t, spacecraft_index)` | the name only |
@@ -41,10 +40,10 @@ grep -rnE "calcForceTorque|calcControl(ForceTorque|MassFlowRate|Effect!)|calcRea
 | `ephemerides_time_seconds(initial_time, model)` | `ephemerides_epoch_seconds(model, initial_time)` | the model first, and the name |
 
 !!! warning "The sign changes"
-    `calcControlMassFlowRate` returned the spacecraft's mass derivative,
-    **negative** while propellant is used. `control_propellant_rate` returns the
-    propellant used, **positive**. Flip the sign when you rename the method: a
-    method renamed without it makes the vehicle gain mass.
+    `calcControlMassFlowRate` returned the spacecraft's mass derivative, which is
+    negative while propellant is used. `control_propellant_rate` returns the
+    propellant used, which is positive. Flip the sign when you rename the method:
+    a method renamed without it makes the vehicle gain mass.
 
 The frames, units and values are otherwise unchanged. An effector that uses no
 propellant, or drives no wheel, needs no `control_propellant_rate` or
@@ -65,29 +64,31 @@ replacements.
 
 A model of your own that names its spacecraft by a field must use the new names
 too: from 0.5.0 the engine reads only `chaser_index`, `target_index` and
-`spacecraft_index`. A model whose only index fields are older names no longer
-gets these behaviours:
+`spacecraft_index`. A model whose only index fields have the older names loses
+these behaviours:
 
 - with `chaser_idx` and `target_idx`, it is no longer seen as coupling two
   spacecraft, so the stiff solvers' Jacobian sparsity pattern leaves out the
   entries between them;
 - with `chaser_idx`, `spacecraft_idx` or `sat_idx`, a control effector is no
-  longer bound to its spacecraft by the external-propagation checks: it counts as
-  acting on every spacecraft, and a run with an external propagator refuses it;
+  longer bound to its spacecraft by the external-propagation checks: it counts
+  as acting on every spacecraft, and a run with an external propagator refuses
+  it;
 - with `spacecraft_idx`, a control effector is no longer bound to its spacecraft
-  by the robot-arm and articulated-panel checks: the run does not couple an arm to
-  the effector's plan, the panel-link check applies the effector to every
+  by the robot-arm and articulated-panel checks: the run does not couple an arm
+  to the effector's plan, the panel-link check applies the effector to every
   spacecraft, and the viewer shows no arm plan for it.
 
 Rename the fields; nothing else changes.
 
 ## Deprecated in 0.5.0
 
-Older index names that were never deprecated follow the same convention.
-Each keeps working as a keyword or property until SpaceAGORA 1.0, with one warning
-per type and name. An old keyword warns where it is passed, which is before the
-run; an old property warns where it is read, which can be inside a callback
-during the run. Under `julia --depwarn=error` either is an error at that point.
+Older index names that were never deprecated follow the same convention now.
+Each keeps working as a keyword or property until SpaceAGORA 1.0, with one
+warning per type and name. An old keyword warns where it is passed, which is
+before the run; an old property warns where it is read, which can be inside a
+callback during the run. Under `julia --depwarn=error` either is an error at that
+point.
 
 | Item | Replacement | Status | Removed in |
 |---|---|---|---|
@@ -95,8 +96,8 @@ during the run. Under `julia --depwarn=error` either is an error at that point.
 | the `sat_idx` keyword of `get_periapsis_pulse_callback` | `spacecraft_index` | warns from 0.5.0 | 1.0 |
 
 An interlink checkpoint keeps its stored keys, so a checkpoint written before
-0.5.0 resumes unchanged. The interlink names that 0.5.0 deprecates, from when every
-link was a laser link, are listed on the
+0.5.0 resumes unchanged. The interlink names that 0.5.0 deprecates, from when
+every link was a laser link, are listed on the
 [Interlinks page](../user/interlinks.md#Deprecated-names).
 
 ## Changed in 0.6.0
@@ -109,8 +110,8 @@ One hook keeps its name and signature and is called for fewer spacecraft.
 
 A model without a `spacecraft_scope` method of its own has the default
 `AllSpacecraft()`, which names every spacecraft, so its calls do not change. The
-burn scheduler, the only built-in model with a method, is event-driven and
-registers its stops from its own callbacks.
+burn scheduler, the only built-in model with a `register_tstops!` method, is
+event-driven and registers its stops from its own callbacks.
 
 The scope itself is read once per periodic tick instead of once per spacecraft,
 and twice for a control model that consumes a link: once before its producers
@@ -119,18 +120,19 @@ change from its next tick. A model that, ticking for spacecraft 1, retargets
 itself to spacecraft 2 used to be ticked for spacecraft 2 in the same tick, and
 is now ticked for it from the next one. A model that sets its spacecraft before
 the run, in its constructor, in `bind_spacecraft` or in an initializer, is
-unaffected.
+unaffected. (0.7.0 goes further and stops a run whose scope changes; see
+[Changed in 0.7.0](#Changed-in-0.7.0).)
 
 ## Removed in 0.6.0
 
 The interlink scheduling policies chosen by a symbol were removed in 0.6.0,
 without a deprecation period, together with `SchedulingPolicyModel`'s
-`target_index` and `target_indices` and the 0.5.0 names `target_idx` and
+`target_index` and `target_indices` and the names `target_idx` and
 `target_idxs`, which had warned since 0.5.0. Scheduling policies are types now
-(see [Interlinks](../user/interlinks.md#Policies)). A call with a symbol throws
-an `ArgumentError` that names its typed replacement, whether or not Julia runs
-with `--depwarn=error`. Interlink checkpoints written with the symbol policies
-still resume under the typed policy that schedules the same.
+(see [Interlinks](../user/interlinks.md#Policies)). A call with a symbol throws an
+`ArgumentError` that names its typed replacement, whether or not Julia runs with
+`--depwarn=error`. Interlink checkpoints written with the symbol policies still
+resume, under the typed policy that schedules the same.
 
 | Item | Replacement | Status | Removed in |
 |---|---|---|---|
@@ -155,72 +157,77 @@ signatures and are called for fewer spacecraft.
 
 | Hook | 0.6 and earlier | 0.7.0 | What to do |
 |---|---|---|---|
-| `control_wrench`, `control_propellant_rate`, `control_wheel_torque` | called at every evaluation of the equations of motion for every spacecraft | called for each spacecraft the model's scope names; for a `CoupledSpacecraft`, the primary only, since its partners are read, not acted on | nothing, if the hook returns zeros or `nothing` for other spacecraft, as the docs asked; a model that acts on a spacecraft outside its declared scope, such as a coupled model that pushes its partners, declares a scope that names it, or `AllSpacecraft()`, and is ticked for it too |
+| `control_wrench`, `control_propellant_rate`, `control_wheel_torque` | called at every evaluation of the equations of motion for every spacecraft | called for each spacecraft the model's scope names; for a `CoupledSpacecraft`, the primary only, since its partners are read, not acted on | nothing, if the hook returns zeros or `nothing` for other spacecraft, as the documentation asked; a model that acts on a spacecraft outside its declared scope, such as a coupled model that pushes its partners, declares a scope that names it, or `AllSpacecraft()`, and is ticked for it too |
 | `actuator_levels`, `control_thruster_levels` | read for every spacecraft by the dynamics, the power and fault readers and the result columns | read during the run for each spacecraft the model's scope names; `control_thruster_levels` is still asked for every spacecraft before the run, when the result columns are sized | as above |
 | `atmosphere_transition!` | called for every guidance and control model when a spacecraft crosses | called for the models whose scope names that spacecraft | as above |
 
-- **The scope is fixed for the run.** The engine takes each model's scope when the
-  run starts, once the run-start initializers ran, and stops the run when a later
-  read differs: at each tick, and once per accepted step for an event-driven model.
-  A model that changed its scope during a run, which 0.6 ticked for its new
-  spacecraft from its next tick (see [Changed in 0.6.0](#Changed-in-0.6.0)), sets
-  its spacecraft before the run instead: in the model, in `bind_spacecraft` or in
-  an initializer.
-- **A `SpacecraftSelection` scopes GNC models too.** 0.6 refused it; it is
-  resolved when the run starts, its `where` called once per spacecraft. Its
-  `where` function is compared by identity, so keep the selection in the model and
-  return that object: one rebuilt at each call, with a new closure, stops the run.
-- **Direct callers are unchanged.** The conformance kit and a model's own tests
-  may still call the hooks for any spacecraft, so keep the zero and `nothing`
-  returns outside the scope.
-- **Known user models.** The kit demo's `PDPointingController` and
-  `AttitudeFilter` declare a narrower scope and return zero output outside it,
-  so their runs do not change.
-- **A bound copy that acts on every spacecraft warns.** A model declared on a
+The other changes of 0.7.0 to scopes:
+
+- The scope is fixed for the run. The engine takes each model's scope when the
+  run starts, once the run-start initializers have run, and stops the run when a
+  later read differs: at each tick, and once per accepted step for an
+  event-driven model. A model that changed its scope during a run, which 0.6
+  ticked for its new spacecraft from its next tick (see
+  [Changed in 0.6.0](#Changed-in-0.6.0)), sets its spacecraft before the run
+  instead: in the model, in `bind_spacecraft` or in an initializer.
+- A `SpacecraftSelection` scopes GNC models too. 0.6 refused it; it is now
+  resolved when the run starts, with its `where` called once per spacecraft. Its
+  `where` function is compared by identity, so keep the selection in the model
+  and return that same object: a selection rebuilt at each call, with a new
+  closure, stops the run.
+- Direct callers are unchanged. The conformance kit and a model's own tests may
+  still call the hooks for any spacecraft, so keep the zero and `nothing` returns
+  outside the scope.
+- The kit demo's `PDPointingController` and `AttitudeFilter` declare a narrower
+  scope and return zero output outside it, so their runs do not change.
+- A bound copy that acts on every spacecraft warns. A model declared on a
   spacecraft whose `bind_spacecraft` copy still declares `AllSpacecraft()` acts
-  on every spacecraft, as at configuration level; each run warns once for each
-  such type (in an ensemble, each member's run). Return `BoundSpacecraft((k,))`
-  from the copy's `spacecraft_scope`, for the copy bound to run position `k`.
-- **Ensembles refuse configuration-level GNC bound to run positions.**
+  on every spacecraft, as at configuration level, and each run warns once for
+  each such type (in an ensemble, each member's run). Return
+  `BoundSpacecraft((k,))` from the copy's `spacecraft_scope`, for the copy bound
+  to run position `k`.
+- Ensembles refuse configuration-level GNC bound to run positions.
   `run_constellation_ensemble(args; allow_gnc_effectors=true)` refuses a
   configuration-level model whose scope is a `BoundSpacecraft`, a
-  `CoupledSpacecraft` or a `SpacecraftSelection`. 0.6 passed it to every member,
-  where it acted on every member's spacecraft or failed. Declare it on its
-  spacecraft instead.
-- **The maneuver guidance models bind.** `ApoapsisTargetPeriapsisRaiseGuidanceModel`
+  `CoupledSpacecraft` or a `SpacecraftSelection`. 0.6 passed such a model to every
+  member, where it acted on every member's spacecraft or failed. Declare it on
+  its spacecraft instead.
+- The maneuver guidance models bind. `ApoapsisTargetPeriapsisRaiseGuidanceModel`
   and `AerobrakingCampaignPropulsiveManeuverGuidanceModel` gain
-  `spacecraft_index` (0, every spacecraft, by default) and may be declared on a
-  spacecraft; their positional constructors without it still work.
+  `spacecraft_index` (0, meaning every spacecraft, by default) and may be
+  declared on a spacecraft; their positional constructors without it still work.
   `BaseThrusterModel` stays one model for every spacecraft, and its refusal on a
   spacecraft says so.
 
 ## Schedule
 
-- **0.3.0.** The new names, with warnings for the old ones.
-  `ExternalPropagationServices`, `HYPRServices` and `EDGServices` are at
-  contract 2.0.0, with SpaceAGORAMuJoCo 0.2.0, HYPR 0.2.0 and SpaceAGORAEDG 0.2.0.
-- **0.3.1.** `RobotArmReactionEffector.spacecraft_idx` becomes `spacecraft_index`,
+- 0.3.0: the new names, with warnings for the old ones.
+  `ExternalPropagationServices`, `HYPRServices` and `EDGServices` are at contract
+  2.0.0, with SpaceAGORAMuJoCo 0.2.0, HYPR 0.2.0 and SpaceAGORAEDG 0.2.0.
+- 0.3.1: `RobotArmReactionEffector.spacecraft_idx` becomes `spacecraft_index`,
   with a warning for the old name.
-- **0.4.0.** The companion packages use the new names. `skip_inactive` defaults
-  to `true`: a guidance, navigation or control model stops ticking for a
-  spacecraft once it is inactive, unless it returns `false`. The pre-run
+- 0.4.0: the companion packages use the new names. `skip_inactive` defaults to
+  `true`: a guidance, navigation or control model stops ticking for a spacecraft
+  once it is inactive, unless the model returns `false`. The pre-run
   configuration checks that warned in 0.3 refuse the run with an `ArgumentError`,
   whether or not Julia runs with `--depwarn=error`: a control period
   (`gnc_period_s`) that differs from its control rate or from its controller's
   discretization step, a spacecraft scope that names a position outside the run,
   and Apollo descent guidance and control that do not share their state and
   spacecraft.
-- **0.5.0.** The deprecated names are removed, and `control_propellant_rate` and
+- 0.5.0: the deprecated names are removed, and `control_propellant_rate` and
   `control_wheel_torque` gain defaults, `0.0` and `nothing`. The tagged releases
   0.3.0 to 0.4.0 carried the warnings, and the companion packages moved to the
   new names in 0.4.0.
-- **0.6.0.** The interlink scheduling policies chosen by a symbol, and
+- 0.6.0: the interlink scheduling policies chosen by a symbol, and
   `SchedulingPolicyModel`'s target names, are removed without a deprecation
   period (see [Removed in 0.6.0](#Removed-in-0.6.0)). A symbol is refused with
   its typed replacement, and old interlink checkpoints resume. The interlink
   states `laser_dv` and `laser_delta_sma` become `interlink_dv` and
   `interlink_delta_sma`; their `laser_*` columns stay as aliases until 1.0.
-- **0.7.0.** A guidance, navigation or control model's per-spacecraft hooks follow
+  `HYPRServices` and `EDGServices` move to contract 3.0.0, with HYPR 0.5.0 and
+  SpaceAGORAEDG 0.5.0.
+- 0.7.0: a guidance, navigation or control model's per-spacecraft hooks follow
   its `spacecraft_scope`, and a scope that changes during a run stops it (see
   [Changed in 0.7.0](#Changed-in-0.7.0)).
 
@@ -229,8 +236,8 @@ Release numbers follow `version` in `Project.toml`. The older `v1.0.0` and
 
 ## Checklist
 
-1. Find each method of an old name with the command above. On 0.4.0, a test
-   run with `julia --depwarn=error` also stops at each one. Search for
+1. Find each method of an old name with the command above. On 0.4.0, a test run
+   with `julia --depwarn=error` also stops at each one. Search for
    `RPOGuidanceModel` too: its warning on 0.3 and 0.4 was an ordinary warning,
    which `--depwarn=error` does not turn into an error.
 2. Rename each tick.
@@ -241,7 +248,7 @@ Release numbers follow `version` in `Project.toml`. The older `v1.0.0` and
    planet-fixed frame.
 5. Type the sample argument `x::StateSample`, or leave it untyped (see the
    [conventions](extension_conventions.md#The-supported-sample-argument)).
-6. Run the tests again: the pre-run check accepts every model.
+6. Run the tests again, and check that the pre-run check accepts every model.
 
 ## Names that cannot warn
 
@@ -257,9 +264,9 @@ grep -rnE "ConstellationInterLinkModel|InterLinkParameters" src test
 ```
 
 The columns `sc1_laser_dv_1` .. `sc1_laser_dv_3` and `sc1_laser_delta_sma`,
-deprecated in 0.6.0, cannot warn either: a run writes them beside
+deprecated in 0.6.0, cannot warn either: until 1.0 a run writes them beside
 `sc1_interlink_dv_1` .. `sc1_interlink_dv_3` and `sc1_interlink_delta_sma`, with
-the same values, until 1.0. Search your analysis code for them:
+the same values. Search your analysis code for them:
 
 ```bash
 grep -rnE "laser_dv|laser_delta_sma" .

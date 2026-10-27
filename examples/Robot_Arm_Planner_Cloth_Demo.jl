@@ -1,5 +1,5 @@
 # Load from the companion environment before common.jl continues in the examples environment.
-# Setup: julia --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
+# Setup: julia --startup-file=no examples/rpo_planner_env/setup.jl
 #        julia --startup-file=no examples/setup.jl
 using SpaceAGORA, HYPR
 include(joinpath(@__DIR__, "common.jl"))
@@ -32,7 +32,7 @@ Run with, after preparing the HYPR environment (`examples/rpo_planner_env/setup.
 and the examples environment (`julia --startup-file=no examples/setup.jl`):
 
 ```text
-julia --project=examples/rpo_planner_env examples/Robot_Arm_Planner_Cloth_Demo.jl
+julia --startup-file=no examples/rpo_planner_env/run.jl examples/Robot_Arm_Planner_Cloth_Demo.jl
 ```
 """
 

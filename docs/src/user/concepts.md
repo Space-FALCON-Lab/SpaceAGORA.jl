@@ -1,12 +1,12 @@
 # Concepts
 
-Use this page when you want the mental model behind the main workflows without
-reading the contributor documentation kept in the repository.
+This page gives the mental model behind the main workflows: which operating
+mode to start in, which entry point to use, and where outputs go. It assumes
+you can already run commands from the repository root; the contributor
+documentation in the repository is not needed.
 
-This page is for users who can already run commands and now want to understand
-which route, mode, or surface is appropriate for their work.
-
-Shortest successful command:
+Once the examples environment is prepared
+(`julia --startup-file=no examples/setup.jl`), the shortest complete run is:
 
 ```text
 julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --output-dir=output/cli_run
@@ -14,7 +14,7 @@ julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstar
 
 What to read next:
 
-- [First Simulation](first_script.md)
+- [Your First Script](first_script.md)
 - [Assets & Modes](../assets.md)
 - [Public API](../generated/public_api.md)
 
@@ -22,62 +22,65 @@ What to read next:
 
 ### No-GRAM mode
 
-Use no-GRAM mode when you want:
-
-- onboarding
-- smoke runs
-- lightweight studies
-- the shortest route to a successful run on a new machine
+No-GRAM mode needs nothing beyond the public checkout: no GRAM installation,
+no SPICE kernels and no licensed data. Use it to learn the package, for smoke
+runs and lightweight studies, and for the first run on a new machine.
 
 ### Higher-fidelity mode
 
-Use the higher-fidelity path when you need:
-
-- mission-quality atmosphere and winds
-- SPICE-backed geometry and frame data
-- other machine-local or licensed assets
+Switch to the higher-fidelity path when your models need GRAM atmosphere and
+winds, SPICE-backed geometry and frames, or other machine-local or licensed
+assets. Each of these needs its own preparation; [Assets & Modes](../assets.md)
+lists them and the command that checks which ones your machine has.
 
 ## Three common entry surfaces
 
 ### Example scripts
 
-Example scripts are the quickest way to run a repository-owned scenario.
+The scripts in `examples/` are complete scenarios owned by the repository and
+the quickest way to run one. They run in the examples environment.
 
 ### CLI
 
-The CLI is the stable packaged command surface for examples, verification,
-benchmarks, and asset inspection.
+`src/interfaces/cli/main.jl` is the packaged command surface. Its commands run
+examples (`run`), the telemetry verification study (`telemetry`), the benchmark
+studies (`benchmark`), the asset inventory (`assets`) and the viewer
+(`visualize`); see [CLI](../cli.md).
 
 ### Root package API
 
-For scripts and extension work, depend on the exported `SpaceAGORA` surface.
-Treat the generated Public API page as the supported list of exports.
+Scripts and extensions should depend on what `SpaceAGORA` itself exports. The
+generated Public API page is the list of supported exports.
 
 ## Outputs stay local
 
-SpaceAGORA regenerates reports, docs builds, and similar artifacts into ignored
-paths such as `output/`, `docs/build/`, `docs/site/`, and `docs/src/generated/`.
+Reports, docs builds and similar generated files go to paths that Git ignores:
+`output/`, `docs/build/`, `docs/site/` and `docs/src/generated/`.
 
 ## Performance knob: `isolate_state`
 
-`SpaceAGORA.run_simulation(...; isolate_state=true)` deep-copies the
-configuration by default so repeated or concurrent runs do not alias mutable
-state.
+By default, `run_simulation(config; isolate_state=true)` works on a deep copy
+of the configuration, so repeated or concurrent runs never share mutable
+model state.
 
-Treat `isolate_state=false` as an expert-only throughput lever after you have
-measured the setup cost and confirmed that the configuration instance is not
-shared across overlapping or state-mutating runs.
+`isolate_state=false` skips that copy, and the run then advances your own
+configuration objects. Use it as a speed setting only after you have measured
+that the copy matters for your setup, and only when no other run uses the same
+configuration object at the same time. Some models document it as the way to
+read back what they recorded during a run, such as a command log. The RPO
+planner lifecycle refuses `isolate_state=false` at startup.
 
 ## Query a regional terrain map
 
-Use a terrain model to query surface height at a latitude and longitude. These
-queries are independent of propagation: adding a terrain model does not enable
-landing guidance, a touchdown event, a radar altimeter or viewer terrain.
+A terrain model returns surface height at a latitude and longitude. Queries
+are independent of propagation: adding a terrain model does not turn on
+landing guidance, a touchdown event, a radar altimeter or terrain in the
+viewer.
 
-Coordinates are **planetocentric latitude and east-positive longitude in
-degrees**. Heights are metres above a stated reference sphere, not geodetic
-heights above an ellipsoid. Keep the same reference radius for every grid in a
-model.
+Coordinates are planetocentric latitude and east-positive longitude, in
+degrees. Heights are in meters above a stated reference sphere, not geodetic
+heights above an ellipsoid, and every grid in a model uses that one reference
+radius.
 
 ```julia
 using SpaceAGORA
@@ -91,35 +94,41 @@ terrain = DEMTerrainModel([grid]; reference_radius_m=radius_m,
                           fallback_height_m=-5.0)
 
 terrain_height(terrain, 1.5, 12.0)       # 215.0 m above the sphere
-terrain_radius(terrain, 1.5, 12.0)       # 3_396_415.0 m from the body centre
+terrain_radius(terrain, 1.5, 12.0)       # 3_396_415.0 m from the body center
 dem_grid_covers(grid, 1.5, 12.0)        # true
 terrain_height(terrain, 5.0, 12.0)       # -5.0, the selected fallback
 ```
 
-Grid bounds describe the **outer cell edges**, and samples sit at cell centres.
-The query interpolates between centres and clamps to the nearest centre at an
-outer edge. The example's first sample is at latitude 2.5°, longitude 10.5°.
-When grids overlap, the first matching grid wins; put the preferred grid first.
-`DEMGrid` copies its height matrix, and `DEMTerrainModel` makes independent copies
-of its grids. Changing the input arrays later does not change the model.
+The grid bounds are the outer cell edges, and each sample sits at a cell
+center; in the example the first sample is at latitude 2.5° and longitude
+10.5°. A query interpolates bilinearly between centers; in the half cell along
+an outer edge it clamps to the outermost row or column of centers. A point
+that no grid covers gets the model's `fallback_height_m` (zero by default).
+Where grids overlap, the first grid that covers the point wins, so list the
+preferred grid first.
+`DEMGrid` copies its height matrix and `DEMTerrainModel` copies its grids, so
+changing the input arrays afterwards does not change the model.
 
-Regional grids may cross the longitude seam: use increasing bounds such as
-`350.0, 370.0`; queries at −5° and 355° then agree. Longitudes are compared modulo
-360°. Latitude must be within −90° to 90°, and a grid's longitude span must be
-greater than zero and less than 360°. Full-globe grids are not supported.
-Samples, bounds and queries must be finite; missing-height values such as NaN
-are rejected. Each grid needs at least two rows and two columns.
+A regional grid may cross the longitude seam: give increasing bounds such as
+`350.0, 370.0`, and queries at −5° and 355° then return the same height.
+Longitudes are compared modulo 360°. Latitudes must lie in −90° to 90°, and a
+grid's longitude span must be greater than zero and less than 360°; full-globe
+grids are not supported. Samples, bounds and query coordinates must be finite,
+so missing-height values such as NaN are refused, and each grid needs at least
+two rows and two columns.
 
-An in-memory grid may omit `reference_radius_m` when its datum is supplied by
-the model. If the grid records a radius, it must match the model's explicit
-positive radius. `terrain_radius(terrain, lat, lon, radius_m)` also rejects a
-conflicting radius. For a flat sphere, use
-`terrain_radius(NoTerrainModel(), lat, lon, radius_m)`.
+An in-memory grid may leave out `reference_radius_m` and take its datum from
+the model. A grid that does record a radius must match the model's radius
+exactly, and `terrain_radius(terrain, lat, lon, radius_m)` refuses a radius
+that differs from the model's. For a bare sphere with no terrain, use
+`terrain_radius(NoTerrainModel(), lat, lon, radius_m)`. A model type of your
+own can subtype `AbstractTerrainModel` and add a `terrain_height` method; the
+[Terrain API](../generated/terrain_api.md) lists the functions.
 
 ### Load local grid files
 
-`load_dem_grid("region.json")` reads a JSON header and the neighbouring
-`region.f32`. For the matrix above, the header is:
+`load_dem_grid("region.json")` reads a JSON header and the binary file beside
+it, `region.f32`. For the matrix above, the header is:
 
 ```json
 {
@@ -135,13 +144,15 @@ conflicting radius. For a flat sphere, use
 }
 ```
 
-The binary contains exactly `rows × cols` little-endian Float32 samples, one row
-after another from north to south, each row ordered west to east. This is not
-Julia's default matrix storage order. The loader rejects missing samples, extra
-bytes, invalid dimensions, nonfinite heights and missing reference radii. It
-reads local files only; it does not download maps.
+`rows`, `cols`, the four bounds and `reference_radius_m` are required; `units`,
+`layout` and `format` are optional, but when present they must agree with the
+format. The binary holds exactly `rows × cols` little-endian Float32 samples,
+one row after another from north to south, each row ordered west to east. This
+is not Julia's column-major matrix order. The loader refuses a file with too
+few or too many bytes, invalid dimensions, nonfinite heights or no reference
+radius. It reads local files only and never downloads maps.
 
-For ordered grids and a named query point, `load_site_terrain("site.json")`
+For several grids and a named query point, `load_site_terrain("site.json")`
 returns `(terrain, site)`. A minimal site file is:
 
 ```json
@@ -151,6 +162,8 @@ returns `(terrain, site)`. A minimal site file is:
 }
 ```
 
-Every `dem` entry names a neighbouring grid header. Every grid declares the same
-radius; no default planetary radius is assumed. The returned `site` contains the
-point's coordinates, name, height and reference radius.
+The `dem` entries are in priority order, and each names a grid header in the
+same folder (here `region.json`). Every entry and every header must state the
+same radius; no default planetary radius is assumed. The returned `site` holds
+the point's `lat_deg`, `lon_deg`, `name`, its terrain `height_m` and the
+`reference_radius_m`.

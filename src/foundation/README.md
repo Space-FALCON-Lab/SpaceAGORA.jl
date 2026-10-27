@@ -1,17 +1,28 @@
 # Shared foundation
 
-`core/` holds abstract model contracts, reusable mathematics, reference-system
-configuration and compatibility model codes. `assets/` provides asset catalogs,
-availability checks and specific asset loaders.
+Code that many parts of SpaceAGORA use and that belongs to none of them.
 
-Simulator composition lives in `../orchestration/simulation/composition/`, run
-buffers and concrete runtime state in `../orchestration/simulation/state/`, and
-onboarding configurations in `../orchestration/simulation/config/presets/`.
-These locations expose responsibilities while retaining the existing Julia
-modules and type identities. The code is still assembled in the established
-include order; folder boundaries do not imply independent package boundaries.
+`core/` holds:
 
-Atmosphere-specific epoch, coordinate and payload validation stays with the
-atmosphere models. Geometry readers stay with vehicle structure; asset loaders
-may use those shared readers. CLI formatting and argument handling remain in
-Interfaces.
+- `types/`: the abstract model types (`AbstractTypes`), the state and
+  environment sample types effectors receive (`EffectorSampling`), and the
+  older integer model codes (`LegacyModelCodes`);
+- `numerics/`: geodesy, orbital geometry and quaternion utilities;
+- `state/` and `interfaces/reference_system.jl`: reference-system
+  configuration and frame operations;
+- `interfaces/hook_deprecation.jl`: once-per-key warnings for deprecated names
+  and pre-run configuration checks (`HookDeprecation`).
+
+`assets/` finds and checks data files; see [its README](assets/README.md).
+
+Some shared pieces live elsewhere: the composition of the `SimulationModel`
+module in `../orchestration/simulation/composition/`, run buffers and other
+concrete run state in `../orchestration/simulation/state/`, and the onboarding
+configurations in `../orchestration/simulation/config/presets/`. These folders
+are not package boundaries; the files are still loaded in one fixed include
+order.
+
+Checks that belong to one model stay with it: the atmosphere models validate
+their own epochs, coordinates and payloads, geometry readers stay with the
+vehicle structure code (asset loaders may call them), and command-line
+formatting and argument handling stay in `../interfaces/cli/`.

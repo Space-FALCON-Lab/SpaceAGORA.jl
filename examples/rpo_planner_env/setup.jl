@@ -1,5 +1,10 @@
 include(joinpath(@__DIR__, "..", "..", "scripts", "setup_hypr.jl"))
-# Generated installation metadata stays local; the tracked template is immutable.
-project = joinpath(@__DIR__, "Project.toml")
-isfile(project) || cp(joinpath(@__DIR__, "Project.template.toml"), project)
-HYPRInstallation.setup(@__DIR__)
+include(joinpath(@__DIR__, "environment.jl"))
+length(ARGS) <= 1 || error("Usage: julia examples/rpo_planner_env/setup.jl [separate-environment]")
+environment = isempty(ARGS) ? RPOExampleEnvironment.directory() : abspath(only(ARGS))
+HYPRInstallation.setup(environment)
+println("RPO environment: ", environment)
+println("Run an example with: julia examples/rpo_planner_env/run.jl <example-file> [arguments...]")
+if !isempty(ARGS)
+    println("Set SPACEAGORA_RPO_ENV to this directory when using the example launcher.")
+end

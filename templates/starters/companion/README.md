@@ -7,14 +7,15 @@ owns for a whole run. Replace this paragraph with the engine it brings.
 ## The boundary
 
 The companion reaches SpaceAGORA only through the versioned facade
-`SpaceAGORA.ExternalPropagationServices`. It requires the facade's exact contract
-version (`CORE_CONTRACT_VERSION`) before it defines any method, and again at load,
-so an incompatible core is refused before any of its code runs.
-`CircularOrbitPropagator` is an example owner to replace with the companion's own
-engine; it implements the facade's `IMPLEMENTED_FUNCTIONS`.
+`SpaceAGORA.ExternalPropagationServices`. It checks the facade's exact contract
+version (`CORE_CONTRACT_VERSION`) before it defines any method, and again when it
+loads, so an incompatible core is refused before any of the companion's methods
+exist. `CircularOrbitPropagator` is an example owner; replace it with the
+companion's own engine. It implements every function in the facade's
+`IMPLEMENTED_FUNCTIONS`.
 
-A companion for a new boundary needs that boundary in SpaceAGORA first: its facade,
-reviewed there, then this starter pointed at it.
+A companion for a different boundary needs that boundary's facade in SpaceAGORA
+first, added and reviewed there; then point this starter at it.
 
 ## Set up and test
 
@@ -29,28 +30,36 @@ git -C ../StarterName-core checkout 0000000000000000000000000000000000000000
 julia --startup-file=no ../StarterName-core/scripts/contributor_environment.jl companion . ../StarterName-env --manifest core
 ```
 
-`--filter=blob:none` skips the contents of old file versions: Git downloads the
-files of a commit when you check it out. `-c lfs.fetchexclude="*"` keeps this
+`--filter=blob:none` skips the contents of old file versions; Git downloads a
+commit's files when you check it out. `-c lfs.fetchexclude="*"` keeps this
 clone, its checkouts and later pulls from downloading SpaceAGORA's large data
 files (Git LFS), which a contributor repository does not use. Without Git LFS
 installed the setting does nothing, and nothing is downloaded either.
 
-Then `julia --project=../StarterName-env -e 'using Pkg; Pkg.test("StarterName")'`.
+Then run `julia --project=../StarterName-env -e 'using Pkg; Pkg.test("StarterName")'`.
 That line is quoted for bash or zsh (on Windows, Git Bash). In PowerShell or
 Command Prompt, start `julia --project=../StarterName-env` and enter
 `using Pkg; Pkg.test("StarterName")` at the `julia>` prompt; the three commands
-above run there as written.
-The generated checkout command contains the same exact revision as
-`SpaceAGORASource.toml`. SpaceAGORA's `repin` does not rewrite this README:
-after a repin, use the new `rev` from `SpaceAGORASource.toml` in the checkout
-command. Setup writes the separate environment and can access package servers;
-it does not install the optional native engine for you.
+above run there as written. Setup writes the separate environment and can
+download packages; it does not install the companion's native engine for you.
 
-The tests check the facade's shape at the companion's contract version, a short run
-with the example owner, and that a SpaceAGORA-only session loads none of the
-companion. `test/incompatible_core.jl` (an incompatible contract is refused) and
-`test/load_order.jl core-first` / `companion-first` run in fresh processes; CI runs
-all of them.
+The checkout command above holds the same commit as `SpaceAGORASource.toml`. To
+move to another SpaceAGORA commit, run `repin` from a checkout of that commit:
+
+```bash
+julia --startup-file=no ../StarterName-core/scripts/contributor_environment.jl repin companion .
+```
+
+`repin` updates the pin file, the workflow call and `[compat]`. It does not
+change this README or `CORE_CONTRACT_VERSION`: put the new `rev` from
+`SpaceAGORASource.toml` in the checkout command yourself, and update
+`CORE_CONTRACT_VERSION` when the facade's contract has moved.
+
+The tests check the facade's shape at the companion's contract version, a short
+run with the example owner, and that a session that loads only SpaceAGORA loads
+none of the companion. `test/incompatible_core.jl` (an incompatible contract is
+refused) and `test/load_order.jl core-first` / `companion-first` run in fresh
+processes; CI runs all of them.
 
 ## License
 
@@ -60,5 +69,5 @@ if it is still there, or replace the file to choose another license.
 
 ## Claims
 
-A conformance pass certifies the boundary; the engine's correctness and every
-claim made from it are the author's work.
+Passing the conformance checks shows that the companion meets the boundary; the
+engine's correctness and every claim made from it are the author's work.

@@ -1,50 +1,7 @@
 # Renderer-independent saved-data conversion. The optional visualizer owns
 # browser modules and HTML assembly; the data contract stays with SpaceAGORA.
 
-# Mission history is optional plain data shared with the independent viewer.
-# Validate structure without changing times, names or the underlying results.
-function _validated_mission_history(mission)
-    mission === nothing && return nothing
-    mission isa AbstractDict || throw(ArgumentError("mission must be a JSON object."))
-    schema = get(mission, "schema", nothing)
-    schema isa Integer && !(schema isa Bool) && schema == 1 ||
-        throw(ArgumentError("Unsupported mission history schema; expected 1."))
-    name_ok(x) = x isa AbstractString && !isempty(strip(x))
-    time_ok(x) = x isa Real && !(x isa Bool) && isfinite(x) && x >= 0
-    name_ok(get(mission, "name", nothing)) || throw(ArgumentError("mission.name must be a nonempty string."))
-    segments = get(mission, "segments", nothing)
-    transitions = get(mission, "transitions", nothing)
-    segments isa AbstractVector || throw(ArgumentError("mission.segments must be an array."))
-    transitions isa AbstractVector || throw(ArgumentError("mission.transitions must be an array."))
-    names = Set{String}()
-    for (i, segment) in enumerate(segments)
-        segment isa AbstractDict || throw(ArgumentError("mission segment must be an object."))
-        name = get(segment, "name", nothing)
-        name_ok(name) && !(name in names) || throw(ArgumentError("Mission segment names must be nonempty and unique."))
-        push!(names, name)
-        start_s, end_s = get(segment, "start_s", nothing), get(segment, "end_s", nothing)
-        time_ok(start_s) && time_ok(end_s) && start_s <= end_s ||
-            throw(ArgumentError("Mission segment times must be finite and satisfy 0 <= start_s <= end_s."))
-        i == 1 || segments[i - 1]["end_s"] == start_s ||
-            throw(ArgumentError("Mission segment intervals must be contiguous and ordered."))
-    end
-    n = length(segments)
-    (n == 0 ? isempty(transitions) : length(transitions) in (n - 1, n)) ||
-        throw(ArgumentError("Mission history needs one transition per adjacent segment and an optional final exit."))
-    for (i, transition) in enumerate(transitions)
-        transition isa AbstractDict || throw(ArgumentError("mission transition must be an object."))
-        t = get(transition, "time_s", nothing)
-        time_ok(t) && t == segments[i]["end_s"] ||
-            throw(ArgumentError("Mission transition time must match its segment boundary."))
-        get(transition, "from", nothing) == segments[i]["name"] ||
-            throw(ArgumentError("Mission transition.from must name its outgoing segment."))
-        haskey(transition, "to") && transition["to"] == (i < n ? segments[i + 1]["name"] : nothing) ||
-            throw(ArgumentError("Mission transition.to must name the next segment, or be null at final exit."))
-        name_ok(get(transition, "reason", nothing)) ||
-            throw(ArgumentError("Mission transition.reason must be a nonempty string."))
-    end
-    return mission
-end
+include("mission_history.jl")
 
 const TEXTURES_DIR = normpath(joinpath(@__DIR__, "..", "..", "..", "..", "..", "data", "scene", "textures"))
 # Plume-surface interaction block of the frames payload: one Float32 array per
@@ -224,34 +181,7 @@ function _viewer_frame_plan(n_rows::Integer, S::Integer, bytes_per_frame::Intege
     return (budget=budget, limit=limit)
 end
 
-"""
-    build_viewer_frames(df, scene; max_frames=2000, data_budget_mb=150.0, position_precision=:auto) -> Dict{String, Any}
-
-Decimate the results table to the playback budget and encode positions (km),
-velocities (km/s), attitude quaternions and link poses as base64 Float32
-blocks, row-major over (frame, spacecraft, component). Positions are Float64
-for 64 spacecraft or fewer, and above that when Float64 keeps the same frames
-as Float32 would; `position_precision=:f64` or `:f32` forces either.
-"""
-function build_viewer_frames(
-    df::DataFrame,
-    scene::VisualizationScene;
-    max_frames::Integer=DEFAULT_MAX_FRAMES,
-    data_budget_mb::Real=DEFAULT_DATA_BUDGET_MB,
-    channels=(),
-    mission=nothing,
-    position_precision=:auto
-)::Dict{String, Any}
-    _checked_position_precision(position_precision)
-    mission = _validated_mission_history(mission)
-    S = length(scene.spacecraft)
-    S >= 1 || throw(ArgumentError("The scene has no spacecraft."))
-    n_rows = nrow(df)
-    "time" in names(df) || throw(ArgumentError("Results table has no `time` column."))
-    for i in 1:S
-        _has_columns(df, ("sc$(i)_pos_1", "sc$(i)_pos_2", "sc$(i)_pos_3")) ||
-            throw(ArgumentError("Results table has no position columns for spacecraft $(i) (sc$(i)_pos_1..3)."))
-    end
+function _viewer_frame_layout(df, scene, S)
     has_vel = all(i -> _has_columns(df, ("sc$(i)_vel_1", "sc$(i)_vel_2", "sc$(i)_vel_3")), 1:S)
     has_q = all(i -> _has_columns(df, ("sc$(i)_q_1", "sc$(i)_q_2", "sc$(i)_q_3", "sc$(i)_q_4")), 1:S)
     has_mass = all(i -> "sc$(i)_mass" in names(df), 1:S)
@@ -322,7 +252,17 @@ function build_viewer_frames(
         arm_total += has_arm ? stride_lp * arm_counts[i] : 0
     end
 
-    channel_specs = _resolved_channels(df, channels, S)
+    return (; S, has_vel, has_q, has_mass, has_density, has_heat,
+        has_drag, has_wind, has_plume, has_sun, stride_lp, counts, has_lp, lp_offsets, lp_total,
+         thruster_counts, thr_total, thr_offsets, dir_counts, dir_total, dir_offsets,
+        arm_counts, has_arm, arm_offsets, arm_total)
+end
+
+function _select_viewer_frame_rows(df, mission, layout, channel_specs, n_rows, max_frames, data_budget_mb, position_precision)
+    (; S, has_vel, has_q, has_mass, has_density, has_heat,
+        has_drag, has_wind, has_plume, has_sun, stride_lp, counts, has_lp, lp_offsets, lp_total,
+         thruster_counts, thr_total, thr_offsets, dir_counts, dir_total, dir_offsets,
+        arm_counts, has_arm, arm_offsets, arm_total) = layout
     # Bytes per frame besides the positions: per spacecraft, and for the frame.
     other_sat_bytes = (has_vel ? 12 : 0) + (has_q ? 16 : 0) + (has_mass ? 4 : 0) +
                       (has_density ? 4 : 0) + (has_heat ? 4 : 0) + (has_drag ? 4 : 0) + (has_wind ? 12 : 0) +
@@ -342,6 +282,15 @@ function build_viewer_frames(
     forced_f64 = position_precision === :f64 && S > FLOAT64_POSITION_MAX_SPACECRAFT
     rows = _mission_kept_rows(df, mission, regular_rows, limit;
         hint=forced_f64 ? ", or use position_precision=:auto, which can keep Float32 positions to leave room for more rows" : "")
+    return (; rows, regular_rows, budget, pos_f64)
+end
+
+function _pack_viewer_frame_blocks(df, scene, layout, selected, channel_specs, n_rows)::Dict{String, Any}
+    (; S, has_vel, has_q, has_mass, has_density, has_heat,
+        has_drag, has_wind, has_plume, has_sun, stride_lp, counts, has_lp, lp_offsets, lp_total,
+         thruster_counts, thr_total, thr_offsets, dir_counts, dir_total, dir_offsets,
+        arm_counts, has_arm, arm_offsets, arm_total) = layout
+    (; rows, regular_rows, budget, pos_f64) = selected
     N = length(rows)
 
     times = Float64[Float64(df[r, "time"]) for r in rows]
@@ -495,6 +444,41 @@ function build_viewer_frames(
             "data" => _float32_base64(tdir))
     end
     return frames
+end
+
+"""
+    build_viewer_frames(df, scene; max_frames=2000, data_budget_mb=150.0, position_precision=:auto) -> Dict{String, Any}
+
+Decimate the results table to the playback budget and encode positions (km),
+velocities (km/s), attitude quaternions and link poses as base64 Float32
+blocks, row-major over (frame, spacecraft, component). Positions are Float64
+for 64 spacecraft or fewer, and above that when Float64 keeps the same frames
+as Float32 would; `position_precision=:f64` or `:f32` forces either.
+"""
+function build_viewer_frames(
+    df::DataFrame,
+    scene::VisualizationScene;
+    max_frames::Integer=DEFAULT_MAX_FRAMES,
+    data_budget_mb::Real=DEFAULT_DATA_BUDGET_MB,
+    channels=(),
+    mission=nothing,
+    position_precision=:auto
+)::Dict{String, Any}
+    _checked_position_precision(position_precision)
+    mission = _validated_mission_history(mission)
+    S = length(scene.spacecraft)
+    S >= 1 || throw(ArgumentError("The scene has no spacecraft."))
+    n_rows = nrow(df)
+    "time" in names(df) || throw(ArgumentError("Results table has no `time` column."))
+    for i in 1:S
+        _has_columns(df, ("sc$(i)_pos_1", "sc$(i)_pos_2", "sc$(i)_pos_3")) ||
+            throw(ArgumentError("Results table has no position columns for spacecraft $(i) (sc$(i)_pos_1..3)."))
+    end
+    layout = _viewer_frame_layout(df, scene, S)
+    channel_specs = _resolved_channels(df, channels, S)
+    selected = _select_viewer_frame_rows(df, mission, layout, channel_specs,
+        n_rows, max_frames, data_budget_mb, position_precision)
+    return _pack_viewer_frame_blocks(df, scene, layout, selected, channel_specs, n_rows)
 end
 
 # Missing samples and NaN are plot gaps; infinities and Float32 overflow are errors.

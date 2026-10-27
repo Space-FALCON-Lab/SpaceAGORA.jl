@@ -226,7 +226,7 @@ function summarize_entry_duration_results(entry_raw_df::DataFrame)::DataFrame
     return summary
 end
 
-function summarize_results(raw_df::DataFrame)::DataFrame
+function summarize_results(raw_df::DataFrame; baseline_scenario::String="single_j2")::DataFrame
     keys = _summary_group_keys(
         raw_df,
         [
@@ -493,7 +493,7 @@ function summarize_results(raw_df::DataFrame)::DataFrame
         for row in eachrow(summary)
     ]
 
-    baseline_idx = findfirst(==(PERF_BASELINE_SCENARIO), summary.scenario)
+    baseline_idx = findfirst(==(baseline_scenario), summary.scenario)
     if baseline_idx === nothing || ismissing(summary.total_time_mean_s[baseline_idx]) || summary.total_time_mean_s[baseline_idx] <= 0.0
         summary[!, :relative_to_baseline] = fill(missing, nrow(summary))
         summary[!, :speedup_vs_baseline] = fill(missing, nrow(summary))
@@ -568,24 +568,6 @@ function summarize_density_backend_breakdown(raw_df::DataFrame)::DataFrame
         ))
     end
     return DataFrame(rows)
-end
-
-@inline function _case_with_solver(
-    case::BenchmarkCase;
-    solver_mode_override::Union{Nothing, String}=nothing,
-    split_imex_solver_override::Union{Nothing, String}=nothing
-)::BenchmarkCase
-    return BenchmarkCase(
-        name=case.name,
-        category=case.category,
-        description=case.description,
-        args_template=case.args_template,
-        run_in_quick=case.run_in_quick,
-        solver_mode_override=solver_mode_override,
-        split_imex_solver_override=split_imex_solver_override,
-        entry_target_count_override=case.entry_target_count_override,
-        env_overrides=copy(case.env_overrides)
-    )
 end
 
 @inline function _solution_state_at(sol, t::Float64)

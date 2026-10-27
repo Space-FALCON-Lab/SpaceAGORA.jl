@@ -16,7 +16,10 @@ const _PERF_POLICY_ENV_BASELINE = Dict{String, Union{Nothing, String}}(
 )
 const _PERF_THREADS_BACKEND_WARNING_EMITTED = Ref(false)
 
-include(joinpath(REPO_ROOT, "src", "orchestration", "parallel", "routing", "parallel_profiles.jl"))
+# Use the prepared caller environment and the package's canonical module identities.
+import SpaceAGORA
+const ParallelProfiles = SpaceAGORA.ParallelProfiles
+const RuntimeServices = SpaceAGORA.RuntimeServices
 using .ParallelProfiles
 
 using CSV
@@ -36,7 +39,7 @@ if myid() == 1
     using Plots
 end
 
-include(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "composition", "simulation_model.jl"))
+const SimulationModel = SpaceAGORA.SimulationModel
 using .SimulationModel
 const MissionType = SimulationModel.SimConfig.MissionType
 const MissionTime = SimulationModel.SimConfig.MissionTime
@@ -81,161 +84,28 @@ end
 
 _ensure_perf_gramsuite_loaded!()
 
-const EM = SimulationModel.EnvironmentModels
-const PERF_GRAM_LOCK = RuntimeServices.GRAM_LOCK
+# GRAM constructors, copies, serialization, locks and native ownership belong
+# to the package extension; this benchmark defines no competing adapters.
+Base.get_extension(SpaceAGORA, :SpaceAGORAGRAMSuiteExt) === nothing &&
+    error("Runtime benchmark requires the canonical SpaceAGORAGRAMSuiteExt extension.")
+const SimulationEngine = SpaceAGORA.SimulationEngine
+const run_simulation = SpaceAGORA.run_simulation
 
-function EM.GRAMAtmosphereModel(; kwargs...)
-    return EM.GRAMAtmosphereModel(GRAMSuite.GRAMAtmosphereModel(; kwargs...))
-end
 
-function EM.GRAMAtmosphereModelSurrogate(;
-    surrogate_file::String="",
-    point_fallback_below_m::Union{Nothing, Real}=nothing,
-    kwargs...
-)
-    base_model = EM.GRAMAtmosphereModel(; kwargs...)
-    file = isempty(strip(surrogate_file)) ?
-        GRAMSuite.gram_default_surrogate_file(base_model.planet_name; gram_root=base_model.gram_root) :
-        GRAMSuite.resolve_path(surrogate_file)
-    point_fallback = if point_fallback_below_m === nothing
-        GRAMSuite.gram_default_point_fallback_below_m(base_model.planet_name)
-    else
-        value = Float64(point_fallback_below_m)
-        value >= 0.0 || throw(ArgumentError("point_fallback_below_m must be >= 0.0 m, got $value"))
-        value
-    end
-    return EM.GRAMAtmosphereModelSurrogate(base_model, file, point_fallback)
-end
-
-function Base.deepcopy_internal(model::EM.GRAMAtmosphereModel, stackdict::IdDict)
-    haskey(stackdict, model) && return stackdict[model]
-    copied = lock(PERF_GRAM_LOCK) do
-        EM.GRAMAtmosphereModel(deepcopy(model.core))
-    end
-    stackdict[model] = copied
-    return copied
-end
-
-function Base.deepcopy_internal(model::EM.GRAMAtmosphereModelSurrogate, stackdict::IdDict)
-    haskey(stackdict, model) && return stackdict[model]
-    copied = lock(PERF_GRAM_LOCK) do
-        EM.GRAMAtmosphereModelSurrogate(
-            deepcopy(model.base_model),
-            model.surrogate_file,
-            model.point_fallback_below_m
-        )
-    end
-    stackdict[model] = copied
-    return copied
-end
-
-function EM._gram_core_density_state(
-    core::GRAMSuite.GRAMAtmosphereModel,
-    h::Float64,
-    lat::Float64,
-    lon::Float64,
-    el_time::Float64,
-    wind::Bool,
-    lock_obj,
-    vacuum_temperature::Float64
-)::Tuple{Float64, Float64, SVector{3, Float64}}
-    return GRAMSuite.density_state(
-        core, h, lat, lon, el_time, wind;
-        lock_obj=lock_obj,
-        vacuum_temperature=vacuum_temperature
-    )
-end
-
-@inline function EM._gram_point_density(
-    model::EM.GRAMAtmosphereModel,
-    h::Float64,
-    lat::Float64,
-    lon::Float64,
-    el_time::Float64,
-    wind::Bool
-)::Tuple{Float64, Float64, SVector{3, Float64}}
-    h_gram = max(h, -30.0)
-    return GRAMSuite.point_density_state(model.core, h_gram, lat, lon, el_time, wind; lock_obj=PERF_GRAM_LOCK)
-end
-
-function EM.getDensity(
-    model::EM.GRAMAtmosphereModel,
-    h::Float64,
-    lat::Float64,
-    lon::Float64,
-    el_time::Float64,
-    wind::Bool,
-    p::params
-)::Tuple{Float64, Float64, SVector{3, Float64}} where params
-    EI = p.args.environment_model.EI * 1e3
-    drag_state = h - EI <= 0.0
-
-    if h > 2000.0e3
-        return 0.0, p.args.environment_model.planet.T_ref, SVector{3, Float64}(0.0, 0.0, 0.0)
-    elseif !drag_state && !p.args.mission_configuration.keplerian
-        return EM.density_polyfit(h, p)
-    end
-
-    h_gram = max(h, -30.0)
-    return GRAMSuite.density_state(
-        model.core,
-        h_gram,
-        lat,
-        lon,
-        el_time,
-        wind;
-        lock_obj=PERF_GRAM_LOCK,
-        vacuum_temperature=p.args.environment_model.planet.T_ref
-    )
-end
-
-function EM.getDensity(
-    model::EM.GRAMAtmosphereModelSurrogate,
-    h::Float64,
-    lat::Float64,
-    lon::Float64,
-    el_time::Float64,
-    wind::Bool,
-    p::params
-)::Tuple{Float64, Float64, SVector{3, Float64}} where params
-    EI = p.args.environment_model.EI * 1e3
-    drag_state = h - EI <= 0.0
-
-    if h > 2000.0e3
-        return 0.0, p.args.environment_model.planet.T_ref, SVector{3, Float64}(0.0, 0.0, 0.0)
-    elseif !drag_state && !p.args.mission_configuration.keplerian
-        return EM.density_polyfit(h, p)
-    end
-
-    base_model = model.base_model isa EM.GRAMAtmosphereModel ? model.base_model.core : model.base_model
-    point_fallback = model.base_model isa EM.GRAMAtmosphereModel ? nothing :
-        (m, h_i, lat_i, lon_i, t_i, w_i) -> EM._gram_point_density(m, h_i, lat_i, lon_i, t_i, w_i)
-    h_gram = max(h, -30.0)
-
-    return GRAMSuite.surrogate_density_state(
-        base_model,
-        model.surrogate_file,
-        model.point_fallback_below_m,
-        h_gram,
-        lat,
-        lon,
-        el_time,
-        wind;
-        lock_obj=PERF_GRAM_LOCK,
-        point_density_fallback=point_fallback,
-        vacuum_temperature=p.args.environment_model.planet.T_ref
-    )
-end
-
-# run_simulation.jl expects quat_mult in the including scope.
-const quat_mult = SimulationModel.quat_mult
-if !isdefined(@__MODULE__, :SimulationEngine)
-    include(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine", "simulation_engine.jl"))
-end
-if !isdefined(@__MODULE__, :run_simulation)
-    const run_simulation = SimulationEngine.run_simulation
-end
-
+include(joinpath(@__DIR__, "reporting", "runtime_reports.jl"))
+using .RuntimeReports
+using .RuntimeReports: _parse_positive_int_env, _parse_nonnegative_int_env, _parse_nonnegative_float_env, _parse_bool_env,
+    _perf_smoke_mode, _perf_case_name_filter, _exclude_entry_scenarios, _split_rollout_enabled,
+    _split_rollout_enforce, _split_rollout_case_names, _split_rollout_solver_variants, _split_rollout_max_slowdown_ratio,
+    _split_rollout_pos_rel_tol, _split_rollout_vel_rel_tol, _split_rollout_q_angle_tol_rad, _split_rollout_omega_rel_tol,
+    _split_rollout_sample_count, _multirate_rollout_enabled, _multirate_rollout_enforce, _multirate_rollout_case_names,
+    _multirate_rollout_max_slowdown_ratio, _multirate_rollout_pos_rel_tol, _multirate_rollout_vel_rel_tol, _multirate_rollout_q_angle_tol_rad,
+    _multirate_rollout_omega_rel_tol, _multirate_rollout_sample_count, _multirate_env_float_or_missing, _multirate_env_int_or_missing,
+    _multirate_rollout_setting_snapshot, _safe_unique_join, _fmt, _scenario_metric,
+    _safe_stat, _ci95_bounds, _ci95_low, _ci95_high,
+    _sem, _cv_pct, _sum_nonmissing, _safe_share,
+    _summary_group_keys, _case_with_solver, _solution_state_at, _relative_vector_delta,
+    _quaternion_angle_delta_rad, _trajectory_delta_metrics
 
 include(joinpath(@__DIR__, "case_catalog.jl"))
 include(joinpath(@__DIR__, "measurement.jl"))

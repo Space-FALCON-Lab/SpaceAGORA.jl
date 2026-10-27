@@ -7,10 +7,11 @@ Replace this paragraph with the study's question.
 
 - `src/StarterName.jl`: the study's own models (here `LowThrustPush`, an example
   force model) and its case (`case_configuration`, `run_case`).
-- `scripts/run_case.jl`: the working example; CI runs it after the tests.
-- `test/runtests.jl`: interface conformance of the study's models and a short run.
+- `scripts/run_case.jl`: the worked example; CI runs it after the tests.
+- `test/runtests.jl`: conformance checks of the study's models and a short run.
 - `SpaceAGORASource.toml`: the SpaceAGORA commit the study is tested against.
 - `Manifest.toml`: committed, so every result has its exact package versions.
+  The generator starts it as a copy of the pinned commit's manifest.
 
 ## Set up and test
 
@@ -26,18 +27,16 @@ git -C ../StarterName-core checkout 0000000000000000000000000000000000000000
 julia --startup-file=no ../StarterName-core/scripts/contributor_environment.jl project . ../StarterName-env --manifest committed
 ```
 
-`--filter=blob:none` skips the contents of old file versions: Git downloads the
-files of a commit when you check it out. `-c lfs.fetchexclude="*"` keeps this
+`--filter=blob:none` skips the contents of old file versions; Git downloads a
+commit's files when you check it out. `-c lfs.fetchexclude="*"` keeps this
 clone, its checkouts and later pulls from downloading SpaceAGORA's large data
 files (Git LFS), which a contributor repository does not use. Without Git LFS
 installed the setting does nothing, and nothing is downloaded either. These
 commands, and the test command below, run as written in bash or zsh, PowerShell
 and Command Prompt.
 
-The generated checkout command contains the same exact revision as
-`SpaceAGORASource.toml`. SpaceAGORA's `repin` does not rewrite this README:
-after a repin, use the new `rev` from `SpaceAGORASource.toml` in the checkout
-command. Setup writes the separate environment and can access package servers.
+The checkout command holds the same commit as `SpaceAGORASource.toml`. Setup
+writes the separate environment and can download packages.
 
 Then, from `test/`:
 
@@ -45,13 +44,24 @@ Then, from `test/`:
 julia --startup-file=no --project=../../StarterName-env runtests.jl
 ```
 
-CI (`.github/workflows/ci.yml`) does the same with SpaceAGORA's reusable workflow.
-To move to a newer SpaceAGORA commit, change the commit in `SpaceAGORASource.toml`
-and in the workflow call together, rebuild the environment and commit its Manifest.
+CI (`.github/workflows/ci.yml`) does the same through SpaceAGORA's reusable
+workflow.
+
+To move to another SpaceAGORA commit, check that commit out in
+`../StarterName-core` and run its `repin` from this repository's root:
+
+```bash
+julia --startup-file=no ../StarterName-core/scripts/contributor_environment.jl repin project .
+```
+
+`repin` updates the pin file, both commit references in the workflow call and
+`[compat]`, but not this README: put the new `rev` in the checkout command
+yourself. Then rebuild the environment in a new directory and commit the
+updated `Manifest.toml`.
 
 ## Results and claims
 
-Keep results out of this repository (`output/` and `results/` are ignored) and
+Keep results out of this repository (Git ignores `output/` and `results/`) and
 record the SpaceAGORA commit with each one. The conformance tests check that the
-study's models meet SpaceAGORA's interface contracts; validating the models, the
-case and every claim made from them is the author's work.
+study's models meet SpaceAGORA's interfaces; validating the models, the case and
+every claim made from them is the author's work.

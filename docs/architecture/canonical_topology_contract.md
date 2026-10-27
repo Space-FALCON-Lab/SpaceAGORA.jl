@@ -1,166 +1,205 @@
-# SpaceAGORA Canonical Topology Contract
+# Canonical topology contract
 
-This contract defines where SpaceAGORA implementation responsibilities live.
+This contract says where each implementation responsibility lives in the
+repository. The gates listed under [Enforcement](#enforcement) check the parts
+that can be checked mechanically; the rest is applied in review.
 
-The source tree has four groups: `src/interfaces/` contains `cli`, `io` and
-`analysis`; `src/orchestration/` contains `simulation`, `mission` and `parallel`;
-`src/models/` contains `vehicle`, `environment`, `dynamics` and `gnc`; and
-`src/foundation/` contains `core` and `assets`. These groups organize files while
-preserving the existing Julia modules and their include order. They do not impose
-a new dependency hierarchy: `orchestration/simulation/composition/simulation_model.jl` remains the
-composition loader for definitions owned across the groups.
+## Source layout
 
-`src/SpaceAGORA.jl` and `src/precompile_workload.jl` remain at the package source
-root. Julia discovers package extensions in repository-root `ext/`. Optional
-companions retain their own repositories and source trees outside core `src/`.
+`src/` has four physical groups, each holding a fixed set of domain
+directories:
+
+| Group | Domains |
+|---|---|
+| `src/interfaces/` | `cli`, `io`, `analysis` |
+| `src/orchestration/` | `simulation`, `mission`, `parallel` |
+| `src/models/` | `vehicle`, `environment`, `dynamics`, `gnc` |
+| `src/foundation/` | `core`, `assets` |
+
+The groups organize files only. They add no Julia modules, keep the existing
+modules and their include order, and impose no dependency hierarchy:
+`src/orchestration/simulation/composition/simulation_model.jl` still composes
+definitions from every group. `src/SpaceAGORA.jl` and
+`src/precompile_workload.jl` stay at the source root, and package extensions
+stay in the repository-root `ext/`, where Julia discovers them. Optional
+companions keep their own repositories and source trees outside core `src/`.
 
 ## Repository organization
 
-The root README maps the repository's entry points. Organize files by their
-responsibility and intended use, rather than their author, date or language.
+The root README maps the repository's entry points. Organize files by
+responsibility and intended use, not by author, date or language.
 
-- Keep a capability's runner, configuration, analysis and instructions together.
-  Study-specific tools belong with their study under `benchmarks/`; reusable
-  maintenance and operational tools belong in `scripts/`. Share helpers when
-  independent consumers need them, rather than creating a general utility area
-  in anticipation of future use.
+- Keep a capability's runner, configuration, analysis and instructions
+  together. Study-specific tools belong with their study under `benchmarks/`;
+  reusable maintenance and operational tools belong in `scripts/`. Share a
+  helper once independent consumers need it; don't create a general utility
+  area in anticipation.
 - Reuse an existing home first. Add a directory only when it gives a distinct
-  responsibility, dependency environment or lifecycle a clear boundary. A file
-  count alone is not a reason to split or combine directories.
-- Runnable demonstrations belong in `examples/`. Copy-and-complete extension
-  skeletons belong in `templates/`. Automated pass/fail verification and its
-  required fixtures belong in `test/`; long research campaigns belong with
-  their benchmarks, even when they call tested verification code.
-- Use descriptive names. Preserve Julia package conventions and supported
-  command names; avoid names based only on a person, date or temporary revision.
+  responsibility, dependency environment or lifecycle a clear boundary. File
+  count alone is not a reason to split or merge directories.
+- Runnable demonstrations belong in `examples/`, copy-and-complete extension
+  skeletons in `templates/`, and automated pass/fail verification with its
+  fixtures in `test/`. Long research campaigns stay with their benchmarks even
+  when they call tested verification code.
+- Use descriptive names. Keep Julia package conventions and supported command
+  names; avoid names based only on a person, date or temporary revision.
 - Remove redundant pointers, empty placeholders and superseded implementations
-  when their useful content has a maintained home. Before retiring an executable,
-  inspect its behavior, callers and published usage: lack of callers alone does
-  not establish that it is obsolete. Update references and checks in the same
-  change. Keep compatibility launchers only for a supported usage requirement.
-- Keep generated run products in ignored output locations. Retain necessary
+  once their useful content has a maintained home. Before retiring an
+  executable, check its behavior, callers and published usage; having no
+  callers does not by itself make it obsolete. Update references and checks in
+  the same change, and keep a compatibility launcher only for a supported use.
+- Keep generated run products in ignored output locations. Keep necessary
   fixtures, reproducibility inputs, licensed assets and documentation figures
   deliberately, with their purpose and provenance. Historical research records
   need an explicit retention or archive decision before removal.
 - Use the root map and existing catalogs for discovery. Add a local README when
-  it explains a real workflow or boundary; do not create one just to fill an
-  otherwise empty folder. Extend existing ownership checks rather than creating
-  a separate gate for each placement rule.
+  it explains a real workflow or boundary, not to fill an otherwise empty
+  folder. Extend an existing ownership check rather than adding a gate per
+  placement rule.
 
-Optional companions share supported interface and compatibility requirements,
-but their loading mechanisms can differ. `ext/` contains Julia-discovered glue;
-`packages/` locates external source and installation metadata. Changes to source
-pins must preserve both Git-checkout and documented standalone installation
-routes. Source grouping does not move companion implementations into core.
+Optional companions share the supported interface and compatibility rules, but
+they load in different ways: `ext/` holds the glue Julia loads as package
+extensions, and `packages/` records where each companion's source lives and how
+it is installed. A change to a source pin must keep both the Git-checkout route
+and the documented standalone installation working. Grouping source never moves
+a companion's implementation into core.
 
-## Locked Ownership Decisions
-1. Benchmarks and studies are owned only by top-level `benchmarks/` (never under `src/`).
-2. Runnable examples are owned only by top-level `examples/` (never under `src/`).
-3. Reusable operational plotting scripts are owned by top-level `scripts/plotting/`; study-specific plotting belongs beside its study under `benchmarks/`. Installed analysis APIs remain under `src/interfaces/analysis/`.
-4. Domain dynamics ownership is:
-   - `src/models/dynamics/translational/*`
-   - `src/models/dynamics/rotational/*`
-   - `src/models/dynamics/effectors/*` (every force and torque the simulator applies)
-   - `src/models/dynamics/multibody/*` (articulated and compliant multibody dynamics)
-   - `src/models/dynamics/external_propagation.jl` (the external-propagator hook)
-   and `src/models/dynamics/models/` is retired.
-5. Mission configuration ownership: initial-state definitions live with the
-   spacecraft model (`src/models/vehicle/spacecraft/model.jl`); mission plans and
-   schedules live under `src/orchestration/mission/operations/*`.
-   One-run scenario configuration lives under `src/orchestration/simulation/config/`; the existing
-   spacecraft collection and selected effectors are defined in
-   `constellation_configuration.jl`, retaining the `SpacecraftModels.DynamicsModel`
-   identity. Physical spacecraft assembly remains under vehicle.
-6. Simulation execution ownership belongs to `src/orchestration/simulation/engine/*`; legacy `src/orchestration/simulation/events/*`, `src/orchestration/simulation/execution/*`, and `src/orchestration/simulation/solver_orchestration/*` are retired.
-7. Shared runtime serialization services are owned by `src/orchestration/simulation/runtime_services.jl`, not by `SimulationModel`.
-8. Actuator ownership: the actuator contract lives in
-   `src/models/vehicle/actuators/actuators.jl`, mounting and the evaluation of a
-   mounted set in `src/models/vehicle/actuators/mounting.jl`, and each actuator
-   kind in one file beside them (`thruster.jl`); thruster firing dynamics live in
-   `src/models/vehicle/actuators/thruster_hooks.jl`.
-9. Vehicle boundary is:
-   - `src/models/vehicle/spacecraft/*` for composition/integration
-   - `src/models/vehicle/structure/*` for mass/inertia/geometry/structure analysis,
-     including the CAD/mesh readers (`mesh_geometry.jl`) shared by the
-     visualization scene
-10. Visualization boundary is:
-   - `src/interfaces/analysis/visualization/scene/*` owns the renderer-independent scene
-     layer (scene types, spacecraft geometry conversion, planet rotation
-     sampling, the JSON sidecar) as a `SimulationModel` submodule
-   - `src/interfaces/analysis/visualization/rpo/*` owns the PlotlyJS RPO plots
-   - the browser viewer and HTML assembly are owned by the independent
-     `SpaceAGORAVisualizer.jl` package; core keeps portable payload export and
-     `ext/SpaceAGORAVisualizerExt.jl` connects the optional renderer. No renderer
-     source is duplicated under `src/viewer/` or top-level `viewer/`.
+## Ownership decisions
 
-11. Externally propagated spacecraft (shadow entries held in the state vector while an
-    optional package integrates them) are owned in four places, none of which
-    knows any concrete integrator:
-    - `src/models/dynamics/external_propagation.jl`: the `SimulationModel.ExternalPropagation`
-      hook implementation identities. Optional adapters use the supported facade below;
-      default hooks throw `Not implemented`, except for the accepting preflight default.
-    - `src/orchestration/simulation/engine/external_propagation.jl`: setup-time refusals, per-run runtimes
-      and the shadow right-hand side.
-    - `src/orchestration/simulation/callbacks/external_propagation_callbacks.jl`: the sync callback that
-      overwrites shadow entries after every accepted step, first among the discrete callbacks.
-    - `src/orchestration/simulation/external_propagation_services.jl`: the versioned
-      `SpaceAGORA.ExternalPropagationServices` adapter boundary, aliasing existing hook
-      identities and supplying narrow configuration, state and frame services.
-    `SimulationConfiguration.external_propagators` carries the owners. Concrete owners live
-    in their domain repositories, including the independent
-    [SpaceAGORAMuJoCo.jl companion](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl).
-    The root package never depends on them. Native bindings, adapter tests and the
-    Basilisk/MuJoCo comparison harness belong to that companion; generic lifecycle,
-    conformance tests and shared physics remain in core.
+1. Benchmarks and studies live only in top-level `benchmarks/`, never under
+   `src/`.
+2. Runnable examples live only in top-level `examples/`, never under `src/`.
+3. Reusable operational plotting scripts live in `scripts/plotting/`;
+   study-specific plotting stays beside its study under `benchmarks/`.
+   Installed analysis APIs stay under `src/interfaces/analysis/`.
+4. Dynamics is owned by `src/models/dynamics/translational/`,
+   `src/models/dynamics/rotational/`, `src/models/dynamics/effectors/` (every
+   force and torque the simulator applies), `src/models/dynamics/multibody/`
+   (articulated and compliant multibody dynamics) and
+   `src/models/dynamics/external_propagation.jl` (the external-propagator
+   hooks). `src/models/dynamics/models/` is retired.
+5. Initial-state definitions live with the spacecraft model
+   (`src/models/vehicle/spacecraft/model.jl`); mission plans and schedules live
+   under `src/orchestration/mission/operations/`. One-run scenario configuration
+   lives under `src/orchestration/simulation/config/`, where
+   `constellation_configuration.jl` defines the spacecraft collection and the
+   selected effectors while keeping the `SpacecraftModels.DynamicsModel` type
+   identity. Physical spacecraft assembly stays under `src/models/vehicle/`.
+6. Simulation execution belongs to `src/orchestration/simulation/engine/`. The
+   former `src/orchestration/simulation/events/`,
+   `src/orchestration/simulation/execution/` and
+   `src/orchestration/simulation/solver_orchestration/` are retired.
+7. Shared runtime serialization services (`SPICE_LOCK`, `GRAM_LOCK`) are owned
+   by `src/orchestration/simulation/runtime_services.jl`, not by
+   `SimulationModel`.
+8. The actuator contract lives in `src/models/vehicle/actuators/actuators.jl`,
+   mounting and evaluation of a mounted set in `mounting.jl`, and each actuator
+   kind in its own file beside them (for example `thruster.jl`). Thruster firing
+   dynamics live in `thruster_hooks.jl`.
+9. Within the vehicle, `src/models/vehicle/spacecraft/` composes and integrates
+   a spacecraft, and `src/models/vehicle/structure/` computes mass, inertia,
+   geometry and structure, including the CAD and mesh readers
+   (`mesh_geometry.jl`) that the visualization scene also uses.
+10. Visualization: `src/interfaces/analysis/visualization/scene/` owns the
+    renderer-independent scene layer (scene types, spacecraft geometry
+    conversion, planet rotation sampling, the JSON sidecar) as a
+    `SimulationModel` submodule, and
+    `src/interfaces/analysis/visualization/rpo/` owns the PlotlyJS RPO plots.
+    The browser viewer and HTML assembly belong to the independent
+    `SpaceAGORAVisualizer.jl` package. Core keeps portable payload export, and
+    `ext/SpaceAGORAVisualizerExt.jl` connects the optional renderer. No renderer
+    source is copied under `src/viewer/` or a top-level `viewer/`.
+11. Externally propagated spacecraft (shadow entries kept in the state vector
+    while an optional package integrates them) are owned in four places, none
+    of which knows a concrete integrator:
+    - `src/models/dynamics/external_propagation.jl`: the
+      `SimulationModel.ExternalPropagation` hook identities. Default hooks throw
+      `Not implemented`, except `external_preflight`, whose default accepts.
+    - `src/orchestration/simulation/engine/external_propagation.jl`: setup-time
+      refusals, per-run runtimes and the shadow right-hand side.
+    - `src/orchestration/simulation/callbacks/external_propagation_callbacks.jl`:
+      the sync callback that overwrites shadow entries after every accepted
+      step, installed before every other discrete callback.
+    - `src/orchestration/simulation/external_propagation_services.jl`: the
+      versioned `SpaceAGORA.ExternalPropagationServices` facade, which aliases
+      the hook identities and supplies narrow configuration, state and frame
+      services. Optional adapters use only this facade.
 
-## Required Canonical Files
-1. `src/orchestration/simulation/engine/public_api.jl`
-2. `src/orchestration/simulation/engine/execution.jl`
-3. `src/orchestration/simulation/runtime_services.jl`
-4. `src/models/dynamics/effectors/force_torque_models.jl`
-5. `src/models/vehicle/actuators/thruster_hooks.jl`
-6. `src/models/vehicle/structure/structure_models.jl`
-7. `src/models/vehicle/structure/mass_properties.jl`
-7a. `src/models/vehicle/structure/mesh_geometry.jl`
-8. `src/models/vehicle/structure/geometry_properties.jl`
+    `SimulationConfiguration.external_propagators` carries the owners. Concrete
+    owners live in their own repositories, such as the
+    [SpaceAGORAMuJoCo.jl companion](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl),
+    and core never depends on them. Native bindings, adapter tests and the
+    Basilisk/MuJoCo comparison harness belong to that companion; the generic
+    lifecycle, conformance tests and shared physics stay in core.
 
-## Path Policy
-1. This contract documents canonical owners only.
-2. Removed or forbidden legacy paths are intentionally not listed here as a
-   tombstone inventory.
-3. Canonical-path enforcement belongs to CI gates, not to user-facing topology
-   documentation.
+## GNC and runtime IO owners
 
-## Canonical GNC and Runtime IO Owners
-1. GNC hook owners: `src/models/gnc/control/hooks.jl`, `src/models/gnc/guidance/hooks.jl`, `src/models/gnc/navigation/hooks.jl`.
-2. Runtime IO owners: `src/interfaces/io/paths/io_paths.jl`, `src/interfaces/io/checkpoints/checkpoint_storage.jl`, `src/interfaces/io/outputs/io_outputs.jl`; `src/orchestration/simulation/engine/*` orchestrates IO but does not own serialization or output implementations.
-3. No `legacy_` identifiers in `src/`.
+- GNC hooks: `src/models/gnc/control/hooks.jl`,
+  `src/models/gnc/guidance/hooks.jl` and `src/models/gnc/navigation/hooks.jl`.
+- Runtime IO: `src/interfaces/io/paths/io_paths.jl`,
+  `src/interfaces/io/checkpoints/checkpoint_storage.jl` and
+  `src/interfaces/io/outputs/io_outputs.jl`. The engine under
+  `src/orchestration/simulation/engine/` orchestrates IO but owns no
+  serialization or output implementation.
+- No identifier in `src/` contains `legacy_`.
 
-## Enforcement Gates
-1. `test/gates/ci_path_policy_gate.jl` (retired paths, required owner files, forbidden path tokens)
-2. `test/gates/ci_vehicle_structure_boundary_gate.jl`
-3. `test/gates/ci_architecture_contract_gate.jl`
-4. `test/gates/ci_thin_entry_files_gate.jl` (benchmark launchers stay thin forwarders)
+## Shared configuration and mathematics
 
-## Shared Configuration and Mathematics
-
-- `SimulationModel.SimConfig._with_configuration` copies an existing simulation
-  configuration and applies named overrides. Unchanged fields retain their
-  references, and model types are inferred again by the constructor. Callers
-  retain responsibility for nested settings and intentional resets. The telemetry
-  runner explicitly clears the typed solver so its environment-based retry
-  policy remains authoritative. Engine state isolation remains separate.
-  Settings, mission, environment, spacecraft and campaign-sample copies use
-  `SimConfig._with_fields` the same way: they name only the fields that change,
+- `SimulationModel.SimConfig._with_configuration` copies a simulation
+  configuration with named overrides. Unchanged fields keep their references,
+  and the constructor infers model types again. Callers stay responsible for
+  nested settings and deliberate resets; for example, the telemetry runner
+  clears the typed solver (`solver_config=nothing`) because it owns solver
+  selection and its per-attempt iteration retry. Mutable-state isolation is the engine's job, not this
+  copy's. Settings, mission, environment, spacecraft and campaign-sample copies
+  use `SimConfig._with_fields` the same way: name only the fields that change,
   and every other field passes through the type's constructor.
 - `SimulationModel.QuaternionMath` owns the quaternion functions in
-  `src/foundation/core/numerics/quaternion_utils.jl`. Consumers import this module rather
-  than including another copy of the implementation. Quaternions are scalar-last;
+  `src/foundation/core/numerics/quaternion_utils.jl`. Consumers import this
+  module rather than including another copy. Quaternions are scalar-last, and
   `rot(q)` maps inertial components to body components.
 - `SimulationModel.FrameTransforms` owns the coordinate functions in
-  `src/foundation/core/interfaces/reference_system.jl`. Engine, callbacks, GNC, aerodynamics
-  and telemetry import these same bindings. `rotate_vector_by_quaternion` is an
-  active vector rotation, so it is not interchangeable with `rot(q)`.
-- These are internal owners, not new root-level public APIs. Existing qualified
-  consumer bindings remain available. `ReferenceSystems` continues to own the
+  `src/foundation/core/interfaces/reference_system.jl`. The engine, callbacks,
+  GNC, aerodynamics and telemetry import these same bindings.
+  `rotate_vector_by_quaternion` is an active vector rotation, so it is not
+  interchangeable with `rot(q)`.
+- These are internal owners, not root-level public APIs. Existing qualified
+  bindings stay available, and `ReferenceSystems` still owns the
   reference-system types.
+
+## Enforcement
+
+The retired paths are listed in `RETIRED_PATHS` in
+`test/gates/ci_path_policy_gate.jl`, not on this page; record a new retirement
+there instead of adding a gate.
+
+- `test/gates/ci_path_policy_gate.jl` checks the source layout above (exactly
+  these groups and domains, real directories, each with Julia files; no former
+  `src/<domain>/` root; the two root files; an entry file in `ext/` for every
+  extension registered in `Project.toml`). It fails if a retired path exists or
+  a required owner file in `REQUIRED_PATHS` is missing, and it scans source,
+  tests, docs, examples and workflows for forbidden tokens: retired paths, the
+  `legacy_` prefix and the retired `ControlEffectors`, `GuidanceEffectors` and
+  `NavigationEffectors` names in `src/`. This page,
+  `src_completeness_contract.md` and `src_canonical_owner_audit.md` are exempt
+  from the token scan because they name retired paths on purpose.
+- `test/gates/ci_architecture_contract_gate.jl` checks module composition and
+  include order, lock ownership in `RuntimeServices`, the typed
+  `run_simulation` boundary and the effector split. It also fails if any of
+  these owner files is missing:
+  `src/orchestration/simulation/engine/public_api.jl`,
+  `src/orchestration/simulation/engine/execution.jl`,
+  `src/orchestration/simulation/runtime_services.jl`,
+  `src/models/dynamics/effectors/force_torque_models.jl`,
+  `src/models/vehicle/actuators/thruster_hooks.jl`,
+  `src/models/vehicle/structure/structure_models.jl`,
+  `src/models/vehicle/structure/mass_properties.jl` and
+  `src/models/vehicle/structure/geometry_properties.jl`.
+- `test/gates/ci_vehicle_structure_boundary_gate.jl` requires the structure
+  owner files and fails if a structure function (`get_COM`,
+  `get_inertia_tensor` and the area, normal-vector and tangent-vector helpers)
+  is defined under `src/models/vehicle/spacecraft/`.
+- `test/gates/ci_thin_entry_files_gate.jl` keeps the listed module entry files
+  and benchmark launchers thin: at most 80 non-comment lines and no function or
+  struct definitions, and the two benchmark launchers forward to their split
+  implementations.

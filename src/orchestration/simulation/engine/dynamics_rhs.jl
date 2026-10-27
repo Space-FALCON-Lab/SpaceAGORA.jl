@@ -3775,6 +3775,69 @@ function _apply_data_storage_rhs!(du, u, p, t::Float64)
     return nothing
 end
 
+# Each physics partition owns one per-spacecraft operation. Serial and batch
+# dispatch share it; early returns leave only this spacecraft, not the loop.
+# Propagate the serial loop's bounds context across this inlined boundary.
+Base.@propagate_inbounds function _spacecraft_full_rhs!(sc_du, sc_state, p, i, t, spacecraft, dynamic_effectors, effector_decision, debug_control)
+    if !p.is_active[i]
+        sc_du[i] .= 0.0
+        return nothing
+    end
+    @views begin
+        sc_view = sc_state[i]
+        du_view = sc_du[i]
+        if p.shared_buffers.external_present[] && p.shared_buffers.external_owner[i] != 0
+            _assign_external_shadow_rhs!(du_view, sc_view, p, i, t)
+            return nothing
+        end
+        if p.shared_buffers.articulated_present[]
+            art = p.shared_buffers.articulated_runtimes[i]
+            if art !== nothing
+                _assign_articulated_spacecraft_rhs!(du_view, sc_view, art, p, i, t, dynamic_effectors, effector_decision, debug_control)
+                return nothing
+            end
+        end
+        forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+        torques = MVector{3, Float64}(0.0, 0.0, 0.0)
+        _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
+        mass_rate, rw_torque_body = _control_effectors_with_wheels!(forces, torques, sc_view, p, i, t, debug_control)
+        _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
+        _apply_attachments_rigid!(du_view, sc_view, p, i, t, forces, torques, dynamic_effectors)
+        heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
+            p,
+            sc_view,
+            i,
+            t;
+            use_buffered_density=false,
+        )
+
+        SimulationModel.DynamicsTranslational.assign_full_translational_rhs!(
+            du_view,
+            sc_view,
+            forces,
+            mass_rate,
+        )
+        _finish_attachments_rigid!(du_view, p, i)
+
+        if p.args.mission_configuration.orientation_sim
+            inertia_tensor = spacecraft[i].inertia_tensor
+            _assign_orientation_rhs!(
+                du_view,
+                sc_view,
+                inertia_tensor,
+                torques;
+                propagate_quaternion=true,
+                include_gyroscopic=true,
+                rw_assembly=spacecraft[i].root.rw_assembly,
+                rw_torque_body=SVector{3, Float64}(rw_torque_body),
+            )
+        end
+
+        _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
+    end
+    return nothing
+end
+
 function _spacecraft_dynamics_dispatch!(du::ComponentVector, u::ComponentVector, p, t::Float64)
     sc_state = u.sc
     sc_du = du.sc
@@ -3796,125 +3859,60 @@ function _spacecraft_dynamics_dispatch!(du::ComponentVector, u::ComponentVector,
     if use_rhs_batch
         minbatch = _rhs_batch_minbatch(p, length(spacecraft))
         @batch minbatch=minbatch for i in eachindex(sc_state)
-            if !p.is_active[i]
-                sc_du[i] .= 0.0
-                continue
-            end
-            @views begin
-                sc_view = sc_state[i]
-                du_view = sc_du[i]
-                if p.shared_buffers.external_present[] && p.shared_buffers.external_owner[i] != 0
-                    _assign_external_shadow_rhs!(du_view, sc_view, p, i, t)
-                    continue
-                end
-                if p.shared_buffers.articulated_present[]
-                    art = p.shared_buffers.articulated_runtimes[i]
-                    if art !== nothing
-                        _assign_articulated_spacecraft_rhs!(du_view, sc_view, art, p, i, t, dynamic_effectors, effector_decision, debug_control)
-                        continue
-                    end
-                end
-                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
-                torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-                _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
-                mass_rate, rw_torque_body = _control_effectors_with_wheels!(forces, torques, sc_view, p, i, t, debug_control)
-                _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
-                _apply_attachments_rigid!(du_view, sc_view, p, i, t, forces, torques, dynamic_effectors)
-                heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
-                    p,
-                    sc_view,
-                    i,
-                    t;
-                    use_buffered_density=false,
-                )
-
-                SimulationModel.DynamicsTranslational.assign_full_translational_rhs!(
-                    du_view,
-                    sc_view,
-                    forces,
-                    mass_rate,
-                )
-                _finish_attachments_rigid!(du_view, p, i)
-
-                if p.args.mission_configuration.orientation_sim
-                    inertia_tensor = spacecraft[i].inertia_tensor
-                    _assign_orientation_rhs!(
-                        du_view,
-                        sc_view,
-                        inertia_tensor,
-                        torques;
-                        propagate_quaternion=true,
-                        include_gyroscopic=true,
-                        rw_assembly=spacecraft[i].root.rw_assembly,
-                        rw_torque_body=SVector{3, Float64}(rw_torque_body),
-                    )
-                end
-
-                _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
-            end
+            _spacecraft_full_rhs!(sc_du, sc_state, p, i, t, spacecraft, dynamic_effectors, effector_decision, debug_control)
         end
     else
         @inbounds for i in eachindex(sc_state)
-            if !p.is_active[i]
-                sc_du[i] .= 0.0
-                continue
-            end
-            @views begin
-                sc_view = sc_state[i]
-                du_view = sc_du[i]
-                if p.shared_buffers.external_present[] && p.shared_buffers.external_owner[i] != 0
-                    _assign_external_shadow_rhs!(du_view, sc_view, p, i, t)
-                    continue
-                end
-                if p.shared_buffers.articulated_present[]
-                    art = p.shared_buffers.articulated_runtimes[i]
-                    if art !== nothing
-                        _assign_articulated_spacecraft_rhs!(du_view, sc_view, art, p, i, t, dynamic_effectors, effector_decision, debug_control)
-                        continue
-                    end
-                end
-                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
-                torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-                _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
-                mass_rate, rw_torque_body = _control_effectors_with_wheels!(forces, torques, sc_view, p, i, t, debug_control)
-                _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
-                _apply_attachments_rigid!(du_view, sc_view, p, i, t, forces, torques, dynamic_effectors)
-                heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
-                    p,
-                    sc_view,
-                    i,
-                    t;
-                    use_buffered_density=false,
-                )
-
-                SimulationModel.DynamicsTranslational.assign_full_translational_rhs!(
-                    du_view,
-                    sc_view,
-                    forces,
-                    mass_rate,
-                )
-                _finish_attachments_rigid!(du_view, p, i)
-
-                if p.args.mission_configuration.orientation_sim
-                    inertia_tensor = spacecraft[i].inertia_tensor
-                    _assign_orientation_rhs!(
-                        du_view,
-                        sc_view,
-                        inertia_tensor,
-                        torques;
-                        propagate_quaternion=true,
-                        include_gyroscopic=true,
-                        rw_assembly=spacecraft[i].root.rw_assembly,
-                        rw_torque_body=SVector{3, Float64}(rw_torque_body),
-                    )
-                end
-
-                _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
-            end
+            _spacecraft_full_rhs!(sc_du, sc_state, p, i, t, spacecraft, dynamic_effectors, effector_decision, debug_control)
         end
     end
     _apply_interlink_rhs!(du, u, p, t)
 end # function spacecraft_dynamics!
+
+Base.@propagate_inbounds function _spacecraft_slow_rhs!(sc_du, sc_state, p, i, t, spacecraft, dynamic_effectors, effector_decision)
+    if !p.is_active[i]
+        sc_du[i] .= 0.0
+        return nothing
+    end
+    @views begin
+        sc_view = sc_state[i]
+        du_view = sc_du[i]
+        forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+        torques = MVector{3, Float64}(0.0, 0.0, 0.0)
+        _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
+        _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
+        heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
+            p,
+            sc_view,
+            i,
+            t;
+            use_buffered_density=false,
+        )
+
+        SimulationModel.DynamicsTranslational.assign_slow_translational_rhs!(
+            du_view,
+            sc_view,
+            forces,
+        )
+
+        if p.args.mission_configuration.orientation_sim
+            inertia_tensor = spacecraft[i].inertia_tensor
+            _assign_orientation_rhs!(
+                du_view,
+                sc_view,
+                inertia_tensor,
+                torques;
+                propagate_quaternion=true,
+                include_gyroscopic=true,
+                rw_assembly=spacecraft[i].root.rw_assembly,
+                actuator_rates=false,
+            )
+        end
+
+        _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
+    end
+    return nothing
+end
 
 function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t::Float64)
     sc_state = u.sc
@@ -3935,91 +3933,11 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
     if use_rhs_batch
         minbatch = _rhs_batch_minbatch(p, length(spacecraft))
         @batch minbatch=minbatch for i in eachindex(sc_state)
-            if !p.is_active[i]
-                sc_du[i] .= 0.0
-                continue
-            end
-            @views begin
-                sc_view = sc_state[i]
-                du_view = sc_du[i]
-                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
-                torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-                _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
-                _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
-                heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
-                    p,
-                    sc_view,
-                    i,
-                    t;
-                    use_buffered_density=false,
-                )
-
-                SimulationModel.DynamicsTranslational.assign_slow_translational_rhs!(
-                    du_view,
-                    sc_view,
-                    forces,
-                )
-
-                if p.args.mission_configuration.orientation_sim
-                    inertia_tensor = spacecraft[i].inertia_tensor
-                    _assign_orientation_rhs!(
-                        du_view,
-                        sc_view,
-                        inertia_tensor,
-                        torques;
-                        propagate_quaternion=true,
-                        include_gyroscopic=true,
-                        rw_assembly=spacecraft[i].root.rw_assembly,
-                        actuator_rates=false,
-                    )
-                end
-
-                _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
-            end
+            _spacecraft_slow_rhs!(sc_du, sc_state, p, i, t, spacecraft, dynamic_effectors, effector_decision)
         end
     else
         @inbounds for i in eachindex(sc_state)
-            if !p.is_active[i]
-                sc_du[i] .= 0.0
-                continue
-            end
-            @views begin
-                sc_view = sc_state[i]
-                du_view = sc_du[i]
-                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
-                torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-                _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
-                _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
-                heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
-                    p,
-                    sc_view,
-                    i,
-                    t;
-                    use_buffered_density=false,
-                )
-
-                SimulationModel.DynamicsTranslational.assign_slow_translational_rhs!(
-                    du_view,
-                    sc_view,
-                    forces,
-                )
-
-                if p.args.mission_configuration.orientation_sim
-                    inertia_tensor = spacecraft[i].inertia_tensor
-                    _assign_orientation_rhs!(
-                        du_view,
-                        sc_view,
-                        inertia_tensor,
-                        torques;
-                        propagate_quaternion=true,
-                        include_gyroscopic=true,
-                        rw_assembly=spacecraft[i].root.rw_assembly,
-                        actuator_rates=false,
-                    )
-                end
-
-                _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
-            end
+            _spacecraft_slow_rhs!(sc_du, sc_state, p, i, t, spacecraft, dynamic_effectors, effector_decision)
         end
     end
 end # function spacecraft_dynamics_slow!
@@ -4055,6 +3973,43 @@ end
         _spacecraft_outside_atmosphere_for_current_state(sc_state[i], p, i, t) || return false
     end
     return true
+end
+
+Base.@propagate_inbounds function _spacecraft_implicit_rhs!(sc_du, sc_state, p, i, t, spacecraft, dynamic_effectors, effector_decision)
+    if !p.is_active[i] || _spacecraft_outside_atmosphere_for_current_state(sc_state[i], p, i, t)
+        sc_du[i] .= 0.0
+        return nothing
+    end
+    @views begin
+        sc_view = sc_state[i]
+        du_view = sc_du[i]
+        forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+        torques = MVector{3, Float64}(0.0, 0.0, 0.0)
+        _accumulate_dynamic_effectors_partitioned!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision, :implicit)
+
+        SimulationModel.DynamicsTranslational.assign_force_only_translational_rhs!(
+            du_view,
+            sc_view,
+            forces,
+        )
+
+        if p.args.mission_configuration.orientation_sim
+            inertia_tensor = spacecraft[i].inertia_tensor
+            _assign_orientation_rhs!(
+                du_view,
+                sc_view,
+                inertia_tensor,
+                torques;
+                propagate_quaternion=false,
+                include_gyroscopic=false,
+                rw_assembly=spacecraft[i].root.rw_assembly,
+                actuator_rates=false,
+            )
+        end
+
+        du_view.heat_loads .= 0.0
+    end
+    return nothing
 end
 
 function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::ComponentVector, p, t::Float64)
@@ -4096,80 +4051,63 @@ function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::Compon
     if use_rhs_batch
         minbatch = _rhs_batch_minbatch(p, length(spacecraft))
         @batch minbatch=minbatch for i in eachindex(sc_state)
-            if !p.is_active[i] || _spacecraft_outside_atmosphere_for_current_state(sc_state[i], p, i, t)
-                sc_du[i] .= 0.0
-                continue
-            end
-            @views begin
-                sc_view = sc_state[i]
-                du_view = sc_du[i]
-                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
-                torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-                _accumulate_dynamic_effectors_partitioned!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision, :implicit)
-
-                SimulationModel.DynamicsTranslational.assign_force_only_translational_rhs!(
-                    du_view,
-                    sc_view,
-                    forces,
-                )
-
-                if p.args.mission_configuration.orientation_sim
-                    inertia_tensor = spacecraft[i].inertia_tensor
-                    _assign_orientation_rhs!(
-                        du_view,
-                        sc_view,
-                        inertia_tensor,
-                        torques;
-                        propagate_quaternion=false,
-                        include_gyroscopic=false,
-                        rw_assembly=spacecraft[i].root.rw_assembly,
-                        actuator_rates=false,
-                    )
-                end
-
-                du_view.heat_loads .= 0.0
-            end
+            _spacecraft_implicit_rhs!(sc_du, sc_state, p, i, t, spacecraft, dynamic_effectors, effector_decision)
         end
     else
         @inbounds for i in eachindex(sc_state)
-            if !p.is_active[i] || _spacecraft_outside_atmosphere_for_current_state(sc_state[i], p, i, t)
-                sc_du[i] .= 0.0
-                continue
-            end
-            @views begin
-                sc_view = sc_state[i]
-                du_view = sc_du[i]
-                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
-                torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-                _accumulate_dynamic_effectors_partitioned!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision, :implicit)
-
-                SimulationModel.DynamicsTranslational.assign_force_only_translational_rhs!(
-                    du_view,
-                    sc_view,
-                    forces,
-                )
-
-                if p.args.mission_configuration.orientation_sim
-                    inertia_tensor = spacecraft[i].inertia_tensor
-                    _assign_orientation_rhs!(
-                        du_view,
-                        sc_view,
-                        inertia_tensor,
-                        torques;
-                        propagate_quaternion=false,
-                        include_gyroscopic=false,
-                        rw_assembly=spacecraft[i].root.rw_assembly,
-                        actuator_rates=false,
-                    )
-                end
-
-                du_view.heat_loads .= 0.0
-            end
+            _spacecraft_implicit_rhs!(sc_du, sc_state, p, i, t, spacecraft, dynamic_effectors, effector_decision)
         end
     end
     SimulationModel.SimulationCallbacks._publish_initial_force_outputs!(u, t, p)
     return nothing
 end # function spacecraft_dynamics_implicit_atmosphere!
+
+Base.@propagate_inbounds function _spacecraft_explicit_rhs!(sc_du, sc_state, p, i, t, spacecraft, dynamic_effectors, effector_decision, debug_control)
+    if !p.is_active[i]
+        sc_du[i] .= 0.0
+        return nothing
+    end
+    @views begin
+        sc_view = sc_state[i]
+        du_view = sc_du[i]
+        forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+        torques = MVector{3, Float64}(0.0, 0.0, 0.0)
+        _accumulate_dynamic_effectors_partitioned!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision, :explicit)
+        mass_rate, rw_torque_body = _control_effectors_with_wheels!(forces, torques, sc_view, p, i, t, debug_control)
+        _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
+        heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
+            p,
+            sc_view,
+            i,
+            t;
+            use_buffered_density=false,
+        )
+
+        SimulationModel.DynamicsTranslational.assign_full_translational_rhs!(
+            du_view,
+            sc_view,
+            forces,
+            mass_rate,
+        )
+
+        if p.args.mission_configuration.orientation_sim
+            inertia_tensor = spacecraft[i].inertia_tensor
+            _assign_orientation_rhs!(
+                du_view,
+                sc_view,
+                inertia_tensor,
+                torques;
+                propagate_quaternion=true,
+                include_gyroscopic=true,
+                rw_assembly=spacecraft[i].root.rw_assembly,
+                rw_torque_body=SVector{3, Float64}(rw_torque_body),
+            )
+        end
+
+        _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
+    end
+    return nothing
+end
 
 function spacecraft_dynamics_explicit_remainder!(du::ComponentVector, u::ComponentVector, p, t::Float64)
     sc_state = u.sc
@@ -4199,98 +4137,53 @@ function spacecraft_dynamics_explicit_remainder!(du::ComponentVector, u::Compone
     if use_rhs_batch
         minbatch = _rhs_batch_minbatch(p, length(spacecraft))
         @batch minbatch=minbatch for i in eachindex(sc_state)
-            if !p.is_active[i]
-                sc_du[i] .= 0.0
-                continue
-            end
-            @views begin
-                sc_view = sc_state[i]
-                du_view = sc_du[i]
-                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
-                torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-                _accumulate_dynamic_effectors_partitioned!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision, :explicit)
-                mass_rate, rw_torque_body = _control_effectors_with_wheels!(forces, torques, sc_view, p, i, t, debug_control)
-                _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
-                heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
-                    p,
-                    sc_view,
-                    i,
-                    t;
-                    use_buffered_density=false,
-                )
-
-                SimulationModel.DynamicsTranslational.assign_full_translational_rhs!(
-                    du_view,
-                    sc_view,
-                    forces,
-                    mass_rate,
-                )
-
-                if p.args.mission_configuration.orientation_sim
-                    inertia_tensor = spacecraft[i].inertia_tensor
-                    _assign_orientation_rhs!(
-                        du_view,
-                        sc_view,
-                        inertia_tensor,
-                        torques;
-                        propagate_quaternion=true,
-                        include_gyroscopic=true,
-                        rw_assembly=spacecraft[i].root.rw_assembly,
-                        rw_torque_body=SVector{3, Float64}(rw_torque_body),
-                    )
-                end
-
-                _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
-            end
+            _spacecraft_explicit_rhs!(sc_du, sc_state, p, i, t, spacecraft, dynamic_effectors, effector_decision, debug_control)
         end
     else
         @inbounds for i in eachindex(sc_state)
-            if !p.is_active[i]
-                sc_du[i] .= 0.0
-                continue
-            end
-            @views begin
-                sc_view = sc_state[i]
-                du_view = sc_du[i]
-                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
-                torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-                _accumulate_dynamic_effectors_partitioned!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision, :explicit)
-                mass_rate, rw_torque_body = _control_effectors_with_wheels!(forces, torques, sc_view, p, i, t, debug_control)
-                _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
-                heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
-                    p,
-                    sc_view,
-                    i,
-                    t;
-                    use_buffered_density=false,
-                )
-
-                SimulationModel.DynamicsTranslational.assign_full_translational_rhs!(
-                    du_view,
-                    sc_view,
-                    forces,
-                    mass_rate,
-                )
-
-                if p.args.mission_configuration.orientation_sim
-                    inertia_tensor = spacecraft[i].inertia_tensor
-                    _assign_orientation_rhs!(
-                        du_view,
-                        sc_view,
-                        inertia_tensor,
-                        torques;
-                        propagate_quaternion=true,
-                        include_gyroscopic=true,
-                        rw_assembly=spacecraft[i].root.rw_assembly,
-                        rw_torque_body=SVector{3, Float64}(rw_torque_body),
-                    )
-                end
-
-                _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
-            end
+            _spacecraft_explicit_rhs!(sc_du, sc_state, p, i, t, spacecraft, dynamic_effectors, effector_decision, debug_control)
         end
     end
 end # function spacecraft_dynamics_explicit_remainder!
+
+Base.@propagate_inbounds function _spacecraft_fast_control_rhs!(sc_du, sc_state, p, i, t, spacecraft, debug_control)
+    if !p.is_active[i]
+        sc_du[i] .= 0.0
+        return nothing
+    end
+    @views begin
+        sc_view = sc_state[i]
+        du_view = sc_du[i]
+        forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+        torques = MVector{3, Float64}(0.0, 0.0, 0.0)
+        mass_rate, rw_torque_body = _control_effectors_with_wheels!(forces, torques, sc_view, p, i, t, debug_control)
+        _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
+
+        SimulationModel.DynamicsTranslational.assign_control_only_translational_rhs!(
+            du_view,
+            sc_view,
+            forces,
+            mass_rate,
+        )
+
+        if p.args.mission_configuration.orientation_sim
+            inertia_tensor = spacecraft[i].inertia_tensor
+            _assign_orientation_rhs!(
+                du_view,
+                sc_view,
+                inertia_tensor,
+                torques;
+                propagate_quaternion=false,
+                include_gyroscopic=false,
+                rw_assembly=spacecraft[i].root.rw_assembly,
+                rw_torque_body=SVector{3, Float64}(rw_torque_body),
+            )
+        end
+
+        du_view.heat_loads .= 0.0
+    end
+    return nothing
+end
 
 function spacecraft_dynamics_fast_control!(du::ComponentVector, u::ComponentVector, p, t::Float64)
     sc_state = u.sc
@@ -4302,79 +4195,11 @@ function spacecraft_dynamics_fast_control!(du::ComponentVector, u::ComponentVect
     if use_rhs_batch
         minbatch = _rhs_batch_minbatch(p, length(spacecraft))
         @batch minbatch=minbatch for i in eachindex(sc_state)
-            if !p.is_active[i]
-                sc_du[i] .= 0.0
-                continue
-            end
-            @views begin
-                sc_view = sc_state[i]
-                du_view = sc_du[i]
-                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
-                torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-                mass_rate, rw_torque_body = _control_effectors_with_wheels!(forces, torques, sc_view, p, i, t, debug_control)
-                _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
-
-                SimulationModel.DynamicsTranslational.assign_control_only_translational_rhs!(
-                    du_view,
-                    sc_view,
-                    forces,
-                    mass_rate,
-                )
-
-                if p.args.mission_configuration.orientation_sim
-                    inertia_tensor = spacecraft[i].inertia_tensor
-                    _assign_orientation_rhs!(
-                        du_view,
-                        sc_view,
-                        inertia_tensor,
-                        torques;
-                        propagate_quaternion=false,
-                        include_gyroscopic=false,
-                        rw_assembly=spacecraft[i].root.rw_assembly,
-                        rw_torque_body=SVector{3, Float64}(rw_torque_body),
-                    )
-                end
-
-                du_view.heat_loads .= 0.0
-            end
+            _spacecraft_fast_control_rhs!(sc_du, sc_state, p, i, t, spacecraft, debug_control)
         end
     else
         @inbounds for i in eachindex(sc_state)
-            if !p.is_active[i]
-                sc_du[i] .= 0.0
-                continue
-            end
-            @views begin
-                sc_view = sc_state[i]
-                du_view = sc_du[i]
-                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
-                torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-                mass_rate, rw_torque_body = _control_effectors_with_wheels!(forces, torques, sc_view, p, i, t, debug_control)
-                _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
-
-                SimulationModel.DynamicsTranslational.assign_control_only_translational_rhs!(
-                    du_view,
-                    sc_view,
-                    forces,
-                    mass_rate,
-                )
-
-                if p.args.mission_configuration.orientation_sim
-                    inertia_tensor = spacecraft[i].inertia_tensor
-                    _assign_orientation_rhs!(
-                        du_view,
-                        sc_view,
-                        inertia_tensor,
-                        torques;
-                        propagate_quaternion=false,
-                        include_gyroscopic=false,
-                        rw_assembly=spacecraft[i].root.rw_assembly,
-                        rw_torque_body=SVector{3, Float64}(rw_torque_body),
-                    )
-                end
-
-                du_view.heat_loads .= 0.0
-            end
+            _spacecraft_fast_control_rhs!(sc_du, sc_state, p, i, t, spacecraft, debug_control)
         end
     end
 end # function spacecraft_dynamics_fast_control!

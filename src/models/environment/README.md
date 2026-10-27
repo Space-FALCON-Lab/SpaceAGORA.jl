@@ -1,20 +1,23 @@
-# Environmental models and field kernels
+# Environment models and field kernels
 
-Environmental models describe the surroundings sampled by a simulation:
-planet properties, atmosphere, ephemerides, radiation inputs and physical
-fields. They supply environmental values; spacecraft-specific force and torque
-adapters live in `../dynamics/effectors/`.
+The environment is what a simulation samples around the spacecraft: planet
+properties, ephemerides, the atmosphere, terrain and the gravity field. This
+folder supplies those values. The models that turn them into forces and torques
+on a spacecraft are in `../dynamics/effectors/`, and so are the radiation and
+magnetic-field models, which are written as effectors.
 
-The distinction is about responsibility, not a new Julia namespace boundary.
-The small `aerodynamics/aerodynamic_effectors.jl` and
-`gravity/gravity_effectors.jl` modules are compatibility facades that forward
-existing dynamic-effector names. They do not contain independent force-model
-implementations.
+| Folder or file | Contents |
+|---|---|
+| `ephemerides/` | Planets and their shapes (`Planets`) and the ephemeris models, including the analytic `SimpleEphemeridesModel` (`EphemeridesModels`). |
+| `physical_models.jl`, `atmosphere/` | `EnvironmentModels`: the density models, the frozen GRAM grid and near-surface models, the combined atmosphere, the named surrogate presets and the density epoch. |
+| `terrain/` | Terrain models (`TerrainModels`). |
+| `gravity/` | Analytic gravity-field kernels: central acceleration, Encke differencing and J2, J2 secular rates and the gravity gradient. |
+| `gravity/gravity_effectors.jl`, `aerodynamics/aerodynamic_effectors.jl` | Small forwarding modules that re-export a few dynamic-effector names under their older paths. They hold no force-model code. |
 
-Analytic gravity kernels such as central acceleration, Encke differencing and
-J2 secular rates live in `gravity/`. Runtime state access, model types and
-spacecraft wrench adapters live in `../dynamics/effectors/gravity/`. The ordered
-`gravity/gravity_models.jl` include manifest preserves the original loading
-sequence and evaluates both sets of definitions in the existing
-`DynamicEffectors.GravityEffectors` module. That deliberate composition keeps
-method/type identities and numerical expressions intact.
+The gravity kernels and the spacecraft side of the gravity models live in two
+folders but one module. `gravity/gravity_models.jl` includes the kernels here
+and the model types, run-time helpers and wrench adapters from
+`../dynamics/effectors/gravity/` in a fixed order, all evaluated in
+`DynamicEffectors.GravityEffectors`. Keep that order when you add a file, so
+types and methods keep their identities and the numerical expressions do not
+change.

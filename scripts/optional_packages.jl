@@ -154,28 +154,26 @@ function destination(directory; root=ROOT)
     return path
 end
 
-"""Build the existing installer's command after all source/destination preflight."""
+"""Build the same standalone command for every companion after source preflight."""
+function companion_installation_command(path, environment; root=ROOT, migrate_from="")
+    root = realpath(root)
+    env = destination(environment; root)
+    destination(env; root=realpath(path))
+    script = joinpath(path, "scripts", "setup_env.jl")
+    isfile(script) || fail("Missing companion installer at $script. Update the recorded companion source; no legacy fallback is used.")
+    arguments = isempty(migrate_from) ? [env] : ["--migrate-from", abspath(migrate_from), env]
+    return addenv(`$(Base.julia_cmd()) --startup-file=no --project=@stdlib $script $arguments`,
+        "SPACEAGORA_CORE_PATH" => root, "SPACEAGORA_CORE_REV" => "", "JULIA_LOAD_PATH" => "@:@stdlib")
+end
+
 function installation_command(name, environment; root=ROOT)
     root = source_root(root)
-    env = destination(environment; root)
     path = check(name; root)
-    if name == "hypr"
-        isfile(joinpath(root, "Manifest.toml")) || fail("HYPR setup requires the core Manifest.toml.")
-        driver = "include(ARGS[1]); HYPRInstallation.setup(ARGS[2]; root=ARGS[3], local_path=ARGS[4])"
-        script = joinpath(root, "scripts", "setup_hypr.jl")
-        return addenv(`$(Base.julia_cmd()) --startup-file=no --project=@stdlib -e $driver $script $env $root $path`,
-            "JULIA_LOAD_PATH" => "@:@stdlib")
-    end
-    script = joinpath(path, "scripts", "setup_env.jl")
-    isfile(script) || fail("Missing $(name) companion installer.")
-    return addenv(`$(Base.julia_cmd()) --startup-file=no --project=@stdlib $script $env`,
-        "SPACEAGORA_CORE_PATH" => root, "SPACEAGORA_CORE_REV" => "", "JULIA_LOAD_PATH" => "@:@stdlib")
+    return companion_installation_command(path, environment; root)
 end
 
 function setup(name, environment; root=ROOT)
     destination(environment; root) # fail before fetching a package
-    name == "hypr" && !isfile(joinpath(root, "Manifest.toml")) &&
-        fail("HYPR setup requires the core Manifest.toml.")
     checkout(name; root)
     run(installation_command(name, environment; root))
     return canonical_destination(environment)

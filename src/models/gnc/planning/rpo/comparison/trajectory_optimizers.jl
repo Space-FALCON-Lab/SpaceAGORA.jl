@@ -219,6 +219,28 @@ function rpo_chomp_numeric_gradient(theta, start, goal, objective_fn, gradient_e
     return grad
 end
 
+# Result conversion is common; CHOMP/STOMP search and termination remain separate.
+function _rpo_refined_optimizer_result(best_points, best_cost, best_components, geometry, local_cfg;
+    safe_distance_m, cost_history, history, iterations_completed, best_obj)
+    refined, refined_cost, improved = rpo_post_refine_path(best_points, geometry, local_cfg; safe_distance_m=safe_distance_m)
+    refined_components = rpo_normalized_path_cost_components(refined, geometry, local_cfg; safe_distance_m=safe_distance_m)
+    return (
+        path=refined,
+        raw_path=best_points,
+        cost=refined_cost,
+        raw_cost=best_cost,
+        components=refined_components,
+        raw_components=best_components,
+        config=local_cfg,
+        adaptive=(enabled=false,),
+        refinement_improved=improved,
+        cost_history=cost_history,
+        history=history,
+        iterations=iterations_completed,
+        objective=best_obj,
+    )
+end
+
 """Plan an RPO path using the CHOMP-like comparison optimizer."""
 function rpo_chomp_plan_path(
     start_rtn,
@@ -311,23 +333,8 @@ function rpo_chomp_plan_path(
         end
     end
 
-    refined, refined_cost, improved = rpo_post_refine_path(best_points, geometry, local_cfg; safe_distance_m=safe_distance_m)
-    refined_components = rpo_normalized_path_cost_components(refined, geometry, local_cfg; safe_distance_m=safe_distance_m)
-    return (
-        path=refined,
-        raw_path=best_points,
-        cost=refined_cost,
-        raw_cost=best_cost,
-        components=refined_components,
-        raw_components=best_components,
-        config=local_cfg,
-        adaptive=(enabled=false,),
-        refinement_improved=improved,
-        cost_history=cost_history,
-        history=history,
-        iterations=iterations_completed,
-        objective=best_obj,
-    )
+    return _rpo_refined_optimizer_result(best_points, best_cost, best_components, geometry, local_cfg;
+        safe_distance_m, cost_history, history, iterations_completed, best_obj)
 end
 
 """Evaluate waypoint obstacle state cost used by STOMP rollouts."""
@@ -500,21 +507,6 @@ function rpo_stomp_plan_path(
         end
     end
 
-    refined, refined_cost, improved = rpo_post_refine_path(best_points, geometry, local_cfg; safe_distance_m=safe_distance_m)
-    refined_components = rpo_normalized_path_cost_components(refined, geometry, local_cfg; safe_distance_m=safe_distance_m)
-    return (
-        path=refined,
-        raw_path=best_points,
-        cost=refined_cost,
-        raw_cost=best_cost,
-        components=refined_components,
-        raw_components=best_components,
-        config=local_cfg,
-        adaptive=(enabled=false,),
-        refinement_improved=improved,
-        cost_history=cost_history,
-        history=history,
-        iterations=iterations_completed,
-        objective=best_obj,
-    )
+    return _rpo_refined_optimizer_result(best_points, best_cost, best_components, geometry, local_cfg;
+        safe_distance_m, cost_history, history, iterations_completed, best_obj)
 end

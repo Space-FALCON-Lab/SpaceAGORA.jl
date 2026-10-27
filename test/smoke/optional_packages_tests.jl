@@ -286,17 +286,12 @@ end
             @test "--startup-file=no" in command.exec
             @test "--project=@stdlib" in command.exec
             @test !ispath(environment)
-            if name == "hypr"
-                @test joinpath(fixture.root, "scripts", "setup_hypr.jl") in command.exec
-                @test fixture.root in command.exec
-                @test hypr in command.exec
-                @test any(argument -> occursin("HYPRInstallation.setup", argument) &&
-                            occursin("local_path=ARGS[4]", argument), command.exec)
-            else
-                @test joinpath(name == "edg" ? edg : mujoco, "scripts", "setup_env.jl") in command.exec
-                @test "SPACEAGORA_CORE_PATH=$(fixture.root)" in command.env
-                @test "SPACEAGORA_CORE_REV=" in command.env
-            end
+            provider = Dict("hypr" => hypr, "mujoco" => mujoco, "edg" => edg)[name]
+            @test joinpath(provider, "scripts", "setup_env.jl") in command.exec
+            @test "SPACEAGORA_CORE_PATH=$(fixture.root)" in command.env
+            @test "SPACEAGORA_CORE_REV=" in command.env
+            @test joinpath(fixture.root, "scripts", "setup_hypr.jl") ∉ command.exec
+            @test !any(argument -> occursin("HYPRInstallation.setup", argument), command.exec)
         end
         @test fixture_snapshot(fixture.root) == before
     end
@@ -309,13 +304,19 @@ end
         @test_throws Exception OptionalPackages.setup("mujoco", joinpath(fixture.root, "environment"); root=fixture.root)
         @test fixture_snapshot(fixture.root) == before
         @test Base.active_project() == active
+        provider = OptionalPackages.checkout("hypr"; root=fixture.root)
         rm(joinpath(fixture.root, "Manifest.toml"))
         before = fixture_snapshot(fixture.root)
         environment = joinpath(fixture.temporary, "external-environment")
-        @test_throws Exception OptionalPackages.setup("hypr", environment; root=fixture.root)
+        command = OptionalPackages.installation_command("hypr", environment; root=fixture.root)
+        @test joinpath(provider, "scripts", "setup_env.jl") in command.exec
         @test !ispath(environment)
         @test fixture_snapshot(fixture.root) == before
         @test Base.active_project() == active
+        # An older companion cannot silently fall back to the former core owner.
+        rm(joinpath(provider, "scripts", "setup_env.jl"))
+        @test_throws ArgumentError OptionalPackages.companion_installation_command(provider, environment; root=fixture.root)
+        @test !ispath(environment)
     end
 end
 

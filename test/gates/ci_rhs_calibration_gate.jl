@@ -114,17 +114,29 @@ dynamics_pos !== nothing && calib_pos !== nothing ||
 first(dynamics_pos) < first(calib_pos) ||
     error("rhs_calibration.jl is included before dynamics_rhs.jl in simulation_engine.jl — it must come after")
 
-# ── §9: _calibrate_rhs_plan_if_needed! called from execution.jl ──────────────
+# ── §9: calibration phase stays between Jacobian preparation and solving ───
 
-occursin("_calibrate_rhs_plan_if_needed!(p, u_start, args)", exec_src) ||
-    error("_calibrate_rhs_plan_if_needed! is not called in execution.jl")
+phase_call = "_prepare_run_execution_policy!(p, u_start, args)"
+occursin(phase_call, exec_src) || error("Execution-policy preparation is not called in execution.jl")
+phase_match = match(r"function _prepare_run_execution_policy!\(.*?\nend"s, setup_src)
+phase_match !== nothing || error("Execution-policy preparation has no setup owner")
+phase_src = phase_match.match
+occursin("_calibrate_rhs_plan_if_needed!(p, u_start, args)", phase_src) ||
+    error("Execution-policy preparation does not call RHS calibration")
 
-# The calibration call must appear after jac_prototype construction and before the solve loop.
-jac_pos   = findfirst("jac_prototype", exec_src)
-calib_call_pos = findfirst("_calibrate_rhs_plan_if_needed!", exec_src)
-jac_pos !== nothing && calib_call_pos !== nothing ||
-    error("Could not locate jac_prototype or _calibrate_rhs_plan_if_needed! in execution.jl")
-first(jac_pos) < first(calib_call_pos) ||
-    error("_calibrate_rhs_plan_if_needed! is called before jac_prototype construction in execution.jl")
+jac_pos = findfirst("jac_prototype_active_count =", exec_src)
+phase_pos = findfirst(phase_call, exec_src)
+solve_pos = findfirst("if t_start < mission_end && checkpoint_active", exec_src)
+all(!isnothing, (jac_pos, phase_pos, solve_pos)) ||
+    error("Could not locate Jacobian preparation, execution-policy preparation and solve loop")
+first(jac_pos) < first(phase_pos) < first(solve_pos) ||
+    error("Execution-policy preparation must follow Jacobian preparation and precede solving")
+calib_pos = findfirst("_calibrate_rhs_plan_if_needed!(p, u_start, args)", phase_src)
+identify_pos = findfirst("build_rhs_width_trial(p, args.dynamics_model.dynamic_effectors)", phase_src)
+reset_pos = findfirst("_reset_density_model_histories!(p)", phase_src)
+all(!isnothing, (calib_pos, identify_pos, reset_pos)) ||
+    error("Calibration, in-run identification or density-history reset is missing from preparation")
+first(calib_pos) < first(identify_pos) < first(reset_pos) ||
+    error("Preparation must calibrate before identification, then reset density histories")
 
 println("ci_rhs_calibration_gate_ok")

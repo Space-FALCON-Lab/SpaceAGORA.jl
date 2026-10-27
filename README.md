@@ -8,7 +8,9 @@
 SpaceAGORA is a Julia simulator for spacecraft that fly in or near a planet's
 atmosphere. It models aerobraking, entry, aerocapture and orbital flight around
 Earth, Mars, Venus, Titan and the Moon, with guidance and control in the loop.
-The Space-FALCON Lab at the University of Michigan develops it.
+It also simulates spacecraft constellations, including their orbital layouts,
+inter-satellite links and ground-station contacts. The Space-FALCON Lab at the
+University of Michigan develops it.
 
 ![A simulated Mars aerobraking pass in the SpaceAGORA viewer: the Mars Odyssey spacecraft model coloured by its heating, with the Martian limb behind it and a panel listing altitude, density, heat rate and drag.](docs/src/assets/figures/viewer_heating_closeup.jpg)
 
@@ -65,9 +67,13 @@ julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstar
 - **Guidance and control**: your own controllers in the loop, energy-depletion
   aerobraking guidance, rendezvous planning and powered lunar descent with
   plume-surface interaction.
+- **Constellations**: custom orbital planes and Walker delta or star layouts,
+  with spacecraft ids, plane and slot assignments. Propagate interacting
+  spacecraft together with inter-satellite links and guidance, or run uncoupled
+  spacecraft as independent ensembles in parallel. Merge member results into
+  constellation tables that retain each spacecraft's identity.
 - **Missions and campaigns**: operational segments, phases and events within a
-  run; Monte Carlo and constellation ensembles in parallel; inter-satellite
-  links and ground stations.
+  run; Monte Carlo campaigns in parallel; ground-station contacts.
 - **Results**: CSV and Feather tables with a manifest, plots, an interactive 3D
   viewer, and a verification study that grades runs against reconstructed Mars
   Odyssey and Venus Express trajectories and a GMAT Earth reference.
@@ -94,6 +100,9 @@ separate, each in a Julia environment of its own:
 
 - [Configuring a Simulation](https://space-falcon-lab.github.io/SpaceAGORA.jl/user/simulation_configuration/):
   build your own scenario.
+- [Constellations](https://space-falcon-lab.github.io/SpaceAGORA.jl/user/constellations/):
+  build orbital layouts, choose coupled or independent propagation, and read
+  constellation results.
 - [Odyssey guidance with a frozen atmosphere](https://space-falcon-lab.github.io/SpaceAGORA.jl/tutorials/odyssey_surrogate/):
   a complete aerobraking exercise without licensed data.
 - [Interactive Visualization](https://space-falcon-lab.github.io/SpaceAGORA.jl/user/visualization/):

@@ -18,6 +18,20 @@
 #   SPACEAGORA_RHS_CALIBRATE_N_TIMED  number of timed calls per candidate (default 10)
 #   SPACEAGORA_RHS_CALIBRATE_SCHEDULERS  static,dynamic (default) -- which inner
 #                                     schedulers the flat ladder is swept over
+#   SPACEAGORA_RHS_CALIBRATE_SEED_TOPK   0 (default, full sweep) -- when K > 0, only
+#                                     the K candidates nearest the heuristic's plan
+#                                     plus the flat(1, static) reference are timed;
+#                                     falls back to the full sweep when the seeded
+#                                     result is not trustworthy (see
+#                                     _rhs_seed_needs_full_sweep)
+#   SPACEAGORA_RHS_CALIBRATE_SEED_DISAGREE_MARGIN  fraction by which a seeded
+#                                     winner may beat the heuristic before the
+#                                     ranking is distrusted (default: the
+#                                     OVERRIDE_MARGIN value)
+#   SPACEAGORA_RHS_CALIBRATE_SKIP_RATIO  0 (default, off) -- when > 0, replaces the
+#                                     fixed MIN_SOLVE_S rule with: honour a cached
+#                                     verdict (skip the sweep) when the predicted
+#                                     solve time < ratio * the predicted sweep time
 #
 # The sweep covers (scheduler x allotment) for the flat route, not allotment
 # alone. The scheduler used to come from SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER
@@ -408,6 +422,8 @@ function _rhs_calib_load!()::Nothing
                 "honoured_ns"    => Float64(get(row, "honoured_ns", 0.0)),
                 "plan_votes"     => Int(get(row, "plan_votes", 0)),
             )
+            # Optional, additive (schema stays 2): absent in older files.
+            get(row, "sweep_seeded", false) === true && (entry["sweep_seeded"] = true)
             timings = _rhs_calib_candidates_from_toml(get(row, "candidates", nothing))
             isempty(timings) || (entry["candidates"] = timings)
             _rhs_calib_cache[sig] = entry
@@ -455,6 +471,8 @@ function _rhs_calib_save!()::Nothing
             # the winner's time. Readers of schema 1 ignore the key.
             timings = get(e, "candidates", nothing)
             (timings isa AbstractVector && !isempty(timings)) && (row["candidates"] = timings)
+            # Written only when true, so unseeded stores are byte-identical.
+            get(e, "sweep_seeded", false) === true && (row["sweep_seeded"] = true)
             push!(rows, row)
         end
         payload = Dict{String, Any}(
@@ -572,7 +590,7 @@ end
 end
 
 function _rhs_calib_store_heuristic!(sig::String, heuristic_ns::Float64 = 0.0; sweep_ns::Float64 = 0.0,
-                                     timings = nothing)::Nothing
+                                     timings = nothing, seeded::Bool = false)::Nothing
     _rhs_calib_load!()
     lock(_rhs_calib_lock) do
         prev = get(_rhs_calib_cache, sig, nothing)
@@ -593,6 +611,7 @@ function _rhs_calib_store_heuristic!(sig::String, heuristic_ns::Float64 = 0.0; s
             "honoured_ns"     => 0.0,
         )
         prev !== nothing && haskey(prev, "solve_ns") && (entry["solve_ns"] = prev["solve_ns"])
+        seeded && (entry["sweep_seeded"] = true)
         _rhs_calib_carry_timings!(entry, prev, timings)
         _rhs_calib_cache[sig] = entry
     end
@@ -635,7 +654,7 @@ end
 end
 
 function _rhs_calib_store!(sig::String, plan, elapsed_mean_ns::Float64; sweep_ns::Float64 = 0.0,
-                           timings = nothing)::Nothing
+                           timings = nothing, seeded::Bool = false)::Nothing
     # Settle the lazy one-time disk load first: otherwise a later first lookup
     # would load persisted entries over fresher in-process stores.
     _rhs_calib_load!()
@@ -666,6 +685,7 @@ function _rhs_calib_store!(sig::String, plan, elapsed_mean_ns::Float64; sweep_ns
                 "plan_votes"      => 0,
             )
             haskey(prev, "solve_ns") && (entry["solve_ns"] = prev["solve_ns"])
+            seeded && (entry["sweep_seeded"] = true)
             _rhs_calib_carry_timings!(entry, prev, timings)
             _rhs_calib_cache[sig] = entry
             return nothing
@@ -685,6 +705,7 @@ function _rhs_calib_store!(sig::String, plan, elapsed_mean_ns::Float64; sweep_ns
         # dropping it here put every freshly pinned plan back into "never
         # measured", i.e. the sweep regime, until the next solve re-measured it.
         prev !== nothing && haskey(prev, "solve_ns") && (entry["solve_ns"] = prev["solve_ns"])
+        seeded && (entry["sweep_seeded"] = true)
         _rhs_calib_carry_timings!(entry, prev, timings)
         _rhs_calib_cache[sig] = entry
     end
@@ -800,6 +821,91 @@ function _rhs_plan_candidates(p, dynamic_effectors)
     end
 
     return candidates
+end
+
+# ── Seeded search (SPACEAGORA_RHS_CALIBRATE_SEED_TOPK) ────────────────────────
+
+@inline function _rhs_calibrate_seed_topk()::Int
+    raw = strip(_engine_env_get("SPACEAGORA_RHS_CALIBRATE_SEED_TOPK", "0"))
+    v = tryparse(Int, raw)
+    v === nothing && throw(ArgumentError("SPACEAGORA_RHS_CALIBRATE_SEED_TOPK must be an integer, got '$raw'"))
+    return max(0, v)
+end
+
+# How far a seeded winner may beat the heuristic before the heuristic-proximity
+# ranking is treated as wrong. Defaults to the override margin, the repo's own
+# threshold for "clearly better".
+@inline function _rhs_calibrate_seed_disagree_margin()::Float64
+    raw = strip(_engine_env_get("SPACEAGORA_RHS_CALIBRATE_SEED_DISAGREE_MARGIN", ""))
+    isempty(raw) && return _rhs_calibrate_override_margin()
+    v = tryparse(Float64, raw)
+    v === nothing && throw(ArgumentError(
+        "SPACEAGORA_RHS_CALIBRATE_SEED_DISAGREE_MARGIN must be a float, got '$raw'"))
+    return max(0.0, v)
+end
+
+@inline _rhs_is_serial_reference(c) = c.mode !== :satellite_batch && Int(c.allotment) == 1 && c.scheduler === :static
+
+# The K candidates nearest the heuristic's plan, plus the flat(1, static)
+# reference and the heuristic's own plan, in the original candidate order.
+# Nearness is lexicographic: same mode, then |log2 width ratio|, then same
+# scheduler -- the only ordering the heuristic's single answer implies; no cost
+# numbers are involved.
+function _rhs_seed_subset(candidates, heuristic, k::Int)
+    h_width = _rhs_plan_width(heuristic)
+    dist(c) = (c.mode !== heuristic.mode,
+               abs(log2(_rhs_plan_width(c)) - log2(h_width)),
+               c.scheduler !== heuristic.scheduler)
+    order = sortperm(collect(candidates); by = dist)   # stable
+    keep = Set(order[1:min(k, length(order))])
+    for (i, c) in pairs(candidates)
+        (_rhs_is_serial_reference(c) ||
+         (c.mode === heuristic.mode && c.allotment == heuristic.allotment &&
+          c.scheduler === heuristic.scheduler)) && push!(keep, i)
+    end
+    return [candidates[i] for i in 1:length(candidates) if i in keep]
+end
+
+# Whether a seeded sweep's per-candidate records (the sweep's timing dicts) must
+# be discarded for a full sweep: the best timed plan does not clear the serial
+# reference by `override_margin` (nothing to trust), or it beats the heuristic's
+# plan by more than `disagree_margin` (the ranking missed a better region).
+# Each plan counts at its most precise record (round 0 over earlier rounds).
+function _rhs_seed_needs_full_sweep(records, override_margin::Float64, disagree_margin::Float64)::Bool
+    best_of = Dict{Tuple{String, Int, String}, Tuple{Int, Float64}}()
+    heur = NaN; ref = NaN
+    for r in records
+        ns = Float64(get(r, "ns", Inf))
+        isfinite(ns) || continue
+        key = (String(r["mode"]), Int(r["allotment"]), String(r["scheduler"]))
+        old = get(best_of, key, nothing)
+        rnd = Int(get(r, "round", 0))
+        (old === nothing || rnd == 0 || (old[1] != 0 && rnd > old[1])) && (best_of[key] = (rnd, ns))
+    end
+    isempty(best_of) && return false
+    for r in records
+        key = (String(r["mode"]), Int(r["allotment"]), String(r["scheduler"]))
+        ns = haskey(best_of, key) ? best_of[key][2] : continue
+        get(r, "default", false) === true && (heur = ns)
+        (key[1] != "satellite_batch" && key[2] == 1 && key[3] == "static") && (ref = ns)
+    end
+    best = minimum(v[2] for v in values(best_of))
+    isfinite(ref) && !(best < ref * (1.0 - override_margin)) && return true
+    isfinite(heur) && best < heur * (1.0 - disagree_margin) && return true
+    return false
+end
+
+function _run_rhs_sweep!(p, u0, dynamic_effectors, verbose::Bool, args = nothing)
+    k = _rhs_calibrate_seed_topk()
+    (k > 0 && args !== nothing) || return _run_rhs_sweep_core!(p, u0, dynamic_effectors, verbose, args, 0)
+    res = _run_rhs_sweep_core!(p, u0, dynamic_effectors, verbose, args, k)
+    timings = res[6]
+    if !isempty(timings) && _rhs_seed_needs_full_sweep(
+            timings, _rhs_calibrate_override_margin(), _rhs_calibrate_seed_disagree_margin())
+        verbose && println("[SpaceAGORA] RHS calibration: seeded result not trusted; running the full sweep")
+        return _run_rhs_sweep_core!(p, u0, dynamic_effectors, verbose, args, 0)
+    end
+    return res
 end
 
 # ── Sweep ─────────────────────────────────────────────────────────────────────
@@ -931,7 +1037,7 @@ function _rhs_sweep_measure!(p, du, u0, candidate, reps::Int)::Float64
     end
 end
 
-function _run_rhs_sweep!(p, u0, dynamic_effectors, verbose::Bool, args = nothing)
+function _run_rhs_sweep_core!(p, u0, dynamic_effectors, verbose::Bool, args, seed_k::Int)
     n_warmup   = _rhs_calibrate_n_warmup()
     n_timed    = _rhs_calibrate_n_timed()
     candidates = _rhs_plan_candidates(p, dynamic_effectors)
@@ -964,6 +1070,17 @@ function _run_rhs_sweep!(p, u0, dynamic_effectors, verbose::Bool, args = nothing
         end
     end
 
+    # Seeded search: time only the candidates nearest the heuristic's plan (plus
+    # the serial reference). Needs the heuristic as the anchor of the ranking.
+    seeded = false
+    if seed_k > 0 && heuristic !== nothing
+        subset = _rhs_seed_subset(candidates, heuristic, seed_k)
+        if length(subset) < length(candidates)
+            candidates = subset
+            seeded = true
+        end
+    end
+
     # What every candidate measured, kept for the store (schema 2): each
     # candidate's score from the LAST round it took part in, i.e. its most
     # precise reading, with that round's rep count. The sixth return value.
@@ -981,6 +1098,7 @@ function _run_rhs_sweep!(p, u0, dynamic_effectors, verbose::Bool, args = nothing
         for (c, ns, dflt) in final_recorded
             isfinite(ns) && push!(out, _rhs_sweep_timing_record(c, ns, max(2, n_timed), 0, dflt))
         end
+        seeded && foreach(t -> t["seeded"] = true, out)
         out
     end
 
@@ -1497,16 +1615,68 @@ function _rhs_calib_reverify_due(sig::String)::Bool
     return honoured_ns * share >= sweep_ns
 end
 
+# Ratio of predicted solve time to predicted sweep time below which the sweep is
+# skipped and a cached verdict honoured. 0 (default) keeps the fixed MIN_SOLVE_S
+# rule. Dimensionless; there is no repo-sourced default, so it is opt-in only.
+@inline function _rhs_calibrate_skip_ratio()::Float64
+    raw = strip(_engine_env_get("SPACEAGORA_RHS_CALIBRATE_SKIP_RATIO", "0"))
+    v = try
+        parse(Float64, raw)
+    catch
+        throw(ArgumentError("SPACEAGORA_RHS_CALIBRATE_SKIP_RATIO must be a float, got '$raw'"))
+    end
+    return isfinite(v) ? max(0.0, v) : 0.0
+end
+
+# Predicted solve time (ns) for a cached entry, from existing records only: the
+# minimum measured solve_ns when there is one, otherwise the estimated RHS
+# evaluation count (`_rhs_estimated_evaluations`) times the per-call time the
+# sweep recorded for the heuristic's own plan. 0.0 = no usable prediction (a
+# first encounter has no entry at all, so it always sweeps).
+function _rhs_calib_predicted_solve_ns(entry, est_evals::Float64)::Float64
+    solve_ns = Float64(get(entry, "solve_ns", 0.0))
+    (isfinite(solve_ns) && solve_ns > 0.0) && return solve_ns
+    (isfinite(est_evals) && est_evals > 0.0) || return 0.0
+    timings = get(entry, "candidates", nothing)
+    timings isa AbstractVector || return 0.0
+    for t in timings
+        get(t, "default", false) === true || continue
+        ns = Float64(get(t, "ns", 0.0))
+        (isfinite(ns) && ns > 0.0) && return est_evals * ns
+    end
+    return 0.0
+end
+
+# Pure skip decision: `true` skip the sweep, `false` sweep, `nothing` no usable
+# prediction (or ratio off) so the caller keeps its fixed rule.
+function _rhs_calib_skip_by_prediction(ratio::Float64, predicted_solve_ns::Float64,
+                                       predicted_sweep_ns::Float64)::Union{Nothing, Bool}
+    ratio > 0.0 || return nothing
+    (isfinite(predicted_solve_ns) && predicted_solve_ns > 0.0) || return nothing
+    (isfinite(predicted_sweep_ns) && predicted_sweep_ns > 0.0) || return nothing
+    return predicted_solve_ns < ratio * predicted_sweep_ns
+end
+
 # True when this signature has been seen to solve for longer than the threshold,
 # i.e. we are in the always-sweep regime. An unmeasured signature answers TRUE:
 # the first encounter sweeps, which is also the only conservative choice, since
 # nothing is yet known about what the cache would be replaying into.
-function _rhs_calib_solve_exceeds_threshold(sig::String)::Bool
+function _rhs_calib_solve_exceeds_threshold(sig::String; est_evals::Float64 = 0.0)::Bool
     _rhs_calib_load!()
     entry = lock(_rhs_calib_lock) do
         get(_rhs_calib_cache, sig, nothing)
     end
     entry === nothing && return true
+    # Optional ratio rule (SPACEAGORA_RHS_CALIBRATE_SKIP_RATIO); when it has a
+    # prediction for both sides it replaces the fixed threshold below, otherwise
+    # the fixed threshold decides, exactly as with the ratio off.
+    ratio = _rhs_calibrate_skip_ratio()
+    if ratio > 0.0
+        skip = _rhs_calib_skip_by_prediction(
+            ratio, _rhs_calib_predicted_solve_ns(entry, est_evals),
+            Float64(get(entry, "sweep_ns", 0.0)))
+        skip === nothing || return !skip
+    end
     solve_ns = Float64(get(entry, "solve_ns", 0.0))
     (isfinite(solve_ns) && solve_ns > 0.0) || return true
     return solve_ns >= _rhs_calibrate_min_solve_seconds() * 1e9
@@ -1563,9 +1733,9 @@ end
 # +8%) carried rhs_plan_source=sweep with verdict heuristic on every repeat,
 # while the same cases at twelve threads hit a cached heuristic verdict and sat
 # within 3%. A cached PLAN still re-sweeps on a long solve either way.
-function _rhs_calib_cached_verdict(sig::String, honour_heuristic_verdict::Bool)
+function _rhs_calib_cached_verdict(sig::String, honour_heuristic_verdict::Bool; est_evals::Float64 = 0.0)
     _rhs_calibration_mode() == :force && return nothing
-    long_solve = _rhs_calib_solve_exceeds_threshold(sig)
+    long_solve = _rhs_calib_solve_exceeds_threshold(sig; est_evals = est_evals)
     (long_solve && !honour_heuristic_verdict) && return nothing
     cached = _rhs_calib_lookup(sig)
     cached === nothing && return nothing
@@ -1644,7 +1814,8 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
 
     penv = p.shared_buffers.policy_env_config[]
     honour_heuristic_verdict = penv !== nothing && penv.policy_v2
-    cached = _rhs_calib_cached_verdict(sig, honour_heuristic_verdict)
+    est_evals = _rhs_calibrate_skip_ratio() > 0.0 ? _rhs_estimated_evaluations(p) : 0.0
+    cached = _rhs_calib_cached_verdict(sig, honour_heuristic_verdict; est_evals = est_evals)
     if cached !== nothing
         lock(_rhs_calib_lock) do
             _rhs_calib_solve_honoured[sig] = true
@@ -1687,6 +1858,7 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
     best_plan, best_elapsed, verdict, _rival_ns, _rival_plan, sweep_timings =
         _run_rhs_sweep!(p, u0, dynamic_effectors, verbose, args)
     sweep_ns = Float64(time_ns() - sweep_started)
+    seeded = any(t -> get(t, "seeded", false) === true, sweep_timings)
     # The solve is timed from here, not from before the sweep: the gate reads
     # solve_ns as the solve's own length, and charging the sweep to it would
     # make every swept shape look longer than it is.
@@ -1699,7 +1871,7 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
             SimulationModel.ParallelPolicy.record_rhs_plan_selection!(
                 :sweep, :heuristic, 0, :none; sweep_ns=sweep_ns
             )
-            _rhs_calib_store_heuristic!(sig, best_elapsed; sweep_ns=sweep_ns, timings=sweep_timings)
+            _rhs_calib_store_heuristic!(sig, best_elapsed; sweep_ns=sweep_ns, timings=sweep_timings, seeded=seeded)
             _rhs_calib_save!()
         end
         return
@@ -1711,7 +1883,7 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
     SimulationModel.ParallelPolicy.record_rhs_plan_selection!(
         :sweep, best_plan.mode, best_plan.allotment, best_plan.scheduler; sweep_ns=sweep_ns
     )
-    _rhs_calib_store!(sig, best_plan, best_elapsed; sweep_ns=sweep_ns, timings=sweep_timings)
+    _rhs_calib_store!(sig, best_plan, best_elapsed; sweep_ns=sweep_ns, timings=sweep_timings, seeded=seeded)
     _rhs_calib_save!()
 
     return nothing

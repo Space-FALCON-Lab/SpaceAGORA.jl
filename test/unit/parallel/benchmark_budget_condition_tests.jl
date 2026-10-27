@@ -19,7 +19,7 @@ function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSp
               terminal=(terminal_time_s=1.0, pos_norm_m=2.0, vel_norm_mps=3.0, mass_kg=4.0))
     return (results=fill(sample, n), batch_wall_time_s=2.0, actual_backend="none",
             execution_scope="fixture", outer_tasks=1, mode=mode,
-            env_extra=Pair{String,String}[], adaptive_allocation="", policy=(;))
+            env_extra=Pair{String,String}[], adaptive_allocation="", policy=ppc_policy_columns(nothing))
 end
 
 ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed, mc_index::Int=1) = (; seed)

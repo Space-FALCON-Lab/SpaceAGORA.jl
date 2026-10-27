@@ -110,6 +110,19 @@ separate, each in a Julia environment of its own:
 - [Extensibility](https://space-falcon-lab.github.io/SpaceAGORA.jl/extensibility/):
   add your own forces, atmospheres, actuators and controllers.
 
+## Contributors
+
+The following people have contributed to SpaceAGORA, listed alphabetically by
+surname:
+
+- Mohammed Fadag
+- [Giusy Falcone](https://github.com/gfalcon2)
+- [Jakob Gorisek-Gazze](https://github.com/jgorisek)
+- [Giovanni Romagnoli](https://github.com/GiovanniRomagnoli)
+- [Nihal Simha](https://github.com/NihalSimha)
+- [Kuang Sun](https://github.com/Kuang-Sun)
+- [Evan Yu](https://github.com/EvanY14)
+
 ## Citing
 
 If you use SpaceAGORA, please cite it with the metadata in

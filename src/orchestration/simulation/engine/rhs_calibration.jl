@@ -1682,6 +1682,30 @@ function _rhs_calib_solve_exceeds_threshold(sig::String; est_evals::Float64 = 0.
     return solve_ns >= _rhs_calibrate_min_solve_seconds() * 1e9
 end
 
+# Regret-guard hook helpers (pure). The baseline is flat(1, static), the plan
+# the guard falls back to. `prev_solve_ns` is the entry's minimum earlier solve
+# of the policy-chosen plan, `elapsed_mean_ns` that plan's sweep time per RHS and
+# `ref_ns` the baseline's sweep time per RHS (same unit, same sweep), so
+# prev * ref / elapsed is the baseline's predicted solve time. Returns 0.0 (skip)
+# on any missing, zero or non-finite input.
+function _rhs_calib_regret_baseline_ns(prev_solve_ns::Real, ref_ns::Real, elapsed_mean_ns::Real)::Float64
+    all(x -> isfinite(x) && x > 0, (prev_solve_ns, ref_ns, elapsed_mean_ns)) || return 0.0
+    return Float64(prev_solve_ns) * Float64(ref_ns) / Float64(elapsed_mean_ns)
+end
+
+_rhs_calib_is_baseline_row(r)::Bool =
+    get(r, "mode", "") == "flat_constellation_effector_queue" &&
+    Int(get(r, "allotment", 1)) == 1 && get(r, "scheduler", "") == "static"
+
+function _rhs_calib_regret_ref_ns(entry)::Float64
+    timings = get(entry, "candidates", nothing)
+    timings isa AbstractVector || return 0.0
+    for t in timings
+        _rhs_calib_is_baseline_row(t) && return Float64(get(t, "ns", 0.0))
+    end
+    return 0.0
+end
+
 # Called once the solve is done. See the call in simulation/engine/execution.jl.
 function _rhs_calib_record_solve_time!()::Nothing
     now = time_ns()
@@ -1709,6 +1733,11 @@ function _rhs_calib_record_solve_time!()::Nothing
             # answer for it: it spent tens of seconds compiling, so the sweep's
             # ~0.1 s is a rounding error there anyway.
             prev = Float64(get(entry, "solve_ns", 0.0))
+            if SimulationModel.ParallelPolicy.regret_guard_enabled() && !_rhs_calib_is_baseline_row(entry)
+                base = _rhs_calib_regret_baseline_ns(
+                    prev, _rhs_calib_regret_ref_ns(entry), Float64(get(entry, "elapsed_mean_ns", 0.0)))
+                base > 0.0 && SimulationModel.ParallelPolicy.regret_guard_observe!(sig, sample, base)
+            end
             entry["solve_ns"] = (isfinite(prev) && prev > 0.0) ? min(prev, sample) : sample
         end
         return nothing
@@ -1805,6 +1834,15 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
         p, dynamic_effectors, args.environment_model.density_model
     )
     verbose = args.simulation_settings.verbose
+
+    # Regret guard fired: run the baseline plan, no sweep, no solve sample.
+    if SimulationModel.ParallelPolicy.regret_guard_enabled() &&
+       SimulationModel.ParallelPolicy.regret_guard_frozen()
+        p.shared_buffers.rhs_plan_override[] = _make_calib_flat_plan(1, :static)
+        SimulationModel.ParallelPolicy.record_rhs_plan_selection!(
+            :regret_guard, :flat_constellation_effector_queue, 1, :static)
+        return
+    end
 
     # Note the start unconditionally: whichever way the gate goes, the solve that
     # follows is the sample that decides the regime next time.

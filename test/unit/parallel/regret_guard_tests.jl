@@ -37,3 +37,20 @@ end
     end
     PP.reset_regret_guard!()
 end
+
+@testset "regret guard hook arithmetic (pure)" begin
+    SEng = SpaceAGORA.SimulationEngine
+    b = SEng._rhs_calib_regret_baseline_ns
+    @test b(10.0, 2.0, 4.0) == 5.0           # prev * ref / elapsed
+    @test b(10.0, 4.0, 4.0) == 10.0
+    @test b(0.0, 2.0, 4.0) == 0.0            # no earlier solve
+    @test b(10.0, 0.0, 4.0) == 0.0           # no reference candidate
+    @test b(10.0, 2.0, 0.0) == 0.0
+    @test b(NaN, 2.0, 4.0) == 0.0
+    @test b(10.0, Inf, 4.0) == 0.0
+    base_row = Dict("mode" => "flat_constellation_effector_queue", "allotment" => 1, "scheduler" => "static")
+    @test SEng._rhs_calib_is_baseline_row(base_row)
+    @test !SEng._rhs_calib_is_baseline_row(merge(base_row, Dict("scheduler" => "dynamic")))
+    @test SEng._rhs_calib_regret_ref_ns(Dict("candidates" => [Dict("mode" => "satellite_batch", "ns" => 1.0), merge(base_row, Dict("ns" => 7.0))])) == 7.0
+    @test SEng._rhs_calib_regret_ref_ns(Dict()) == 0.0
+end

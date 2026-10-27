@@ -536,7 +536,7 @@ end
     readme = read(joinpath(REPO_ROOT, "README.md"), String)
     quickstart = read(joinpath(REPO_ROOT, "docs", "src", "user", "quickstart.md"), String)
     @test occursin("julia_version_strict=true", readme)
-    @test occursin("canonical committed execution environment", quickstart)
+    @test occursin("committed root manifest pins the package versions used by this checkout’s root environment", replace(quickstart, r"\s+" => " "))
     for page in (readme, quickstart)
         @test occursin("julia --startup-file=no examples/setup.jl", page)
         @test occursin("julia --project=examples examples/AGORA_Basic_Quickstart.jl", page)

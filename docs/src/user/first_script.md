@@ -1,8 +1,8 @@
 # Your First Script
 
-Use this page when you have run the [Quickstart](quickstart.md) and want to
-write a scenario of your own. It starts from the same no-GRAM Earth scenario
-and changes what you need.
+Once the [Quickstart](quickstart.md) has run, this page shows how to write a
+scenario of your own. It starts from the same no-GRAM Earth scenario and
+changes the parts you are most likely to change first.
 
 What to read next:
 
@@ -13,17 +13,17 @@ What to read next:
 
 ## Your own script
 
-Save the following code as `first_orbit.jl` in your SpaceAGORA checkout.
-It runs in the root environment that the [Quickstart](quickstart.md)'s
-`Pkg.instantiate` step prepared: the script loads only SpaceAGORA, so it does
-not need the examples environment. This example needs no GRAM installation or
-SPICE kernels.
+Save the following code as `first_orbit.jl` in your SpaceAGORA checkout. It
+loads only SpaceAGORA, so it runs in the root environment that the
+[Quickstart](quickstart.md)'s `Pkg.instantiate` step prepared and does not need
+the examples environment. It needs no GRAM installation and no SPICE kernels.
 
-Every type needed for this example is exported from the root module, so
-`using SpaceAGORA` is the only import. `make_example_config` and
-`make_three_body_spacecraft` build a complete configuration from a planet, a
-spacecraft, and an initial condition. `make_example_config` defaults to SPICE
-ephemerides, so pass `SimpleEphemeridesModel()` for a run without SPICE kernels:
+Every name the script uses is exported by SpaceAGORA, so `using SpaceAGORA` is
+the only import. `make_three_body_spacecraft` builds a bus with two solar
+panels and its initial orbit, and `make_example_config` builds a complete
+configuration from a planet, that spacecraft, a duration and an epoch.
+`make_example_config` uses SPICE ephemerides unless told otherwise, so the
+script passes `SimpleEphemeridesModel()` to run without SPICE kernels:
 
 ```julia
 using SpaceAGORA
@@ -51,22 +51,26 @@ From the checkout directory, run:
 julia --project=. first_orbit.jl
 ```
 
-The final simulated time should be `300.0` seconds. The solver solution is
-returned to the script; `results=false` means this example does not write result
-files. To save tables and inspect their columns, follow
-[Simulation Outputs](outputs.md).
+The final simulated time should be `300.0` seconds. `return_solution=true`
+hands the solver's solution back to the script, and `results=false` keeps the
+run from writing result files. To save tables and inspect their columns,
+follow [Simulation Outputs](outputs.md).
 
 For a first change, set `mission_time=600.0` and rerun the script. Then change
-the initial orbit in `InitialCondition`; the radii `ra` and `rp` are measured
-from the planet's centre, in metres, rather than from its surface.
+the initial orbit in `InitialCondition`: `ra` and `rp` are the apoapsis and
+periapsis radii, measured from the planet's center in meters, not altitudes
+above its surface.
+[Configuring a Simulation](simulation_configuration.md#InitialCondition) lists
+the other ways to give an initial orbit.
 
 ## When to pick a different path
 
-Choose [Verification Study](verification_study.md) instead when your goal is a
-known study workflow with enforcement and report outputs.
+Choose [Verification Study](verification_study.md) instead when you want the
+packaged telemetry verification study, which compares simulated orbits with
+mission telemetry and writes summary reports.
 
-Choose [Simulation Outputs](outputs.md) when the run completed and you need to
-interpret the CSV, Feather, or manifest files.
+Choose [Simulation Outputs](outputs.md) when a run has finished and you need to
+read its CSV, Feather or manifest files.
 
-Choose [Assets & Modes](../assets.md) instead when you need to decide whether a
-machine is ready for GRAM/SPICE-backed runs.
+Choose [Assets & Modes](../assets.md) when you need to decide whether a machine
+is ready for runs that use GRAM or SPICE.

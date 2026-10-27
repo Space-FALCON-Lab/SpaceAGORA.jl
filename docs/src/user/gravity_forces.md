@@ -1,8 +1,10 @@
 # Gravity and Forces
 
-Use this page to choose the gravity model and the other force and torque models
-that act on your spacecraft. They are listed in the effector tuple of
-`DynamicsModel`, which [Configuring a Simulation](simulation_configuration.md#DynamicsModel) describes.
+This page covers the gravity models and how they combine with the other force
+and torque models acting on a spacecraft. All of them go in the effector tuple
+of `DynamicsModel`, which
+[Configuring a Simulation](simulation_configuration.md#DynamicsModel)
+describes.
 
 What to read next:
 
@@ -12,26 +14,32 @@ What to read next:
 
 ## Built-in gravity models
 
-The effector tuple accepts any combination of `AbstractForceTorqueModel`
-implementations. The built-in gravity models:
+The effector tuple takes any combination of `AbstractForceTorqueModel`
+implementations. The built-in gravity models are:
 
-- `InverseSquaredGravityModel()`: inverse-square point-mass gravity
-- `InverseSquaredJ2GravityModel()`: point-mass gravity with J2 oblateness
-- `GravitationalHarmonicsModel(L, M, coefficients_file, planet)` — spherical-harmonic gravity to degree `L` and order `M`
-- `NBodyGravityModel(body_names=..., primary_body_name=..., planet=planet)` — third-body gravity from ephemerides for the listed bodies, for example `NBodyGravityModel(body_names=("Sun", "Moon"), primary_body_name="Earth", planet=planet)`
+- `InverseSquaredGravityModel()`: point-mass gravity
+- `InverseSquaredJ2GravityModel()`: point-mass gravity plus the J2 oblateness
+  term
+- `GravitationalHarmonicsModel(L, M, coefficients_file, planet)`:
+  spherical-harmonic gravity to degree `L` and order `M`
+- `NBodyGravityModel(body_names=..., primary_body_name=..., planet=planet)`:
+  the gravity of the listed third bodies, whose positions come from SPICE, for
+  example
+  `NBodyGravityModel(body_names=("Sun", "Moon"), primary_body_name="Earth", planet=planet)`
 
-Forces you write yourself enter the same tuple; see
+Forces you write yourself go in the same tuple; see
 [Adding a Force or Torque](custom_effector.md).
 
 ## Spherical-harmonic gravity
 
 `GravitationalHarmonicsModel(L, M, coefficients_file, planet)` evaluates the
-gravity field to degree `L` and order `M` (with `M <= L`) from a file of
-coefficients. By default it includes the central point-mass term, so use it
-instead of `InverseSquaredGravityModel()` or `InverseSquaredJ2GravityModel()`,
-not alongside them: listing both counts the central attraction twice. Pass the
-same `planet` object as the rest of the configuration and a coefficients file
-for that body. This is the [Your First Script](first_script.md) example with degree-8 Earth gravity:
+gravity field to degree `L` and order `M` (`M <= L`) from a file of
+coefficients. By default it includes the central point-mass term, so use it in
+place of `InverseSquaredGravityModel()` or `InverseSquaredJ2GravityModel()`,
+not together with them: listing both counts the central attraction twice. Pass
+the same `planet` object as the rest of the configuration and a coefficients
+file for that body. This is the [Your First Script](first_script.md) example
+with degree-8 Earth gravity:
 
 ```julia
 using SpaceAGORA
@@ -54,15 +62,16 @@ config = make_example_config(
 run_simulation(config)
 ```
 
-The repository's coefficient files, fully normalized with columns
-`degree,order,C,S`, are in `data/planets/gravity/`. They include
+The repository's coefficient files are in `data/planets/gravity/`, fully
+normalized, with columns that start `degree,order,C,S`. They include
 `EarthGGM05C.csv` and `egm96.csv` for Earth, `Mars50c.csv` and `GMM2B.csv` for
 Mars, `MGNP180U.csv` for Venus, `LP165P.csv` for the Moon and `titan5.csv` for
-Titan; the `README.md` in that folder lists every file, including variants
-with other tide conventions, with its source. Asking for a degree beyond what a
-file contains is refused with an error. Run time grows with the degree, so
+Titan; the `README.md` in that folder lists every file with its source,
+including variants with other tide conventions. Asking for a degree or order
+beyond what a file contains raises an error. Run time grows with the degree, so
 start low and raise it once the setup works; `AGORA_Earth_Aerobraking.jl`,
 `AGORA_Odyssey.jl` and `AGORA_Vex.jl` use degree and order 50. Keywords select
 other coefficient normalizations (`coefficient_normalization=:schmidt` or
-`:unnormalized`) and a perturbation-only term (`include_central=false`); the
+`:unnormalized`) and leave out the central term for a perturbation-only model
+(`include_central=false`); the
 [Simulation Setup API](../generated/simulation_setup_api.md) entry lists them.

@@ -871,7 +871,11 @@ end
 # reference by `override_margin` (nothing to trust), or it beats the heuristic's
 # plan by more than `disagree_margin` (the ranking missed a better region).
 # Each plan counts at its most precise record (round 0 over earlier rounds).
-function _rhs_seed_needs_full_sweep(records, override_margin::Float64, disagree_margin::Float64)::Bool
+_rhs_seed_needs_full_sweep(records, override_margin::Float64, disagree_margin::Float64)::Bool =
+    _rhs_seed_fallback_reason(records, override_margin, disagree_margin) !== :none
+
+# :none, :no_gain_over_reference, or :beats_heuristic -- which guard fired.
+function _rhs_seed_fallback_reason(records, override_margin::Float64, disagree_margin::Float64)::Symbol
     best_of = Dict{Tuple{String, Int, String}, Tuple{Int, Float64}}()
     heur = NaN; ref = NaN
     for r in records
@@ -882,7 +886,7 @@ function _rhs_seed_needs_full_sweep(records, override_margin::Float64, disagree_
         rnd = Int(get(r, "round", 0))
         (old === nothing || rnd == 0 || (old[1] != 0 && rnd > old[1])) && (best_of[key] = (rnd, ns))
     end
-    isempty(best_of) && return false
+    isempty(best_of) && return :none
     for r in records
         key = (String(r["mode"]), Int(r["allotment"]), String(r["scheduler"]))
         ns = haskey(best_of, key) ? best_of[key][2] : continue
@@ -890,9 +894,9 @@ function _rhs_seed_needs_full_sweep(records, override_margin::Float64, disagree_
         (key[1] != "satellite_batch" && key[2] == 1 && key[3] == "static") && (ref = ns)
     end
     best = minimum(v[2] for v in values(best_of))
-    isfinite(ref) && !(best < ref * (1.0 - override_margin)) && return true
-    isfinite(heur) && best < heur * (1.0 - disagree_margin) && return true
-    return false
+    isfinite(ref) && !(best < ref * (1.0 - override_margin)) && return :no_gain_over_reference
+    isfinite(heur) && best < heur * (1.0 - disagree_margin) && return :beats_heuristic
+    return :none
 end
 
 function _run_rhs_sweep!(p, u0, dynamic_effectors, verbose::Bool, args = nothing)
@@ -902,7 +906,9 @@ function _run_rhs_sweep!(p, u0, dynamic_effectors, verbose::Bool, args = nothing
     timings = res[6]
     if !isempty(timings) && _rhs_seed_needs_full_sweep(
             timings, _rhs_calibrate_override_margin(), _rhs_calibrate_seed_disagree_margin())
-        verbose && println("[SpaceAGORA] RHS calibration: seeded result not trusted; running the full sweep")
+        # Always logged (seeded path only): says which guard sent the sweep back to the full set.
+        @info "RHS calibration: seeded result not trusted; running the full sweep" reason=_rhs_seed_fallback_reason(
+            timings, _rhs_calibrate_override_margin(), _rhs_calibrate_seed_disagree_margin()) seeded_candidates=length(timings)
         return _run_rhs_sweep_core!(p, u0, dynamic_effectors, verbose, args, 0)
     end
     return res

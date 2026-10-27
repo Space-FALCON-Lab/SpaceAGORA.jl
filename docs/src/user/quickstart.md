@@ -5,9 +5,8 @@ machine. The run needs neither GRAM nor SPICE: it propagates an Earth orbit
 with J2 gravity, no atmosphere (`NoAtmosphereModel()`) and the analytic
 ephemerides (`SimpleEphemeridesModel()`).
 
-The committed root environment sets the package versions every run uses:
-instantiating it installs SpaceAGORA at the versions its committed manifest
-pins. The examples run in a second environment, the examples environment,
+The committed root manifest pins the package versions used by this checkout’s
+root environment. Instantiating it installs those versions. The examples run in a second environment, the examples environment,
 which one setup command prepares from that manifest; it adds the packages the
 examples use for plots and analysis.
 

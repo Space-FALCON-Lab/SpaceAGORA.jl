@@ -220,7 +220,8 @@ class PlanTests(unittest.TestCase):
         self.assertIn("test/smoke/optional_packages_tests.jl", job)
         setup = (ROOT / "test/optional/hypr/setup.jl").read_text()
         self.assertIn('OptionalPackages.setup("hypr",', setup)
-        self.assertIn('with_hypr=false', setup)
+        self.assertIn('CoreEnvironment.setup(joinpath(directory, "core"))', setup)
+        self.assertNotIn('HYPRInstallation.setup', setup)
         self.assertNotIn("submodules: recursive", job)
 
     def test_external_visualizer_is_mandatory_and_core_isolated(self):

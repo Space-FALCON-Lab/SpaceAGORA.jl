@@ -11,9 +11,14 @@ end
     launcher = joinpath(repo, "benchmarks", "studies", "performance", "performance_static_vs_parallel.jl")
     owner = joinpath(repo, "benchmarks", "scripts", "performance_paper_pipeline.jl")
     probe = Module(gensym(:BenchmarkLauncherProbe))
-    # Stop before the pipeline loads GRAM or any benchmark definitions.
-    Core.eval(probe, :(include(path::AbstractString) =
-        throw($PipelineIncludeBoundary(normpath(String(path))))))
+    support = joinpath(repo, "benchmarks", "support", "artifacts.jl")
+    # Load the pure shared helper, then stop before the pipeline loads GRAM.
+    # Any unexpected include must still fail at the boundary assertion below.
+    Core.eval(probe, :(function include(path::AbstractString)
+        normalized = normpath(String(path))
+        normalized == $support && return Base.include(@__MODULE__, normalized)
+        throw($PipelineIncludeBoundary(normalized))
+    end))
     original_dir = pwd()
     original_project = Base.active_project()
 
@@ -34,6 +39,7 @@ end
                 end
             end
             @test Base.invokelatest(getfield, probe, :_WRAPPER_DIR) == dirname(launcher)
+            @test isdefined(probe, :BenchmarkArtifacts)
             @test !isdefined(probe, :REPO_ROOT)
             @test !isdefined(probe, :Random)
             @test !isdefined(probe, :StaticVsParallelConfig)

@@ -1,6 +1,7 @@
 using SpaceAGORA
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
+include(joinpath(REPO_ROOT, "examples", "rpo_planner_env", "environment.jl"))
 const EXAMPLES_DIR = joinpath(REPO_ROOT, "examples")
 # The examples run in the examples environment (examples/setup.jl prepares it).
 const PROJECT_PATH = joinpath(REPO_ROOT, "examples")
@@ -21,7 +22,7 @@ function example_project(path)
         return SpaceAGORA.SpaceAGORACLI._edg_project()
     end
     return name in HYPR_EXAMPLES ?
-        joinpath(REPO_ROOT, "examples", "rpo_planner_env") : PROJECT_PATH
+        RPOExampleEnvironment.directory(; root=REPO_ROOT) : PROJECT_PATH
 end
 function example_command(path)
     project = example_project(path)

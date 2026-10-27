@@ -2889,3 +2889,165 @@ function _initialize_attachment_runtimes!(p)
     end
     return nothing
 end
+
+# Ordered setup phases used by the execution coordinator.
+
+function _validate_run_models!(args, solver_mode)
+    # Typed pipeline is SI-native (meters, seconds, kilograms). The
+    # `simulation_settings.normalize` field is legacy-only and rejected by default.
+    _enforce_typed_normalize_policy!(args)
+    _validate_articulated_spacecraft!(args, solver_mode)
+    _validate_attachments!(args, solver_mode)
+    _validate_external_propagators!(args, solver_mode)
+    _validate_interlinks!(args, solver_mode)
+    _validate_data_parts!(args)
+    _warn_repeated_spacecraft_ids(args)
+    _validate_orientation_inertia!(args)
+    _validate_thermal_model_support!(args)
+    _validate_ephemerides_support!(args)
+    # Before any callback, model or density setup, and before a resumed run that
+    # is already at its end skips the solve. `_solve_with_solver_policy` checks
+    # again for problems solved directly.
+    if solver_mode === :gravity_backbone_split
+        reject_reason = _gravity_backbone_reject_reason(args)
+        isnothing(reject_reason) || throw(ArgumentError(reject_reason))
+    end
+    _warn_density_without_atmospheric_effector(args)
+    return nothing
+end
+
+function _prepare_run_runtime!(args, initial_conditions, solver_mode)
+    p = SimulationModel.ODEParams(n_sats=length(args.dynamics_model.spacecraft), args=args) # Define the parameters for the ODE problem, including the shared buffers for the callbacks
+    # Before any setup that evaluates a model: the hooks are checked against the
+    # exact argument types of this run's state and parameters.
+    _validate_model_hooks!(args, initial_conditions, p, solver_mode)
+    _initialize_in_atmosphere_flags!(p, initial_conditions)
+    # Snapshot env-derived runtime config (policy/RHS-plan/callback knobs) once,
+    # inside the active SimulationEngineConfig override scope, so hot paths read
+    # typed struct fields instead of re-parsing process-global ENV per RHS call.
+    _initialize_runtime_env_config!(p)
+    _initialize_heat_rate_buffers!(p)
+    _initialize_save_cache_buffers!(p)
+    _initialize_density_model_instances!(p)
+    _initialize_density_cache_buffers!(p)
+    _initialize_gram_isolated_pool_buffers!(p)
+    _initialize_harmonics_workspace_buffers!(p)
+    _initialize_nbody_workspace_buffers!(p)
+    _initialize_aero_workspace_buffers!(p)
+    _initialize_articulated_runtimes!(p)
+    _initialize_attachment_runtimes!(p)
+    _initialize_external_runtimes!(p, initial_conditions)
+    _initialize_nbody_ephemeris_cache_buffer!(p)
+    _initialize_srp_sun_cache_buffer!(p)
+    _initialize_planet_frame_cache_buffer!(p)
+    _initialize_spice_rhs_memo_mode!(p)
+    _reset_spice_runtime_counters!(p)
+    _reset_spice_rhs_memo!(p)
+    p.shared_buffers.debug_control[] = _engine_env_get("SPACEAGORA_DEBUG_CONTROL", "0") == "1"
+    p.shared_buffers.debug_initial_derivative[] = _engine_env_get("SPACEAGORA_DEBUG_INITIAL_DERIVATIVE", "0") == "1"
+    return p
+end
+
+function _prepare_run_ephemerides!(args, p)
+    ephemerides_model = args.environment_model.ephemerides_model
+    et_start = SimulationModel.EphemeridesModels.ephemerides_epoch_seconds(ephemerides_model, args.initial_time)
+    p.shared_buffers.et_start[] = et_start
+    args.environment_model.planet.L_PI .= SimulationModel.EphemeridesModels.ephemerides_frame_lpi(ephemerides_model, args.environment_model.planet, et_start)
+    if SimulationModel.ephemerides_requires_spice(ephemerides_model)
+        Base.Threads.atomic_add!(p.shared_buffers.spice_runtime_counters.planet_pxform_runtime_calls, 1)
+    end
+    mission_end = args.mission_configuration.mission_time
+    _initialize_nbody_ephemeris_cache!(p, et_start, mission_end)
+    _initialize_srp_sun_ephemeris_cache!(p, et_start, mission_end)
+    _initialize_planet_frame_ephemeris_cache!(p, et_start, mission_end)
+    return mission_end
+end
+
+function _prepare_run_execution_policy!(p, u_start, args)
+    # Auto-calibration: time candidate execution plans before the solve and pin the
+    # fastest one for the duration.  No-ops when budget <= 1, SPACEAGORA_RHS_CALIBRATE=off,
+    # or a cached result already exists for this machine + scenario signature.
+    # The native-lock Amdahl bound for this solve.
+    #
+    # THE DENOMINATOR IS THE WHOLE DIFFICULTY. What bounds inner width is the
+    # fraction of an RHS EVALUATION spent holding the shared native lock,
+    # because that is the part a wider split cannot divide. Dividing instead by
+    # the solve's wall clock folds in the solver spine, the callbacks and the
+    # saving path -- work that has nothing to do with the RHS split -- and
+    # understates it by two orders of magnitude. Measured on a live-GRAM solve:
+    # hold over RHS time is 0.89, hold over solve wall is 0.008, and only the
+    # first is a statement about what widening the RHS can achieve. A first
+    # version of this took the wall-clock ratio and the cap never engaged on the
+    # one workload it exists for.
+    #
+    # `probe_contention_inputs!` measures exactly that ratio over warm passes,
+    # so the ceiling is derived from it rather than from the lock counters'
+    # running totals. A failed or invalid probe applies no constraint: "not
+    # measured" and "no constraint" must reach the same place, since a bound
+    # invented from a failed measurement is worse than none.
+    if _rhs_lock_width_cap_enabled()
+        contention = try
+            probe_contention_inputs!(
+                p, u_start, args;
+                k = 5,
+                t_step = Float64(args.mission_configuration.mission_time) / 8)
+        catch err
+            @debug "Lock width cap: contention probe failed; no constraint." exception=err
+            nothing
+        end
+        if contention !== nothing && contention.valid
+            rho = SimulationModel.ParallelCost.lock_duty_cycle(contention, 1)
+            if rho >= _rhs_lock_cap_floor_rho()
+                p.shared_buffers.rhs_width_ceiling[] = max(1, ceil(Int, 1.0 / rho))
+            end
+        end
+    end
+
+    # Per-solve refresh of the multibody parallel mode the per-satellite
+    # decision reads (see _multibody_parallel_mode).
+    SimulationModel.DynamicEffectors.AerodynamicEffectors.refresh_multibody_parallel_mode!()
+    # The sweep times whole plans with the barrier off; no probe may switch it.
+    _spin_barrier_tuner_reset!(p.shared_buffers.spin_barrier_tuner, false)
+    _calibrate_rhs_plan_if_needed!(p, u_start, args)
+    _calibrate_density_callback_width!(p, u_start, args)
+    # Per-region widths are searched during the solve, never during the sweep
+    # above, which times whole plans and would read a search in progress.
+    empty!(p.shared_buffers.rhs_region_tuners)
+    p.shared_buffers.rhs_region_tuning[] = _rhs_region_width_enabled()
+    # Spin-barrier probe (auto): fresh per solve, after the sweep for the same
+    # reason, and only where there is more than one thread to dispatch to.
+    _spin_barrier_tuner_reset!(p.shared_buffers.spin_barrier_tuner,
+        _rhs_env_config(p).harmonics_batch_spin_barrier === :auto &&
+        SimulationModel.ParallelPolicy.effective_inner_thread_budget() > 1)
+
+    # In-run width identification, AFTER the sweep and only where the sweep
+    # produced no plan.
+    #
+    # Both mechanisms drive `rhs_plan_override`, and running them together does
+    # not merely duplicate work -- it corrupts the sweep. The sweep measures a
+    # candidate by pinning it and calling the RHS; with a trial installed, the
+    # RHS wrapper replaces that pin with whichever arm the trial wants next, so
+    # every reading the sweep takes belongs to a different plan than the one it
+    # believes it is timing. It then caches that verdict, and the bad entry
+    # outlives the run. Measured on the 256-satellite fullstack shape at a
+    # 3600 s arc with a clean store: identification-before-sweep ran 57% slower
+    # than the sweep alone, 15-0 and significant, and the penalty survived
+    # warm-up because it was baked into the cached entry.
+    #
+    # Ordering it after the sweep also makes the division of labour the useful
+    # one. The sweep pins a plan when it can separate the candidates by its
+    # margin; identification is for the case where it cannot and abstains,
+    # which is where a solve is currently left with the runtime heuristic and no
+    # measurement behind it.
+    if _rhs_identify_enabled() && p.shared_buffers.rhs_plan_override[] === nothing
+        p.shared_buffers.rhs_width_trial[] =
+            build_rhs_width_trial(p, args.dynamics_model.dynamic_effectors)
+    end
+
+    # Every pre-solve probe is done; start history-dependent density models
+    # (GRAM perturbed winds) from their seed so the solve does not inherit
+    # whatever those probes, or an earlier run on the same instance, queried.
+    _reset_density_model_histories!(p)
+
+    return nothing
+end

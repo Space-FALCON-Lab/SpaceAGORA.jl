@@ -181,34 +181,7 @@ function _viewer_frame_plan(n_rows::Integer, S::Integer, bytes_per_frame::Intege
     return (budget=budget, limit=limit)
 end
 
-"""
-    build_viewer_frames(df, scene; max_frames=2000, data_budget_mb=150.0, position_precision=:auto) -> Dict{String, Any}
-
-Decimate the results table to the playback budget and encode positions (km),
-velocities (km/s), attitude quaternions and link poses as base64 Float32
-blocks, row-major over (frame, spacecraft, component). Positions are Float64
-for 64 spacecraft or fewer, and above that when Float64 keeps the same frames
-as Float32 would; `position_precision=:f64` or `:f32` forces either.
-"""
-function build_viewer_frames(
-    df::DataFrame,
-    scene::VisualizationScene;
-    max_frames::Integer=DEFAULT_MAX_FRAMES,
-    data_budget_mb::Real=DEFAULT_DATA_BUDGET_MB,
-    channels=(),
-    mission=nothing,
-    position_precision=:auto
-)::Dict{String, Any}
-    _checked_position_precision(position_precision)
-    mission = _validated_mission_history(mission)
-    S = length(scene.spacecraft)
-    S >= 1 || throw(ArgumentError("The scene has no spacecraft."))
-    n_rows = nrow(df)
-    "time" in names(df) || throw(ArgumentError("Results table has no `time` column."))
-    for i in 1:S
-        _has_columns(df, ("sc$(i)_pos_1", "sc$(i)_pos_2", "sc$(i)_pos_3")) ||
-            throw(ArgumentError("Results table has no position columns for spacecraft $(i) (sc$(i)_pos_1..3)."))
-    end
+function _viewer_frame_layout(df, scene, S)
     has_vel = all(i -> _has_columns(df, ("sc$(i)_vel_1", "sc$(i)_vel_2", "sc$(i)_vel_3")), 1:S)
     has_q = all(i -> _has_columns(df, ("sc$(i)_q_1", "sc$(i)_q_2", "sc$(i)_q_3", "sc$(i)_q_4")), 1:S)
     has_mass = all(i -> "sc$(i)_mass" in names(df), 1:S)
@@ -279,7 +252,17 @@ function build_viewer_frames(
         arm_total += has_arm ? stride_lp * arm_counts[i] : 0
     end
 
-    channel_specs = _resolved_channels(df, channels, S)
+    return (; S, has_vel, has_q, has_mass, has_density, has_heat,
+        has_drag, has_wind, has_plume, has_sun, stride_lp, counts, has_lp, lp_offsets, lp_total,
+         thruster_counts, thr_total, thr_offsets, dir_counts, dir_total, dir_offsets,
+        arm_counts, has_arm, arm_offsets, arm_total)
+end
+
+function _select_viewer_frame_rows(df, mission, layout, channel_specs, n_rows, max_frames, data_budget_mb, position_precision)
+    (; S, has_vel, has_q, has_mass, has_density, has_heat,
+        has_drag, has_wind, has_plume, has_sun, stride_lp, counts, has_lp, lp_offsets, lp_total,
+         thruster_counts, thr_total, thr_offsets, dir_counts, dir_total, dir_offsets,
+        arm_counts, has_arm, arm_offsets, arm_total) = layout
     # Bytes per frame besides the positions: per spacecraft, and for the frame.
     other_sat_bytes = (has_vel ? 12 : 0) + (has_q ? 16 : 0) + (has_mass ? 4 : 0) +
                       (has_density ? 4 : 0) + (has_heat ? 4 : 0) + (has_drag ? 4 : 0) + (has_wind ? 12 : 0) +
@@ -299,6 +282,15 @@ function build_viewer_frames(
     forced_f64 = position_precision === :f64 && S > FLOAT64_POSITION_MAX_SPACECRAFT
     rows = _mission_kept_rows(df, mission, regular_rows, limit;
         hint=forced_f64 ? ", or use position_precision=:auto, which can keep Float32 positions to leave room for more rows" : "")
+    return (; rows, regular_rows, budget, pos_f64)
+end
+
+function _pack_viewer_frame_blocks(df, scene, layout, selected, channel_specs, n_rows)::Dict{String, Any}
+    (; S, has_vel, has_q, has_mass, has_density, has_heat,
+        has_drag, has_wind, has_plume, has_sun, stride_lp, counts, has_lp, lp_offsets, lp_total,
+         thruster_counts, thr_total, thr_offsets, dir_counts, dir_total, dir_offsets,
+        arm_counts, has_arm, arm_offsets, arm_total) = layout
+    (; rows, regular_rows, budget, pos_f64) = selected
     N = length(rows)
 
     times = Float64[Float64(df[r, "time"]) for r in rows]
@@ -452,6 +444,41 @@ function build_viewer_frames(
             "data" => _float32_base64(tdir))
     end
     return frames
+end
+
+"""
+    build_viewer_frames(df, scene; max_frames=2000, data_budget_mb=150.0, position_precision=:auto) -> Dict{String, Any}
+
+Decimate the results table to the playback budget and encode positions (km),
+velocities (km/s), attitude quaternions and link poses as base64 Float32
+blocks, row-major over (frame, spacecraft, component). Positions are Float64
+for 64 spacecraft or fewer, and above that when Float64 keeps the same frames
+as Float32 would; `position_precision=:f64` or `:f32` forces either.
+"""
+function build_viewer_frames(
+    df::DataFrame,
+    scene::VisualizationScene;
+    max_frames::Integer=DEFAULT_MAX_FRAMES,
+    data_budget_mb::Real=DEFAULT_DATA_BUDGET_MB,
+    channels=(),
+    mission=nothing,
+    position_precision=:auto
+)::Dict{String, Any}
+    _checked_position_precision(position_precision)
+    mission = _validated_mission_history(mission)
+    S = length(scene.spacecraft)
+    S >= 1 || throw(ArgumentError("The scene has no spacecraft."))
+    n_rows = nrow(df)
+    "time" in names(df) || throw(ArgumentError("Results table has no `time` column."))
+    for i in 1:S
+        _has_columns(df, ("sc$(i)_pos_1", "sc$(i)_pos_2", "sc$(i)_pos_3")) ||
+            throw(ArgumentError("Results table has no position columns for spacecraft $(i) (sc$(i)_pos_1..3)."))
+    end
+    layout = _viewer_frame_layout(df, scene, S)
+    channel_specs = _resolved_channels(df, channels, S)
+    selected = _select_viewer_frame_rows(df, mission, layout, channel_specs,
+        n_rows, max_frames, data_budget_mb, position_precision)
+    return _pack_viewer_frame_blocks(df, scene, layout, selected, channel_specs, n_rows)
 end
 
 # Missing samples and NaN are plot gaps; infinities and Float32 overflow are errors.

@@ -170,9 +170,8 @@ without fetching or writing anything. `checkout` initializes the selected
 submodule at its recorded Git revision. `check` verifies the checkout's
 revision, origin, package name, UUID and version, and that it has no local
 changes; it does not run scientific or native tests. `setup` performs
-`checkout` and `check`, then runs the package's installer
-(`scripts/setup_hypr.jl` for HYPR, the companion's own `scripts/setup_env.jl`
-for MuJoCo and EDG) with that local checkout and this core checkout. The
+`checkout` and `check`, then runs the companion's own `scripts/setup_env.jl`
+for HYPR, MuJoCo or EDG with that local checkout and this core checkout. The
 installer creates the environment in the directory you name, which must be
 outside the SpaceAGORA checkout. Setup can download dependencies and runs the
 installer's usual preparation steps.
@@ -199,25 +198,24 @@ select these revisions.
 
 | Companion | Package version | Source revision |
 | --- | --- | --- |
-| HYPR | 0.5.0 | [`2816df11`](https://github.com/Space-FALCON-Lab/HYPR.jl/commit/2816df11c86206cc348ec2c4f82732f958f18ad2) |
-| SpaceAGORAEDG | 0.5.1 | [`424d8aa8`](https://github.com/Space-FALCON-Lab/SpaceAGORAEDG.jl/commit/424d8aa822e4f2d0a710231b86c28a1bc1dfd636) |
-| SpaceAGORAMuJoCo | 0.5.0 | [`7b5a0031`](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl/commit/7b5a00318f6883d7cdc7c7e7c0c18830f96ce57f) |
+| HYPR | 0.5.0 | [`75bcb8de`](https://github.com/Space-FALCON-Lab/HYPR.jl/commit/75bcb8dee1bcbef73000c2edfab252264e45efa2) |
+| SpaceAGORAEDG | 0.5.1 | [`a5e3c7c5`](https://github.com/Space-FALCON-Lab/SpaceAGORAEDG.jl/commit/a5e3c7c5590bbe01b90cbe70def4c276ac4bee47) |
+| SpaceAGORAMuJoCo | 0.5.0 | [`a73635fe`](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl/commit/a73635fecb975894f27a24e65fd38146eba3f154) |
 
-Each companion's own default core pin, which its standalone installer uses,
-still names a SpaceAGORA 0.6 release. SpaceAGORA's CI jobs for the optional
+At these revisions, each companion's standalone installer pins core commit
+`bec28fcc348b48c6e807d007f9a5009e253e8340` (SpaceAGORA 0.7.0), recorded in
+HYPR's and MuJoCo's `SpaceAGORASource.toml` and EDG's `CoreSource.toml`. SpaceAGORA's CI jobs for the optional
 packages test the revisions above against this checkout. A companion's broad
 compatibility range (for example `SpaceAGORA = "0.6, 0.7"`) does not mean that
 every revision in that range has been tested with this core.
 
 ### Optional HYPR planner
 
-HYPR lives at `packages/robotics/HYPR.jl` and provides RPO and robot-arm
-planning. Loading both packages activates HYPR's SpaceAGORA adapter. After
-`setup hypr`, start Julia with `--project=/path/to/hypr-env` and load
-`SpaceAGORA` and `HYPR`. The
-[planner guide](rpo_planner_pilot.md#Installing-optional-HYPR) also describes
-the `scripts/setup_hypr.jl` route, which fetches HYPR from its own repository
-at the recorded revision instead of using the submodule.
+HYPR lives at `packages/robotics/HYPR.jl` and supports RPO and robot-arm planning.
+Loading both packages activates HYPR's SpaceAGORA adapter. After `setup hypr`,
+start Julia with `--project=/path/to/hypr-env` and load `SpaceAGORA` and `HYPR`. The [planner guide](rpo_planner_pilot.md#Installing-optional-HYPR)
+also documents `scripts/setup_hypr.jl`, a compatibility shortcut that uses
+the same verified source and companion-owned installer.
 
 ### Optional MuJoCo companion
 
@@ -323,15 +321,17 @@ julia --startup-file=no examples/setup.jl
 SPACEAGORA_EDG_TEST_ENV=/path/to/edg-test-env julia --startup-file=no --project=test test/runtests.jl
 ```
 
-The tests run in the repository's test environment, which holds the test
-tools, and start their example and command-line child processes in the
-examples environment; the EDG environment is added to the load path as the
-provider. Both setup scripts keep the core's dependency versions and leave its
-tracked project files unchanged. Setting
-`SPACEAGORA_EDG_PATH=/absolute/path/to/SpaceAGORAEDG.jl` substitutes a local
-EDG checkout, which must be version 0.5.1, for development with this test
-helper; it is not a release pin. The full suites can also need the other
-optional packages and assets described on this site.
+The tests run in the repository's test environment, which holds the test tools,
+and start their example and CLI children in the examples environment; the EDG
+environment is added as the provider. `test/setup.jl` retains the core's dependency
+versions. The EDG shortcut delegates to the companion-owned installer, which
+resolves a separate manifest from the packages' compatibility requirements. Both
+leave the core's tracked project files unchanged. Older test environments bearing
+the `.spaceagora-edg-test-environment.toml` marker are not adopted by the shared
+installer; keep them unchanged and choose a fresh empty destination.
+`SPACEAGORA_EDG_PATH=/absolute/path/to/SpaceAGORAEDG.jl`
+is an explicit development override for this test helper; it is not a release
+pin. Full suites may require the other documented optional packages and assets.
 
 ## Your own project
 

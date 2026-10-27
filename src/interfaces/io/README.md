@@ -1,13 +1,10 @@
-# I/O responsibilities
+# Result and checkpoint files
 
-`paths/io_paths.jl` derives result and checkpoint filenames from configuration.
-It retains the `IOConfig` module identity. It does not parse simulation settings
-or decide when a checkpoint should be written.
+| File | Module | What it does |
+|---|---|---|
+| `paths/io_paths.jl` | `IOConfig` | Derives result and checkpoint file names from the configuration. It does not parse simulation settings or decide when to write a checkpoint. |
+| `checkpoints/checkpoint_storage.jl` | `IOSerialization` | Reads and writes checkpoint payloads and their manifests, with atomic file replacement and checksums. |
+| `outputs/io_outputs.jl` | `IOOutputs` | Builds the result tables from the saved samples and writes them in their output formats. |
 
-`checkpoints/checkpoint_storage.jl` reads and writes checkpoint payloads and their
-manifests, including atomic file replacement and checksums. Its module remains
-`IOSerialization`, so moving the source does not rename Julia bindings or change
-the stored format. Checkpoint scheduling and restart decisions belong to the
-simulation engine.
-
-`outputs/` contains result writers and their output-format handling.
+The simulation engine, not this folder, decides when to save a checkpoint and
+whether to resume from one.

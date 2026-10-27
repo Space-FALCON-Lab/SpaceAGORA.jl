@@ -63,7 +63,7 @@ end
             @test !has_nan
             @test occursin("ORDINARY_EXAMPLE_SMOKE_CHILD_OK", output)
             @test harness.example_project(joinpath(directory, "Earth_RPO_CubeSat_MPC.jl")) ==
-                joinpath(harness.REPO_ROOT, "examples", "rpo_planner_env")
+                harness.RPOExampleEnvironment.directory(; root=harness.REPO_ROOT)
         end
 
         withenv("SPACEAGORA_EDG_ENV" => joinpath(temporary, "missing")) do

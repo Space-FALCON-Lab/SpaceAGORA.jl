@@ -72,6 +72,11 @@ Base.@kwdef mutable struct PolicyTelemetry
     #                       the scheduler became part of the calibrated plan
     #                       rather than a process-global setting.
     rhs_plan_scheduler::Symbol = :none
+    #   rhs_plan_sweep_ns / rhs_plan_sweeps_total  wall time of the route sweep
+    #                       that ran in THIS context (0 when the plan came from
+    #                       the cache), and how many sweeps ran. Accounting only.
+    rhs_plan_sweep_ns::Float64 = 0.0
+    rhs_plan_sweeps_total::Int64 = 0
     # Pre-solve density-callback width calibration (V2): the pinned width (0 =
     # static per-call decision retained) and the static width it was measured
     # against. Accounting only.

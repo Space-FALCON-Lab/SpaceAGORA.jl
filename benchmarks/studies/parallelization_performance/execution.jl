@@ -742,6 +742,7 @@ function ppc_policy_columns(snap)
         policy_last_mode="none", policy_last_allotment=0, policy_last_outer_active=false,
         policy_decisions_total=0, policy_adaptive_decisions_total=0,
         policy_threads_enabled_total=0, policy_discarded_by_route_total=0,
+        rhs_plan_sweep_s=0.0, rhs_plan_sweeps=0, policy_last_budget=0,
     )
     snap === nothing && return empty
     g(k, d) = hasproperty(snap, k) ? getproperty(snap, k) : d
@@ -757,8 +758,21 @@ function ppc_policy_columns(snap)
         policy_adaptive_decisions_total=g(:adaptive_decisions_total, 0),
         policy_threads_enabled_total=g(:threads_enabled_total, 0),
         policy_discarded_by_route_total=g(:policy_discarded_by_route_total, 0),
+        # Appended last so the CSV keeps its existing column order. Sweep time is
+        # 0 when the plan came from the cache; `rhs_plan_sweeps` counts sweeps
+        # that ran in this solve; the budget is the thread count the last
+        # policy decision was made against.
+        rhs_plan_sweep_s=Float64(g(:rhs_plan_sweep_ns, 0.0)) / 1.0e9,
+        rhs_plan_sweeps=g(:rhs_plan_sweeps_total, 0),
+        policy_last_budget=g(:last_budget, 0),
     )
 end
+
+# Column groups of ppc_policy_columns: the original block stays where it was in
+# the row, the telemetry added later is splatted after the last existing column.
+const PPC_POLICY_TAIL_KEYS = (:rhs_plan_sweep_s, :rhs_plan_sweeps, :policy_last_budget)
+ppc_policy_head(p) = p[Tuple(k for k in keys(p) if !(k in PPC_POLICY_TAIL_KEYS))]
+ppc_policy_tail(p) = p[PPC_POLICY_TAIL_KEYS]
 
 function ppc_run_worker_performance(cfg::PPCConfig)
     catalog = ppc_case_catalog()
@@ -865,7 +879,7 @@ function ppc_run_worker_performance(cfg::PPCConfig)
         # What the router actually selected during the timed batch, as opposed to
         # the mode requested above. See ppc_policy_snapshot for the mechanism and
         # its process-route caveat.
-        batch.policy...,
+        ppc_policy_head(batch.policy)...,
         rhs_batch_parallel=mode.rhs_batch,
         density_callback_parallel=mode.density,
         control_callback_parallel=mode.control,
@@ -876,7 +890,8 @@ function ppc_run_worker_performance(cfg::PPCConfig)
         final_primary_pos_norm_m=final_terminal.pos_norm_m,
         final_primary_vel_norm_mps=final_terminal.vel_norm_mps,
         final_primary_mass_kg=final_terminal.mass_kg,
-        effective_env=env_string
+        effective_env=env_string,
+        ppc_policy_tail(batch.policy)...
     ))
     end
     ppc_write_rows(cfg.worker_outfile, rows)

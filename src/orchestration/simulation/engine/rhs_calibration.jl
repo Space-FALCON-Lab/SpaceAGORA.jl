@@ -1697,7 +1697,7 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
     if best_plan === nothing
         if verdict === :heuristic && _rhs_calibrate_cache_heuristic()
             SimulationModel.ParallelPolicy.record_rhs_plan_selection!(
-                :sweep, :heuristic, 0, :none
+                :sweep, :heuristic, 0, :none; sweep_ns=sweep_ns
             )
             _rhs_calib_store_heuristic!(sig, best_elapsed; sweep_ns=sweep_ns, timings=sweep_timings)
             _rhs_calib_save!()
@@ -1709,7 +1709,7 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
     # The flat effector slots are sized by (effector, satellite) and do not
     # depend on the allotment, so the sweep leaves nothing oversized behind.
     SimulationModel.ParallelPolicy.record_rhs_plan_selection!(
-        :sweep, best_plan.mode, best_plan.allotment, best_plan.scheduler
+        :sweep, best_plan.mode, best_plan.allotment, best_plan.scheduler; sweep_ns=sweep_ns
     )
     _rhs_calib_store!(sig, best_plan, best_elapsed; sweep_ns=sweep_ns, timings=sweep_timings)
     _rhs_calib_save!()

@@ -203,6 +203,8 @@ function policy_telemetry_snapshot()
             rhs_plan_mode=String(t.rhs_plan_mode),
             rhs_plan_allotment=t.rhs_plan_allotment,
             rhs_plan_scheduler=String(t.rhs_plan_scheduler),
+            rhs_plan_sweep_ns=t.rhs_plan_sweep_ns,
+            rhs_plan_sweeps_total=t.rhs_plan_sweeps_total,
             callback_width_density=t.callback_width_density,
             callback_width_density_static=t.callback_width_density_static
         )
@@ -211,12 +213,14 @@ end
 
 """
     record_rhs_plan_selection!(source::Symbol, mode::Symbol, allotment::Integer,
-                              scheduler::Symbol=:none)
+                              scheduler::Symbol=:none; sweep_ns::Real=0.0)
 
 Record which RHS execution plan pre-solve calibration installed, so the choice
 survives the solve and can be read back through
 [`policy_telemetry_snapshot`](@ref). `source` is `:cache` when the plan came from
-the calibration cache and `:sweep` when it was measured by a fresh route sweep.
+the calibration cache and `:sweep` when it was measured by a fresh route sweep;
+a `:sweep` record also stores `sweep_ns` (the sweep's wall time) and counts one
+sweep in this context.
 
 Accounting only — no policy path reads these fields back.
 """
@@ -224,7 +228,8 @@ function record_rhs_plan_selection!(
     source::Symbol,
     mode::Symbol,
     allotment::Integer,
-    scheduler::Symbol=:none
+    scheduler::Symbol=:none;
+    sweep_ns::Real=0.0
 )
     ctx = _active_policy_context()
     lock(ctx.lock) do
@@ -233,6 +238,10 @@ function record_rhs_plan_selection!(
         t.rhs_plan_mode = mode
         t.rhs_plan_allotment = Int64(max(0, allotment))
         t.rhs_plan_scheduler = scheduler
+        if source === :sweep
+            t.rhs_plan_sweep_ns = Float64(sweep_ns)
+            t.rhs_plan_sweeps_total += 1
+        end
     end
     return nothing
 end

@@ -16,12 +16,14 @@ export thread_worker_count
 export reset_policy_telemetry!, policy_telemetry_snapshot, record_policy_observation!, record_route_discard!
 export reset_persistent_hint_state!, persistent_hints_state_reset_requested
 export hint_layer_stats_snapshot
+export regret_guard_decision, regret_guard_observe!, regret_guard_frozen, regret_guard_snapshot, reset_regret_guard!
 
 include(joinpath(@__DIR__, "types.jl"))
 include(joinpath(@__DIR__, "context.jl"))
 include(joinpath(@__DIR__, "env_config.jl"))
 include(joinpath(@__DIR__, "persistent_hints.jl"))
 include(joinpath(@__DIR__, "policy_telemetry.jl"))
+include(joinpath(@__DIR__, "regret_guard.jl"))
 include(joinpath(@__DIR__, "adaptive_decision.jl"))
 include(joinpath(@__DIR__, "thread_execution.jl"))
 include(joinpath(@__DIR__, "observation_tracking.jl"))

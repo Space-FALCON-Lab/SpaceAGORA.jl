@@ -226,6 +226,24 @@ function ppc_mode_specs()::Dict{String, PPCModeSpec}
             persistent=true,
             allow_inner_with_outer=true
         ),
+        # `predictive` with only the pre-solve plan sweep turned off.
+        "predictive_nocalib" => PPCModeSpec(
+            name="predictive_nocalib",
+            profile="R7",
+            backend="auto",
+            outer_active=true,
+            policy_adaptive=true,
+            rhs_batch="auto",
+            density="auto",
+            control="auto",
+            thermal="auto",
+            multibody="auto",
+            effector="auto",
+            scheduler="static",
+            persistent=true,
+            allow_inner_with_outer=true,
+            calibrate="off"
+        ),
         (("force_" * key) => PPCModeSpec(
             name="force_" * key, profile="R7", backend="auto", outer_active=true,
             policy_adaptive=true, rhs_batch="auto", density="auto", control="auto",

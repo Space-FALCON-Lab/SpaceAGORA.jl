@@ -198,5 +198,15 @@ end
     @test ppc_warmup_columns(0.0, ()).warmup_rhs_plan_source == "none"
 end
 
+@testset "predictive_nocalib differs from predictive only in RHS calibration" begin
+    specs = ppc_mode_specs()
+    cfg = PPCConfig(process_workers=4)
+    env(m) = Dict(ppc_mode_env_pairs(specs[m], cfg))
+    a, b = env("predictive"), env("predictive_nocalib")
+    @test b["SPACEAGORA_RHS_CALIBRATE"] == "off"
+    @test a["SPACEAGORA_RHS_CALIBRATE"] == "auto"
+    @test delete!(copy(a), "SPACEAGORA_RHS_CALIBRATE") == delete!(copy(b), "SPACEAGORA_RHS_CALIBRATE")
+end
+
 end
 end # module

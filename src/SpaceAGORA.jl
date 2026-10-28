@@ -942,4 +942,8 @@ function __init__()
 end
 
 
+
+# Core-owned trial RHS contract for optional coordinate solvers.
+const trial_rhs_safe = SimulationEngine.trial_rhs_safe
+export trial_rhs_safe
 end # module SpaceAGORA

@@ -1,0 +1,57 @@
+MOUNTED_DATA_GUARD field=data_stores error=nothing
+New upstream mounted data remain outside initial KS scope: Test Failed at /Users/josephine/.codex/visualizations/2026/10/27/01a17e95-a323-7a20-8321-e62fc2210d33/ks-verification/upstream-delivery-20261028/adapter-verification/upstream-data-guard.jl:11
+  Expression: err isa ArgumentError
+   Evaluated: nothing isa ArgumentError
+
+Stacktrace:
+ [1] macro expansion
+   @ ~/.julia/juliaup/julia-1.12.7+0.aarch64.apple.darwin14/share/julia/stdlib/v1.12/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/.codex/visualizations/2026/10/27/01a17e95-a323-7a20-8321-e62fc2210d33/ks-verification/upstream-delivery-20261028/adapter-verification/upstream-data-guard.jl:11 [inlined]
+ [3] macro expansion
+   @ ~/.julia/juliaup/julia-1.12.7+0.aarch64.apple.darwin14/share/julia/stdlib/v1.12/Test/src/Test.jl:1777 [inlined]
+ [4] top-level scope
+   @ ~/.codex/visualizations/2026/10/27/01a17e95-a323-7a20-8321-e62fc2210d33/ks-verification/upstream-delivery-20261028/adapter-verification/upstream-data-guard.jl:4
+New upstream mounted data remain outside initial KS scope: Test Failed at /Users/josephine/.codex/visualizations/2026/10/27/01a17e95-a323-7a20-8321-e62fc2210d33/ks-verification/upstream-delivery-20261028/adapter-verification/upstream-data-guard.jl:12
+  Expression: err isa ArgumentError && occursin(string(field), sprint(showerror, err))
+
+Stacktrace:
+ [1] macro expansion
+   @ ~/.julia/juliaup/julia-1.12.7+0.aarch64.apple.darwin14/share/julia/stdlib/v1.12/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/.codex/visualizations/2026/10/27/01a17e95-a323-7a20-8321-e62fc2210d33/ks-verification/upstream-delivery-20261028/adapter-verification/upstream-data-guard.jl:12 [inlined]
+ [3] macro expansion
+   @ ~/.julia/juliaup/julia-1.12.7+0.aarch64.apple.darwin14/share/julia/stdlib/v1.12/Test/src/Test.jl:1777 [inlined]
+ [4] top-level scope
+   @ ~/.codex/visualizations/2026/10/27/01a17e95-a323-7a20-8321-e62fc2210d33/ks-verification/upstream-delivery-20261028/adapter-verification/upstream-data-guard.jl:4
+MOUNTED_DATA_GUARD field=data_sources error=nothing
+ERROR: LoadError: Some tests did not pass: 0 passed, 4 failed, 0 errored, 0 broken.
+in expression starting at /Users/josephine/.codex/visualizations/2026/10/27/01a17e95-a323-7a20-8321-e62fc2210d33/ks-verification/upstream-delivery-20261028/adapter-verification/upstream-data-guard.jl:3
+New upstream mounted data remain outside initial KS scope: Test Failed at /Users/josephine/.codex/visualizations/2026/10/27/01a17e95-a323-7a20-8321-e62fc2210d33/ks-verification/upstream-delivery-20261028/adapter-verification/upstream-data-guard.jl:11
+  Expression: err isa ArgumentError
+   Evaluated: nothing isa ArgumentError
+
+Stacktrace:
+ [1] macro expansion
+   @ ~/.julia/juliaup/julia-1.12.7+0.aarch64.apple.darwin14/share/julia/stdlib/v1.12/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/.codex/visualizations/2026/10/27/01a17e95-a323-7a20-8321-e62fc2210d33/ks-verification/upstream-delivery-20261028/adapter-verification/upstream-data-guard.jl:11 [inlined]
+ [3] macro expansion
+   @ ~/.julia/juliaup/julia-1.12.7+0.aarch64.apple.darwin14/share/julia/stdlib/v1.12/Test/src/Test.jl:1777 [inlined]
+ [4] top-level scope
+   @ ~/.codex/visualizations/2026/10/27/01a17e95-a323-7a20-8321-e62fc2210d33/ks-verification/upstream-delivery-20261028/adapter-verification/upstream-data-guard.jl:4
+New upstream mounted data remain outside initial KS scope: Test Failed at /Users/josephine/.codex/visualizations/2026/10/27/01a17e95-a323-7a20-8321-e62fc2210d33/ks-verification/upstream-delivery-20261028/adapter-verification/upstream-data-guard.jl:12
+  Expression: err isa ArgumentError && occursin(string(field), sprint(showerror, err))
+
+Stacktrace:
+ [1] macro expansion
+   @ ~/.julia/juliaup/julia-1.12.7+0.aarch64.apple.darwin14/share/julia/stdlib/v1.12/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/.codex/visualizations/2026/10/27/01a17e95-a323-7a20-8321-e62fc2210d33/ks-verification/upstream-delivery-20261028/adapter-verification/upstream-data-guard.jl:12 [inlined]
+ [3] macro expansion
+   @ ~/.julia/juliaup/julia-1.12.7+0.aarch64.apple.darwin14/share/julia/stdlib/v1.12/Test/src/Test.jl:1777 [inlined]
+ [4] top-level scope
+   @ ~/.codex/visualizations/2026/10/27/01a17e95-a323-7a20-8321-e62fc2210d33/ks-verification/upstream-delivery-20261028/adapter-verification/upstream-data-guard.jl:4
+Test Summary:                                             | Fail  Total  Time
+New upstream mounted data remain outside initial KS scope |    4      4  1.8s
+RNG of the outermost testset: Random.Xoshiro(0xed478d7bcc49bb0d, 0x043345549bc47dc0, 0x2bdd55a75a677afa, 0x9abd01fd89f5e99f, 0x105f17ad2955fe88)

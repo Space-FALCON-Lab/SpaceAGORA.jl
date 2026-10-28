@@ -1,0 +1,522 @@
+julia = "1.12.7"
+status = "complete bounded matrix; review required"
+
+[[rows]]
+case = "two_body"
+attempts = 18992
+reference_qualified = true
+rtol = 1.0e-8
+nonlinear_failures = 0
+passed = false
+rhs_calls_steps_only = 3337300
+clock_residual_s = 2.1094237467877974e-13
+atol = 1.0e-9
+preset = "coarse"
+dtmax_s = 20.0
+
+    [rows.reference_refinement]
+    mass_kg = 0.0
+    heat_J_cm2 = 0.0
+    position_m = 5.014862521868137e-6
+    heat_budget_ratio = 0.0
+    velocity_m_s = 5.415058284905996e-9
+
+    [rows.normal_route_error]
+    mass_kg = 0.0
+    heat_J_cm2 = 0.0
+    position_m = 2.315285574721353e-6
+    heat_budget_ratio = 0.0
+    velocity_m_s = 2.5119338103405662e-9
+
+    [rows.independent_error]
+    mass_kg = 5.684341886080802e-14
+    heat_J_cm2 = 0.0
+    position_m = 250.19639305563766
+    heat_budget_ratio = 0.0
+    velocity_m_s = 0.2709040647716681
+
+    [rows.KS_vs_normal]
+    mass_kg = 5.684341886080802e-14
+    heat_J_cm2 = 0.0
+    position_m = 250.1963943858148
+    heat_budget_ratio = 0.0
+    velocity_m_s = 0.2709040661546349
+
+    [rows.reference_analytic]
+    mass_kg = 0.0
+    heat_J_cm2 = 0.0
+    position_m = 4.475512493668406e-6
+    heat_budget_ratio = 0.0
+    velocity_m_s = 4.8228691400140085e-9
+[[rows]]
+case = "two_body"
+attempts = 87628
+reference_qualified = true
+rtol = 1.0e-10
+nonlinear_failures = 0
+passed = false
+rhs_calls_steps_only = 14797064
+clock_residual_s = 6.794564910705958e-14
+atol = 1.0e-11
+preset = "medium"
+dtmax_s = 10.0
+
+    [rows.reference_refinement]
+    mass_kg = 0.0
+    heat_J_cm2 = 0.0
+    position_m = 5.014862521868137e-6
+    heat_budget_ratio = 0.0
+    velocity_m_s = 5.415058284905996e-9
+
+    [rows.normal_route_error]
+    mass_kg = 0.0
+    heat_J_cm2 = 0.0
+    position_m = 2.315285574721353e-6
+    heat_budget_ratio = 0.0
+    velocity_m_s = 2.5119338103405662e-9
+
+    [rows.independent_error]
+    mass_kg = 5.684341886080802e-14
+    heat_J_cm2 = 0.0
+    position_m = 11.577627158619126
+    heat_budget_ratio = 0.0
+    velocity_m_s = 0.01253585541933303
+
+    [rows.KS_vs_normal]
+    mass_kg = 5.684341886080802e-14
+    heat_J_cm2 = 0.0
+    position_m = 11.577628488793883
+    heat_budget_ratio = 0.0
+    velocity_m_s = 0.012535856802301536
+
+    [rows.reference_analytic]
+    mass_kg = 0.0
+    heat_J_cm2 = 0.0
+    position_m = 4.475512493668406e-6
+    heat_budget_ratio = 0.0
+    velocity_m_s = 4.8228691400140085e-9
+[[rows]]
+case = "two_body"
+attempts = 406566
+reference_qualified = true
+rtol = 1.0e-12
+nonlinear_failures = 0
+passed = true
+rhs_calls_steps_only = 58301620
+clock_residual_s = 1.7263968032921184e-14
+atol = 1.0e-13
+preset = "fine"
+dtmax_s = 5.0
+
+    [rows.reference_refinement]
+    mass_kg = 0.0
+    heat_J_cm2 = 0.0
+    position_m = 5.014862521868137e-6
+    heat_budget_ratio = 0.0
+    velocity_m_s = 5.415058284905996e-9
+
+    [rows.normal_route_error]
+    mass_kg = 0.0
+    heat_J_cm2 = 0.0
+    position_m = 2.315285574721353e-6
+    heat_budget_ratio = 0.0
+    velocity_m_s = 2.5119338103405662e-9
+
+    [rows.independent_error]
+    mass_kg = 5.684341886080802e-14
+    heat_J_cm2 = 0.0
+    position_m = 0.536640386179872
+    heat_budget_ratio = 0.0
+    velocity_m_s = 0.000581055192153542
+
+    [rows.KS_vs_normal]
+    mass_kg = 5.684341886080802e-14
+    heat_J_cm2 = 0.0
+    position_m = 0.5366417163541939
+    heat_budget_ratio = 0.0
+    velocity_m_s = 0.0005810565751220158
+
+    [rows.reference_analytic]
+    mass_kg = 0.0
+    heat_J_cm2 = 0.0
+    position_m = 4.475512493668406e-6
+    heat_budget_ratio = 0.0
+    velocity_m_s = 4.8228691400140085e-9
+[[rows]]
+case = "J2_only"
+attempts = 18801
+reference_qualified = true
+rtol = 1.0e-8
+nonlinear_failures = 0
+passed = false
+rhs_calls_steps_only = 3304048
+clock_residual_s = 2.7355895326763857e-13
+atol = 1.0e-9
+preset = "coarse"
+dtmax_s = 20.0
+
+    [rows.reference_refinement]
+    mass_kg = 0.0
+    heat_J_cm2 = 0.0
+    position_m = 7.671936072742138e-6
+    heat_budget_ratio = 0.0
+    velocity_m_s = 8.322643319146402e-9
+
+    [rows.normal_route_error]
+    mass_kg = 0.0
+    heat_J_cm2 = 0.0
+    position_m = 8.48221505972889e-6
+    heat_budget_ratio = 0.0
+    velocity_m_s = 9.164237688262524e-9
+
+    [rows.independent_error]
+    mass_kg = 5.684341886080802e-14
+    heat_J_cm2 = 0.0
+    position_m = 263.08465594802954
+    heat_budget_ratio = 0.0
+    velocity_m_s = 0.2855440920190788
+
+    [rows.KS_vs_normal]
+    mass_kg = 5.684341886080802e-14
+    heat_J_cm2 = 0.0
+    position_m = 263.0846474659719
+    heat_budget_ratio = 0.0
+    velocity_m_s = 0.285544082854893
+
+    [rows.reference_analytic]
+[[rows]]
+case = "J2_only"
+attempts = 86600
+reference_qualified = true
+rtol = 1.0e-10
+nonlinear_failures = 0
+passed = false
+rhs_calls_steps_only = 14674740
+clock_residual_s = 7.238654120556021e-14
+atol = 1.0e-11
+preset = "medium"
+dtmax_s = 10.0
+
+    [rows.reference_refinement]
+    mass_kg = 0.0
+    heat_J_cm2 = 0.0
+    position_m = 7.671936072742138e-6
+    heat_budget_ratio = 0.0
+    velocity_m_s = 8.322643319146402e-9
+
+    [rows.normal_route_error]
+    mass_kg = 0.0
+    heat_J_cm2 = 0.0
+    position_m = 8.48221505972889e-6
+    heat_budget_ratio = 0.0
+    velocity_m_s = 9.164237688262524e-9
+
+    [rows.independent_error]
+    mass_kg = 5.684341886080802e-14
+    heat_J_cm2 = 0.0
+    position_m = 12.176911330656681
+    heat_budget_ratio = 0.0
+    velocity_m_s = 0.013216461857070231
+
+    [rows.KS_vs_normal]
+    mass_kg = 5.684341886080802e-14
+    heat_J_cm2 = 0.0
+    position_m = 12.176902848600365
+    heat_budget_ratio = 0.0
+    velocity_m_s = 0.013216452692884467
+
+    [rows.reference_analytic]
+[[rows]]
+case = "J2_only"
+attempts = 401722
+reference_qualified = true
+rtol = 1.0e-12
+nonlinear_failures = 0
+passed = true
+rhs_calls_steps_only = 56317456
+clock_residual_s = 1.7458257062230587e-14
+atol = 1.0e-13
+preset = "fine"
+dtmax_s = 5.0
+
+    [rows.reference_refinement]
+    mass_kg = 0.0
+    heat_J_cm2 = 0.0
+    position_m = 7.671936072742138e-6
+    heat_budget_ratio = 0.0
+    velocity_m_s = 8.322643319146402e-9
+
+    [rows.normal_route_error]
+    mass_kg = 0.0
+    heat_J_cm2 = 0.0
+    position_m = 8.48221505972889e-6
+    heat_budget_ratio = 0.0
+    velocity_m_s = 9.164237688262524e-9
+
+    [rows.independent_error]
+    mass_kg = 5.684341886080802e-14
+    heat_J_cm2 = 0.0
+    position_m = 0.5645894261918736
+    heat_budget_ratio = 0.0
+    velocity_m_s = 0.0006127893867218155
+
+    [rows.KS_vs_normal]
+    mass_kg = 5.684341886080802e-14
+    heat_J_cm2 = 0.0
+    position_m = 0.564580944135659
+    heat_budget_ratio = 0.0
+    velocity_m_s = 0.0006127802225360359
+
+    [rows.reference_analytic]
+[[rows]]
+case = "drag_only"
+attempts = 21452
+reference_qualified = true
+rtol = 1.0e-8
+nonlinear_failures = 0
+passed = false
+rhs_calls_steps_only = 3770596
+clock_residual_s = 5.706546346573305e-14
+atol = 1.0e-9
+preset = "coarse"
+dtmax_s = 20.0
+
+    [rows.reference_refinement]
+    mass_kg = 0.0
+    heat_J_cm2 = 7.968736781549524e-12
+    position_m = 1.223518120567973e-6
+    heat_budget_ratio = 3.6482175004510895e-8
+    velocity_m_s = 1.2307511692248912e-9
+
+    [rows.normal_route_error]
+    mass_kg = 0.0
+    heat_J_cm2 = 4.157740818300226e-11
+    position_m = 1.3335430618489309e-5
+    heat_budget_ratio = 1.8818084303805684e-7
+    velocity_m_s = 1.4495951852664082e-8
+
+    [rows.independent_error]
+    mass_kg = 5.684341886080802e-14
+    heat_J_cm2 = 0.0009913570956463502
+    position_m = 198.5762255904754
+    heat_budget_ratio = 4.4831039556968255
+    velocity_m_s = 0.21511951057791115
+
+    [rows.KS_vs_normal]
+    mass_kg = 5.684341886080802e-14
+    heat_J_cm2 = 0.000991357054068942
+    position_m = 198.57621225565111
+    heat_budget_ratio = 4.483103767667507
+    velocity_m_s = 0.2151194960821529
+
+    [rows.reference_analytic]
+[[rows]]
+case = "drag_only"
+attempts = 99053
+reference_qualified = true
+rtol = 1.0e-10
+nonlinear_failures = 0
+passed = false
+rhs_calls_steps_only = 16602344
+clock_residual_s = 6.872280522429719e-14
+atol = 1.0e-11
+preset = "medium"
+dtmax_s = 10.0
+
+    [rows.reference_refinement]
+    mass_kg = 0.0
+    heat_J_cm2 = 7.968736781549524e-12
+    position_m = 1.223518120567973e-6
+    heat_budget_ratio = 3.6482175004510895e-8
+    velocity_m_s = 1.2307511692248912e-9
+
+    [rows.normal_route_error]
+    mass_kg = 0.0
+    heat_J_cm2 = 4.157740818300226e-11
+    position_m = 1.3335430618489309e-5
+    heat_budget_ratio = 1.8818084303805684e-7
+    velocity_m_s = 1.4495951852664082e-8
+
+    [rows.independent_error]
+    mass_kg = 5.684341886080802e-14
+    heat_J_cm2 = 4.594596094875669e-5
+    position_m = 9.198814233489061
+    heat_budget_ratio = 0.2077763100524002
+    velocity_m_s = 0.009965155576134494
+
+    [rows.KS_vs_normal]
+    mass_kg = 5.684341886080802e-14
+    heat_J_cm2 = 4.594591937134851e-5
+    position_m = 9.198800898666418
+    heat_budget_ratio = 0.20777612203111986
+    velocity_m_s = 0.009965141080375156
+
+    [rows.reference_analytic]
+[[rows]]
+case = "drag_only"
+attempts = 459560
+reference_qualified = true
+rtol = 1.0e-12
+nonlinear_failures = 0
+passed = true
+rhs_calls_steps_only = 63990216
+clock_residual_s = 1.712519015484304e-14
+atol = 1.0e-13
+preset = "fine"
+dtmax_s = 5.0
+
+    [rows.reference_refinement]
+    mass_kg = 0.0
+    heat_J_cm2 = 7.968736781549524e-12
+    position_m = 1.223518120567973e-6
+    heat_budget_ratio = 3.6482175004510895e-8
+    velocity_m_s = 1.2307511692248912e-9
+
+    [rows.normal_route_error]
+    mass_kg = 0.0
+    heat_J_cm2 = 4.157740818300226e-11
+    position_m = 1.3335430618489309e-5
+    heat_budget_ratio = 1.8818084303805684e-7
+    velocity_m_s = 1.4495951852664082e-8
+
+    [rows.independent_error]
+    mass_kg = 5.684341886080802e-14
+    heat_J_cm2 = 2.130820945467349e-6
+    position_m = 0.4265741109759926
+    heat_budget_ratio = 0.009635974616470675
+    velocity_m_s = 0.00046211143196759025
+
+    [rows.KS_vs_normal]
+    mass_kg = 5.684341886080802e-14
+    heat_J_cm2 = 2.130779368059166e-6
+    position_m = 0.42656077615328836
+    heat_budget_ratio = 0.009635786595562898
+    velocity_m_s = 0.00046209693620813684
+
+    [rows.reference_analytic]
+[[rows]]
+case = "J2_plus_drag"
+attempts = 21331
+reference_qualified = true
+rtol = 1.0e-8
+nonlinear_failures = 0
+passed = false
+rhs_calls_steps_only = 3748740
+clock_residual_s = 5.906386491005833e-14
+atol = 1.0e-9
+preset = "coarse"
+dtmax_s = 20.0
+
+    [rows.reference_refinement]
+    mass_kg = 0.0
+    heat_J_cm2 = 1.9092283309873892e-11
+    position_m = 8.610114991569871e-6
+    heat_budget_ratio = 8.040953967296752e-8
+    velocity_m_s = 9.290033753688985e-9
+
+    [rows.normal_route_error]
+    mass_kg = 0.0
+    heat_J_cm2 = 2.9825031333530205e-12
+    position_m = 2.4249268949631114e-6
+    heat_budget_ratio = 2.450321758176625e-8
+    velocity_m_s = 2.633509401703168e-9
+
+    [rows.independent_error]
+    mass_kg = 5.684341886080802e-14
+    heat_J_cm2 = 0.0011266329373320616
+    position_m = 204.56370174384185
+    heat_budget_ratio = 4.744955561413818
+    velocity_m_s = 0.2222777721521698
+
+    [rows.KS_vs_normal]
+    mass_kg = 5.684341886080802e-14
+    heat_J_cm2 = 0.0011266329363692762
+    position_m = 204.56369932025547
+    heat_budget_ratio = 4.744955557358734
+    velocity_m_s = 0.22227776951907127
+
+    [rows.reference_analytic]
+[[rows]]
+case = "J2_plus_drag"
+attempts = 98419
+reference_qualified = true
+rtol = 1.0e-10
+nonlinear_failures = 0
+passed = false
+rhs_calls_steps_only = 16514700
+clock_residual_s = 7.30526750203353e-14
+atol = 1.0e-11
+preset = "medium"
+dtmax_s = 10.0
+
+    [rows.reference_refinement]
+    mass_kg = 0.0
+    heat_J_cm2 = 1.9092283309873892e-11
+    position_m = 8.610114991569871e-6
+    heat_budget_ratio = 8.040953967296752e-8
+    velocity_m_s = 9.290033753688985e-9
+
+    [rows.normal_route_error]
+    mass_kg = 0.0
+    heat_J_cm2 = 2.9825031333530205e-12
+    position_m = 2.4249268949631114e-6
+    heat_budget_ratio = 2.450321758176625e-8
+    velocity_m_s = 2.633509401703168e-9
+
+    [rows.independent_error]
+    mass_kg = 5.684341886080802e-14
+    heat_J_cm2 = 5.222620924527632e-5
+    position_m = 9.477792866385398
+    heat_budget_ratio = 0.21995721392343448
+    velocity_m_s = 0.010298455715320542
+
+    [rows.KS_vs_normal]
+    mass_kg = 5.684341886080802e-14
+    heat_J_cm2 = 5.2226208282490916e-5
+    position_m = 9.47779044279865
+    heat_budget_ratio = 0.21995720986853437
+    velocity_m_s = 0.01029845308222052
+
+    [rows.reference_analytic]
+[[rows]]
+case = "J2_plus_drag"
+attempts = 456593
+reference_qualified = true
+rtol = 1.0e-12
+nonlinear_failures = 0
+passed = true
+rhs_calls_steps_only = 61788220
+clock_residual_s = 1.7319479184152442e-14
+atol = 1.0e-13
+preset = "fine"
+dtmax_s = 5.0
+
+    [rows.reference_refinement]
+    mass_kg = 0.0
+    heat_J_cm2 = 1.9092283309873892e-11
+    position_m = 8.610114991569871e-6
+    heat_budget_ratio = 8.040953967296752e-8
+    velocity_m_s = 9.290033753688985e-9
+
+    [rows.normal_route_error]
+    mass_kg = 0.0
+    heat_J_cm2 = 2.9825031333530205e-12
+    position_m = 2.4249268949631114e-6
+    heat_budget_ratio = 2.450321758176625e-8
+    velocity_m_s = 2.633509401703168e-9
+
+    [rows.independent_error]
+    mass_kg = 5.684341886080802e-14
+    heat_J_cm2 = 2.422191791140449e-6
+    position_m = 0.43953578328508136
+    heat_budget_ratio = 0.01020136375330849
+    velocity_m_s = 0.00047759359420999214
+
+    [rows.KS_vs_normal]
+    mass_kg = 5.684341886080802e-14
+    heat_J_cm2 = 2.422190828355042e-6
+    position_m = 0.4395333596980699
+    heat_budget_ratio = 0.010201359698416889
+    velocity_m_s = 0.0004775909611097693
+
+    [rows.reference_analytic]

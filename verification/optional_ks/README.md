@@ -7,15 +7,19 @@ stepping. The extension uses SpaceAGORA's configured full Cartesian RHS;
 standalone KS force models do not supply integrated spacecraft physics.
 Mohammed's MPC is unchanged.
 
-This is a draft development candidate. Current-source qualification is in
-progress; historical prototype passes are not current-upstream verdicts. The
-source-specific report and capability table will identify completed gates and
-failures. Neither this draft nor a package unit-test pass is a general accuracy
-or performance claim. The separate checkpoint-table repair is a prerequisite.
+This is a draft development candidate. The [report](REPORT.md) and
+[capability table](CAPABILITIES.md) document current-upstream trajectory, lifecycle,
+installation and guard verdicts, including all eight coarse/medium misses.
+Performance and final delivery review remain pending. Neither this draft nor
+a package unit-test pass is a general accuracy or performance claim. The
+separate checkpoint-table repair is a prerequisite.
 
 ## Installation and selection
 
 Use Julia 1.12.7 and a checkout of this candidate, with a fresh environment.
+Use normal Git/LFS checkout, then the installer below. A direct Pkg.add of the
+SpaceAGORA Git URL failed with a LibGit2 submodule checkout error in the tested
+environment; the working checkout/installer route is the verified route.
 The installer fetches KS source `05d969c24a6595c2752f7ff947af77c504053623`
 (version 0.2.0) from its maintained repository. The KS repository is private,
 so normal authorized GitHub access is required. It is not a registry release.

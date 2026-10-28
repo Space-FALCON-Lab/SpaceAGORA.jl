@@ -1,0 +1,119 @@
+{
+  "status": "APPROVE mathematical/source contract for stated initial adapter scope; not final trajectory/lifecycle or installation-delivery qualification",
+  "reviewed_utc": "2026-10-28T11:51:44.506943+00:00",
+  "candidate": "c091191a1ae0dc602ae50025889d34d4b2800a96",
+  "upstream": "a664365499c08cd84b1421047cb2208bf2b46e5b",
+  "checkpoint_base": "615a447c0115f7aa576a604f76ba15321aa0f893",
+  "guard_fix": "0037984e0ab6ed0aa5fd2b82d3e4ca0193e7304f",
+  "source_sha256": {
+    "Project.toml": "19d8f490b8631bc6cbce057d86e9a732092bb367a3fe321d1f9665ab1ce64dcf",
+    "ext/SpaceAGORAKSPropagatorExt.jl": "e572a963130408c4278d9ef0122703b8e2dd89e64358ba39aae3358ec992314b",
+    "src/orchestration/simulation/engine/ks_solver.jl": "ae82caf29ba973403438535c01ce42962e69ef4f643dc2a1e742420b6611b6bc",
+    "src/orchestration/simulation/engine/dynamics_rhs.jl": "ffb76fd9e26c82a5a6ce9bd23e993f10d2aa152b56868c7cd0d6460e43f92fda",
+    "src/orchestration/simulation/engine/solver_policy.jl": "57558ca10e76c1950d19d150ec20c3b39653ea1150292c0af294f8145cc38aa1",
+    "src/orchestration/simulation/engine/execution.jl": "eb50baaa20ebdb363bee8dba5d3d272a0e9503147a173670fbf9c9d86d1092ce",
+    "src/orchestration/simulation/engine/effector_scopes.jl": "2fb254afff24ab1c6addf6809f8e49d1f04fa63994623c0cdda157589830477c",
+    "src/orchestration/simulation/engine/effector_sampling.jl": "6b95c19946366e63999cfc20aeb644a5f2a21f3381dbf2ff11e3a459bcea2a90",
+    "src/orchestration/simulation/engine/setup.jl": "592aa3788be57042b781e491567272fa525695c7c60684aee1ac73d6380a9646",
+    "src/orchestration/simulation/engine/reporting.jl": "fb882d9b1f007cc1e1bafa591776d02ce967e0cb80479ef7a1a6d29a5e7ee0ef",
+    "src/orchestration/simulation/callbacks/event_callbacks.jl": "5667a45ffe207fdf146d9783fa080c6d752b9667e7bfbc4c310a5341ecf37c2c",
+    "src/orchestration/simulation/callbacks/density_callbacks/assembly.jl": "d33a0f36faf45049cb15beb336c89f5a99ca73fb4557212fa528c086f0ecdea2",
+    "src/orchestration/simulation/callbacks/density_callbacks/model_selection.jl": "556580e871576026832970c79319a52811e7088c61a5cd20f703f03f1243bb83",
+    "src/orchestration/simulation/callbacks/thermal_callbacks.jl": "0fd543126ddce8cc69e59fa52c3e0ed9a0cd6b30c5a1ffbe6d4e57c1ca58bec4",
+    "src/orchestration/simulation/callbacks/save_fields.jl": "f8b84f6a6fdc88854430a29b2765323f6ed7246625fca2a440d3621bb199eabc"
+  },
+  "installed_ks": {
+    "root": "/Users/josephine/.julia/packages/KSPropagator/tzZTB",
+    "git_revision": "8cfc936fe2ba403996ed7682aa700b56d6e04c5d",
+    "version": "0.2.0",
+    "bridge_sha256": "2d6545cc647b5e0d5cd2ccf2f5b3e4b1f584df69b5f4c16f91bd2b50da70370d",
+    "source_correspondence": "94tracked numerical src/test files match installedsource,PR24checkout and reviewed78856d; zero mismatches; unrelated.DS_Store excluded"
+  },
+  "normal_runtime": {
+    "julia": "1.12.7",
+    "OrdinaryDiffEqCore": "4.19.0 git-tree5a995982a30ce31999c5504569234ecb91a6e0ef",
+    "SciMLBase": "3.58.0",
+    "DiffEqCallbacks": "4.19.5",
+    "ForwardDiff": "1.4.6",
+    "diagnostic_command_policy": "--startup-file=no --compiled-modules=existing with resolved adapter-environment; actual installed package and extension, no loading/source/model shim"
+  },
+  "mathematical_assessment": {
+    "physical_state": "Core owns planet-centred inertial Cartesian state, physical seconds,kgmass and nativeJ/cm2heat; legacy normalize does not silently rescale typed propagation. Position/velocity slots are discovered from ComponentVector axes.",
+    "coupled_stage": "Unknown increments includeKS10+all other physical states and positive fictitious step through log parameter. Midpoint force/aux evaluation uses one common full stage and localphysicalclock; daux/ds=rho*daux/dt. Complete FD nonlinear residual captures state,time,mass/heat couplings without requiring application AD.",
+    "central_force": "Application supplies total acceleration. Bridge forms perturbation=total+mu*r/r^3, subtracting the selected negative monopole once; KS central part uses same positive mu via initialization. No standalone KS force law is selected.",
+    "clocks": "Single-step clock is local; doubled maps share local[0,dt] anchored once at physicalt0. Both actualSundman and imposedendpoint residuals are bounded; absolute callbackepochs retainFloat64precision. No separate absolutehalfmidpoint is required.",
+    "endpoint": "Solveddp/dq produce anchoredCartesian increments; denominator isdot(p0+dp,p0+dp). Initialroundoff anchoring term isO(eps*increment); no nearcollision promise.",
+    "error_control": "Twohalfstepsaccepted; norm offine-minus-coarse/3 feeds existing componentwise physicalabstol/reltol scaling and SciMLinternalnorm. NoRichardsonextrapolation or globalerrorguarantee.",
+    "trial_cache": "Core invalidates density_sample_t and in_atmosphere_sample_t before fullRHS; fullRHS repopulates state/mass and heat buffers from supplied state. Initialforce publication retains exactsaved-state check. Successfulcandidate is refreshed; rejectedtrial derivedbuffers may temporarily change but accepted callbacks cannot consume rejected state.",
+    "purity": "Knownforces/thermal/idealcontrol have explicitrepeatability; unknown dynamic/control require deliberate trait. Custom opt-in is not scientificvalidation; state/history-consuming owners outside scope are refused.",
+    "guards": "0037984 correctly excludes new mounteddata sources/stores and counts one central actually applicable to spacecraft1 using resolved scopes. Per-spacecraft GNC flattening/scope resolution precedes preflight; ordinary modes and typedoverrides remain authoritative.",
+    "effective_density": "Allowedanalytic setup empties per-spacecraft density overrides; own4case runtime checks confirm empty vector. This is not validation of arbitrary manually injected runtime density instances or mutation of model ownership by custom callbacks.",
+    "dense_history": "Fourpayload physicalHermite states/rates are copied pre-affect independently ofFSALscratch. Current interval may shorten once before eventaffect; same-endpoint calls retain history. Historicalquery never re-evaluates currentcommands. Root pre-event table draining resolves currenttyped saver from checkpoint repair.",
+    "retry_and_reset": "Only typedCoupledMidpointFailure is retried. Otherconfiguration/physicalDomainerrors propagate. Fresh start/endRHS and canonicalCartesian reset remove hiddenKSphysicalcheckpointstate; per-runmu/diagnostics do not reuse priorKScache.",
+    "sensitivity_limit": "Physicaltime derivatives of cubic interpolation are not state sensitivities. No newfixedarrivalphysicaltimeJacobian/tangentAPI is supplied."
+  },
+  "independent_diagnostics": {
+    "test_groups": {
+      "review/adapter-math-diagnostics-attempt1.log": [
+        192,
+        428
+      ],
+      "review/adapter-root-reference-refinement-attempt1.log": [
+        4
+      ],
+      "logs/adapter-current-checks-attempt2.log": [
+        4,
+        6,
+        68,
+        20,
+        218
+      ]
+    },
+    "trial_permutations": {
+      "pass": 192,
+      "scope": "same physical epoch,permuted copiedposition/velocity/positive mass/heat trial states; repeatedstatesexact outputidentity; independent central/J2/currentmassdrag/scalarheat formulas; restoredstartbuffers"
+    },
+    "dense_rejection": {
+      "pass": 428,
+      "manufactured_scope": "explicitcentralcancelling opted-in testforce; engineeringinterpolation test,notcentraltrajectoryqualification",
+      "cases": 2,
+      "rejects_per_case": 2,
+      "accepts_per_case": 35,
+      "max_position_error_m": 2.282809177756997e-08,
+      "max_velocity_error_m_s": 1.0846985868865684e-08,
+      "checks": "no callback saves,root endpoints,bothcontinuities,historyafterlatercommands/impulse,time derivatives andscalar/vector idxs,in-place andallocating output"
+    },
+    "reference_root_gate": {
+      "pass": 4,
+      "main_coarse_s": 2718.3509058762047,
+      "main_fine_s": 2718.350905876202,
+      "absolute_refinement_s": 2.7284841053187847e-12,
+      "unchanged_budget_s": 1e-06,
+      "coincident": "zero roots inbothrefs"
+    },
+    "source_hashes_unchanged_during_diagnostics": true
+  },
+  "gates_not_inferred": [
+    "Full12row current-source baseline and independent raw accuracy/refinement assessment remain a separate completion gate; oldfine results do not retroactively qualify newsource.",
+    "Current lifecycle runner has completed per parent; independent final raw8table/2snapshot accuracy,restoration andschedule audit is owned by separate review and not duplicated or preapproved here.",
+    "Current upstream full-prefix resume expectation was adapted prospectively; originalphysicalinputs andbudgets unchanged.",
+    "DirectPkg.addSpaceAGORA installation failure and normalGitclone/assets installation route are operational delivery gates outside this mathematical approval.",
+    "Broader invalid configurations,unqualifiedforce models,integratedsail/highordergravity,inactiveeventphysics and generalhistory-dependent callbacks are not promoted to supported capabilities.",
+    "No timing or matchedaccuracyperformance comparison was performed; diagnostics/RHScounts are not totalwork benchmarks."
+  ],
+  "provenance_sha256": {
+    "review/adapter-math-diagnostics-attempt1.log": "0abc516f1df766dbbea38e7605999ef40c2c47713b2bab4121c6ba3127a4d6cd",
+    "review/adapter-trial-permutation.jl": "98b8dd708f8f543a08b51268fbe9d5526b6de4de9e48b89a9125d10f8e3fd662",
+    "review/adapter-dense-rejection-retry.jl": "3609d4f15bf0e78fdfeeda3b7f8d6feeaba651bce52c75a7ece40b410b41957e",
+    "review/run-adapter-math-diagnostics.jl": "6f6c21126eed98cf2c9ff7aced7186970252207abcdcdaa4c312a4c153a64da9",
+    "review/adapter-root-reference-refinement.jl": "6833bddb57bb998816214eed71b55043f942657566ad2aa53702c9f0d1d47f41",
+    "review/adapter-root-reference-refinement.toml": "c72d53b61c2a91b8e89e7218d1f398341373fa721ea502ac92a6cec64d75ada9",
+    "review/adapter-root-reference-refinement-attempt1.log": "7a748beb9fcfbe6a5481a84e0f19aa716830917bb2ddc4436b014b36e0c9cd3f",
+    "review/adapter-installed-ks-source-correspondence.json": "4ef82176ceb9bd11aab6c5fb70b52ad397a40beefc5ddbf824e825b6812e1ebe",
+    "adapter-environment/Project.toml": "e2d163d9c7eeec22a106af4e239c54f5e478fc8d09aafdcd8652ef7397d222e7",
+    "adapter-environment/Manifest.toml": "179a13f81da0a12d0c059ed68b9048603bc61eaf6e91bea9e92d230df5c536e1",
+    "adapter-qualification-plan.md": "bc2d7d6d03f7c740e90cd7ebcf30ad4d7f3c0f13b7d63b762a8c549c2e562dbe"
+  },
+  "production_edits_or_publication_by_reviewer": false,
+  "old_signoffs": "Preserved as source-specific records; this fresh review applies to c091candidate and installed exactPR24source only."
+}

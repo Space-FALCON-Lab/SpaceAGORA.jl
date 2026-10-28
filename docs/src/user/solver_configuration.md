@@ -301,5 +301,6 @@ time, scheduling, events, checkpoints and outputs. KSPropagator supplies the
 coordinate transformation and coupled numerical stepping. See
 [`verification/optional_ks/README.md`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/blob/feature/optional-ks-propagation/verification/optional_ks/README.md)
 for the exact KS installation source, supported models, guards and reproducible
-qualification commands. Current-source acceptance is still in progress; consult
-the candidate's source-specific report before using its historical fine settings.
+qualification commands. Consult the candidate's source-specific report and capability table for the
+verified initial scope, failed settings and installation limitations. Performance
+and final delivery review remain pending.

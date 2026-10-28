@@ -28,6 +28,11 @@
 #                                     winner may beat the heuristic before the
 #                                     ranking is distrusted (default: the
 #                                     OVERRIDE_MARGIN value)
+#   SPACEAGORA_RHS_CALIBRATE_SEED_ACCEPT_WINNER  0 (default) -- when 1, a seeded
+#                                     sweep whose winner beats the heuristic by
+#                                     more than the disagree margin is accepted
+#                                     instead of rerun as the full sweep (the
+#                                     no-gain-over-reference guard still falls back)
 #   SPACEAGORA_RHS_CALIBRATE_SKIP_RATIO  0 (default, off) -- when > 0, replaces the
 #                                     fixed MIN_SOLVE_S rule with: honour a cached
 #                                     verdict (skip the sweep) when the predicted
@@ -844,6 +849,16 @@ end
     return max(0.0, v)
 end
 
+@inline _rhs_calibrate_seed_accept_winner()::Bool =
+    SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_RHS_CALIBRATE_SEED_ACCEPT_WINNER", false)
+
+# Whether a seeded result with this fallback `reason` is rerun as the full sweep.
+# Accepting the winner only waives :beats_heuristic, the guard that exists to
+# catch a ranking that missed a better region; a winner that does not clear the
+# serial reference is never trusted.
+_rhs_seed_should_fallback(reason::Symbol, accept_winner::Bool)::Bool =
+    reason !== :none && !(accept_winner && reason === :beats_heuristic)
+
 @inline _rhs_is_serial_reference(c) = c.mode !== :satellite_batch && Int(c.allotment) == 1 && c.scheduler === :static
 
 # The K candidates nearest the heuristic's plan, plus the flat(1, static)
@@ -904,12 +919,14 @@ function _run_rhs_sweep!(p, u0, dynamic_effectors, verbose::Bool, args = nothing
     (k > 0 && args !== nothing) || return _run_rhs_sweep_core!(p, u0, dynamic_effectors, verbose, args, 0)
     res = _run_rhs_sweep_core!(p, u0, dynamic_effectors, verbose, args, k)
     timings = res[6]
-    if !isempty(timings) && _rhs_seed_needs_full_sweep(
+    if !isempty(timings)
+        reason = _rhs_seed_fallback_reason(
             timings, _rhs_calibrate_override_margin(), _rhs_calibrate_seed_disagree_margin())
-        # Always logged (seeded path only): says which guard sent the sweep back to the full set.
-        @info "RHS calibration: seeded result not trusted; running the full sweep" reason=_rhs_seed_fallback_reason(
-            timings, _rhs_calibrate_override_margin(), _rhs_calibrate_seed_disagree_margin()) seeded_candidates=length(timings)
-        return _run_rhs_sweep_core!(p, u0, dynamic_effectors, verbose, args, 0)
+        if _rhs_seed_should_fallback(reason, _rhs_calibrate_seed_accept_winner())
+            # Always logged (seeded path only): says which guard sent the sweep back to the full set.
+            @info "RHS calibration: seeded result not trusted; running the full sweep" reason=reason seeded_candidates=length(timings)
+            return _run_rhs_sweep_core!(p, u0, dynamic_effectors, verbose, args, 0)
+        end
     end
     return res
 end

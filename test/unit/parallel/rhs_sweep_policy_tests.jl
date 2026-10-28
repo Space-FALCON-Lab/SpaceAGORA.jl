@@ -119,3 +119,17 @@ end
         end
     end
 end
+
+@testset "accept-winner waives only the beats-heuristic fallback, default off" begin
+    fb = SEng._rhs_seed_should_fallback
+    @test !fb(:none, false) && !fb(:none, true)
+    @test fb(:beats_heuristic, false)
+    @test !fb(:beats_heuristic, true)
+    @test fb(:no_gain_over_reference, false) && fb(:no_gain_over_reference, true)
+    withenv("SPACEAGORA_RHS_CALIBRATE_SEED_ACCEPT_WINNER" => nothing) do
+        @test !SEng._rhs_calibrate_seed_accept_winner()
+    end
+    withenv("SPACEAGORA_RHS_CALIBRATE_SEED_ACCEPT_WINNER" => "1") do
+        @test SEng._rhs_calibrate_seed_accept_winner()
+    end
+end

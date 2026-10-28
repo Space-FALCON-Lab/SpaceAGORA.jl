@@ -302,5 +302,6 @@ coordinate transformation and coupled numerical stepping. See
 [`verification/optional_ks/README.md`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/blob/feature/optional-ks-propagation/verification/optional_ks/README.md)
 for the exact KS installation source, supported models, guards and reproducible
 qualification commands. Consult the candidate's source-specific report and capability table for the
-verified initial scope, failed settings and installation limitations. Performance
-and final delivery review remain pending.
+verified initial scope, failed settings and installation limitations. The bounded
+performance study found a large observed two-body cost and inconclusive J2-plus-
+drag wall timing; see the independently reviewed performance findings in that directory.

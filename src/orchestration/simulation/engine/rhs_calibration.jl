@@ -33,6 +33,11 @@
 #                                     more than the disagree margin is accepted
 #                                     instead of rerun as the full sweep (the
 #                                     no-gain-over-reference guard still falls back)
+#   SPACEAGORA_RHS_CALIBRATE_PIN_MARGIN  unset/0 (default, off) -- fraction in [0, 1) a
+#                                     non-heuristic winner must beat the heuristic's
+#                                     paired re-measurement by to be pinned; the
+#                                     effective margin is max(this, OVERRIDE_MARGIN),
+#                                     so it can only make pinning stricter
 #   SPACEAGORA_RHS_CALIBRATE_SKIP_RATIO  0 (default, off) -- when > 0, replaces the
 #                                     fixed MIN_SOLVE_S rule with: honour a cached
 #                                     verdict (skip the sweep) when the predicted
@@ -96,6 +101,23 @@ end
     end
     return clamp(v, 0.0, 0.9)
 end
+
+# Extra margin (opt-in) a swept winner must clear against the heuristic before it
+# is pinned. 0 = off. The final paired comparison in the sweep is the only place
+# a winner is accepted, so both the seeded and the full sweep honor it there.
+@inline function _rhs_calibrate_pin_margin()::Float64
+    raw = strip(_engine_env_get("SPACEAGORA_RHS_CALIBRATE_PIN_MARGIN", ""))
+    isempty(raw) && return 0.0
+    v = tryparse(Float64, raw)
+    (v === nothing || !isfinite(v) || v < 0.0 || v >= 1.0) && throw(ArgumentError(
+        "SPACEAGORA_RHS_CALIBRATE_PIN_MARGIN must be a float in [0, 1), got '$raw'"))
+    return v
+end
+
+# True when the winner clears the heuristic by `margin` (an unmeasurable
+# heuristic never blocks; an unmeasurable winner always does).
+_rhs_pin_accepts(best_ns::Float64, heuristic_ns::Float64, margin::Float64)::Bool =
+    isfinite(best_ns) && !(isfinite(heuristic_ns) && best_ns > heuristic_ns * (1.0 - margin))
 
 # Persist a "the heuristic won" verdict, so it is reached once per machine
 # rather than re-derived once per solve.
@@ -1430,12 +1452,11 @@ function _run_rhs_sweep_core!(p, u0, dynamic_effectors, verbose::Bool, args, see
         heuristic_ns = get(final_scores, heuristic, Inf)
         push!(final_recorded, (best_plan, best_final, false))
         push!(final_recorded, (heuristic, heuristic_ns, true))
-        margin = _rhs_calibrate_override_margin()
+        margin = max(_rhs_calibrate_override_margin(), _rhs_calibrate_pin_margin())
         # An unmeasurable heuristic must not win by default: `Inf` here means the
         # floor could not be evaluated, and retaining it would hand the solve a
         # plan the probe could not even run once.
-        if !isfinite(best_final) ||
-           (isfinite(heuristic_ns) && best_final > heuristic_ns * (1.0 - margin))
+        if !_rhs_pin_accepts(best_final, heuristic_ns, margin)
             if verbose
                 println("  → heuristic retained ($(round(heuristic_ns / 1e6, digits=3)) ms/call " *
                         "vs best swept $(round(best_final / 1e6, digits=3)); " *

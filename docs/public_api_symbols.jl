@@ -284,6 +284,15 @@ const PUBLIC_API_SECTIONS = [
         ]
     ),
     (
+        title = "Control Forecasts",
+        items = [
+            (owner = :SpaceAGORA, symbol = :ControlForecastSnapshot, rendered = "SpaceAGORA.ControlForecastSnapshot"),
+            (owner = :SpaceAGORA, symbol = :capture_control_forecast, rendered = "SpaceAGORA.capture_control_forecast"),
+            (owner = :SpaceAGORA, symbol = :run_control_forecast, rendered = "SpaceAGORA.run_control_forecast"),
+            (owner = :SpaceAGORA, symbol = :with_control_forecast_worker, rendered = "SpaceAGORA.with_control_forecast_worker"),
+        ]
+    ),
+    (
         title = "Optional Adapter Services",
         items = [
             (owner = :SpaceAGORA, symbol = :visualizer_available, rendered = "SpaceAGORA.visualizer_available"),

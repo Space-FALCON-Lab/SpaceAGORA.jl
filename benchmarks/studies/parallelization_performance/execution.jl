@@ -1,4 +1,55 @@
+# SPACEAGORA_PPB_SNAPSHOT_DIR=<dir>: after EVERY solve in this process (warm-ups
+# and timed repeats alike) write one TOML file with the solve's wall time, a copy
+# of the RHS calibration store before and after the solve, and the solve's own
+# policy telemetry snapshot. Diagnostic only; unset (default) changes nothing.
+# Read-only on the store: copies it under its lock, never loads or saves it.
+const _PPC_SNAPSHOT_SEQ = Threads.Atomic{Int}(0)
+
+# TOML-safe copy: Symbols and anything exotic become strings, nothing is dropped.
+ppc_toml_safe(x::AbstractDict) = Dict{String, Any}(string(k) => ppc_toml_safe(v) for (k, v) in x)
+ppc_toml_safe(x::NamedTuple) = Dict{String, Any}(string(k) => ppc_toml_safe(v) for (k, v) in pairs(x))
+ppc_toml_safe(x::AbstractVector) = Any[ppc_toml_safe(v) for v in x]
+ppc_toml_safe(x::AbstractString) = String(x)
+ppc_toml_safe(x::Union{Bool, Integer, AbstractFloat}) = x
+ppc_toml_safe(x) = string(x)
+
+# Store entries without the per-arm timing lists (only their count is kept).
+function ppc_store_copy(cache::AbstractDict)
+    out = Dict{String, Any}()
+    for (sig, e) in cache
+        c = Dict{String, Any}(string(k) => v for (k, v) in e if string(k) != "timings")
+        t = get(e, "timings", nothing)
+        c["n_timings"] = t isa AbstractVector ? length(t) : 0
+        out[string(sig)] = c
+    end
+    return out
+end
+
+function ppc_solve_record(seq::Int, is_warmup::Bool, wall_s::Real, store_before, store_after, policy)
+    return Dict{String, Any}(
+        "seq" => seq,
+        "is_warmup" => is_warmup,
+        "wall_time_s" => Float64(wall_s),
+        "store_before" => ppc_toml_safe(store_before),
+        "store_after" => ppc_toml_safe(store_after),
+        "policy" => policy === nothing ? Dict{String, Any}() : ppc_toml_safe(policy),
+    )
+end
+
+function _ppc_store_now()
+    try
+        lock(SimulationEngine._rhs_calib_lock) do
+            return ppc_store_copy(SimulationEngine._rhs_calib_cache)
+        end
+    catch
+        return Dict{String, Any}()
+    end
+end
+
 function ppc_solve_once(args, cfg::PPCConfig)
+    snapdir = get(ENV, "SPACEAGORA_PPB_SNAPSHOT_DIR", "")
+    store_before = isempty(snapdir) ? nothing : _ppc_store_now()
+    t0 = time_ns()
     # The worker applies one mode environment around the whole sample batch.
     # Calling the config-taking API here would reapply those values by mutating
     # process-global ENV for every solve, which is unsafe when samples run on
@@ -9,6 +60,26 @@ function ppc_solve_once(args, cfg::PPCConfig)
         return_solution=true,
         return_solver_metadata=true
     )
+    wall_s = (time_ns() - t0) / 1.0e9
+    if !isempty(snapdir)
+        try
+            seq = Threads.atomic_add!(_PPC_SNAPSHOT_SEQ, 1) + 1
+            rec = ppc_solve_record(seq, seq <= cfg.warmup, wall_s, store_before, _ppc_store_now(),
+                                   get(result, :parallel_policy, nothing))
+            rec["pid"] = getpid()
+            rec["threads"] = Threads.nthreads()
+            rec["reverify_share"] = try Float64(SimulationEngine._rhs_calibrate_reverify_share()) catch; -1.0 end
+            if seq == 1
+                rec["env"] = Dict{String, Any}(k => v for (k, v) in ENV if startswith(k, "SPACEAGORA_"))
+            end
+            mkpath(snapdir)
+            open(joinpath(snapdir, "solve_p$(getpid())_$(lpad(seq, 3, '0')).toml"), "w") do io
+                TOML.print(io, rec)
+            end
+        catch err
+            @warn "ppb snapshot failed" exception=err
+        end
+    end
     ppc_startup_trace("first_solve")
     return result
 end

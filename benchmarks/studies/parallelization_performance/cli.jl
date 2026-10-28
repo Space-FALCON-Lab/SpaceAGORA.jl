@@ -13,6 +13,7 @@ using SHA
 using Sockets
 using StaticArrays
 using Statistics
+using TOML
 
 # Startup trace: with SPACEAGORA_PPC_STARTUP_TRACE=1 a worker prints one line
 # per startup milestone (files loaded, first solve returned, first timed repeat

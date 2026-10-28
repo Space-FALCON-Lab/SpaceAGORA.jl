@@ -456,7 +456,7 @@ building the run's buffers and callbacks:
 1. `_resume_engine_state!`. On a run resumed from a checkpoint file, it checks
    the checkpoint against the run and restores the engine's and the
    callbacks' run state: the `activity`, `interlinks`, `callbacks`,
-   `maneuver_buffers`, `orbits` and `entries` entries, and the periodic ticks
+   `link_attitudes`, `maneuver_buffers`, `orbits` and `entries` entries, and the periodic ticks
    still pending. It also sets the resume flags (`callback_resume`,
    `model_resume`). The `interlinks` entry restores `active_links`, the
    previous matching used for carried receiver-outflow scoring; the scheduler
@@ -475,31 +475,43 @@ building the run's buffers and callbacks:
      its checkpoint entry (`_gnc_scope_record`); a resumed run compares them
      with the checkpoint's `gnc_scopes` entry (`_check_gnc_scope_baseline`)
      before going on;
-   - on a resumed run, the models' own state (`restore_checkpoint_state!`),
-     which replaces their reset;
+   - on a resumed run, the callback-owned state again, so initializers cannot
+     replace saved hardware timing;
+   - the models' own state (`restore_checkpoint_state!`), which replaces their
+     reset and can reconnect custom sensor state to the restored generic state;
+   - the exact saved non-root link attitudes, after hinge restoration has
+     recomputed its geometry;
    - the EDG heat accounting.
 
-The callbacks initialize after these phases, when the solve starts. So there
-are two restores at two different times:
+The callbacks initialize after these phases, when the solve starts. Restoration
+happens on both sides of model initialization:
 
-- the engine's and the callbacks' state comes back before the models start and
-  before the callbacks initialize;
-- the models' state comes back after their initializers.
+- Engine and callback state is restored before models start.
+- After model initialization, callback state is reinstated first, then the
+  models restore their own state, then exact non-root link attitudes are restored.
 
 `test/unit/gnc/gnc_runtime_declarations_tests.jl` checks that order on a
 resumed run. The checkpoint side lives in `engine/resume_checkpoint.jl`, whose
 sections follow the same order. The lifecycle hooks are listed in the order the
 engine calls them at the top of `src/models/gnc/contracts/simulation_lifecycle.jl`.
 
+Checkpoints written before `link_attitudes` existed retain their legacy resume
+behavior. A run with non-root links warns that their previous commanded geometry
+cannot be recovered; those older checkpoints are not qualified for panel-state
+continuity. New snapshots validate spacecraft order, link positions, dimensions,
+reference areas and root placement before restoring any link. Resume with the
+same spacecraft structure and model configuration.
+
 | State | Owner | Reset at a run's start | Checkpoint entry | Restored on a resume | When |
 | --- | --- | --- | --- | --- | --- |
 | Which spacecraft are active | `ODEParams.is_active` | a new `ODEParams`, all active | `activity` (also in `interlinks`) | `_restore_activity_checkpoint_state!` | phase 1 |
 | Interlink selection | the `InterlinkModel` | `run_simulation` clears the graph's flags and matching | `interlinks`: configuration identity, activity flags and `active_links` | identity is checked and the previous matching restored, independently of history; scheduler initialization checks availability and chooses the next matching | phase 1; scheduler at the solve's start |
 | Recorded interlink history | `InterlinkModel.history` | `run_simulation` empties it | `interlink_history`: the owned prefix of `simulation_checkpoint.interlinks.bin`, recording settings, token and sample count, and (since 0.7.1) a SHA-256 checksum | `_start_interlink_history!` restores the prefix before the first segment, or warns and starts history at resume time; changed recording settings are refused | before the solve |
-| Battery flags, fault activity | the batteries and the actuator faults | the power and fault callbacks' first initialization | `callbacks` | `_restore_callback_checkpoint_state!`, which sets `callback_resume` so that those initializations keep it | phase 1 |
-| Data store flags | the data stores | the data callbacks' first initialization | `callbacks`, only in a run with a data store | `_restore_callback_checkpoint_state!`, as the battery flags | phase 1 |
-| Sensor streams, latest measurements, biases, sample times | the mounted sensors and the sensor callbacks | `reset_sensors!` at the first solve's start | `callbacks`, and the sensor's own `checkpoint_state` in `models` | the records in phase 1; the sensor's own state in phase 3. A resumed run does not call `initialize_sensor!` | phases 1 and 3 |
-| Hinge and gimbal angles, mounted thrusters' firing state (`κ`, `thrust`) | the link hardware: `PanelHinge`, `ThrusterGimbal` and `Thruster`, which keep the state a run starts from (`run_start`, first the configured one) and the last tick's write (`run_written`) | the run-state callback's first initialization (`get_run_state_callbacks`): a value still equal to the last mounted tick's write returns to the previous run's start; a value a user changed between runs is kept | `callbacks` | `_restore_callback_checkpoint_state!`, which sets `callback_resume`: the run-state callback's initialization then keeps the restored state and records it as the latest write | phase 1 |
+| Battery flags, fault activity | the batteries and the actuator faults | the power and fault callbacks' first initialization | `callbacks` | `_restore_callback_checkpoint_state!`, which sets `callback_resume` so that those initializations keep it | phases 1 and 3 |
+| Data store flags | the data stores | the data callbacks' first initialization | `callbacks`, only in a run with a data store | `_restore_callback_checkpoint_state!`, as the battery flags | phases 1 and 3 |
+| Sensor streams, latest measurements, biases, sample times | the mounted sensors and the sensor callbacks | `reset_sensors!` at the first solve's start | `callbacks`, and the sensor's own `checkpoint_state` in `models` | the records in phases 1 and 3 before the sensor's own state in phase 3. A resumed run does not call `initialize_sensor!` | phases 1 and 3 |
+| Hinge and gimbal angles, mounted thrusters' firing state (`κ`, `thrust`) | the link hardware: `PanelHinge`, `ThrusterGimbal` and `Thruster`, which keep the state a run starts from (`run_start`, first the configured one) and the last tick's write (`run_written`) | the run-state callback's first initialization (`get_run_state_callbacks`): a value still equal to the last mounted tick's write returns to the previous run's start; a value a user changed between runs is kept | `callbacks` | `_restore_callback_checkpoint_state!`, which sets `callback_resume`: the run-state callback's initialization then keeps the restored state and records it as the latest write | phases 1 and 3 |
+| Non-root link orientation and aerodynamic angle of attack | each non-root `Link` (`q`, `α`) | configured geometry or model initialization | `link_attitudes`: version, spacecraft/link structure, exact quaternion components and angle | validate the complete entry first, then restore exact values without a control tick or normalization; root attitude stays with the integrated state | after callback restoration in phase 1, again after model restoration in phase 3 |
 | Maneuver commands and burn plans | `SharedBuffers.maneuver_commands` and `maneuver_burn_plans`: the maneuver guidance models write the commands, the burn scheduler (`BaseThrusterModel`) the plans | a new `SharedBuffers`, every command and plan unset | `maneuver_buffers`, written while a command or plan is set | `_restore_maneuver_buffer_checkpoint_state!` | phase 1 |
 | The orbit each spacecraft is on | `ODEParams.orbit_counter`: the apoapsis callback counts the orbits, and a state anchor with an `orbit_count` sets it | a new `ODEParams`, the first orbit for every spacecraft | `orbits`, written once a spacecraft is past its first orbit | `_restore_orbit_counter_checkpoint_state!` | phase 1 |
 | Completed atmosphere entries | `SharedBuffers.entry_counter`: with an entry target enabled, the shared drag-state callback counts downward interface crossings when drag-phase changes are enabled; otherwise the standalone entry-end callback counts them | new run buffers, zero for every spacecraft | `entries`, written once a spacecraft has entered | `_restore_entry_counter_checkpoint_state!` | phase 1 |

@@ -78,6 +78,8 @@ export SimulationSettings
 # --- Simulation setup API: `using SpaceAGORA` alone is enough to configure a run ---
 using .SimulationModel: AerodynamicCoefficientfM
 export AerodynamicCoefficientfM
+using .SimulationModel: SolarRadiationPressureModel
+export SolarRadiationPressureModel
 @doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.AerodynamicCoefficientfM) AerodynamicCoefficientfM
 using .SimulationModel: SimulationConfiguration, MissionConfiguration, MissionType, MissionTime, MissionOrbits, EnvironmentModel, DynamicsModel, GuidanceModel, NavigationModel, ControlModel, SpacecraftModel, Link, Joint, InitialCondition, CartesianInitialCondition, InitialTime, IntegrationTolerances, SaveField, default_save_fields, MaxwellianHeat, InverseSquaredGravityModel, InverseSquaredJ2GravityModel, NBodyGravityModel, GravitationalHarmonicsModel, make_example_config, make_three_body_spacecraft
 export SimulationConfiguration, MissionConfiguration, MissionType, MissionTime, MissionOrbits, EnvironmentModel, DynamicsModel, GuidanceModel, NavigationModel, ControlModel, SpacecraftModel, Link, Joint, InitialCondition, CartesianInitialCondition, InitialTime, IntegrationTolerances, SaveField, default_save_fields, MaxwellianHeat, InverseSquaredGravityModel, InverseSquaredJ2GravityModel, NBodyGravityModel, GravitationalHarmonicsModel, make_example_config, make_three_body_spacecraft
@@ -216,6 +218,18 @@ Return the default `SaveField`s for `config`.""" default_save_fields
 @doc """Point-mass (inverse-square) gravity effector.""" InverseSquaredGravityModel
 @doc """Point-mass gravity with the J2 oblateness term.""" InverseSquaredJ2GravityModel
 @doc """Third-body gravity effector using ephemerides for the listed bodies.""" NBodyGravityModel
+@doc """
+    SolarRadiationPressureModel(Cr, A, AU_m=149_597_870_700.0; kwargs...)
+
+Solar radiation pressure for reflectivity coefficient `Cr` and reference area
+`A` in square metres. Direct sunlight is enabled by default (`direct=true`);
+planetary albedo and infrared contributions are opt-in (`albedo=false`,
+`ir=false`). Their parameters are `planet_albedo=0.3` and
+`planet_ir_flux_w_m2=237.0`. Use this effector in `DynamicsModel` or the
+`dynamic_effectors` argument of `make_example_config`. Active direct sunlight
+or albedo requires `SpiceEphemeridesModel` and kernels for the selected planet
+and epoch; a run using `SimpleEphemeridesModel` rejects that combination.
+""" SolarRadiationPressureModel
 @doc """
     GravitationalHarmonicsModel(L, M, coefficients_file, planet; kwargs...)
 
@@ -400,7 +414,7 @@ using .SimulationModel: NoAtmosphereModel, ExponentialAtmosphereModel, Piecewise
 using .SimulationModel: GRAMGridAtmosphereModel, GRAMNearSurfaceAtmosphereModel, CombinedAtmosphereModel
 using .SimulationModel.EnvironmentModels: SurrogatePresetResolution, available_surrogate_presets, resolve_surrogate_preset, surrogate_preset_model, atmosphere_provenance
 using .SimulationModel: NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
-using .SimulationModel: SimpleEphemeridesModel
+using .SimulationModel: SimpleEphemeridesModel, SpiceEphemeridesModel
 using .SimulationModel.TerrainModels: AbstractTerrainModel, NoTerrainModel, DEMGrid, DEMTerrainModel
 using .SimulationModel.TerrainModels: terrain_height, terrain_radius, load_dem_grid, load_site_terrain, dem_grid_covers
 using .SimulationModel: make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
@@ -723,6 +737,14 @@ end
 @doc (@doc SimulationModel.descent_attitude_command) descent_attitude_command
 @doc (@doc SimulationModel.init_nrlmsise_space_indices!) init_nrlmsise_space_indices!
 @doc (@doc SimulationModel.SimpleEphemeridesModel) SimpleEphemeridesModel
+@doc """
+    SpiceEphemeridesModel()
+
+Use SPICE kernels for planetary frames, the Sun direction and the simulation
+start epoch. Furnish kernels covering the chosen body and epoch before running
+(for example through a SPICE-backed planet constructor). This constructor selects
+the existing backend; it does not download or load kernels itself.
+""" SpiceEphemeridesModel
 @doc (@doc SimulationModel.make_no_gram_planet) make_no_gram_planet
 @doc (@doc SimulationModel.make_no_gram_density_model) make_no_gram_density_model
 @doc (@doc SimulationModel.make_no_gram_environment) make_no_gram_environment
@@ -882,7 +904,7 @@ export NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosp
 export GRAMGridAtmosphereModel, GRAMNearSurfaceAtmosphereModel, CombinedAtmosphereModel
 export SurrogatePresetResolution, available_surrogate_presets, resolve_surrogate_preset, surrogate_preset_model, atmosphere_provenance
 export NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
-export SimpleEphemeridesModel
+export SimpleEphemeridesModel, SpiceEphemeridesModel
 export make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
 export wrench, environment_requirements, solver_partition
 export gravity_backbone_structure, gravity_backbone_acceleration_ii

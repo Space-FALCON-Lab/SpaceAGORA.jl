@@ -50,12 +50,13 @@ is built from the nested structs this page describes. The common setup types
 (`SimulationConfiguration`, `SimulationSettings`, `MissionConfiguration`,
 `EnvironmentModel`, `DynamicsModel`, the guidance, navigation and control
 models, `SpacecraftModel`, `Link`, `InitialCondition`, `InitialTime`,
-`IntegrationTolerances`, `SolverConfig`, the gravity models and the
+`IntegrationTolerances`, `SolverConfig`, the gravity models,
+`SpiceEphemeridesModel`, `SolarRadiationPressureModel` and the
 `make_example_config` helper) are exported by SpaceAGORA, so
-`using SpaceAGORA` is enough for them. Less common types, such as `FilePaths`,
-`SpiceEphemeridesModel` and the heating models other than `MaxwellianHeat`,
-are reached through `SpaceAGORA.SimulationModel`, abbreviated `SM` on this
-page.
+`using SpaceAGORA` is enough for them. This page also shows internal configuration types such as `FilePaths` and
+heating models other than `MaxwellianHeat` through `SpaceAGORA.SimulationModel`,
+abbreviated `SM`. Those internal names are not a supported companion-package
+boundary; use the root setup helpers for companion code.
 
 In outline, with `...` standing for the arguments the sections below describe
 and `spacecraft` and `effectors` as in [DynamicsModel](#DynamicsModel):
@@ -201,7 +202,7 @@ a circular orbit, use Mode 1 with `ra` equal to `rp`, or Mode 2 with
 The apsis directions depend on the rotation from the inertial to the
 planet-fixed frame, so pass the same `initial_time` and `ephemerides_model` as
 the simulation configuration. Given `initial_time` without `ephemerides_model`,
-the constructor uses `SM.SpiceEphemeridesModel()`, which needs SPICE kernels.
+the constructor uses `SpiceEphemeridesModel()`, which needs SPICE kernels.
 Advanced callers can supply the rotation directly as `L_PI`, which takes
 precedence. With neither `L_PI` nor `initial_time`, the constructor uses
 `planet.L_PI` if it has been initialized, and the identity rotation if that
@@ -277,7 +278,7 @@ yourself with `mission_type = SM.MissionOrbits`.
 
 `EnvironmentModel` brings together the planet, atmosphere, ephemerides and
 thermal model. Only `planet`, `EI`, `density_model` and `thermal_model` are
-required. The others default to `ephemerides_model = SM.SpiceEphemeridesModel()`,
+required. The others default to `ephemerides_model = SpiceEphemeridesModel()`,
 `wind = true`, `topography = false`, and `topo_degree` and `topo_order` of
 `90`. `EI`, `topo_degree` and `topo_order` must be nonnegative.
 
@@ -343,7 +344,7 @@ For the supported atmosphere models and their constructors, see
 
 ### Ephemerides models
 
-`SM.SpiceEphemeridesModel()` takes the planet's orientation and the Sun's
+`SpiceEphemeridesModel()` takes the planet's orientation and the Sun's
 direction from the run's SPICE kernels. `SimpleEphemeridesModel()` needs no
 kernels: it turns the planet about its spin axis (Earth by its Greenwich mean
 sidereal time) and gives the Sun's direction for Earth only. An ephemerides

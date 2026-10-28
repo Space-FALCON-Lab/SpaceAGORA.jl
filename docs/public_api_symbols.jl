@@ -259,6 +259,10 @@ const PUBLIC_API_SECTIONS = [
         items = [
             (owner = :SpaceAGORA, symbol = :run_simulation, rendered = "SpaceAGORA.run_simulation"),
             (owner = :SpaceAGORA, symbol = :SimulationResults, rendered = "SpaceAGORA.SimulationResults"),
+            (owner = :SpaceAGORA, symbol = :ControlForecastSnapshot, rendered = "SpaceAGORA.ControlForecastSnapshot"),
+            (owner = :SpaceAGORA, symbol = :capture_control_forecast, rendered = "SpaceAGORA.capture_control_forecast"),
+            (owner = :SpaceAGORA, symbol = :run_control_forecast, rendered = "SpaceAGORA.run_control_forecast"),
+            (owner = :SpaceAGORA, symbol = :with_control_forecast_worker, rendered = "SpaceAGORA.with_control_forecast_worker"),
             (owner = :SpaceAGORA, symbol = :run_table, rendered = "SpaceAGORA.run_table"),
             (owner = :SpaceAGORA, symbol = :long_table, rendered = "SpaceAGORA.long_table"),
             (owner = :SpaceAGORA, symbol = :MissionPlan, rendered = "SpaceAGORA.MissionPlan"),

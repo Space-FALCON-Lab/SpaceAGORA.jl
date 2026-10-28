@@ -281,6 +281,7 @@ makedocs(
             "Writing a GNC Algorithm" => "user/gnc_algorithm.md",
             "Feedback Controllers and Estimators" => "user/gnc_feedback.md",
             "Planning Algorithms" => "user/gnc_planning.md",
+            "Candidate Control Forecasts" => "user/control_forecasts.md",
             "Your First Controller Package" => "user/feedback_package.md",
             "Energy Depletion Guidance" => "user/edg_guidance.md",
             "Motion Planning with HYPR" => "user/hypr_planning.md",

@@ -33,6 +33,12 @@ sets the rules on ownership, compatibility, installation and conformance;
 the facade for external spacecraft integrators, and HYPR uses its
 [versioned planning services](reference/hypr_services.md).
 
+For a bounded single-spacecraft search, the experimental
+[candidate control forecast service](user/control_forecasts.md) evaluates copied
+plans using core's configured physics in a dedicated worker. It requires a
+pre-command snapshot and checkpoint-capable controller; its guide lists the
+supported models and the checks still required before accepting a plan.
+
 ## Add a force or torque model
 
 Shape: right-hand side (R), plus declarations (D). Rows:

@@ -634,8 +634,9 @@ function _resume_engine_state!(args, p, solver_mode, initial_conditions)
     interlink_history = nothing
     link_attitudes = nothing
     callback_checkpoint = nothing
-    if args.simulation_settings.resume_from_checkpoint
-        ckpt = _load_checkpoint(args)
+    forecast_restart = _CONTROL_FORECAST_RESTART[]
+    if args.simulation_settings.resume_from_checkpoint || forecast_restart !== nothing
+        ckpt = forecast_restart === nothing ? _load_checkpoint(args) : forecast_restart.checkpoint
         if ckpt === nothing
             @warn "resume_from_checkpoint=true but no checkpoint file was found; starting from initial conditions."
         else
@@ -683,7 +684,9 @@ end
 # (see callbacks/periodic_tick_callbacks.jl), and the ticks a resumed run takes at
 # its start.
 function _start_run_clock!(p, run_clock, mission_end, pending_ticks)
-    p.shared_buffers.periodic_clock_origin_s[] = run_clock ? 0.0 : NaN
+    forecast_restart = _CONTROL_FORECAST_RESTART[]
+    origin = forecast_restart === nothing ? 0.0 : forecast_restart.clock_origin_s
+    p.shared_buffers.periodic_clock_origin_s[] = run_clock ? origin : NaN
     p.shared_buffers.periodic_clock_horizon_s[] = run_clock ? Float64(mission_end) : NaN
     p.shared_buffers.periodic_clock_pending_s[] = pending_ticks.at_s
     p.shared_buffers.periodic_clock_pending_from_s[] = pending_ticks.from_s
@@ -702,7 +705,8 @@ function _start_run_models!(args, p, u_start, t_start, run_clock, resumed, model
     # navigation, guidance and control: each stage may read what the previous one
     # set up.
     SimulationModel.SimulationCallbacks.initialize_gnc_links!(args, u_start, p, t_start)
-    SimulationModel.SimulationCallbacks._report_gnc_clocks!(args, run_clock ? 0.0 : t_start)
+    SimulationModel.SimulationCallbacks._report_gnc_clocks!(args,
+        run_clock ? p.shared_buffers.periodic_clock_origin_s[] : t_start)
     for navigation in args.navigation_model.navigation_effectors
         SimulationLifecycle.initialize_navigation!(navigation, u_start, p, t_start)
     end

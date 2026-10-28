@@ -318,6 +318,7 @@ using .ParallelProcess: ProcessPool, campaign_process_pool, ensure_process_worke
 using .SimulationEngine: ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 using .SimulationEngine: simulation_engine_config_from_env
 using .SimulationEngine: SimulationResults, link_schedule, run_table, long_table
+using .SimulationEngine: ControlForecastSnapshot, capture_control_forecast, run_control_forecast, with_control_forecast_worker
 using .SimulationEngine: prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
 run_simulation(args...; kwargs...) = SimulationEngine.run_simulation(args...; kwargs...)
 
@@ -530,6 +531,10 @@ end
 @doc (@doc SimulationEngine.SimulationEngineConfig) SimulationEngineConfig
 @doc (@doc SimulationEngine.simulation_engine_config_from_env) simulation_engine_config_from_env
 @doc (@doc SimulationEngine.SimulationResults) SimulationResults
+@doc (@doc SimulationEngine.ControlForecastSnapshot) ControlForecastSnapshot
+@doc (@doc SimulationEngine.capture_control_forecast) capture_control_forecast
+@doc (@doc SimulationEngine.run_control_forecast) run_control_forecast
+@doc (@doc SimulationEngine.with_control_forecast_worker) with_control_forecast_worker
 @doc (@doc SimulationEngine.link_schedule) link_schedule
 @doc (@doc SimulationEngine.run_table) run_table
 @doc (@doc SimulationEngine.long_table) long_table
@@ -938,6 +943,7 @@ export SolarPanelAngleOfAttackControlModel
 export ApoapsisTargetPeriapsisRaiseGuidanceModel
 export VerificationRequest, VerificationResult
 export run_verification, run_verification_cli, run_study, run_simulation, SimulationResults, link_schedule, run_table, long_table
+export ControlForecastSnapshot, capture_control_forecast, run_control_forecast, with_control_forecast_worker
 export station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
 export RPOStationGeometry, RPOCubeSatGeometry
 export VisualizationScene, PlanetSpec, SpacecraftGeometry, LinkBox, AtmosphereSpec, atmosphere_spec, ArmGeometry, arm_geometry

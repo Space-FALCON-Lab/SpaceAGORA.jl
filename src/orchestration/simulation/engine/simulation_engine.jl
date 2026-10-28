@@ -41,6 +41,7 @@ include(joinpath(@__DIR__, "resume_checkpoint.jl"))
 include(joinpath(@__DIR__, "gnc_run_scopes.jl"))
 include(joinpath(@__DIR__, "reporting.jl"))
 include(joinpath(@__DIR__, "results.jl"))
+include(joinpath(@__DIR__, "control_forecasts.jl"))
 include(joinpath(@__DIR__, "execution.jl"))
 include(joinpath(@__DIR__, "public_api.jl"))
 include(joinpath(@__DIR__, "callback_services.jl"))
@@ -52,6 +53,7 @@ export ArtifactConfig
 export SimulationEngineConfig
 export simulation_engine_config_from_env
 export run_simulation
+export ControlForecastSnapshot, capture_control_forecast, run_control_forecast, with_control_forecast_worker
 export SimulationResults
 export link_schedule
 export run_table, long_table

@@ -43,23 +43,66 @@ mutable struct Cache{U,R} <: OC.OrdinaryDiffEqMutableCache
     k::R
     fsalfirst::R
     error::U
+    left_rate::R
+    right_rate::R
+    left_state::U
+    right_state::U
+    interval_start::Float64
+    interval_end::Float64
 end
-OC.full_cache(c::Cache) = (c.u,c.uprev,c.tmp,c.k,c.fsalfirst,c.error)
+OC.full_cache(c::Cache) = (c.u,c.uprev,c.tmp,c.k,c.fsalfirst,c.error,
+    c.left_rate,c.right_rate,c.left_state,c.right_state)
 OC.get_fsalfirstlast(c::Cache,u) = (c.fsalfirst,c.k)
 function OC.alg_cache(alg::CoupledKS,u,rate_prototype,::Type{UT},::Type{BT},::Type{TT},
         uprev,uprev2,f,t,dt,reltol,p,calck,::Val{true},verbose) where {UT,BT,TT}
-    return Cache(u,uprev,zero(u),zero(rate_prototype),zero(rate_prototype),zero(u))
+    return Cache(u,uprev,zero(u),zero(rate_prototype),zero(rate_prototype),zero(u),
+        zero(rate_prototype),zero(rate_prototype),copy(u),copy(u),Float64(t),Float64(t))
 end
 
 function OC.initialize!(integrator,c::Cache)
-    integrator.kshortsize=2
+    integrator.kshortsize=4
     integrator.fsalfirst=c.fsalfirst
     integrator.fsallast=c.k
-    resize!(integrator.k,2)
-    integrator.k[1]=c.fsalfirst;integrator.k[2]=c.k
+    resize!(integrator.k,4)
+    integrator.k[1]=c.left_rate;integrator.k[2]=c.right_rate
+    integrator.k[3]=c.left_state;integrator.k[4]=c.right_state
     SE._trial_cartesian_rhs!(c.fsalfirst,integrator.uprev,integrator.p,Float64(integrator.t))
+    c.left_rate .= c.fsalfirst;c.right_rate .= c.fsalfirst
+    c.left_state .= integrator.uprev;c.right_state .= integrator.uprev
     OC.increment_nf!(integrator.stats,1)
     return nothing
+end
+
+# A returned interval carries its own pre-affect endpoint states and rates.
+# Never replay old physical history by evaluating today's held command. FSAL
+# scratch is separate so Core resets cannot rewrite these interval payloads.
+function OC._ode_addsteps!(k,t,uprev,u,dt,f,p,c::Cache,
+        always_calc_begin=false,allow_calc_end=true,force_calc_end=false)
+    length(k)==4 || throw(ArgumentError("KS dense history requires four saved interval payloads."))
+    endpoint=Float64(t+dt)
+    if Float64(t)==c.interval_start
+        endpoint>c.interval_end && throw(ArgumentError("KS dense history cannot expand a completed interval."))
+        if endpoint<c.interval_end
+            # Core first shortens to a continuous root before running affect!.
+            # Repeated calls at the same endpoint after affect! preserve history.
+            k[4] .= u
+            SE._trial_cartesian_rhs!(k[2],u,p,endpoint)
+            c.interval_end=endpoint
+        end
+    end
+    return nothing
+end
+function OC._ode_interpolant(theta,dt,y0,y1,k,c::Cache,idxs,T::Type{Val{D}},dv) where {D}
+    D<=3 || throw(OC.DerivativeOrderNotPossibleError())
+    length(k)==4 || throw(ArgumentError("KS dense history is incomplete."))
+    differential=OC.interpolation_differential_vars(dv,k[3],idxs)
+    return OC.hermite_interpolant(theta,dt,k[3],k[4],k,Val{true},idxs,T,differential)
+end
+function OC._ode_interpolant!(out,theta,dt,y0,y1,k,c::Cache,idxs,T::Type{Val{D}},dv) where {D}
+    D<=3 || throw(OC.DerivativeOrderNotPossibleError())
+    length(k)==4 || throw(ArgumentError("KS dense history is incomplete."))
+    differential=OC.interpolation_differential_vars(dv,k[3],idxs)
+    return OC.hermite_interpolant!(out,theta,dt,k[3],k[4],k,idxs,T,differential)
 end
 
 function OC.perform_step!(integrator,c::Cache,repeat_step=false)
@@ -97,6 +140,9 @@ function OC.perform_step!(integrator,c::Cache,repeat_step=false)
         # Refresh accepted-candidate state, force and heat/output buffers. The
         # outer SciML controller alone decides acceptance and runs callbacks.
         rhs!(integrator.fsallast,u,t+dt)
+        c.left_rate .= integrator.fsalfirst;c.right_rate .= integrator.fsallast
+        c.left_state .= uprev;c.right_state .= u
+        c.interval_start=Float64(t);c.interval_end=Float64(t+dt)
     catch err
         if err isa KSPropagator.CoupledMidpointFailure
             alg.diagnostics.nonlinear_failures+=1

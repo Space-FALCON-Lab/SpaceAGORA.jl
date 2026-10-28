@@ -50,7 +50,8 @@ function _validate_ks_config!(args)
         throw(ArgumentError("The initial KS route supports a single rigid spacecraft link."))
     link = sc.root
     for field in (:thrusters,:magnets,:magnetorquers,:laser_terminals,:hinges,:gimbals,
-                  :custom_actuators,:solar_arrays,:batteries,:power_loads,:sensors)
+                  :custom_actuators,:solar_arrays,:batteries,:power_loads,:sensors,
+                  :data_stores,:data_sources)
         isempty(getproperty(link,field)) || throw(ArgumentError("Mounted $field are outside the initial KS qualification."))
     end
     link.rw_assembly.n_wheels==0 || throw(ArgumentError("Reaction wheels are outside the initial KS qualification."))
@@ -58,8 +59,12 @@ function _validate_ks_config!(args)
         throw(ArgumentError("Control moment gyros are outside the initial KS qualification."))
     isempty(link.faults.faults) || throw(ArgumentError("Actuator faults are outside the initial KS qualification."))
     effects = args.dynamics_model.dynamic_effectors
-    central = count(e->e isa Union{SimulationModel.InverseSquaredGravityModel,SimulationModel.InverseSquaredJ2GravityModel}, effects)
-    central==1 || throw(ArgumentError("KS requires exactly one configured inverse-square gravity model (with or without J2), avoiding missing or doubled central gravity."))
+    scopes = _effector_scopes_of(args)
+    central = count(eachindex(effects)) do index
+        effects[index] isa Union{SimulationModel.InverseSquaredGravityModel,
+            SimulationModel.InverseSquaredJ2GravityModel} && _effector_applies(scopes,index,1)
+    end
+    central==1 || throw(ArgumentError("KS requires exactly one configured inverse-square gravity model (with or without J2) applying to spacecraft 1, avoiding missing or doubled central gravity."))
     for model in (effects...,args.control_model.control_effectors...)
         trial_rhs_safe(model) || throw(ArgumentError("KS requires repeatable trial RHS evaluations; $(typeof(model)) has not declared trial_rhs_safe."))
     end

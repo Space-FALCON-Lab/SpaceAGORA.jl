@@ -161,3 +161,27 @@ end
         end
     end
 end
+
+@testset "pin margin: off unchanged, inside rejected, outside pinned" begin
+    acc = SEng._rhs_pin_accepts
+    ov = 0.10
+    # off (0.0): effective margin is the override margin, as before
+    @test max(ov, 0.0) == ov
+    @test acc(0.85, 1.0, max(ov, 0.0))          # 15% better, pinned
+    @test !acc(0.95, 1.0, max(ov, 0.0))         # 5% better, rejected
+    # pin margin 0.30: 15% winner now inside the margin, 40% winner outside
+    @test !acc(0.85, 1.0, max(ov, 0.30))
+    @test acc(0.60, 1.0, max(ov, 0.30))
+    @test !acc(Inf, 1.0, 0.1) && acc(0.5, Inf, 0.1)
+    withenv("SPACEAGORA_RHS_CALIBRATE_PIN_MARGIN" => nothing) do
+        @test SEng._rhs_calibrate_pin_margin() == 0.0
+    end
+    withenv("SPACEAGORA_RHS_CALIBRATE_PIN_MARGIN" => "0.25") do
+        @test SEng._rhs_calibrate_pin_margin() == 0.25
+    end
+    for bad in ("-0.1", "1", "1.5", "abc", "NaN")
+        withenv("SPACEAGORA_RHS_CALIBRATE_PIN_MARGIN" => bad) do
+            @test_throws ArgumentError SEng._rhs_calibrate_pin_margin()
+        end
+    end
+end

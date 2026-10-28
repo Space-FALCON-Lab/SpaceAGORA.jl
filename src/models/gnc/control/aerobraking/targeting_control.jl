@@ -121,3 +121,17 @@ end
 @inline function _edg_control_state_index_ok(state::AerobrakingEnergyDepletionState, i::Int)::Bool
     return 1 <= i <= length(state.selected_mode)
 end
+
+"""
+    apply_panel_angle_of_attack!(effector::SolarPanelAngleOfAttackControlModel, spacecraft, alpha_rad, t)
+
+Apply a panel angle of attack in radians at control-tick time `t` (seconds).
+Only the effector's selected non-root links are moved. Hinge-less panels rotate
+directly; mounted hinges respect their configured angle and rate limits, and
+`link.α` records the reached angle. Invalid link indices and root links throw.
+A mounted hinge requires a finite tick time. Call from committed control ticks,
+not from a force evaluation or an optimizer's trial state.
+"""
+apply_panel_angle_of_attack!(effector::SolarPanelAngleOfAttackControlModel,
+    spacecraft, alpha_rad::Real, t::Real) =
+    _apply_solar_panel_aoa!(effector, spacecraft, Float64(alpha_rad), Float64(t))

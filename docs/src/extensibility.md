@@ -558,3 +558,37 @@ under `templates/starters/` add tests and CI
 For a complete scenario to run or adapt, see the
 [Examples Catalog](user/examples_catalog.md). The helpers under
 `examples/support/` serve those scenarios and are not extension contracts.
+
+### Altitude-only density derivatives
+
+An altitude-only atmosphere can implement
+`density_altitude_derivative(model, altitude_m)` to return its density slope in
+kg/m⁴. This query is optional: check `applicable` before calling it. There is
+no generic fallback. It must differentiate the same density used by `getDensity`.
+For a density that also depends on position or time, this scalar derivative
+alone does not describe its full spatial or temporal sensitivity.
+
+The built-in polynomial fit returns zero outside its altitude or exponent
+clamps, and for a zero-width altitude domain. At a nondegenerate clamp endpoint
+it returns the interior derivative. Piecewise exponentials use the right-hand
+layer at a breakpoint; a discontinuous join has no two-sided derivative.
+Exponential validity metadata does not clamp evaluation or its derivative.
+
+### Panel commands and coordinate conversion
+
+A companion controller can call `apply_panel_angle_of_attack!` at an accepted
+control tick. The selected links must be non-root links. Mounted hinges keep
+their angle and rate limits; read each link's `α` for the angle actually reached.
+The helper changes spacecraft geometry and must not run during trial force or
+optimization evaluations.
+
+`planet_fixed_to_geodetic(planet, position_pp)` uses the atmosphere sampler's
+reference ellipsoid and returns altitude in metres and latitude/longitude in
+radians. It does not subtract terrain. `orbital_elements_to_cartesian(ic, planet)`
+uses the simulation initializer's conversion and returns inertial metres and m/s.
+
+`AerodynamicCommandedAreaDragModel` supplies constant-coefficient drag for
+articulated exposed area: selected links contribute `ref_area*sin(α)` and other
+links their full reference area. It records the normal drag diagnostics and
+produces no torque. This is an idealized area-control model, not a replacement
+for free-molecular aerodynamics or a validated aerodynamic model of a mission.

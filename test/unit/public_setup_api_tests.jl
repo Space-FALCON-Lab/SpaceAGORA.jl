@@ -5,6 +5,7 @@ using SpaceAGORA, Test
     @test SpaceAGORA.TelemetryVerification.make_example_config === SpaceAGORA.make_example_config
     @test SpaceAGORA.TelemetryVerification.make_three_body_spacecraft === SpaceAGORA.make_three_body_spacecraft
 
+    @test ephemerides_requires_spice(SpiceEphemeridesModel())
     planet = make_no_gram_planet(:earth)
     spacecraft = make_three_body_spacecraft(
         bus_dims=(2.0, 2.0, 2.0),
@@ -14,17 +15,25 @@ using SpaceAGORA, Test
         panel_offset_y=2.0,
         ic=InitialCondition(ra=planet.Rp_e + 500e3, rp=planet.Rp_e + 500e3, i=45.0, ω=0.0, Ω=0.0, ν=0.0),
     )
-    config = make_example_config(
+    configure(effectors, ephemerides) = make_example_config(
         planet=planet,
         spacecraft=spacecraft,
         mission_time=300.0,
         initial_time=InitialTime(year=2024, month=1, day=1, hour=0, minute=0, second=0.0),
-        dynamic_effectors=(InverseSquaredGravityModel(),),
+        dynamic_effectors=effectors,
         density_model=NoAtmosphereModel(),
-        ephemerides_model=SimpleEphemeridesModel(),
+        ephemerides_model=ephemerides,
         verbose=false,
         results=false,
     )
+    config = configure((InverseSquaredGravityModel(),), SimpleEphemeridesModel())
+    # Construct the research setup using only root names; no kernels are needed
+    # until this SPICE-backed configuration is run.
+    research_effectors = (InverseSquaredGravityModel(), SolarRadiationPressureModel(1.2, 4.0))
+    research = configure(research_effectors, SpiceEphemeridesModel())
+    @test ephemerides_requires_spice(research.environment_model.ephemerides_model)
+    # Active sunlight must not silently fall back to the simple backend.
+    @test_throws ArgumentError run_simulation(configure(research_effectors, SimpleEphemeridesModel()))
     @test config isa SimulationConfiguration
     @test config.mission_configuration.mission_type == MissionTime
     @test (run_simulation(config); true)

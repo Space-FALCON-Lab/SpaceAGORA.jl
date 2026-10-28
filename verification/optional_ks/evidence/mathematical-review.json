@@ -23,11 +23,12 @@
     "src/orchestration/simulation/callbacks/save_fields.jl": "f8b84f6a6fdc88854430a29b2765323f6ed7246625fca2a440d3621bb199eabc"
   },
   "installed_ks": {
-    "root": "/Users/josephine/.julia/packages/KSPropagator/tzZTB",
+    "root": "<Julia package installation>/KSPropagator/tzZTB",
     "git_revision": "8cfc936fe2ba403996ed7682aa700b56d6e04c5d",
     "version": "0.2.0",
     "bridge_sha256": "2d6545cc647b5e0d5cd2ccf2f5b3e4b1f584df69b5f4c16f91bd2b50da70370d",
-    "source_correspondence": "94tracked numerical src/test files match installedsource,PR24checkout and reviewed78856d; zero mismatches; unrelated.DS_Store excluded"
+    "source_correspondence": "94tracked numerical src/test files match installedsource,PR24checkout and reviewed78856d; zero mismatches; unrelated.DS_Store excluded",
+    "path_portability_note": "Installation path abbreviated in repository copy; exact original retained in companion verification evidence. Source hashes and revisions unchanged."
   },
   "normal_runtime": {
     "julia": "1.12.7",

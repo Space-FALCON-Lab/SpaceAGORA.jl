@@ -257,3 +257,5 @@ include("visualization/installation_plan_tests.jl")
 include("visualization/output_preservation_tests.jl")
 
 include(joinpath(@__DIR__, "visualization", "mission_history_contract_tests.jl"))
+
+include("gnc/companion_panel_interfaces_tests.jl")

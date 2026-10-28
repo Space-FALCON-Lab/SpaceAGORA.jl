@@ -164,6 +164,18 @@ function orbitalelemtorv(oe, planet)
     return orbitalelemtorv(SVector{7, Float64}([a, e, i, Ω, ω, ν, 0.0]), planet)
 end
 
+"""
+    orbital_elements_to_cartesian(initial_condition, planet)
+
+Convert a classical `InitialCondition` to inertial Cartesian position (m) and
+velocity (m/s), using the same conversion as the simulation initializer.
+`InitialCondition` stores its angular elements in radians; its public
+constructor accepts degrees. This is a general orbital-state conversion,
+independent of the KS or MPC dynamics.
+"""
+orbital_elements_to_cartesian(initial_condition, planet) =
+    orbitalelemtorv(initial_condition, planet)
+
 
 @inline function _wrap_2pi(θ::Float64)::Float64
     θw = mod(θ, 2pi)
@@ -723,3 +735,14 @@ Rotate an acceleration command from RTN coordinates to the inertial frame.
 function rtn_accel_to_inertial(a_rtn, r_target_ii, v_target_ii)::SVector{3, Float64}
     return rtn_dcm_from_inertial(r_target_ii, v_target_ii) * SVector{3, Float64}(a_rtn)
 end
+
+"""
+    planet_fixed_to_geodetic(planet, position_pp) -> (altitude_m, latitude_rad, longitude_rad)
+
+Convert a planet-fixed Cartesian position in metres to altitude above the
+planet's reference ellipsoid and geodetic latitude/longitude in radians.
+Uses the same ellipsoid conversion as simulation atmosphere sampling; terrain
+height is not subtracted. The position must contain three components.
+"""
+planet_fixed_to_geodetic(planet, position_pp) =
+    rtolatlong(SVector{3,Float64}(position_pp), planet)

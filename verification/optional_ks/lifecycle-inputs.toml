@@ -1,0 +1,73 @@
+status = "Frozen before lifecycle trajectory measurements"
+parent_plan = "SpaceAGORA verification/optional_ks/acceptance.toml c98c9d77360f06292c37f35d1189e0aaf03311eb"
+physical_base = "baseline-inputs.toml spherical Earth, same initial orbit, J2 plus exponential rotating-atmosphere drag and Maxwellian heat"
+duration_s = 6000.0
+output_interval_s = 17.0
+control_period_s = 13.0
+checkpoint_interval_s = 997.3
+initial_mass_kg = 500.0
+dry_mass_kg = 480.0
+initial_propellant_kg = 20.0
+initial_reference_area_m2 = 10.0
+scheduled_times_s = [611.25, 1879.125, 3599.75]
+scheduled_actions = ["set configured root area to15m2; ideal burn starts at same epoch", "add fixed inertial velocity impulse[0,0.05,0]m/s; ideal burn stops at same epoch", "set configured root area to8m2"]
+ideal_thrust_N = 0.2
+ideal_Isp_s = 300.0
+ideal_burn_start_s = 611.25
+ideal_burn_stop_s = 1879.125
+standard_gravity_m_s2 = 9.80665
+held_control_force = "At each13s control tick set inertial Fx=0.02*sin(t/1000)N, Fy=Fz=0; held between ticks; no feedback/optimization"
+state_time_force = "Add a=1e-7*sin(t/700)*(r/7e6)+[0,2e-8*cos(t/900),0]m/s2 at every trial state and physical time"
+continuous_event = "Observe first descending inertial z=0 root; record time/state, no force or state change"
+continuous_epoch_budget_s = 1e-4
+continuous_reference_epoch_budget_s = 1e-6
+continuous_root_residual_m = 1e-4
+scheduled_epoch_budget_s = 1e-8
+position_budget_m = 1.0
+velocity_budget_m_s = 0.001
+resume_position_budget_m = 0.1
+resume_velocity_budget_m_s = 0.0001
+mass_absolute_budget_kg = 1e-7
+heat_absolute_floor_J_cm2 = 1e-6
+heat_relative_budget = 1e-5
+reference_budget_fraction = 0.01
+KS_rtol = 1e-12
+KS_atol = 1e-13
+KS_dt_max_s = 5.0
+normal_DP8_rtol = 2.5e-13
+normal_DP8_atol = 2.5e-13
+normal_DP8_dt_max_s = 5.0
+reference_refinement = "Independent Cartesian8-state equations with same prescribed ticks/burn/area/impulse; DP8 rtol1e-12,dtmax10 versusrtol2.5e-13,dtmax5; segment exactly at all discontinuities"
+interruption = "Throw at1500s after997.3s checkpoint; reconstruct configuration in a fresh Julia process and load checkpoint; pending actions/tick origin/held force/root area/burn state restored"
+checkpoint_contract = "Return_solution for checkpointed run is final segment only; compare saved17s table epochs and checkpoint states separately, not a fictitious stitched ODESolution"
+
+[coincident_boundary_case]
+duration_s = 442.0
+checkpoint_interval_s = 221.0
+output_interval_s = 17.0
+control_period_s = 13.0
+scheduled_action_s = 221.0
+action = "fixed inertial velocity impulse[0,0.05,0]m/s at simultaneous control/output/checkpoint boundary; prescribe priority callback placement and verify observed order/tick counts/no duplicate action after resume"
+position_budget_m = 1.0
+velocity_budget_m_s = 0.001
+scheduled_epoch_budget_s = 1e-8
+resume_position_budget_m = 0.1
+resume_velocity_budget_m_s = 0.0001
+
+[boundary_semantics]
+burn_direction = "Prograde inertial velocity; zero torque"
+incoming_phase = "Reference segments hold incoming area/held control/burn state through all endpoint stages; after reaching endpoint apply scheduled action, switch burn/control, then start outgoing segment"
+impulse_mass_change_kg = 0.0
+current_mass = "Drag, ideal thrust and held-force accelerations use current coupled mass; only ideal burn consumes propellant"
+heat_semantics = "Heat flux/load are per-area W/cm2 and J/cm2; root area changes drag force but do not multiply heat flux/load"
+main_control_ticks = "13:13:5993 seconds; custom initializer does not call update_control at0; initial held force is0"
+coincident_control_ticks = "13:13:429 seconds; normal mission-end442 tick is not taken;221 tick is taken before post-boundary checkpoint"
+output_grid = "0:17:5984 plus mission endpoint6000 for main case;0:17:442 for coincident case; allow additional explicitly marked checkpoint endpoint rows but require every global-grid row without duplicate or shifted scheduled epochs"
+coincident_order = "Priority impulse callback at221, then normal13s control tick, then output, then post-action checkpoint. Resume221 must not repeat the impulse/tick already committed there."
+resume_state = "At997.3 restore area15m2,active burn,last held control from988s tick,next tick1001s,origin0,and pending1879.125 stop/impulse plus3599.75 area change"
+interrupted_audit = "Preserve discarded1001..1500 execution-tail logs separately; authoritative resumed history starts from the997.3 checkpoint, so replaying discarded work does not count as duplicate committed actions"
+nonzero_start = "Application coverage via nonzero checkpoint segment starts and fresh resumed997.3 start, with the same state/time force; independent primitive tests separately cover123456s physical epoch"
+coincident_interruption_s = 300.0
+order_observation = "Shared accepted control/action/output trace, checkpointed with held force/root area; inspect saved221 checkpoint for committed221 impulse/control/output before fresh resume, not merely eventual combined ticks"
+root_alias_check = "After resume verify controller.root is identical to actual configuration spacecraft.root before relying on restored area"
+clock_notifications = "Every reported restarted clock origin must be0; repeated clock-start notifications are not physical tick duplicates"

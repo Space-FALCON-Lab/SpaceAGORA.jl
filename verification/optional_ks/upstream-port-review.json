@@ -1,0 +1,203 @@
+{
+  "status": "SOURCE_REVIEW_APPROVED_AFTER_TWO_TARGETED_GUARD_FIXES; parent after/regression/qualification gates pending",
+  "upstream": "a664365499c08cd84b1421047cb2208bf2b46e5b",
+  "checkpoint_base": "615a447c0",
+  "old_qualified_prototype": "9c6e4b8ae12a5019e91ea4da6a6d0470eddbefec",
+  "reviewed_port_head": "2ccc99f4f693124e2cd19b589f90e766c2940d62",
+  "worktree_status": "",
+  "scientific_requalification": false,
+  "timing_work": false,
+  "implementation_modified_by_reviewer": false,
+  "files": {
+    "src/orchestration/simulation/engine/ks_solver.jl": "16aa7deb79170f7a8b024b3a8f6132aa229f9a6cbbe493d67a35d441dd62f2d1",
+    "src/orchestration/simulation/engine/dynamics_rhs.jl": "ffb76fd9e26c82a5a6ce9bd23e993f10d2aa152b56868c7cd0d6460e43f92fda",
+    "src/orchestration/simulation/engine/effector_scopes.jl": "2fb254afff24ab1c6addf6809f8e49d1f04fa63994623c0cdda157589830477c",
+    "src/orchestration/simulation/engine/gnc_run_scopes.jl": "396211e50003ab54b70d3abeda5be2e66123476a02864ff05f6b2f2212d7c8c0",
+    "src/orchestration/simulation/engine/execution.jl": "eb50baaa20ebdb363bee8dba5d3d272a0e9503147a173670fbf9c9d86d1092ce",
+    "src/orchestration/simulation/engine/solver_policy.jl": "57558ca10e76c1950d19d150ec20c3b39653ea1150292c0af294f8145cc38aa1",
+    "src/orchestration/simulation/engine/effector_sampling.jl": "6b95c19946366e63999cfc20aeb644a5f2a21f3381dbf2ff11e3a459bcea2a90",
+    "src/orchestration/simulation/engine/adapters/from_env.jl": "fdff61cd659379dcb515ea55b88f420e7eab168fe784542910cb9852123c2811",
+    "src/orchestration/simulation/config/constellation_configuration.jl": "b1948c72a9915cc129d22d6ffc45a24a199a2023d91c46613c8e045685a08696",
+    "src/orchestration/simulation/config/simulation_configuration.jl": "c20b3c4be33572f8dd2d2998af23abeaddc8a4aad967629f96f804bc513ecb9a",
+    "src/orchestration/simulation/config/solver_settings.jl": "befeafec64f1d3ce3d38edf3c7be2d256b4a936c8064a8fcefb55305ccd80fb9",
+    "src/models/vehicle/spacecraft/model.jl": "fd00920c7751aa1ac09bde92a16264591c0ae04aa11643dd6ccbb359c0534810",
+    "src/models/vehicle/data/data_storage.jl": "a2340f9b27728e4175ac08a763f96b33bee96c49aafc78c868102cedf4fbdf1c",
+    "src/models/vehicle/interlinks/terminals.jl": "75e10ff227156af024983bddddd378109b3309c20ce4ff9f4b7097988deaa303",
+    "src/orchestration/simulation/state/runtime_types.jl": "7739807dbd4096887ca340a27439a66fdeca33b5ec09366bfc5aff8dae8cd57a",
+    "src/orchestration/simulation/callbacks/density_callbacks/model_selection.jl": "556580e871576026832970c79319a52811e7088c61a5cd20f703f03f1243bb83",
+    "src/orchestration/simulation/callbacks/density_callbacks/config.jl": "656a047db77eff6f1ec2d70b1835acadf00013c4d4a0f8b980c73aae8cee2ce9",
+    "src/orchestration/simulation/callbacks/save_fields.jl": "f8b84f6a6fdc88854430a29b2765323f6ed7246625fca2a440d3621bb199eabc",
+    "ext/SpaceAGORAKSPropagatorExt.jl": "e572a963130408c4278d9ef0122703b8e2dd89e64358ba39aae3358ec992314b",
+    "Project.toml": "19d8f490b8631bc6cbce057d86e9a732092bb367a3fe321d1f9665ab1ce64dcf",
+    "src/orchestration/simulation/engine/setup.jl": "592aa3788be57042b781e491567272fa525695c7c60684aee1ac73d6380a9646",
+    "src/models/vehicle/data/data_components.jl": "8912fc9daf210113426a05dd574c86e94199c48734e25c8ae22de882b66d6c0e",
+    "src/models/gnc/contracts/simulation_lifecycle.jl": "f74fc3a2f3279221ff3b90bb09c87ef4f8a89cf57e21dea4740617e08f677854",
+    "src/orchestration/simulation/callbacks/thermal_callbacks.jl": "0fd543126ddce8cc69e59fa52c3e0ed9a0cd6b30c5a1ffbe6d4e57c1ca58bec4"
+  },
+  "findings": [
+    {
+      "id": "data-source-guard-gap",
+      "priority": 1,
+      "status": "SOURCE_CONFIRMED_GUARD_GAP",
+      "source": "src/orchestration/simulation/engine/ks_solver.jl",
+      "lines": [
+        52,
+        54
+      ],
+      "evidence": [
+        [
+          "src/models/vehicle/spacecraft/model.jl",
+          308,
+          309
+        ],
+        [
+          "src/orchestration/simulation/engine/dynamics_rhs.jl",
+          3697,
+          3699
+        ],
+        [
+          "src/orchestration/simulation/engine/dynamics_rhs.jl",
+          3726,
+          3728
+        ],
+        [
+          "src/models/vehicle/data/data_storage.jl",
+          53,
+          79
+        ]
+      ],
+      "requirement": "Reject data_stores/data_sources in initial KS scope, or add explicit repeatability and lifecycle/event/restart qualification. Custom AbstractDataSource hooks are outside present trial_rhs_safe loop and execute on every RHS. Do not remove ordinary-solver data support.",
+      "follow_up_status": "CORRECTED_AND_SOURCE_REVIEW_APPROVED_AT_0037984e0"
+    },
+    {
+      "id": "effective-central-count",
+      "priority": 2,
+      "status": "LATENT_RESOLVED_SCOPE_CONTRACT_GAP",
+      "source": "src/orchestration/simulation/engine/ks_solver.jl",
+      "lines": [
+        60,
+        64
+      ],
+      "evidence": [
+        [
+          "src/orchestration/simulation/engine/effector_scopes.jl",
+          85,
+          94
+        ],
+        [
+          "src/orchestration/simulation/engine/effector_scopes.jl",
+          127,
+          141
+        ],
+        [
+          "src/orchestration/simulation/engine/effector_scopes.jl",
+          160,
+          178
+        ],
+        [
+          "src/orchestration/simulation/config/constellation_configuration.jl",
+          77,
+          81
+        ]
+      ],
+      "requirement": "Require exactly one central model applicable to spacecraft1, not merely present in global tuple. Normal public one-spacecraft scopes resolve to all/no table; empty selections reject. Already-resolved/manual tables can leave central inactive because upstream generic scoped-run check permits all-false gravity. Preserve normal unscoped and scoped-to-sc1 support.",
+      "follow_up_status": "CORRECTED_AND_SOURCE_REVIEW_APPROVED_AT_0037984e0"
+    },
+    {
+      "id": "effective-config-ownership",
+      "priority": 2,
+      "status": "CURRENT_ORDER_CORRECT_PRESERVE_AND_TEST",
+      "source": "src/orchestration/simulation/engine/execution.jl",
+      "lines": [
+        813,
+        860
+      ],
+      "requirement": "Keep per-spacecraft GNC flatten/bind and dynamic scope resolution before KS validation; preserve _with_fields/_with_configuration and scope tables when copying; explicit args.solver_config wins over typed/environment overrides. Validate effective bound model objects, not caller pre-flatten containers."
+    },
+    {
+      "id": "trial-cache-correctness",
+      "priority": 1,
+      "status": "CORE_SERVICE_PORT_PRESENT_REQUALIFY_NEW_SOURCE",
+      "source": "src/orchestration/simulation/engine/dynamics_rhs.jl",
+      "lines": [
+        4345,
+        4364
+      ],
+      "requirement": "Use core trial evaluator to invalidate density_sample_t and in_atmosphere_sample_t for same-time changed-state trials; retain frozen/history cache refusals using runtime CallbackEnvConfig. Keep accepted-candidate RHS refresh and pre-affect dense endpoints. Test repeated and permuted state/epoch trials against a fresh runtime."
+    },
+    {
+      "id": "runtime-effective-density",
+      "priority": 2,
+      "status": "DEFENSIVE_CONTRACT_REQUIREMENT_NOT_PUBLIC_EXPLOIT_PROVEN",
+      "source": "src/orchestration/simulation/engine/ks_solver.jl",
+      "lines": [
+        71,
+        79
+      ],
+      "evidence": [
+        [
+          "src/orchestration/simulation/callbacks/density_callbacks/model_selection.jl",
+          1,
+          17
+        ],
+        [
+          "src/orchestration/simulation/state/runtime_types.jl",
+          885,
+          889
+        ],
+        [
+          "src/orchestration/simulation/engine/setup.jl",
+          1847,
+          1889
+        ]
+      ],
+      "requirement": "Validate actual effective density instances at solve start or require no per-sat overrides for initial analytic scope. Normal initializer empties the vector for allowed analytic fallback, so no ordinary public bypass established here; do not claim arbitrary custom atmosphere validation from fallback type alone."
+    },
+    {
+      "id": "solver-callback-lifecycle",
+      "priority": 2,
+      "status": "PRESERVE_NEW_UPSTREAM_CONTRACTS",
+      "source": "src/orchestration/simulation/engine/solver_policy.jl",
+      "lines": [
+        432,
+        455
+      ],
+      "requirement": "Preserve tuple/vector callback container ordering, scalar/table checkpoint fixes, accepted-step burn/control scopes, full-state ODE route and ordinary multirate_mri support. Retain algorithm-type check when reusing explicit solver caches and recreate KS runtime per run. Requalify fresh-process restart and root-shortened dense histories."
+    },
+    {
+      "id": "purity-vs-scientific-admission",
+      "priority": 2,
+      "status": "DOCUMENTED_LIMIT_NOT_TYPE_ALLOWLIST_BUG",
+      "source": "src/orchestration/simulation/engine/ks_solver.jl",
+      "lines": [
+        3,
+        15
+      ],
+      "requirement": "Unknown dynamic/control models default false; explicit user trial_rhs_safe opt-in is a repeatability contract, not scientific qualification. Guard every actual RHS extension owner; do not equate custom true with supported flight physics. Accepted-step guidance/navigation may mutate held commands normally; do not indiscriminately reject existing qualified lifecycle."
+    },
+    {
+      "id": "optional-route-resolution",
+      "priority": 2,
+      "status": "PORT_GATE_PENDING_TESTS",
+      "source": "src/orchestration/simulation/engine/solver_policy.jl",
+      "lines": [
+        848,
+        865
+      ],
+      "requirement": "Resolve mode through current _run_solver_config/_engine_env_get, add ks without dropping multirate_mri, require normal ODEParams and valid capability, preserve optional absence/legacy/ordinary solver behavior, pin KS0.2 exact tested source and use cold runtime caches."
+    }
+  ],
+  "follow_up": {
+    "head": "0037984e0ab6ed0aa5fd2b82d3e4ca0193e7304f",
+    "changed_files": [
+      "src/orchestration/simulation/engine/ks_solver.jl"
+    ],
+    "ks_guard_sha256": "ae82caf29ba973403438535c01ce42962e69ef4f643dc2a1e742420b6611b6bc",
+    "source_verdict": "Both targeted guard corrections approved; no further mandatory source change found for stated initial scope",
+    "after_test_verdict": "Pending parent active executions at review time",
+    "before_logs": {
+      "data": "logs/adapter-data-guard-before-attempt1.log (0 pass,4 fail)",
+      "scope": "logs/adapter-scope-guard-before-attempt3.log (4 pass,2 fail)"
+    }
+  }
+}

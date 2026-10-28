@@ -291,3 +291,15 @@ spacecraft and operational mission segments accept only `:tsit5`,
 robot-arm effectors refuse it too. MRI is a numerical option, not a promise
 that coupled runs will be faster; measure accuracy and run time on the case
 you intend to run.
+
+## Optional KS propagation candidate
+
+A separate optional KSPropagator extension provides
+`SolverConfig(solver_mode=:ks)` for the bounded one-spacecraft development
+candidate. SpaceAGORA supplies configured physical forces and retains physical
+time, scheduling, events, checkpoints and outputs. KSPropagator supplies the
+coordinate transformation and coupled numerical stepping. See
+[`verification/optional_ks/README.md`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/blob/feature/optional-ks-propagation/verification/optional_ks/README.md)
+for the exact KS installation source, supported models, guards and reproducible
+qualification commands. Current-source acceptance is still in progress; consult
+the candidate's source-specific report before using its historical fine settings.

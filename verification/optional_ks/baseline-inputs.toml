@@ -1,0 +1,48 @@
+status = "Frozen before integrated trajectory measurements; smoke runs are interface diagnostics only"
+plan = "SpaceAGORA verification/optional_ks/acceptance.toml at c98c9d77360f06292c37f35d1189e0aaf03311eb"
+units = "SI: m, s, kg; integrated heat load follows SpaceAGORA W/cm2 integrated over seconds"
+frame = "Planet-centred inertial; rotation about inertial +z; J2 symmetry axis +z"
+shape = "Spherical altitude datum: Rp_e = Rp_p = Rp_m = 6378136.3 m, explicitly isolates atmospheric height from oblate geodesy"
+mu_m3_s2 = 3.986004418e14
+radius_m = 6378136.3
+spin_rad_s = 7.292115e-5
+J2 = 0.00108262668
+a_m = 7000000.0
+e = 0.01
+inclination_rad = 0.7
+node_rad = 0.3
+periapsis_rad = 0.2
+true_anomaly_rad = 0.0
+initial_epoch = "2020-01-01T00:00:00 (SimpleEphemeridesModel)"
+spacecraft = "One root Link, mass 500 kg, no propellant or mounted hardware, fixed alpha pi/2, beta/theta 0"
+reference_area_m2 = 10.0
+CD = 2.2
+CL = 0.0
+CdA_over_mass_m2_kg = 0.044
+rho0_kg_m3 = 1e-11
+reference_altitude_m = 621863.0
+scale_height_m = 60000.0
+temperature_K = 200.0
+wind = false
+atmosphere_rotation = "Solid rotation omega cross r; exponential model returns zero additional wind"
+entry_interface_km = 1000.0
+thermal = "MaxwellianHeat thermal_accomodation_factor=1, thermal_contact=false, gamma=1.4, gas constant=287.1 J/(kg K)"
+trial_sampling = "DENSITY_FREEZE_PER_STEP=false; GRAM track and vacuum caches off; history-dependent density false"
+normal_solver = "DP8 with configured SpaceAGORA RHS; ordinary time-only sample reuse is retained and assessed, not silently repaired"
+reference = "Separately formulated Cartesian central/J2/exponential rotating drag ODE; standard high-order DP8 integration plus refinement; analytic elliptic Kepler position/velocity for two-body"
+reference_tolerances = [1e-12, 2.5e-13]
+reference_dt_max_s = [20.0, 10.0]
+KS_relative_tolerances = [1e-8, 1e-10, 1e-12]
+KS_absolute_tolerances = [1e-9, 1e-11, 1e-13]
+KS_dt_max_s = [20.0, 10.0, 5.0]
+reference_position_budget_m = 0.01
+reference_velocity_budget_m_s = 0.00001
+accuracy_targets = "Unchanged frozen plan: maximum 1 m and 0.001 m/s at 60 s samples over 86400 s; report failures; no timing claims"
+
+[auxiliary]
+mass_invariant_absolute_budget_kg = 1e-9
+heat_load_absolute_floor_J_cm2 = 1e-6
+heat_load_relative_budget = 1e-5
+heat_budget_rule = "max(absolute floor, relative budget * abs(reference heat load))"
+heat_reference_budget_fraction = 0.01
+heat_reference = "Independently simplified alpha=pi/2 Maxwellian expression, no getHeatRate call; Qdot in W/cm2, integrated Q in J/cm2"

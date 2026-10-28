@@ -8,7 +8,7 @@ isdir(directory) && !isempty(readdir(directory)) && error("Use a new environment
 Pkg.activate(directory)
 Pkg.develop(PackageSpec(path=normpath(joinpath(@__DIR__,"../.."))))
 if !without_ks
-    Pkg.add(PackageSpec(url="https://github.com/gfalcon2/KSPropagator.jl",rev="8cfc936fe2ba403996ed7682aa700b56d6e04c5d"))
+    Pkg.add(PackageSpec(url="https://github.com/gfalcon2/KSPropagator.jl",rev="05d969c24a6595c2752f7ff947af77c504053623"))
 end
 Pkg.add(["Test","LinearAlgebra","TOML","SHA","CSV","DataFrames","Serialization","DiffEqCallbacks","StaticArrays"])
 Pkg.instantiate()

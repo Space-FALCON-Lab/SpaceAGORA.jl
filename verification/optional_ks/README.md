@@ -16,7 +16,7 @@ or performance claim. The separate checkpoint-table repair is a prerequisite.
 ## Installation and selection
 
 Use Julia 1.12.7 and a checkout of this candidate, with a fresh environment.
-The installer fetches KS source `8cfc936fe2ba403996ed7682aa700b56d6e04c5d`
+The installer fetches KS source `05d969c24a6595c2752f7ff947af77c504053623`
 (version 0.2.0) from its maintained repository. The KS repository is private,
 so normal authorized GitHub access is required. It is not a registry release.
 The published dependency inventory is in KS draft PR #24; intermediate PR

@@ -23,3 +23,15 @@ Model ownership: use current configured SpaceAGORA full RHS. KS supplies only
 coordinate-changing numerical integration. Restrict to the original verified
 one-spacecraft scope, and fail clearly for additional unsupported configuration.
 Use normal package installation without model shims or standalone substitutes.
+
+## Post-qualification compatibility-only update
+
+The12-row scientific replay and lifecycle raw audit were completed on initial
+candidatec091191a1 with KS8cfc936f; those records keep their source identities.
+Complete-source CI then exposed the error-display IO name-binding failure on
+Julia1.9/1.10. Independent source/dispatch review approves the one-line Base.IO
+annotation qualification as mathematically equivalent, requiring no trajectory
+rerun solely for that change. The complete repaired KSsrc/test/Project tree
+passes4,170 normal Julia1.12.7 assertions. The installer now pins combined source
+05d969c24a6595c2752f7ff947af77c504053623; normal installed-adapter checks on this
+updated source and full declared-version CI are separate pending gates.

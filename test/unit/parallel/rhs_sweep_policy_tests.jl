@@ -133,3 +133,31 @@ end
         @test SEng._rhs_calibrate_seed_accept_winner()
     end
 end
+
+@testset "sweep_ns floor keeps max(new, previous), default off" begin
+    f = SEng._rhs_stored_sweep_ns
+    prev = Dict{String, Any}("sweep_ns" => 2.0e9)
+    @test f(prev, 3.0e8, false) == 3.0e8
+    @test f(prev, 3.0e8, true) == 2.0e9
+    @test f(prev, 3.0e9, true) == 3.0e9
+    @test f(nothing, 3.0e8, true) == 3.0e8
+    @test f(Dict{String, Any}(), 3.0e8, true) == 3.0e8
+    withenv("SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR" => nothing) do
+        @test !SEng._rhs_calibrate_sweep_ns_floor()
+    end
+    withenv("SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR" => "1") do
+        @test SEng._rhs_calibrate_sweep_ns_floor()
+    end
+    # store path: second (cheap) sweep keeps the first sweep's sweep_ns when on
+    sig = "sweepns_floor_test"
+    plan = (mode = :flat, allotment = 2, scheduler = :static)
+    for (flag, want) in (("0", 3.0e8), ("1", 2.0e9))
+        withenv("SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR" => flag) do
+            delete!(SEng._rhs_calib_cache, sig)
+            SEng._rhs_calib_store!(sig, plan, 1.0; sweep_ns = 2.0e9)
+            SEng._rhs_calib_store!(sig, plan, 1.0; sweep_ns = 3.0e8)
+            @test SEng._rhs_calib_cache[sig]["sweep_ns"] == want
+            delete!(SEng._rhs_calib_cache, sig)
+        end
+    end
+end

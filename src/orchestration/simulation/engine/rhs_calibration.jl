@@ -33,6 +33,12 @@
 #                                     more than the disagree margin is accepted
 #                                     instead of rerun as the full sweep (the
 #                                     no-gain-over-reference guard still falls back)
+#   SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR  0 (default, off) -- when 1, a newly
+#                                     stored sweep_ns is max(new, the previous
+#                                     stored sweep_ns for the same key), so the
+#                                     5% re-verification window is not shrunk by
+#                                     a cheap warm re-sweep (the first sweep in a
+#                                     process includes compilation)
 #   SPACEAGORA_RHS_CALIBRATE_SKIP_RATIO  0 (default, off) -- when > 0, replaces the
 #                                     fixed MIN_SOLVE_S rule with: honour a cached
 #                                     verdict (skip the sweep) when the predicted
@@ -594,6 +600,17 @@ end
     return nothing
 end
 
+@inline _rhs_calibrate_sweep_ns_floor()::Bool =
+    SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR", false)
+
+# The sweep_ns to store: `new` unchanged when `floor` is off or there is no
+# previous row, else max(new, previous row's sweep_ns).
+function _rhs_stored_sweep_ns(prev, new::Float64, floor::Bool)::Float64
+    (floor && prev !== nothing) || return new
+    old = Float64(get(prev, "sweep_ns", 0.0))
+    return isfinite(old) ? max(new, old) : new
+end
+
 function _rhs_calib_store_heuristic!(sig::String, heuristic_ns::Float64 = 0.0; sweep_ns::Float64 = 0.0,
                                      timings = nothing, seeded::Bool = false)::Nothing
     _rhs_calib_load!()
@@ -612,7 +629,7 @@ function _rhs_calib_store_heuristic!(sig::String, heuristic_ns::Float64 = 0.0; s
             "scheduler"       => "auto",
             "elapsed_mean_ns" => heuristic_ns,
             "heuristic_votes" => votes,
-            "sweep_ns"        => sweep_ns,
+            "sweep_ns"        => _rhs_stored_sweep_ns(prev, sweep_ns, _rhs_calibrate_sweep_ns_floor()),
             "honoured_ns"     => 0.0,
         )
         prev !== nothing && haskey(prev, "solve_ns") && (entry["solve_ns"] = prev["solve_ns"])
@@ -685,7 +702,7 @@ function _rhs_calib_store!(sig::String, plan, elapsed_mean_ns::Float64; sweep_ns
                 # A flip is a heuristic vote on top of those the bucket already
                 # carried through the pin (see _rhs_calib_store_heuristic!).
                 "heuristic_votes" => Int(get(prev, "heuristic_votes", 0)) + 1,
-                "sweep_ns"        => sweep_ns,
+                "sweep_ns"        => _rhs_stored_sweep_ns(prev, sweep_ns, _rhs_calibrate_sweep_ns_floor()),
                 "honoured_ns"     => 0.0,
                 "plan_votes"      => 0,
             )
@@ -700,7 +717,7 @@ function _rhs_calib_store!(sig::String, plan, elapsed_mean_ns::Float64; sweep_ns
             "allotment"       => Int(plan.allotment),
             "scheduler"       => String(plan.scheduler),
             "elapsed_mean_ns" => elapsed_mean_ns,
-            "sweep_ns"        => sweep_ns,
+            "sweep_ns"        => _rhs_stored_sweep_ns(prev, sweep_ns, _rhs_calibrate_sweep_ns_floor()),
             "honoured_ns"     => 0.0,
             "plan_votes"      => same_plan ? Int(get(prev, "plan_votes", 0)) + 1 : 1,
             # Carried, not reset (see _rhs_calib_store_heuristic!).

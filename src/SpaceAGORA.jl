@@ -319,6 +319,12 @@ using .SimulationModel: AerodynamicCommandedAreaDragModel, apply_panel_angle_of_
 export orbital_elements_to_cartesian, planet_fixed_to_geodetic
 export PolynomialFitAtmosphereModel, density_altitude_derivative
 export AerodynamicCommandedAreaDragModel, apply_panel_angle_of_attack!
+@doc (@doc SimulationModel.FrameTransforms.orbital_elements_to_cartesian) orbital_elements_to_cartesian
+@doc (@doc SimulationModel.FrameTransforms.planet_fixed_to_geodetic) planet_fixed_to_geodetic
+@doc (@doc SimulationModel.EnvironmentModels.PolynomialFitAtmosphereModel) PolynomialFitAtmosphereModel
+@doc (@doc SimulationModel.EnvironmentModels.density_altitude_derivative) density_altitude_derivative
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.AerodynamicCommandedAreaDragModel) AerodynamicCommandedAreaDragModel
+@doc (@doc SimulationModel.ControlHooks.apply_panel_angle_of_attack!) apply_panel_angle_of_attack!
 using .SimulationModel: StateAnchor, get_state_anchor_callback
 using .SimulationModel.AbstractTypes: AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel
 using .SimulationModel.AbstractTypes: AbstractControlEffectorModel, AbstractEphemeridesModel

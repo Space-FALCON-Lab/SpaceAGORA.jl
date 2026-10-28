@@ -22,7 +22,8 @@ KS repair and the final installation pin. Passing CI alone is not these verdicts
 | Attitude/articulation/mounted systems/history-mutating RHS | Outside initial support |Relevant configurations refused|
 | TrajectoryRecorder cadence/specialized split-multirate output | Outside table-output qualification |Separate work required|
 | MPC predictor/optimizer/feedback changes | Unchanged |No replacement or integration|
-| Matched-accuracy performance | Pending |No speed claim|
+| Two-body matched-accuracy timing | Bounded observed result |About106s KS vs4.81ms DP8;3zero-compile warm calls; machine/noise limits|
+| J2-plus-drag matched-accuracy timing | Inconclusive wall performance |Accuracy passes; ten long monitor gaps; ratio withheld, all calls retained|
 
 Fine: relative1e-12, absolute1e-13, maximum physical step5s for these inputs.
 Targets: maximum sampled1m/0.001m/s plus declared mass/heat/clock budgets. All

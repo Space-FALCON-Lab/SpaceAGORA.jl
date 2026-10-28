@@ -10,7 +10,8 @@ Mohammed's MPC is unchanged.
 This is a draft development candidate. The [report](REPORT.md) and
 [capability table](CAPABILITIES.md) document current-upstream trajectory, lifecycle,
 installation and guard verdicts, including all eight coarse/medium misses.
-Performance and final delivery review remain pending. Neither this draft nor
+The [performance findings](PERFORMANCE.md) report a large observed two-body cost
+and an inconclusive J2-plus-drag wall-time comparison. Neither this draft nor
 a package unit-test pass is a general accuracy or performance claim. The
 separate checkpoint-table repair is a prerequisite.
 
@@ -20,14 +21,17 @@ Use Julia 1.12.7 and a checkout of this candidate, with a fresh environment.
 Use normal Git/LFS checkout, then the installer below. A direct Pkg.add of the
 SpaceAGORA Git URL failed with a LibGit2 submodule checkout error in the tested
 environment; the working checkout/installer route is the verified route.
-The installer fetches KS source `05d969c24a6595c2752f7ff947af77c504053623`
+The installer fetches KS source `c905ef5b068b3cb52c5c3901a80e91b49fa144e8`
 (version 0.2.0) from its maintained repository. The KS repository is private,
 so normal authorized GitHub access is required. It is not a registry release.
-The published dependency inventory is in KS draft PR #24; intermediate PR
+The final private-package fetch required Julia's supported CLI-Git route
+(`JULIA_PKG_USE_CLI_GIT=true`) with an already authorized Git credential helper;
+the default LibGit2 attempt requested credentials and failed. This is an
+authentication limitation, not a numerical verdict. The published dependency inventory is in KS draft PR #24; intermediate PR
 #20–22 heads contain known defects and are not installation sources.
 
 ```sh
-JULIA_LOAD_PATH=@:@stdlib julia --startup-file=no verification/optional_ks/install.jl /absolute/new/ks-environment
+JULIA_PKG_USE_CLI_GIT=true JULIA_LOAD_PATH=@:@stdlib julia --startup-file=no verification/optional_ks/install.jl /absolute/new/ks-environment
 JULIA_LOAD_PATH=@:@stdlib julia --startup-file=no verification/optional_ks/install.jl /absolute/new/ordinary-environment --without-ks
 ```
 

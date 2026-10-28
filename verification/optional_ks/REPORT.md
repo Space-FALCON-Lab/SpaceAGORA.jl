@@ -2,7 +2,8 @@
 
 The bounded candidate meets the stated fine trajectory and tested physical-time
 lifecycle targets. It is reviewable development source, not an adopted release.
-Performance and final delivery review remain pending. A supported verdict is
+The bounded performance study has a qualified two-body result and an
+inconclusive J2-plus-drag wall-time result. A supported verdict is
 specific to the inputs, settings, source and sampled epochs below.
 
 ## Source boundary
@@ -21,12 +22,18 @@ equivalence: all other48 tracked source files are unchanged. Numerical equations
 controls, tolerances and sampling are unchanged. Original scientific source
 identities remain explicit; no trajectory rerun is inferred from a version bump.
 
-The installation pin is the complete source05d969c24a6595c2752f7ff947af77c504053623
-(version0.2.0, KS draft24). Its complete source/test/Project tree matches the
-normal package run with4,170 passing assertions. A genuine installed GitHub
-copy matches97 checked source/test/Project files and passes316 adapter checks.
-The type-only delta requires no further trajectory rerun according to independent
-review. New coupled physical-time sensitivities are not implemented.
+The final installation pin is complete sourcec905ef5b068b3cb52c5c3901a80e91b49fa144e8
+(version0.2.0, KS draft24). The intervening05d source/test/Project tree matches
+the normal package run with4,170 passing assertions. Its only later production
+change moves the unchanged public planet docstring from a private helper to the
+public method (separate draft26); independent review confirms unchanged nonblank
+executable statements. Final c905 passes whole-source Julia1.9/1.10/nightly CI
+and strict Docs. The actual installed c905 copy matches97 checked source/test/
+Project files and passes316 adapter checks plus selected documentation gates.
+The annotation and docstring-only deltas require no further trajectory rerun
+according to independent review. The later SpaceAGORA facade-docstring copy
+uses the existing public alias pattern and changes no numerical statement.
+Original scientific and benchmark source identities remain explicit. New coupled physical-time sensitivities are not implemented.
 
 ## Physics and independent references
 
@@ -98,14 +105,18 @@ engineering checks, not replacements for the trajectory/lifecycle evidence.
 
 A fresh normal GitHub checkout, including actual LFS assets, ran the committed
 installer in separate with-KS and without-KS environments. Runtime316/9 checks
-pass with JULIA_LOAD_PATH=@:@stdlib. The complete new KS pin also passes the316
-installed checks. Direct Pkg.add of the SpaceAGORA Git URL failed in Julia's
+pass with JULIA_LOAD_PATH=@:@stdlib. The complete final KS pin also passes the316
+installed checks in a new environment using supported CLI-Git with the existing
+authorized credential helper. Its default LibGit2 fetch failed a credential
+request; that failure is retained. The final SG docs/installer commit was
+transferred locally into the earlier clean GitHub/LFS checkout after a stalled
+network fetch; this is not a second fresh network-clone claim. Direct Pkg.add of the SpaceAGORA Git URL failed in Julia's
 LibGit2 submodule checkout before loading; that failed route is preserved, not
 claimed to work. Use the verified checkout plus installer route in README.md.
 The KS repository currently requires authorized access; no registry release is
 created. OrdinaryDiffEqCore is restricted to the4.19 minor series.
 
-## Ownership and remaining delivery
+## Ownership and recommendation
 
 SpaceAGORA owns configuration, physical state/time, force interfaces/conventions,
 scheduling/events/checkpoints/outputs and propagator selection. KSPropagator
@@ -119,8 +130,19 @@ Integrated sails, multiple spacecraft, interlinks, mounted systems and new
 physical-time sensitivities remain deferred. The separate TrajectoryRecorder
 cadence and split/multirate paths are outside this table-output qualification.
 
-The bounded matched-accuracy study and final findings review are still pending.
-No speed advantage is claimed. The companion upstream-delivery evidence retains
+The [matched-accuracy findings](PERFORMANCE.md) show about106s versus4.81ms
+for KS versus DP8 in the tested two-body full route (roughly22,000 times longer
+on this machine/settings). Compilation and package loading are separate; all
+three warm repetitions record zero compilation. J2-plus-drag physical accuracy
+passes, but ten long monitor gaps (maximum5034s) make its wall-time comparison
+inconclusive; no J2 speed ratio is reported and no slow call is discarded.
+Independent findings/performance reviews approve these bounded conclusions.
+
+Keep this route an experimental optional draft while investigating implicit-
+stage allocations and computational cost. The longer-term aim remains optional,
+fully supported KS selection with separate package ownership, expanding only
+as each capability passes. This evidence does not justify default selection,
+a general speed claim, or absorbing the package into core. The companion upstream-delivery evidence retains
 raw CSV/binary results, complete logs, environments, source hashes and failed
 attempts; selected verdicts/reviews are included in evidence/. Reproduction
 scripts and frozen inputs are in this directory.

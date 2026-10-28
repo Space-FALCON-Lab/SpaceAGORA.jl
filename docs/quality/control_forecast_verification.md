@@ -61,6 +61,20 @@ packet as `forecast_full_physics_probe.jl`, `ForecastQualificationControls/`,
 driver failures were retained: Julia world-age access and an incorrect test
 expectation for SPICE's missing-variable sentinel.
 
+The same fixture was then extended to 7,000 s with one-second saved rows. The
+final differences were 9.14e-8 m and 3.57e-11 m/s. Interpolated outbound-interface
+times were 627.779100861822 s (uninterrupted) and 627.7791008618206 s (forecast);
+first physical-apoapsis times were 6343.041416187113 s and 6343.041416187137 s.
+The corresponding sampled/interpolated apoapsis radii differed by 4.3e-8 m.
+Repeated forecasts after kernel-pool contamination again returned identical
+states and tables, left the snapshot unchanged and cleaned up the worker.
+
+These crossings are interpolated from one-second rows. Their agreement measures
+equivalence of the two runs, not event-localization accuracy. This remains one
+fixed-plan case at the original scenario epoch, not a test of live MPC planning
+or a mission target error. Evidence is retained as
+`forecast-full-pass-v1/comparison.toml` and its parent/worker logs.
+
 ## Review and remaining scope
 
 Independent review identified and closed concrete issues in kernel cache reset,
@@ -70,7 +84,7 @@ remaining blocker in the stated narrow path. The dedicated-worker requirement
 still applies: the forecast lock does not make unrelated simulations safe to
 run concurrently in that process.
 
-Full-pass event equivalence, campaign handover, cold checkpoint/resume across
-that handover, broader state/planet cases, prediction cost and mission accuracy
+Campaign handover, cold checkpoint/resume across that handover, further
+state/planet cases, event-localization accuracy, prediction cost and mission accuracy
 requirements remain separate work. Default controllers and their optimizer
 equations are unchanged. No physical-apoapsis search is installed automatically.

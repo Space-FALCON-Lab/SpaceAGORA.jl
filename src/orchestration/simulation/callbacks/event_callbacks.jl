@@ -435,6 +435,87 @@ function get_initial_force_output_callback(effectors::Tuple; solver_mode::Symbol
         initialize=initialize, save_positions=(false, false))
 end
 
+# Keep the table's cadence independent of checkpoint segments AND of later
+# mission extensions. Scalar SavingCallback ranges choose a new origin per
+# segment; stop-based floating ranges can also change a tick's representation.
+function _segment_output_times(origin::Float64, start::Float64, stop::Float64,
+    rate::Float64; horizon::Float64=stop)
+    isfinite(rate) && rate > 0.0 || throw(ArgumentError("output interval must be finite and positive"))
+    isfinite(origin) && isfinite(start) && isfinite(stop) && isfinite(horizon) &&
+        origin <= start <= stop <= horizon || throw(ArgumentError(
+            "output segment requires finite forward times with origin <= start <= stop <= horizon"))
+    start == stop && return Float64[start]
+    rate >= eps(max(abs(origin), abs(horizon))) || throw(ArgumentError(
+        "output interval is too small for distinct Float64 epochs at the mission clock scale"))
+    approximate_index = (stop - origin) / rate
+    isfinite(approximate_index) && approximate_index < Float64(typemax(Int) - 2) ||
+        throw(ArgumentError("output grid exceeds the representable integer index domain"))
+    # Indexed ranges preserve the same simple-decimal epochs across lengths.
+    # The quotient is only an initial guess: e.g. .3/.1 rounds below three.
+    tick(k) = last(range(origin; step=rate, length=k + 1))
+    last_index = max(0, floor(Int, approximate_index))
+    while last_index > 0 && tick(last_index) > stop
+        last_index -= 1
+    end
+    while tick(last_index + 1) <= stop
+        tick(last_index + 1) > tick(last_index) || throw(ArgumentError(
+            "output cadence produces repeated Float64 epochs"))
+        last_index += 1
+    end
+    first_index = clamp(floor(Int, (start - origin) / rate), 0, last_index + 1)
+    while first_index > 0 && tick(first_index - 1) >= start
+        first_index -= 1
+    end
+    while first_index <= last_index && tick(first_index) < start
+        first_index += 1
+    end
+    times = Float64[start]
+    for k in first_index:last_index
+        # Define each epoch by its own index, independent of any other range
+        # length. No mission-prefix allocation or prefix-stability assumption.
+        t = tick(k)
+        (t == start || t == stop) && continue
+        t > times[end] && t <= stop || throw(ArgumentError(
+            "output cadence does not produce ordered distinct Float64 epochs"))
+        push!(times, t)
+    end
+    stop > start && push!(times, stop)
+    return times
+end
+
+# Event-output assembly keeps this stable handle, not the inner SavingAffect
+# that initialization replaces. Resolve the live inner saver at every event.
+struct _RunClockSavingAffect{C}
+    callback::Base.RefValue{C}
+end
+(affect::_RunClockSavingAffect)(integrator) = affect.callback[].affect!(integrator)
+_is_saving_affect(::Any) = false
+_is_saving_affect(::Union{DiffEqCallbacks.SavingAffect, _RunClockSavingAffect}) = true
+_current_saving_affect(affect) = affect
+_current_saving_affect(affect::_RunClockSavingAffect) = affect.callback[].affect!
+
+function _run_clock_saving_callback(save_func, saved_values, rate::Float64)
+    make_segment(times) = SavingCallback(save_func, saved_values; saveat=times,
+        save_everystep=false, save_start=true, save_end=false)
+    segment = Ref(make_segment(Float64[]))
+    function initialize(cb, u, t, integrator)
+        origin, horizon, _ = _periodic_run_clock(integrator.p)
+        start = Float64(t)
+        stop = hasproperty(integrator.p, :shared_buffers) ?
+            integrator.p.shared_buffers.solve_segment_end_time[] : NaN
+        isfinite(stop) || (stop = Float64(last(integrator.sol.prob.tspan)))
+        isfinite(origin) || (origin = start)
+        isfinite(horizon) || (horizon = stop)
+        segment[] = make_segment(_segment_output_times(origin, start, stop, rate; horizon))
+        # Fresh public instances reset each segment's heap/counter without
+        # touching SavingCallback's private scalar/vector cache fields.
+        segment[].initialize(segment[], u, t, integrator)
+        return nothing
+    end
+    return DiscreteCallback((u, t, integrator) -> true, _RunClockSavingAffect(segment);
+        initialize=initialize, save_positions=(false, false))
+end
+
 function get_data_saving_callback(
     num_sats::Int,
     args::SimulationConfiguration,
@@ -447,7 +528,7 @@ function get_data_saving_callback(
     end
     data_rate = args.mission_configuration.data_rate
     data_rate > 0.0 || throw(ArgumentError("mission_configuration.data_rate must be > 0.0, got $data_rate."))
-    return SavingCallback(save_func, saved_values; saveat=data_rate, save_everystep=false)
+    return _run_clock_saving_callback(save_func, saved_values, Float64(data_rate))
 end
 
 """
@@ -741,7 +822,8 @@ end
 # while that interpolant still belongs to the incoming trajectory. The ordinary
 # saving callback retains ownership of a sample exactly at the event time.
 function _save_before_continuous_event!(savers, integrator)
-    for saver in savers
+    for affect in savers
+        saver = _current_saving_affect(affect)
         while !isempty(saver.saveat) &&
                 integrator.tdir * first(saver.saveat) < integrator.tdir * integrator.t
             t = pop!(saver.saveat)

@@ -1,0 +1,31 @@
+ERROR: LoadError: Some tests did not pass: 11 passed, 2 failed, 0 errored, 0 broken.
+in expression starting at /Users/josephine/.codex/visualizations/2026/10/27/01a17e95-a323-7a20-8321-e62fc2210d33/ks-verification/upstream-delivery-20261028/checkpoint-table-probe.jl:52
+Ordinary checkpoint table retains mission grid: Test Failed at /Users/josephine/.codex/visualizations/2026/10/27/01a17e95-a323-7a20-8321-e62fc2210d33/ks-verification/upstream-delivery-20261028/checkpoint-table-probe.jl:55
+  Expression: isempty((records[name])["missing_required"])
+   Evaluated: isempty([0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
+
+Stacktrace:
+ [1] macro expansion
+   @ ~/.julia/juliaup/julia-1.12.7+0.aarch64.apple.darwin14/share/julia/stdlib/v1.12/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/.codex/visualizations/2026/10/27/01a17e95-a323-7a20-8321-e62fc2210d33/ks-verification/upstream-delivery-20261028/checkpoint-table-probe.jl:55 [inlined]
+ [3] macro expansion
+   @ ~/.julia/juliaup/julia-1.12.7+0.aarch64.apple.darwin14/share/julia/stdlib/v1.12/Test/src/Test.jl:1777 [inlined]
+ [4] top-level scope
+   @ ~/.codex/visualizations/2026/10/27/01a17e95-a323-7a20-8321-e62fc2210d33/ks-verification/upstream-delivery-20261028/checkpoint-table-probe.jl:53
+Ordinary checkpoint table retains mission grid: Test Failed at /Users/josephine/.codex/visualizations/2026/10/27/01a17e95-a323-7a20-8321-e62fc2210d33/ks-verification/upstream-delivery-20261028/checkpoint-table-probe.jl:55
+  Expression: isempty((records[name])["missing_required"])
+   Evaluated: isempty([0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
+
+Stacktrace:
+ [1] macro expansion
+   @ ~/.julia/juliaup/julia-1.12.7+0.aarch64.apple.darwin14/share/julia/stdlib/v1.12/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/.codex/visualizations/2026/10/27/01a17e95-a323-7a20-8321-e62fc2210d33/ks-verification/upstream-delivery-20261028/checkpoint-table-probe.jl:55 [inlined]
+ [3] macro expansion
+   @ ~/.julia/juliaup/julia-1.12.7+0.aarch64.apple.darwin14/share/julia/stdlib/v1.12/Test/src/Test.jl:1777 [inlined]
+ [4] top-level scope
+   @ ~/.codex/visualizations/2026/10/27/01a17e95-a323-7a20-8321-e62fc2210d33/ks-verification/upstream-delivery-20261028/checkpoint-table-probe.jl:53
+Test Summary:                                  | Pass  Fail  Total  Time
+Ordinary checkpoint table retains mission grid |   11     2     13  1.7s
+RNG of the outermost testset: Random.Xoshiro(0x31c0794d8be00528, 0x1033ed57282a94c4, 0x0c1c6057d24cfa07, 0xf993fb206068e682, 0x71f600ecc2bef325)

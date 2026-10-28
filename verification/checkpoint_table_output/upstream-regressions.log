@@ -1,0 +1,38 @@
+UPSTREAM_CHECKPOINT_REGRESSION_BEGIN test/unit/simulation/checkpoint_periodic_tick_tests.jl
+Test Summary:                               | Pass  Total   Time
+checkpointed runs tick as runs in one piece |  185    185  37.1s
+Test Summary:                                                        | Pass  Total  Time
+periodic GNC callback outside a checkpointed run is PeriodicCallback |   57     57  4.8s
+UPSTREAM_CHECKPOINT_REGRESSION_BEGIN test/unit/simulation/checkpoint_output_grid_tests.jl
+Test Summary:                                    | Pass  Total  Time
+Mission grid exact boundary and floating cadence |   48     48  0.1s
+Test Summary:                                             | Pass  Total  Time
+Normal ordinary affine trajectory and fresh resumed clock |  109    109  8.5s
+CACHED_GRID_SUCCESS samples=14 original_problem_bounds=(0.0, 0.37)
+Test Summary:                                                    | Pass  Total  Time
+Cached reinit preserves original grid and real segment endpoints |   60     60  0.3s
+Test Summary:                                                         | Pass  Total  Time
+Canonical output survives extended horizon with cached problem bounds |   49     49  0.0s
+INDEPENDENT_CANONICAL_GRID_CALLBACK_SUCCESS Julia1.12.7
+UPSTREAM_CHECKPOINT_REGRESSION_BEGIN test/unit/simulation/event_output_tests.jl
+Test Summary:                                       | Pass  Total   Time
+Output before an event uses the incoming trajectory |   16     16  18.5s
+UPSTREAM_CHECKPOINT_REGRESSION_BEGIN test/unit/io/checkpoint_storage_boundary_tests.jl
+Test Summary:                                        | Pass  Total  Time
+I/O paths and checkpoint storage retain their schema |   35     35  0.5s
+Test Summary:                                           | Pass  Total  Time
+Checkpoint history hashes only the requested byte range |    7      7  0.1s
+UPSTREAM_CHECKPOINT_REGRESSION_BEGIN test/unit/io/long_streaming_tests.jl
+┌ Warning: The resumed run's results cannot include the rows before its checkpoint at t = 2.0 s: the run that wrote the checkpoint did not save results rows. They start at the resume, and any results files are written to /var/folders/rx/b_mjqthj0nd_mbb1nt19t6x40000gn/T/jl_CfBCv7/resumed_at_2.0s, so the earlier ones are kept.
+└ @ SpaceAGORA.SimulationEngine ~/.codex/worktrees/checkpoint-table-cadence/SpaceAGORA.jl/src/orchestration/simulation/engine/resume_checkpoint.jl:1082
+┌ Warning: The resumed run's results cannot include the rows before its checkpoint at t = 0.6 s: the run that wrote the checkpoint did not save results rows. They start at the resume, and any results files are written to /var/folders/rx/b_mjqthj0nd_mbb1nt19t6x40000gn/T/jl_ff6PmW/resumed_at_0.6s, so the earlier ones are kept.
+└ @ SpaceAGORA.SimulationEngine ~/.codex/worktrees/checkpoint-table-cadence/SpaceAGORA.jl/src/orchestration/simulation/engine/resume_checkpoint.jl:1082
+┌ Warning: The resumed run's results cannot include the rows before its checkpoint at t = 0.3 s: the run that wrote the checkpoint did not save results rows. They start at the resume, and any results files are written to /var/folders/rx/b_mjqthj0nd_mbb1nt19t6x40000gn/T/jl_n2uRQo/resumed_at_0.3s, so the earlier ones are kept.
+└ @ SpaceAGORA.SimulationEngine ~/.codex/worktrees/checkpoint-table-cadence/SpaceAGORA.jl/src/orchestration/simulation/engine/resume_checkpoint.jl:1082
+Test Summary:                                                    | Pass  Total   Time
+streaming keeps absent fields distinct from missing measurements |   22     22  24.6s
+Test Summary:                                               | Pass  Total  Time
+streaming refuses changed column ownership before appending |    2      2  0.3s
+Test Summary:         | Pass  Total   Time
+streamed long results |   91     91  19.6s
+UPSTREAM_CHECKPOINT_REGRESSIONS_SUCCESS

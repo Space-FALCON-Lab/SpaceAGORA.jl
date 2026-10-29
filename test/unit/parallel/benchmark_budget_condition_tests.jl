@@ -208,5 +208,16 @@ end
     @test delete!(copy(a), "SPACEAGORA_RHS_CALIBRATE") == delete!(copy(b), "SPACEAGORA_RHS_CALIBRATE")
 end
 
+@testset "predictive_notuner differs from predictive only in the region width tuner" begin
+    specs = ppc_mode_specs()
+    cfg = PPCConfig(process_workers=4)
+    env(m) = Dict(ppc_mode_env_pairs(specs[m], cfg))
+    a, b = env("predictive"), env("predictive_notuner")
+    @test b["SPACEAGORA_RHS_REGION_WIDTH"] == "off"
+    @test !haskey(a, "SPACEAGORA_RHS_REGION_WIDTH")
+    @test b["SPACEAGORA_RHS_CALIBRATE"] == "auto"
+    @test delete!(copy(b), "SPACEAGORA_RHS_REGION_WIDTH") == a
+end
+
 end
 end # module

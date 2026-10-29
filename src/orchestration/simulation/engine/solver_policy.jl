@@ -217,13 +217,13 @@ function _ODECore.is_stiff(integrator, alg::_Tsit5StiffnessProbe, ntol, stol, is
     return bool
 end
 
-@inline _auto_stiff_legacy_detector()::Bool =
-    lowercase(strip(get(ENV, "SPACEAGORA_AUTO_STIFF_DETECTOR", "robust"))) == "legacy"
+@inline _auto_stiff_ode_detector()::Bool =
+    lowercase(strip(_engine_env_get("SPACEAGORA_AUTO_STIFF_DETECTOR", "robust"))) == "legacy"
 
-# AutoTsit5(stiff_alg; kwargs...) with the Tsit5-phase estimate above, unless the
-# legacy detector is requested.
+# AutoTsit5(stiff_alg; kwargs...) with the Tsit5-phase estimate above, unless
+# OrdinaryDiffEq's own detector is requested (SPACEAGORA_AUTO_STIFF_DETECTOR=legacy).
 function _auto_tsit5(stiff_alg; kwargs...)
-    _auto_stiff_legacy_detector() && return AutoTsit5(stiff_alg; kwargs...)
+    _auto_stiff_ode_detector() && return AutoTsit5(stiff_alg; kwargs...)
     return _ODECore.CompositeAlgorithm((Tsit5(), stiff_alg), _ODECore.AutoSwitch(_Tsit5StiffnessProbe(), stiff_alg; kwargs...))
 end
 

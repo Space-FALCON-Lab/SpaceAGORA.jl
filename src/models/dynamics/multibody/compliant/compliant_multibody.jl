@@ -25,7 +25,7 @@ export simulate_compliant_multibody
 struct CompliantBody
     name::Symbol
     mass_kg::Float64
-    inertia_body_kg_m2::SMatrix{3, 3, Float64}
+    inertia_body_kg_m2::SMatrix{3, 3, Float64, 9}
 end
 
 """Compliant connection between a parent body and child body."""
@@ -35,10 +35,10 @@ struct CompliantJoint
     child::Int
     parent_point_body::SVector{3, Float64}
     child_point_body::SVector{3, Float64}
-    k_translation_n_m::SMatrix{3, 3, Float64}
-    c_translation_n_s_m::SMatrix{3, 3, Float64}
-    k_rotation_n_m_rad::SMatrix{3, 3, Float64}
-    c_rotation_n_m_s_rad::SMatrix{3, 3, Float64}
+    k_translation_n_m::SMatrix{3, 3, Float64, 9}
+    c_translation_n_s_m::SMatrix{3, 3, Float64, 9}
+    k_rotation_n_m_rad::SMatrix{3, 3, Float64, 9}
+    c_rotation_n_m_s_rad::SMatrix{3, 3, Float64, 9}
     rest_child_parent_quat::SVector{4, Float64}
 end
 
@@ -60,7 +60,7 @@ end
 struct CompliantTopologyNode
     name::Symbol
     mass_kg::Float64
-    inertia_body_kg_m2::SMatrix{3, 3, Float64}
+    inertia_body_kg_m2::SMatrix{3, 3, Float64, 9}
     position::SVector{3, Float64}
     quaternion::SVector{4, Float64}
     velocity::SVector{3, Float64}
@@ -74,10 +74,10 @@ struct CompliantTopologyEdge
     child::Int
     parent_point_body::SVector{3, Float64}
     child_point_body::SVector{3, Float64}
-    k_translation_n_m::SMatrix{3, 3, Float64}
-    c_translation_n_s_m::SMatrix{3, 3, Float64}
-    k_rotation_n_m_rad::SMatrix{3, 3, Float64}
-    c_rotation_n_m_s_rad::SMatrix{3, 3, Float64}
+    k_translation_n_m::SMatrix{3, 3, Float64, 9}
+    c_translation_n_s_m::SMatrix{3, 3, Float64, 9}
+    k_rotation_n_m_rad::SMatrix{3, 3, Float64, 9}
+    c_rotation_n_m_s_rad::SMatrix{3, 3, Float64, 9}
     rest_child_parent_quat::Union{Nothing, SVector{4, Float64}}
 end
 
@@ -94,8 +94,8 @@ struct CompliantJointActuator
     name::Symbol
     joint::Int
     torque_limit_n_m::SVector{3, Float64}
-    kp_n_m_rad::SMatrix{3, 3, Float64}
-    kd_n_m_s_rad::SMatrix{3, 3, Float64}
+    kp_n_m_rad::SMatrix{3, 3, Float64, 9}
+    kd_n_m_s_rad::SMatrix{3, 3, Float64, 9}
     feedforward_torque_child_body::SVector{3, Float64}
     efficiency::Float64
 end

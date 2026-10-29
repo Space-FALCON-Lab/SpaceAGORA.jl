@@ -270,8 +270,8 @@ mutable struct Link
     dims::MVector{3, Float64} # Size[x,y,z] Box= x=thikness, y=z=width, height
     ref_area::Float64 # Reference area for aerodynamic calculations
     m::Float64 # Mass
-    mass::SMatrix{3, 3, Float64} # Mass Matrix
-    inertia::SMatrix{3, 3, Float64} # Inertial matrix
+    mass::SMatrix{3, 3, Float64, 9} # Mass Matrix
+    inertia::SMatrix{3, 3, Float64, 9} # Inertial matrix
     aᵇ::SVector{3, Float64} # Left extent (Body frame)
     bᵇ::SVector{3, Float64} # Right extent (Body frame)
     α::Float64 # Angle of attack, rad
@@ -488,10 +488,10 @@ mutable struct Joint
     link2::Link
     p1ᵇ::SVector{3, Float64} # Position of joint in body frame of link1
     p2ᵇ::SVector{3, Float64} # Position of joint in body frame of link2
-    Kx::SMatrix{3, 3} # Stiffness Matrix
-    Kt::SMatrix{3, 3} # Stiffness Matrix
-    Cx::SMatrix{3, 3} # Damping Matrix
-    Ct::SMatrix{3, 3} # Damping Matrix
+    Kx::SMatrix{3, 3, Float64, 9} # Stiffness Matrix
+    Kt::SMatrix{3, 3, Float64, 9} # Stiffness Matrix
+    Cx::SMatrix{3, 3, Float64, 9} # Damping Matrix
+    Ct::SMatrix{3, 3, Float64, 9} # Damping Matrix
     translational_displacement::SVector{3, Float64} # Translational displacement vector
     rotational_displacement::SVector{4, Float64} # Rotational displacement vector (quaternion)
     joint_type::Symbol # :fixed, :hinge, :slide or :ball
@@ -652,7 +652,7 @@ mutable struct SpacecraftModel
     instant_actuation::Bool # Whether control inputs (e.g., solar panel angles) are applied instantly
     dry_mass::Float64 # Dry mass of the spacecraft
     prop_mass::Float64 # Fuel mass available for maneuvers
-    inertia_tensor::SMatrix{3, 3, Float64} # Inertia tensor of the spacecraft in the body frame
+    inertia_tensor::SMatrix{3, 3, Float64, 9} # Inertia tensor of the spacecraft in the body frame
     initial_condition::AbstractInitialCondition # Initial conditions for the simulation (orbit, attitude, etc.)
     id::Int64 # Unique identifier for the spacecraft (useful for multi-spacecraft simulations)
     # Optional per-spacecraft GNC. Empty by default. `flatten_spacecraft_gnc` folds these into the

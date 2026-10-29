@@ -118,3 +118,35 @@ end
         end
     end
 end
+
+
+@testset "Harmonics batch pool snapshot/restore" begin
+    planet = SM_HBP.Earth()
+    model_a = SM_HBP.GravitationalHarmonicsModel(4, 4, HBP_GRAVITY_FILE, planet)
+    model_b = SM_HBP.GravitationalHarmonicsModel(4, 4, HBP_GRAVITY_FILE, planet)
+    snap0 = PERT_HBP.harmonics_batch_pool_snapshot()
+    try
+        # model_a has a small pool before the snapshot; model_b has none.
+        pool_a = PERT_HBP._get_harmonics_batch_pool(model_a, 2, 16)
+        snap = PERT_HBP.harmonics_batch_pool_snapshot()
+        # Grow a (more workers, taller) and create b, as a sweep would.
+        grown_a = PERT_HBP._get_harmonics_batch_pool(model_a, 8, 512)
+        PERT_HBP._get_harmonics_batch_pool(model_b, 4, 64)
+        @test length(grown_a) == 8 && size(grown_a[1].A, 1) == 512
+        PERT_HBP.harmonics_batch_pool_restore!(snap)
+        now = PERT_HBP.harmonics_batch_pool_snapshot()
+        # a: the pre-snapshot entry object is back; b: its entry is gone.
+        @test now[objectid(model_a)] === pool_a
+        @test length(pool_a) == 2 && size(pool_a[1].A, 1) == 16
+        # (Compared against the snapshot rather than for absence: objectid keys can
+        # be reused by a later model after GC, so a stale entry from an earlier
+        # test may legitimately share model_b's key.)
+        @test get(now, objectid(model_b), nothing) === get(snap, objectid(model_b), nothing)
+        @test keys(now) == keys(snap)
+        # Grow-only behavior is unchanged after a restore.
+        again = PERT_HBP._get_harmonics_batch_pool(model_a, 1, 4)
+        @test again === pool_a
+    finally
+        PERT_HBP.harmonics_batch_pool_restore!(snap0)
+    end
+end

@@ -1098,7 +1098,28 @@ function _rhs_seed_fallback_reason(records, override_margin::Float64, disagree_m
     return :none
 end
 
+# The sweep's candidates run the harmonics batch kernel at every width and
+# slice size on its ladder, and the kernel's workspace pool only ever grows.
+# Left alone, the solve that follows (and every later solve in the process)
+# inherits workspaces sized for the sweep's tallest slice -- 4096 rows against
+# the 256 a 16-worker solve uses -- and runs about 7% slower per RHS call. The
+# pool is therefore restored to its pre-sweep state on every exit path, and the
+# per-solve cached reference to it dropped so the solve rebuilds at its own size.
 function _run_rhs_sweep!(p, u0, dynamic_effectors, verbose::Bool, args = nothing)
+    pert = SimulationModel.DynamicEffectors.PerturbationEffectors
+    pool_before = pert.harmonics_batch_pool_snapshot()
+    try
+        return _run_rhs_sweep_unscoped!(p, u0, dynamic_effectors, verbose, args)
+    finally
+        pert.harmonics_batch_pool_restore!(pool_before)
+        if p !== nothing && hasproperty(p, :shared_buffers) &&
+           hasproperty(p.shared_buffers, :rhs_harmonics_batch_pool)
+            p.shared_buffers.rhs_harmonics_batch_pool[] = nothing
+        end
+    end
+end
+
+function _run_rhs_sweep_unscoped!(p, u0, dynamic_effectors, verbose::Bool, args = nothing)
     k = _rhs_calibrate_seed_topk()
     (k > 0 && args !== nothing) || return _run_rhs_sweep_core!(p, u0, dynamic_effectors, verbose, args, 0)
     res = _run_rhs_sweep_core!(p, u0, dynamic_effectors, verbose, args, k)

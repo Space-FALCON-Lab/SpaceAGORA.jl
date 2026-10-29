@@ -412,6 +412,35 @@ function _get_harmonics_batch_pool(
     return _HARMONICS_BATCH_POOL[key]
 end
 
+# Snapshot/restore of the pool for callers that grow it temporarily.
+#
+# The pool is grow-only (see _get_harmonics_batch_pool), so a caller that visits
+# many (workers, batch) shapes leaves it at the widest x tallest of all of them.
+# The RHS calibration sweep does exactly that: its allotment-1 and -2 flat
+# candidates ask for 2048-4096-row workspaces, and every later solve in the
+# process then took its 256-row slices out of 4096-row workspaces (+7% per RHS
+# call measured at 4096 satellites, 16 threads). The snapshot is a shallow copy
+# of the key -> pool map; the pool vectors themselves are never mutated in
+# place (growth replaces the entry), so restoring the entry object restores the
+# pre-snapshot state exactly. Entries created after the snapshot are removed;
+# entries that existed are put back. Results are unaffected: workspaces are
+# scratch, fully rewritten on every kernel call.
+harmonics_batch_pool_snapshot() = lock(_HARMONICS_BATCH_POOL_LOCK) do
+    copy(_HARMONICS_BATCH_POOL)
+end
+
+function harmonics_batch_pool_restore!(snapshot::Dict{UInt, Vector{HarmonicsBatchWorkspace}})::Nothing
+    lock(_HARMONICS_BATCH_POOL_LOCK) do
+        for key in collect(keys(_HARMONICS_BATCH_POOL))
+            haskey(snapshot, key) || delete!(_HARMONICS_BATCH_POOL, key)
+        end
+        for (key, pool) in snapshot
+            get(_HARMONICS_BATCH_POOL, key, nothing) === pool || (_HARMONICS_BATCH_POOL[key] = pool)
+        end
+    end
+    return nothing
+end
+
 # Fetch the batch pool from a per-solve cached ref to avoid the global Dict lookup
 # on every RHS call. Falls through to _get_harmonics_batch_pool on first use or resize.
 function _get_harmonics_batch_pool_cached!(

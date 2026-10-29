@@ -27,7 +27,7 @@ using Reexport
 export Initial_condition, Aerodynamics, Engines, Model, Cnf, Solution, ODEParams, IntermediateSolution, Mission, InitialParameters
 export SaveCache, SaveData
 export SRPSunEphemerisCache, NBodyEphemerisCache, PlanetFrameEphemerisCache, SpiceRuntimeCounters, SpiceRhsMemo
-export GramTrackCache, VacuumPredictedGRAMCache, GramDensityPerturbationState, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScratchWorkspace
+export GramTrackCache, VacuumPredictedGRAMCache, DensityQueryMemo, GramDensityPerturbationState, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScratchWorkspace
 export PolicyDecisionEnvConfig, GramTrackCacheConfig, CallbackEnvConfig, RhsPlanEnvConfig, RhsRegionTuner, SpinBarrierTuner
 export AbstractPolicyContext
 export GNCScopeSlot, GNCRunScopes
@@ -543,6 +543,22 @@ export RhsEffectorDecision, RhsExecutionPlan
         vac_positions::Vector{SVector{3, Float64}} # vacuum-predicted inertial position at each knot
     end
 
+    # Last mean-density query of one satellite: the exact inputs of the native
+    # query and its result. Immutable, so a reader that loads the slot once sees
+    # a consistent record even if another task replaces the slot meanwhile.
+    # `model` is compared by identity. See `_density_memoized` for the rules.
+    struct DensityQueryMemo
+        model::Any
+        alt::Float64
+        lat::Float64
+        lon::Float64
+        t::Float64
+        wind::Bool
+        rho::Float64
+        T::Float64
+        wind_vec::SVector{3, Float64}
+    end
+
     # Opt-in GRAM perturbed-density state (SPACEAGORA_GRAM_DENSITY_PERTURBATION;
     # see SimulationCallbacks gram_density_perturbation.jl). `nothing` in the
     # SharedBuffers slot below -- the default -- leaves every density path exactly
@@ -885,6 +901,7 @@ export RhsEffectorDecision, RhsExecutionPlan
         density_models::Vector{_PerSatDensityModel} = _PerSatDensityModel[]
         gram_density_cache::Vector{Union{Nothing, GramTrackCache}} = _typed_nothing_vector(GramTrackCache, n_sats)
         vacuum_gram_caches::Vector{Union{Nothing, VacuumPredictedGRAMCache}} = _typed_nothing_vector(VacuumPredictedGRAMCache, n_sats)
+        density_memos::Vector{Union{Nothing, DensityQueryMemo}} = _typed_nothing_vector(DensityQueryMemo, n_sats)
         gram_density_perturbation::Base.RefValue{Union{Nothing, GramDensityPerturbationState}} = Ref{Union{Nothing, GramDensityPerturbationState}}(nothing)
         gram_isolated_pool_models::Vector{GRAMAtmosphereModel} = GRAMAtmosphereModel[]
         gram_isolated_pool_locks::Vector{ReentrantLock} = ReentrantLock[]

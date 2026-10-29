@@ -380,10 +380,55 @@ function _make_harmonics_batch_workspace(model::GravitationalHarmonicsModel, bat
     )
 end
 
-# Per-worker workspace pool keyed by objectid(model).
-# Indexed by worker number (1..n_workers); resized on first use or constellation change.
-const _HARMONICS_BATCH_POOL = Dict{UInt, Vector{HarmonicsBatchWorkspace}}()
+# Per-worker workspace pools, keyed by objectid(model).
+#
+# Each model owns a short list of pools (oldest first), one per (workers, rows)
+# shape that has been asked for, and a request is served by the newest pool that
+# fits it: at least `n_workers` workspaces, and rows in
+# [batch_size, HARMONICS_BATCH_POOL_MAX_ROW_RATIO * batch_size]. The list is
+# replaced, never mutated (copy-on-write), so the lock-free read in the fast
+# path below and the snapshot/restore helpers see a consistent value.
+#
+# This replaces a grow-only rule ("keep the widest x tallest pool for the
+# model's lifetime"). That rule protected the per-region width search, which
+# alternates widths, from rebuilding the whole pool on every switch. It also
+# meant any one oversized request -- the calibration sweep's allotment-1 flat
+# candidate asks for a 4096-row workspace, a pinned width-4 plan for 1024 -- left
+# every later 16-worker solve slicing 256-row batches out of 1024- or 4096-row
+# workspaces (leading dimension of the Legendre/recursion arrays), measured about
+# 7% slower per RHS call at 4096 satellites, 16 threads. A workspace's rows only
+# set its leading dimension and capacity; the kernel loops over the slice it was
+# given, so which pool serves a request cannot change a result.
+#
+# The rebuild cost the old rule avoided stays bounded: at most
+# HARMONICS_BATCH_POOL_MAX_SHAPES pools per model are kept (oldest evicted), so a
+# search that alternates between a few widths builds each once and then reuses it.
+const _HARMONICS_BATCH_POOL = Dict{UInt, Vector{Vector{HarmonicsBatchWorkspace}}}()
 const _HARMONICS_BATCH_POOL_LOCK = ReentrantLock()
+
+# ASSUMED, not measured: a pool up to this many times taller than the request is
+# reused. 2 matches the spacing of the width ladder (halving the width doubles
+# the slice), so neighboring rungs share a pool, while the 4x-16x oversize that
+# showed the slowdown is rebuilt. Not fitted to a benchmark.
+const HARMONICS_BATCH_POOL_MAX_ROW_RATIO = 2
+# ASSUMED, not measured: pools kept per model. Enough for a few distinct widths
+# of a width search; memory per pool is n_workers x rows x O(L) doubles.
+const HARMONICS_BATCH_POOL_MAX_SHAPES = 4
+
+@inline function _harmonics_pool_fits(pool::Vector{HarmonicsBatchWorkspace}, n_workers::Int, batch_size::Int)::Bool
+    isempty(pool) && return false
+    length(pool) >= n_workers || return false
+    rows = size(pool[1].A, 1)
+    return batch_size <= rows <= HARMONICS_BATCH_POOL_MAX_ROW_RATIO * batch_size
+end
+
+function _find_harmonics_pool(shapes, n_workers::Int, batch_size::Int)
+    shapes === nothing && return nothing
+    for i in length(shapes):-1:1
+        _harmonics_pool_fits(shapes[i], n_workers, batch_size) && return shapes[i]
+    end
+    return nothing
+end
 
 function _get_harmonics_batch_pool(
     model::GravitationalHarmonicsModel,
@@ -391,45 +436,36 @@ function _get_harmonics_batch_pool(
     batch_size::Int,
 )::Vector{HarmonicsBatchWorkspace}
     key = objectid(model)
-    pool = get(_HARMONICS_BATCH_POOL, key, nothing)
-    if pool !== nothing && length(pool) >= n_workers && size(pool[1].A, 1) >= batch_size
+    hit = _find_harmonics_pool(get(_HARMONICS_BATCH_POOL, key, nothing), n_workers, batch_size)
+    hit === nothing || return hit
+    return lock(_HARMONICS_BATCH_POOL_LOCK) do
+        shapes = get(_HARMONICS_BATCH_POOL, key, nothing)
+        again = _find_harmonics_pool(shapes, n_workers, batch_size)
+        again === nothing || return again
+        pool = [_make_harmonics_batch_workspace(model, batch_size) for _ in 1:n_workers]
+        updated = shapes === nothing ? [pool] : vcat(shapes, [pool])
+        length(updated) > HARMONICS_BATCH_POOL_MAX_SHAPES &&
+            (updated = updated[(end - HARMONICS_BATCH_POOL_MAX_SHAPES + 1):end])
+        _HARMONICS_BATCH_POOL[key] = updated
         return pool
     end
-    lock(_HARMONICS_BATCH_POOL_LOCK) do
-        pool = get(_HARMONICS_BATCH_POOL, key, nothing)
-        if pool === nothing || length(pool) < n_workers || size(pool[1].A, 1) < batch_size
-            # Grow, never shrink either dimension: the per-region width search
-            # alternates widths, and rebuilding on every switch would allocate
-            # the whole pool each time. ponytail: keeps the widest x tallest
-            # pool for the model's lifetime; a per-width cache if memory matters.
-            if pool !== nothing
-                n_workers = max(n_workers, length(pool))
-                batch_size = max(batch_size, size(pool[1].A, 1))
-            end
-            _HARMONICS_BATCH_POOL[key] = [_make_harmonics_batch_workspace(model, batch_size) for _ in 1:n_workers]
-        end
-    end
-    return _HARMONICS_BATCH_POOL[key]
 end
 
-# Snapshot/restore of the pool for callers that grow it temporarily.
+# Snapshot/restore of the pool for callers that visit many shapes temporarily.
 #
-# The pool is grow-only (see _get_harmonics_batch_pool), so a caller that visits
-# many (workers, batch) shapes leaves it at the widest x tallest of all of them.
-# The RHS calibration sweep does exactly that: its allotment-1 and -2 flat
-# candidates ask for 2048-4096-row workspaces, and every later solve in the
-# process then took its 256-row slices out of 4096-row workspaces (+7% per RHS
-# call measured at 4096 satellites, 16 threads). The snapshot is a shallow copy
-# of the key -> pool map; the pool vectors themselves are never mutated in
-# place (growth replaces the entry), so restoring the entry object restores the
-# pre-snapshot state exactly. Entries created after the snapshot are removed;
-# entries that existed are put back. Results are unaffected: workspaces are
-# scratch, fully rewritten on every kernel call.
+# The pool getter now keeps each shape right-sized, so an oversized request no
+# longer degrades later solves; what the sweep still leaves behind is memory
+# (its allotment-1 and -2 candidates build 2048-4096-row pools, up to 260 MB at
+# 4096 satellites) and an eviction of the pools the solve had before it. The
+# snapshot is a shallow copy of the key -> list-of-pools map; lists are replaced,
+# never mutated, so restoring the entry object restores the pre-snapshot state
+# exactly. Entries created after the snapshot are removed; entries that existed
+# are put back. Results are unaffected: workspaces are scratch.
 harmonics_batch_pool_snapshot() = lock(_HARMONICS_BATCH_POOL_LOCK) do
     copy(_HARMONICS_BATCH_POOL)
 end
 
-function harmonics_batch_pool_restore!(snapshot::Dict{UInt, Vector{HarmonicsBatchWorkspace}})::Nothing
+function harmonics_batch_pool_restore!(snapshot::Dict{UInt, Vector{Vector{HarmonicsBatchWorkspace}}})::Nothing
     lock(_HARMONICS_BATCH_POOL_LOCK) do
         for key in collect(keys(_HARMONICS_BATCH_POOL))
             haskey(snapshot, key) || delete!(_HARMONICS_BATCH_POOL, key)
@@ -452,7 +488,7 @@ function _get_harmonics_batch_pool_cached!(
     cached = pool_ref[]
     if cached isa Vector{HarmonicsBatchWorkspace} &&
        length(cached) >= n_workers &&
-       !isempty(cached) && size(cached[1].A, 1) >= batch_size
+       _harmonics_pool_fits(cached, n_workers, batch_size)
         return cached
     end
     fresh = _get_harmonics_batch_pool(model, n_workers, batch_size)

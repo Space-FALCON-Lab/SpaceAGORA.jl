@@ -126,27 +126,77 @@ end
     model_b = SM_HBP.GravitationalHarmonicsModel(4, 4, HBP_GRAVITY_FILE, planet)
     snap0 = PERT_HBP.harmonics_batch_pool_snapshot()
     try
-        # model_a has a small pool before the snapshot; model_b has none.
         pool_a = PERT_HBP._get_harmonics_batch_pool(model_a, 2, 16)
         snap = PERT_HBP.harmonics_batch_pool_snapshot()
-        # Grow a (more workers, taller) and create b, as a sweep would.
-        grown_a = PERT_HBP._get_harmonics_batch_pool(model_a, 8, 512)
+        # Visit other shapes, as a sweep would.
+        PERT_HBP._get_harmonics_batch_pool(model_a, 8, 512)
         PERT_HBP._get_harmonics_batch_pool(model_b, 4, 64)
-        @test length(grown_a) == 8 && size(grown_a[1].A, 1) == 512
         PERT_HBP.harmonics_batch_pool_restore!(snap)
         now = PERT_HBP.harmonics_batch_pool_snapshot()
-        # a: the pre-snapshot entry object is back; b: its entry is gone.
-        @test now[objectid(model_a)] === pool_a
+        @test now[objectid(model_a)] == [pool_a]
         @test length(pool_a) == 2 && size(pool_a[1].A, 1) == 16
         # (Compared against the snapshot rather than for absence: objectid keys can
         # be reused by a later model after GC, so a stale entry from an earlier
         # test may legitimately share model_b's key.)
         @test get(now, objectid(model_b), nothing) === get(snap, objectid(model_b), nothing)
         @test keys(now) == keys(snap)
-        # Grow-only behavior is unchanged after a restore.
-        again = PERT_HBP._get_harmonics_batch_pool(model_a, 1, 4)
-        @test again === pool_a
     finally
         PERT_HBP.harmonics_batch_pool_restore!(snap0)
     end
+end
+
+@testset "Harmonics batch pool is right-sized per shape" begin
+    planet = SM_HBP.Earth()
+    model = SM_HBP.GravitationalHarmonicsModel(4, 4, HBP_GRAVITY_FILE, planet)
+    ratio = PERT_HBP.HARMONICS_BATCH_POOL_MAX_ROW_RATIO
+    maxshapes = PERT_HBP.HARMONICS_BATCH_POOL_MAX_SHAPES
+    snap0 = PERT_HBP.harmonics_batch_pool_snapshot()
+    try
+        big = PERT_HBP._get_harmonics_batch_pool(model, 4, 1024)
+        @test size(big[1].A, 1) == 1024
+        # A much smaller request is NOT served from the oversized pool...
+        small = PERT_HBP._get_harmonics_batch_pool(model, 16, 256)
+        @test small !== big
+        @test length(small) == 16 && size(small[1].A, 1) == 256
+        # ...and the earlier shape is still there: alternating does not rebuild.
+        @test PERT_HBP._get_harmonics_batch_pool(model, 4, 1024) === big
+        @test PERT_HBP._get_harmonics_batch_pool(model, 16, 256) === small
+        # A request within the ratio, with enough workers, reuses an existing pool.
+        @test PERT_HBP._get_harmonics_batch_pool(model, 8, 256) === small
+        @test PERT_HBP._get_harmonics_batch_pool(model, 4, 512) === big   # 1024 rows == ratio * 512
+        # Too few workers in a fitting pool: rebuilt with enough.
+        wider = PERT_HBP._get_harmonics_batch_pool(model, 32, 256)
+        @test length(wider) >= 32
+        # Bounded: never more than MAX_SHAPES pools per model.
+        for b in (10, 40, 160, 640, 2560, 10240)
+            PERT_HBP._get_harmonics_batch_pool(model, 2, b)
+        end
+        @test length(PERT_HBP.harmonics_batch_pool_snapshot()[objectid(model)]) <= maxshapes
+        # Per-solve cached reference honors the same fit rule.
+        ref = Ref{Any}(nothing)
+        p1 = PERT_HBP._get_harmonics_batch_pool_cached!(ref, model, 2, 100)
+        @test PERT_HBP._get_harmonics_batch_pool_cached!(ref, model, 2, 100) === p1
+        p2 = PERT_HBP._get_harmonics_batch_pool_cached!(ref, model, 2, 10)
+        @test size(p2[1].A, 1) <= ratio * 10
+    finally
+        PERT_HBP.harmonics_batch_pool_restore!(snap0)
+    end
+end
+
+@testset "Harmonics batch kernel result is independent of the pool's row count" begin
+    planet = SM_HBP.Earth()
+    model = SM_HBP.GravitationalHarmonicsModel(8, 8, HBP_GRAVITY_FILE, planet)
+    states = hbp_states(33, 77)
+    work_items = collect(1:33)
+    out = Dict{Int, Array{Float64, 3}}()
+    for rows in (33, 64, 4096)
+        ws = PERT_HBP._make_harmonics_batch_workspace(model, rows)
+        slots = zeros(Float64, 6, 1, 33)
+        for _ in 1:2
+            PERT_HBP._harmonics_flat_batch_kernel!(slots, 1, model, states, work_items, 1, 33, HBP_LPI, ws)
+        end
+        out[rows] = slots
+    end
+    @test out[33] == out[64]
+    @test out[33] == out[4096]
 end

@@ -190,6 +190,7 @@ end
         @test nrow(summarize(mixed)) == 6
         @test Set(summarize(mixed).budget_condition) == Set(["legacy_unrecorded", "equal_core"])
     end
+end
 
 @testset "warm-up columns" begin
     c = ppc_warmup_columns(2.5, [(rhs_plan_source=:sweep, rhs_plan_sweeps_total=1, rhs_plan_sweep_ns=3.0e9), nothing])
@@ -198,25 +199,31 @@ end
     @test ppc_warmup_columns(0.0, ()).warmup_rhs_plan_source == "none"
 end
 
-@testset "predictive_nocalib differs from predictive only in RHS calibration" begin
+@testset "predictive_nocalib differs from predictive in RHS calibration and the pinned former defaults" begin
     specs = ppc_mode_specs()
     cfg = PPCConfig(process_workers=4)
     env(m) = Dict(ppc_mode_env_pairs(specs[m], cfg))
     a, b = env("predictive"), env("predictive_nocalib")
     @test b["SPACEAGORA_RHS_CALIBRATE"] == "off"
     @test a["SPACEAGORA_RHS_CALIBRATE"] == "auto"
-    @test delete!(copy(a), "SPACEAGORA_RHS_CALIBRATE") == delete!(copy(b), "SPACEAGORA_RHS_CALIBRATE")
+    legacy = ("SPACEAGORA_RHS_REGION_WIDTH", "SPACEAGORA_RHS_CALIBRATE_CONFIRM", "SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR")
+    @test !any(haskey(a, k) for k in legacy)   # `predictive` runs on the library defaults
+    @test b["SPACEAGORA_RHS_REGION_WIDTH"] == "auto"   # nocalib keeps its earlier meaning
+    @test foldl(delete!, ("SPACEAGORA_RHS_CALIBRATE", legacy...); init=copy(b)) ==
+          delete!(copy(a), "SPACEAGORA_RHS_CALIBRATE")
 end
 
-@testset "predictive_notuner differs from predictive only in the region width tuner" begin
+@testset "predictive_notuner pins the former confirm/floor defaults and turns the tuner off" begin
     specs = ppc_mode_specs()
     cfg = PPCConfig(process_workers=4)
     env(m) = Dict(ppc_mode_env_pairs(specs[m], cfg))
     a, b = env("predictive"), env("predictive_notuner")
     @test b["SPACEAGORA_RHS_REGION_WIDTH"] == "off"
-    @test !haskey(a, "SPACEAGORA_RHS_REGION_WIDTH")
+    @test b["SPACEAGORA_RHS_CALIBRATE_CONFIRM"] == "0"
+    @test b["SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR"] == "0"
     @test b["SPACEAGORA_RHS_CALIBRATE"] == "auto"
-    @test delete!(copy(b), "SPACEAGORA_RHS_REGION_WIDTH") == a
+    @test foldl(delete!, ("SPACEAGORA_RHS_REGION_WIDTH", "SPACEAGORA_RHS_CALIBRATE_CONFIRM",
+                          "SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR"); init=copy(b)) == a
 end
 
 @testset "predictive_nocalib_notuner differs from predictive_nocalib only in the region width tuner" begin
@@ -225,21 +232,39 @@ end
     env(m) = Dict(ppc_mode_env_pairs(specs[m], cfg))
     a, b = env("predictive_nocalib"), env("predictive_nocalib_notuner")
     @test b["SPACEAGORA_RHS_REGION_WIDTH"] == "off"
+    @test a["SPACEAGORA_RHS_REGION_WIDTH"] == "auto"
     @test b["SPACEAGORA_RHS_CALIBRATE"] == "off"
-    @test delete!(copy(b), "SPACEAGORA_RHS_REGION_WIDTH") == a
+    @test merge(b, Dict("SPACEAGORA_RHS_REGION_WIDTH" => "auto")) == a
 end
 
-@testset "predictive_notuner_confirm differs from predictive_notuner only in confirm and sweep_ns floor" begin
+@testset "predictive_notuner_confirm and predictive_legacy are explicit and bracket predictive" begin
     specs = ppc_mode_specs()
     cfg = PPCConfig(process_workers=4)
     env(m) = Dict(ppc_mode_env_pairs(specs[m], cfg))
-    a, b = env("predictive_notuner"), env("predictive_notuner_confirm")
-    @test b["SPACEAGORA_RHS_CALIBRATE_CONFIRM"] == "1"
-    @test b["SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR"] == "1"
-    @test b["SPACEAGORA_RHS_REGION_WIDTH"] == "off"
-    @test !haskey(a, "SPACEAGORA_RHS_CALIBRATE_CONFIRM")
-    @test delete!(delete!(copy(b), "SPACEAGORA_RHS_CALIBRATE_CONFIRM"), "SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR") == a
+    a, c, l = env("predictive_notuner"), env("predictive_notuner_confirm"), env("predictive_legacy")
+    @test c["SPACEAGORA_RHS_CALIBRATE_CONFIRM"] == "1"
+    @test c["SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR"] == "1"
+    @test c["SPACEAGORA_RHS_REGION_WIDTH"] == "off"
+    @test l["SPACEAGORA_RHS_REGION_WIDTH"] == "auto"
+    @test l["SPACEAGORA_RHS_CALIBRATE_CONFIRM"] == "0"
+    @test l["SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR"] == "0"
+    # legacy is the former notuner-less, confirm-less arm: same env as predictive_notuner but for the tuner
+    @test merge(l, Dict("SPACEAGORA_RHS_REGION_WIDTH" => "off")) == a
+    # `predictive` (library defaults) equals notuner_confirm once those values are made explicit
+    p = env("predictive")
+    @test merge(p, Dict("SPACEAGORA_RHS_REGION_WIDTH" => "off", "SPACEAGORA_RHS_CALIBRATE_CONFIRM" => "1",
+                        "SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR" => "1")) == c
 end
 
+@testset "other adaptive profiles keep the former defaults" begin
+    specs = ppc_mode_specs()
+    cfg = PPCConfig(process_workers=4)
+    for m in ("outer_inner_adaptive", "full_smart", "policy_v2")
+        e = Dict(ppc_mode_env_pairs(specs[m], cfg))
+        @test e["SPACEAGORA_RHS_REGION_WIDTH"] == "auto"
+        @test e["SPACEAGORA_RHS_CALIBRATE_CONFIRM"] == "0"
+        @test e["SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR"] == "0"
+    end
 end
+
 end # module

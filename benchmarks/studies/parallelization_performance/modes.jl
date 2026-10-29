@@ -302,6 +302,28 @@ function ppc_mode_specs()::Dict{String, PPCModeSpec}
                        "SPACEAGORA_RHS_CALIBRATE_CONFIRM" => "1",
                        "SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR" => "1"]
         ),
+        # The former `predictive` default: region width tuner auto, no sweep_ns
+        # floor, no plan confirmation. Identical to `predictive` under the
+        # earlier library defaults, kept so that default can still be measured.
+        "predictive_legacy" => PPCModeSpec(
+            name="predictive_legacy",
+            profile="R7",
+            backend="auto",
+            outer_active=true,
+            policy_adaptive=true,
+            rhs_batch="auto",
+            density="auto",
+            control="auto",
+            thermal="auto",
+            multibody="auto",
+            effector="auto",
+            scheduler="static",
+            persistent=true,
+            allow_inner_with_outer=true,
+            extra_env=["SPACEAGORA_RHS_REGION_WIDTH" => "auto",
+                       "SPACEAGORA_RHS_CALIBRATE_CONFIRM" => "0",
+                       "SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR" => "0"]
+        ),
         (("force_" * key) => PPCModeSpec(
             name="force_" * key, profile="R7", backend="auto", outer_active=true,
             policy_adaptive=true, rhs_batch="auto", density="auto", control="auto",
@@ -598,6 +620,15 @@ function ppc_mode_env_pairs(
     if outer_active && mode.backend == "threads" && outer_tasks > 1 &&
        !haskey(merged, "SPACEAGORA_INNER_THREAD_BUDGET")
         put!("SPACEAGORA_INNER_THREAD_BUDGET", string(max(1, fld(Threads.nthreads(), outer_tasks))))
+    end
+    # The library defaults under the adaptive policy are now region-width tuner
+    # off, sweep_ns floor on, plan confirmation on (what `predictive` measures).
+    # Every other adaptive mode keeps its earlier meaning by pinning the former
+    # defaults here; its own extra_env below still wins.
+    if mode.policy_adaptive && mode.name != "predictive"
+        put!("SPACEAGORA_RHS_REGION_WIDTH", "auto")
+        put!("SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR", "0")
+        put!("SPACEAGORA_RHS_CALIBRATE_CONFIRM", "0")
     end
     for (k, v) in mode.extra_env
         put!(k, v)

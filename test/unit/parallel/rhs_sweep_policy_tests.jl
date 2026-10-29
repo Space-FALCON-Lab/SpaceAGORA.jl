@@ -142,10 +142,17 @@ end
     @test f(prev, 3.0e9, true) == 3.0e9
     @test f(nothing, 3.0e8, true) == 3.0e8
     @test f(Dict{String, Any}(), 3.0e8, true) == 3.0e8
-    withenv("SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR" => nothing) do
+    # unset: on under the adaptive policy, off otherwise; explicit values win both ways
+    withenv("SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR" => nothing, "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1") do
+        @test SEng._rhs_calibrate_sweep_ns_floor()
+    end
+    withenv("SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR" => nothing, "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => nothing) do
         @test !SEng._rhs_calibrate_sweep_ns_floor()
     end
-    withenv("SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR" => "1") do
+    withenv("SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR" => "0", "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1") do
+        @test !SEng._rhs_calibrate_sweep_ns_floor()
+    end
+    withenv("SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR" => "1", "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => nothing) do
         @test SEng._rhs_calibrate_sweep_ns_floor()
     end
     # store path: second (cheap) sweep keeps the first sweep's sweep_ns when on
@@ -188,8 +195,14 @@ end
 
 @testset "A/B confirmation: env parsing, off unchanged, kept, demoted, heuristic skip, restart" begin
     withenv("SPACEAGORA_RHS_CALIBRATE_CONFIRM" => nothing, "SPACEAGORA_RHS_CALIBRATE_CONFIRM_SOLVES" => nothing,
-            "SPACEAGORA_RHS_CALIBRATE_CONFIRM_MARGIN" => nothing) do
-        @test !SEng._rhs_calibrate_confirm()
+            "SPACEAGORA_RHS_CALIBRATE_CONFIRM_MARGIN" => nothing, "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1") do
+        @test SEng._rhs_calibrate_confirm()   # unset + adaptive policy: on
+        withenv("SPACEAGORA_RHS_CALIBRATE_CONFIRM" => "0") do
+            @test !SEng._rhs_calibrate_confirm()
+        end
+        withenv("SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => nothing) do
+            @test !SEng._rhs_calibrate_confirm()   # unset, not adaptive: off
+        end
         @test SEng._rhs_calibrate_confirm_solves() == 2
         @test SEng._rhs_calibrate_confirm_margin() == 0.0
     end

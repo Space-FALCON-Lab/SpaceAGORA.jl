@@ -33,7 +33,9 @@
 #                                     more than the disagree margin is accepted
 #                                     instead of rerun as the full sweep (the
 #                                     no-gain-over-reference guard still falls back)
-#   SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR  0 (default, off) -- when 1, a newly
+#   SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR  unset = on under the adaptive policy
+#                                     (SPACEAGORA_PARALLEL_POLICY_ADAPTIVE=1), off
+#                                     otherwise; 1/0 overrides either way -- when on, a newly
 #                                     stored sweep_ns is max(new, the previous
 #                                     stored sweep_ns for the same key), so the
 #                                     5% re-verification window is not shrunk by
@@ -44,7 +46,9 @@
 #                                     paired re-measurement by to be pinned; the
 #                                     effective margin is max(this, OVERRIDE_MARGIN),
 #                                     so it can only make pinning stricter
-#   SPACEAGORA_RHS_CALIBRATE_CONFIRM  0 (default, off) -- when 1, a pinned
+#   SPACEAGORA_RHS_CALIBRATE_CONFIRM  unset = on under the adaptive policy
+#                                     (SPACEAGORA_PARALLEL_POLICY_ADAPTIVE=1), off
+#                                     otherwise; 1/0 overrides either way -- when on, a pinned
 #                                     non-heuristic plan is A/B confirmed on real
 #                                     solves before it is kept: the next K solves
 #                                     of the signature run the pin, the following K
@@ -58,9 +62,10 @@
 #                                     re-sweeps are suppressed while confirming.
 #                                     State is in memory only, so a new process
 #                                     re-confirms a loaded pin (the safe default).
-#   SPACEAGORA_RHS_CALIBRATE_CONFIRM_SOLVES  K per arm, integer >= 1 (default 2)
+#   SPACEAGORA_RHS_CALIBRATE_CONFIRM_SOLVES  K per arm, integer >= 1 (default 2, an
+#                                     assumed value, not tuned)
 #   SPACEAGORA_RHS_CALIBRATE_CONFIRM_MARGIN  fraction in [0, 1) (default 0 =
-#                                     strictly faster)
+#                                     strictly faster; assumed, not tuned)
 #   SPACEAGORA_RHS_CALIBRATE_SKIP_RATIO  0 (default, off) -- when > 0, replaces the
 #                                     fixed MIN_SOLVE_S rule with: honour a cached
 #                                     verdict (skip the sweep) when the predicted
@@ -639,8 +644,10 @@ end
     return nothing
 end
 
+# Unset = on under the adaptive policy, off elsewhere; an explicit value wins.
 @inline _rhs_calibrate_sweep_ns_floor()::Bool =
-    SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR", false)
+    SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR",
+        SimulationModel.ParallelPolicy.adaptive_policy_enabled())
 
 # The sweep_ns to store: `new` unchanged when `floor` is off or there is no
 # previous row, else max(new, previous row's sweep_ns).
@@ -662,8 +669,10 @@ end
 # confirmation, and persisting a half-finished verdict would replay samples
 # taken under another process's conditions.
 
+# Unset = on under the adaptive policy, off elsewhere; an explicit value wins.
 @inline _rhs_calibrate_confirm()::Bool =
-    SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_RHS_CALIBRATE_CONFIRM", false)
+    SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_RHS_CALIBRATE_CONFIRM",
+        SimulationModel.ParallelPolicy.adaptive_policy_enabled())
 
 @inline function _rhs_calibrate_confirm_solves()::Int
     raw = strip(_engine_env_get("SPACEAGORA_RHS_CALIBRATE_CONFIRM_SOLVES", ""))

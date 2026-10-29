@@ -1198,6 +1198,7 @@ function _snapshot_rhs_plan_env_config()::SimulationModel.RhsPlanEnvConfig
         _rhs_flat_packet_heterogeneity_threshold(),
         _rhs_flat_packet_overhead_disable_ratio(),
         _rhs_flat_packet_overhead_min_samples(),
+        _rhs_plan_step_cache_enabled(),
     )
 end
 
@@ -1435,7 +1436,7 @@ end
     dynamic_effectors::Tuple,
     num_sats::Int
 )::SimulationModel.RhsExecutionPlan
-    if p !== nothing && hasproperty(p, :shared_buffers) && _rhs_plan_step_cache_enabled()
+    if p !== nothing && hasproperty(p, :shared_buffers) && _rhs_env_config(p).plan_step_cache
         cached = p.shared_buffers.rhs_plan_step_cache[]
         cached === nothing || return cached
         plan = _articulated_plan_guard(_clamp_plan_to_lock_ceiling(

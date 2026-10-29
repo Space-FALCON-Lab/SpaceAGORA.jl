@@ -420,7 +420,7 @@ end
                                                      planet.A_topo)
     end
     
-    return SVector{3, Float64}([alt, lat, lon])
+    return SVector{3, Float64}(alt, lat, lon)
 end
 
 function rtolatlong(r_p::SVector{3, Float64}, planet, ephemerides_model)

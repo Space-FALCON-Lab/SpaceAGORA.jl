@@ -403,7 +403,17 @@ end
 # The rebuild cost the old rule avoided stays bounded: at most
 # HARMONICS_BATCH_POOL_MAX_SHAPES pools per model are kept (oldest evicted), so a
 # search that alternates between a few widths builds each once and then reuses it.
-const _HARMONICS_BATCH_POOL = Dict{UInt, Vector{Vector{HarmonicsBatchWorkspace}}}()
+#
+# The key -> pools map is itself copy-on-write: a published Dict is never
+# mutated. Writers (under the lock) build an updated copy and publish it with an
+# atomic store; the lock-free fast path does one atomic load and reads that
+# immutable Dict, so it can never observe an insert or rehash in progress.
+# Dead models' keys stay until the next snapshot/restore, so each miss copies the
+# map (O(models alive over the process), misses only; hits are untouched).
+mutable struct _HarmonicsPoolMap
+    @atomic d::Dict{UInt, Vector{Vector{HarmonicsBatchWorkspace}}}
+end
+const _HARMONICS_BATCH_POOL = _HarmonicsPoolMap(Dict{UInt, Vector{Vector{HarmonicsBatchWorkspace}}}())
 const _HARMONICS_BATCH_POOL_LOCK = ReentrantLock()
 
 # ASSUMED, not measured: a pool up to this many times taller than the request is
@@ -436,17 +446,20 @@ function _get_harmonics_batch_pool(
     batch_size::Int,
 )::Vector{HarmonicsBatchWorkspace}
     key = objectid(model)
-    hit = _find_harmonics_pool(get(_HARMONICS_BATCH_POOL, key, nothing), n_workers, batch_size)
+    hit = _find_harmonics_pool(get(@atomic(_HARMONICS_BATCH_POOL.d), key, nothing), n_workers, batch_size)
     hit === nothing || return hit
     return lock(_HARMONICS_BATCH_POOL_LOCK) do
-        shapes = get(_HARMONICS_BATCH_POOL, key, nothing)
+        cur = @atomic _HARMONICS_BATCH_POOL.d
+        shapes = get(cur, key, nothing)
         again = _find_harmonics_pool(shapes, n_workers, batch_size)
         again === nothing || return again
         pool = [_make_harmonics_batch_workspace(model, batch_size) for _ in 1:n_workers]
         updated = shapes === nothing ? [pool] : vcat(shapes, [pool])
         length(updated) > HARMONICS_BATCH_POOL_MAX_SHAPES &&
             (updated = updated[(end - HARMONICS_BATCH_POOL_MAX_SHAPES + 1):end])
-        _HARMONICS_BATCH_POOL[key] = updated
+        next = copy(cur)
+        next[key] = updated
+        @atomic _HARMONICS_BATCH_POOL.d = next
         return pool
     end
 end
@@ -462,17 +475,15 @@ end
 # exactly. Entries created after the snapshot are removed; entries that existed
 # are put back. Results are unaffected: workspaces are scratch.
 harmonics_batch_pool_snapshot() = lock(_HARMONICS_BATCH_POOL_LOCK) do
-    copy(_HARMONICS_BATCH_POOL)
+    # Published Dicts are immutable, so the snapshot is the Dict itself.
+    @atomic _HARMONICS_BATCH_POOL.d
 end
 
 function harmonics_batch_pool_restore!(snapshot::Dict{UInt, Vector{Vector{HarmonicsBatchWorkspace}}})::Nothing
     lock(_HARMONICS_BATCH_POOL_LOCK) do
-        for key in collect(keys(_HARMONICS_BATCH_POOL))
-            haskey(snapshot, key) || delete!(_HARMONICS_BATCH_POOL, key)
-        end
-        for (key, pool) in snapshot
-            get(_HARMONICS_BATCH_POOL, key, nothing) === pool || (_HARMONICS_BATCH_POOL[key] = pool)
-        end
+        # Publishing the snapshot itself drops entries created since and puts
+        # back those that existed; it is never mutated afterwards.
+        @atomic _HARMONICS_BATCH_POOL.d = snapshot
     end
     return nothing
 end

@@ -200,3 +200,58 @@ end
     @test out[33] == out[64]
     @test out[33] == out[4096]
 end
+
+@testset "Harmonics batch pool map is safe under concurrent growth and restore" begin
+    if Threads.nthreads() < 4
+        @info "Skipping concurrent pool-map stress test: needs >= 4 threads" nthreads = Threads.nthreads()
+    else
+        planet = SM_HBP.Earth()
+        snap0 = PERT_HBP.harmonics_batch_pool_snapshot()
+        stop = Ref(false)
+        errors = Channel{Any}(Inf)
+        try
+            nworkers_t = max(3, Threads.nthreads() - 1)
+            tasks = [Threads.@spawn begin
+                n = 0
+                try
+                    while !stop[]
+                        # Fresh model => fresh key => map grows and rehashes.
+                        m = SM_HBP.GravitationalHarmonicsModel(2, 2, HBP_GRAVITY_FILE, planet)
+                        nw = 1 + (n % 3)
+                        rows = 4 + (n % 5)
+                        for _ in 1:20  # hit path against a map others are replacing
+                            pool = PERT_HBP._get_harmonics_batch_pool(m, nw, rows)
+                            (length(pool) >= nw && size(pool[1].A, 1) >= rows) ||
+                                error("bad pool: $(length(pool)) workers, $(size(pool[1].A, 1)) rows")
+                        end
+                        n += 1
+                    end
+                catch e
+                    put!(errors, e)
+                end
+                n
+            end for _ in 1:nworkers_t]
+            snapper = Threads.@spawn begin
+                try
+                    while !stop[]
+                        s = PERT_HBP.harmonics_batch_pool_snapshot()
+                        PERT_HBP.harmonics_batch_pool_restore!(s)
+                        yield()
+                    end
+                catch e
+                    put!(errors, e)
+                end
+            end
+            sleep(2.0)
+            stop[] = true
+            counts = fetch.(tasks)
+            wait(snapper)
+            close(errors)
+            @test isempty(collect(errors))
+            @test sum(counts) > 0
+        finally
+            stop[] = true
+            PERT_HBP.harmonics_batch_pool_restore!(snap0)
+        end
+    end
+end

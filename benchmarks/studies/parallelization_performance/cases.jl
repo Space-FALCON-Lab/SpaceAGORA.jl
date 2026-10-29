@@ -1174,7 +1174,7 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
             density_model=ExponentialAtmosphereModel(planet),
             dt_max_orbit=20.0
         )
-    elseif occursin(r"^mcgrid_[0-9]+sat_[0-9]+mc$", case_name)
+    elseif occursin(r"^mcgrid_[0-9]+sat_[0-9]+mc(_long)?$", case_name)
         # Joint inner/outer routing. Every other Monte Carlo case in the catalog
         # carries exactly one spacecraft per sample, and every constellation case
         # carries exactly one sample, so in all of them one of the two axes is
@@ -1198,11 +1198,19 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
         # the already-measured 0.072 s/spacecraft-hour. The 1024 spacecraft-hour
         # rungs land near 74 s serial; the 128 spacecraft-hour rungs near 9 s,
         # which is still 3x PPB_NOISE_FLOOR_SERIAL_S.
+        #
+        # The _long suffix keeps the shape (N x S) and the orbit regime and runs
+        # each sample 10x longer (10 h in place of 1 h; smoke 3000 s), so a
+        # 128 spacecraft-hour campaign becomes 1280 and its dispatch/planning
+        # noise stops being a few percent of the wall time.
         mcgrid_n = parse(Int, match(r"^mcgrid_([0-9]+)sat", case_name).captures[1])
+        mcgrid_long = endswith(case_name, "_long")
         return ppc_build_config(
             planet=planet,
             spacecraft=ppc_constellation(planet, mcgrid_n),
-            mission_time_s=ppc_mission_time(cfg.profile; test=10.0, smoke=300.0, full=3600.0),
+            mission_time_s=mcgrid_long ?
+                ppc_mission_time(cfg.profile; test=10.0, smoke=3000.0, full=36000.0) :
+                ppc_mission_time(cfg.profile; test=10.0, smoke=300.0, full=3600.0),
             orientation_sim=false,
             dynamic_effectors=(ppc_harmonics_model(planet, 50), AerodynamicCoefficientfM()),
             density_model=ExponentialAtmosphereModel(planet),
@@ -1812,6 +1820,16 @@ function ppc_case_catalog()::Dict{String, PPCCaseSpec}
             "mcgrid_$(mcgrid_n)sat_$(mcgrid_s)mc", "joint_routing",
             "$(mcgrid_n) spacecraft x $(mcgrid_s) samples, " *
             "$(mcgrid_n * mcgrid_s) spacecraft-hours, both routing axes live",
+            montecarlo=true, default_samples=mcgrid_s
+        )
+    end
+    # 10x-longer variants of the two 128 spacecraft-hour rungs the paper's
+    # campaign-of-constellations phases (P5f, X5a, X5b) use; same shape.
+    for (mcgrid_n, mcgrid_s) in ((16, 8), (8, 16))
+        add!(
+            "mcgrid_$(mcgrid_n)sat_$(mcgrid_s)mc_long", "joint_routing",
+            "$(mcgrid_n) spacecraft x $(mcgrid_s) samples, 10 h each, " *
+            "$(mcgrid_n * mcgrid_s * 10) spacecraft-hours, both routing axes live",
             montecarlo=true, default_samples=mcgrid_s
         )
     end

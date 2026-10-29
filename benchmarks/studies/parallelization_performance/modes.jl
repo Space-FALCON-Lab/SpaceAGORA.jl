@@ -244,6 +244,25 @@ function ppc_mode_specs()::Dict{String, PPCModeSpec}
             allow_inner_with_outer=true,
             calibrate="off"
         ),
+        # `predictive_nocalib` (calibration off) with the per-region width tuner also off.
+        "predictive_nocalib_notuner" => PPCModeSpec(
+            name="predictive_nocalib_notuner",
+            profile="R7",
+            backend="auto",
+            outer_active=true,
+            policy_adaptive=true,
+            rhs_batch="auto",
+            density="auto",
+            control="auto",
+            thermal="auto",
+            multibody="auto",
+            effector="auto",
+            scheduler="static",
+            persistent=true,
+            allow_inner_with_outer=true,
+            calibrate="off",
+            extra_env=["SPACEAGORA_RHS_REGION_WIDTH" => "off"]
+        ),
         # Full `predictive` (calibration on) with only the per-region width tuner off.
         "predictive_notuner" => PPCModeSpec(
             name="predictive_notuner",

@@ -219,5 +219,15 @@ end
     @test delete!(copy(b), "SPACEAGORA_RHS_REGION_WIDTH") == a
 end
 
+@testset "predictive_nocalib_notuner differs from predictive_nocalib only in the region width tuner" begin
+    specs = ppc_mode_specs()
+    cfg = PPCConfig(process_workers=4)
+    env(m) = Dict(ppc_mode_env_pairs(specs[m], cfg))
+    a, b = env("predictive_nocalib"), env("predictive_nocalib_notuner")
+    @test b["SPACEAGORA_RHS_REGION_WIDTH"] == "off"
+    @test b["SPACEAGORA_RHS_CALIBRATE"] == "off"
+    @test delete!(copy(b), "SPACEAGORA_RHS_REGION_WIDTH") == a
+end
+
 end
 end # module

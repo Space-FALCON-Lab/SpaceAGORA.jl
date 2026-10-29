@@ -205,6 +205,12 @@ function policy_telemetry_snapshot()
             rhs_plan_scheduler=String(t.rhs_plan_scheduler),
             rhs_plan_sweep_ns=t.rhs_plan_sweep_ns,
             rhs_plan_sweeps_total=t.rhs_plan_sweeps_total,
+            rhs_confirm_state=String(t.rhs_confirm_state),
+            rhs_confirm_k=t.rhs_confirm_k,
+            rhs_confirm_n_pin=t.rhs_confirm_n_pin,
+            rhs_confirm_n_heur=t.rhs_confirm_n_heur,
+            rhs_confirm_pin_median_ns=t.rhs_confirm_pin_median_ns,
+            rhs_confirm_heur_median_ns=t.rhs_confirm_heur_median_ns,
             callback_width_density=t.callback_width_density,
             callback_width_density_static=t.callback_width_density_static,
             regret_guard_enabled=regret_guard_enabled(),
@@ -248,6 +254,27 @@ function record_rhs_plan_selection!(
             t.rhs_plan_sweep_ns = Float64(sweep_ns)
             t.rhs_plan_sweeps_total += 1
         end
+    end
+    return nothing
+end
+
+"""
+    record_rhs_confirm_state!(state::Symbol, k, n_pin, n_heur, pin_median_ns, heur_median_ns)
+
+Record the A/B confirmation state of a pinned RHS plan so it can be read back
+through [`policy_telemetry_snapshot`](@ref). Accounting only.
+"""
+function record_rhs_confirm_state!(state::Symbol, k::Integer, n_pin::Integer, n_heur::Integer,
+                                   pin_median_ns::Real, heur_median_ns::Real)
+    ctx = _active_policy_context()
+    lock(ctx.lock) do
+        t = ctx.telemetry
+        t.rhs_confirm_state = state
+        t.rhs_confirm_k = Int64(k)
+        t.rhs_confirm_n_pin = Int64(n_pin)
+        t.rhs_confirm_n_heur = Int64(n_heur)
+        t.rhs_confirm_pin_median_ns = Float64(pin_median_ns)
+        t.rhs_confirm_heur_median_ns = Float64(heur_median_ns)
     end
     return nothing
 end

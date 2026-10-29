@@ -44,6 +44,23 @@
 #                                     paired re-measurement by to be pinned; the
 #                                     effective margin is max(this, OVERRIDE_MARGIN),
 #                                     so it can only make pinning stricter
+#   SPACEAGORA_RHS_CALIBRATE_CONFIRM  0 (default, off) -- when 1, a pinned
+#                                     non-heuristic plan is A/B confirmed on real
+#                                     solves before it is kept: the next K solves
+#                                     of the signature run the pin, the following K
+#                                     the heuristic (K = CONFIRM_SOLVES, default 2),
+#                                     each timed as a whole solve. The pin is kept
+#                                     only if median(pin) < median(heuristic) *
+#                                     (1 - CONFIRM_MARGIN), else the row is demoted
+#                                     to the heuristic verdict. A re-sweep that
+#                                     pins a plan different from the kept one (or
+#                                     after a demotion) restarts confirmation;
+#                                     re-sweeps are suppressed while confirming.
+#                                     State is in memory only, so a new process
+#                                     re-confirms a loaded pin (the safe default).
+#   SPACEAGORA_RHS_CALIBRATE_CONFIRM_SOLVES  K per arm, integer >= 1 (default 2)
+#   SPACEAGORA_RHS_CALIBRATE_CONFIRM_MARGIN  fraction in [0, 1) (default 0 =
+#                                     strictly faster)
 #   SPACEAGORA_RHS_CALIBRATE_SKIP_RATIO  0 (default, off) -- when > 0, replaces the
 #                                     fixed MIN_SOLVE_S rule with: honour a cached
 #                                     verdict (skip the sweep) when the predicted
@@ -633,6 +650,127 @@ function _rhs_stored_sweep_ns(prev, new::Float64, floor::Bool)::Float64
     return isfinite(old) ? max(new, old) : new
 end
 
+
+# ── A/B confirmation of a freshly pinned plan (opt-in) ───────────────────────
+#
+# The sweep ranks arms from a handful of calls each and can pin a plan that is
+# slower than the heuristic over a whole solve (measured: +40% on 4096 sats at
+# 16 threads), and the regret guard compares against flat(1, static), not the
+# heuristic, so it never sees that. Confirmation measures the pin against the
+# heuristic on real solves. State lives in memory only: samples are per-process
+# whole-solve wall times, a loaded pin without state simply re-enters
+# confirmation, and persisting a half-finished verdict would replay samples
+# taken under another process's conditions.
+
+@inline _rhs_calibrate_confirm()::Bool =
+    SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_RHS_CALIBRATE_CONFIRM", false)
+
+@inline function _rhs_calibrate_confirm_solves()::Int
+    raw = strip(_engine_env_get("SPACEAGORA_RHS_CALIBRATE_CONFIRM_SOLVES", ""))
+    isempty(raw) && return 2
+    v = tryparse(Int, raw)
+    (v === nothing || v < 1) && throw(ArgumentError(
+        "SPACEAGORA_RHS_CALIBRATE_CONFIRM_SOLVES must be an integer >= 1, got '$raw'"))
+    return v
+end
+
+@inline function _rhs_calibrate_confirm_margin()::Float64
+    raw = strip(_engine_env_get("SPACEAGORA_RHS_CALIBRATE_CONFIRM_MARGIN", ""))
+    isempty(raw) && return 0.0
+    v = tryparse(Float64, raw)
+    (v === nothing || !isfinite(v) || v < 0.0 || v >= 1.0) && throw(ArgumentError(
+        "SPACEAGORA_RHS_CALIBRATE_CONFIRM_MARGIN must be a float in [0, 1), got '$raw'"))
+    return v
+end
+
+mutable struct _RhsConfirm
+    key::Tuple{String, Int, String}   # (mode, allotment, scheduler) of the pin under test
+    phase::Symbol                      # :confirming | :kept | :demoted
+    pin::Vector{Float64}
+    heur::Vector{Float64}
+    running::Symbol                    # arm of the solve in flight: :pin | :heur | :none
+    pin_median_ns::Float64
+    heur_median_ns::Float64
+end
+
+const _rhs_confirm_state = Dict{String, _RhsConfirm}()
+
+_rhs_confirm_key(e)::Tuple{String, Int, String} =
+    (String(get(e, "mode", "")), Int(get(e, "allotment", 1)), String(get(e, "scheduler", "auto")))
+
+function _rhs_median(v::Vector{Float64})::Float64
+    isempty(v) && return 0.0
+    s = sort(v); n = length(s)
+    return isodd(n) ? s[(n + 1) ÷ 2] : (s[n ÷ 2] + s[n ÷ 2 + 1]) / 2
+end
+
+function _rhs_confirm_publish!(st::_RhsConfirm)::Nothing
+    SimulationModel.ParallelPolicy.record_rhs_confirm_state!(
+        st.phase, _rhs_calibrate_confirm_solves(), length(st.pin), length(st.heur),
+        st.pin_median_ns, st.heur_median_ns)
+    return nothing
+end
+
+# Decide which arm this solve runs. Returns `:pin`, `:heuristic`, or `nothing`
+# (confirmation does not apply: heuristic row, no row, or the pin is kept).
+function _rhs_confirm_begin!(sig::String)::Union{Nothing, Symbol}
+    _rhs_calib_load!()
+    lock(_rhs_calib_lock) do
+        entry = get(_rhs_calib_cache, sig, nothing)
+        if entry === nothing || get(entry, "mode", "") == _CALIB_HEURISTIC_MODE
+            delete!(_rhs_confirm_state, sig)
+            return nothing
+        end
+        key = _rhs_confirm_key(entry)
+        st = get(_rhs_confirm_state, sig, nothing)
+        if st === nothing || st.key != key || st.phase == :demoted
+            st = _RhsConfirm(key, :confirming, Float64[], Float64[], :none, 0.0, 0.0)
+            _rhs_confirm_state[sig] = st
+        end
+        st.phase == :kept && (_rhs_confirm_publish!(st); return nothing)
+        arm = length(st.pin) < _rhs_calibrate_confirm_solves() ? :pin : :heur
+        st.running = arm
+        _rhs_confirm_publish!(st)
+        return arm === :pin ? :pin : :heuristic
+    end
+end
+
+# Record the finished solve's wall time on the arm that ran; after K + K
+# samples decide. Must run after the solve_ns update (it may replace the row).
+function _rhs_confirm_sample!(sig::String, sample::Float64)::Nothing
+    st = get(_rhs_confirm_state, sig, nothing)
+    (st === nothing || st.running === :none) && return nothing
+    push!(st.running === :pin ? st.pin : st.heur, sample)
+    st.running = :none
+    k = _rhs_calibrate_confirm_solves()
+    st.pin_median_ns = _rhs_median(st.pin)
+    st.heur_median_ns = _rhs_median(st.heur)
+    if length(st.heur) >= k
+        if st.pin_median_ns < st.heur_median_ns * (1.0 - _rhs_calibrate_confirm_margin())
+            st.phase = :kept
+        else
+            st.phase = :demoted
+            prev = _rhs_calib_cache[sig]
+            entry = Dict{String, Any}(
+                "mode"            => _CALIB_HEURISTIC_MODE,
+                "allotment"       => 1,
+                "scheduler"       => "auto",
+                "elapsed_mean_ns" => Float64(get(prev, "elapsed_mean_ns", 0.0)),
+                "heuristic_votes" => Int(get(prev, "heuristic_votes", 0)) + 1,
+                "sweep_ns"        => Float64(get(prev, "sweep_ns", 0.0)),
+                "honoured_ns"     => 0.0,
+                "plan_votes"      => 0,
+            )
+            haskey(prev, "solve_ns") && (entry["solve_ns"] = prev["solve_ns"])
+            get(prev, "sweep_seeded", false) === true && (entry["sweep_seeded"] = true)
+            haskey(prev, "candidates") && (entry["candidates"] = prev["candidates"])
+            _rhs_calib_cache[sig] = entry
+        end
+    end
+    _rhs_confirm_publish!(st)
+    return nothing
+end
+
 function _rhs_calib_store_heuristic!(sig::String, heuristic_ns::Float64 = 0.0; sweep_ns::Float64 = 0.0,
                                      timings = nothing, seeded::Bool = false)::Nothing
     _rhs_calib_load!()
@@ -645,6 +783,7 @@ function _rhs_calib_store_heuristic!(sig::String, heuristic_ns::Float64 = 0.0; s
         # forever. Measured on the TRX50's sats=257p bucket (L9 and L14 share
         # it): with the reset, four timed solves in a row re-swept.
         votes = prev === nothing ? 1 : Int(get(prev, "heuristic_votes", 0)) + 1
+        delete!(_rhs_confirm_state, sig)
         entry = Dict{String, Any}(
             "mode"            => _CALIB_HEURISTIC_MODE,
             "allotment"       => 1,
@@ -716,6 +855,7 @@ function _rhs_calib_store!(sig::String, plan, elapsed_mean_ns::Float64; sweep_ns
         # (1.28x the static route over the solve) and flat@4 (0.93x). Honouring
         # whichever landed first pinned a coin flip.
         if prev !== nothing && !same_plan && get(prev, "mode", "") != _CALIB_HEURISTIC_MODE
+            delete!(_rhs_confirm_state, sig)
             entry = Dict{String, Any}(
                 "mode"            => _CALIB_HEURISTIC_MODE,
                 "allotment"       => 1,
@@ -733,6 +873,11 @@ function _rhs_calib_store!(sig::String, plan, elapsed_mean_ns::Float64; sweep_ns
             _rhs_calib_carry_timings!(entry, prev, timings)
             _rhs_calib_cache[sig] = entry
             return nothing
+        end
+        # A new pin restarts confirmation; only a re-sweep that re-pins the plan
+        # already kept leaves its verdict standing.
+        let st = get(_rhs_confirm_state, sig, nothing)
+            (st !== nothing && !(same_plan && st.phase == :kept)) && delete!(_rhs_confirm_state, sig)
         end
         entry = Dict{String, Any}(
             "mode"            => String(plan.mode),
@@ -1794,12 +1939,14 @@ function _rhs_calib_record_solve_time!()::Nothing
             # answer for it: it spent tens of seconds compiling, so the sweep's
             # ~0.1 s is a rounding error there anyway.
             prev = Float64(get(entry, "solve_ns", 0.0))
-            if SimulationModel.ParallelPolicy.regret_guard_enabled() && !_rhs_calib_is_baseline_row(entry)
+            arm_running = (st = get(_rhs_confirm_state, sig, nothing)) === nothing ? :none : st.running
+            if arm_running !== :heur && SimulationModel.ParallelPolicy.regret_guard_enabled() && !_rhs_calib_is_baseline_row(entry)
                 base = _rhs_calib_regret_baseline_ns(
                     prev, _rhs_calib_regret_ref_ns(entry), Float64(get(entry, "elapsed_mean_ns", 0.0)))
                 base > 0.0 && SimulationModel.ParallelPolicy.regret_guard_observe!(sig, sample, base)
             end
             entry["solve_ns"] = (isfinite(prev) && prev > 0.0) ? min(prev, sample) : sample
+            _rhs_confirm_sample!(sig, sample)
         end
         return nothing
     end
@@ -1909,6 +2056,28 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
     # follows is the sample that decides the regime next time.
     lock(_rhs_calib_lock) do
         _rhs_calib_solve_start[sig] = time_ns()
+    end
+
+    # Opt-in A/B confirmation of a pinned plan: while it runs, no sweep and no
+    # cached-verdict logic; the solve runs the pin or the heuristic (see above).
+    if _rhs_calibration_mode() != :force && _rhs_calibrate_confirm()
+        arm = _rhs_confirm_begin!(sig)
+        if arm === :pin
+            plan = _rhs_calib_lookup(sig)
+            if plan isa NamedTuple
+                p.shared_buffers.rhs_plan_override[] = plan
+                SimulationModel.ParallelPolicy.record_rhs_plan_selection!(
+                    :confirm, plan.mode, plan.allotment, plan.scheduler)
+                return
+            end
+            lock(_rhs_calib_lock) do   # unusable row: abandon this arm's sample
+                st = get(_rhs_confirm_state, sig, nothing)
+                st === nothing || (st.running = :none)
+            end
+        elseif arm === :heuristic
+            SimulationModel.ParallelPolicy.record_rhs_plan_selection!(:confirm, :heuristic, 0, :none)
+            return
+        end
     end
 
     penv = p.shared_buffers.policy_env_config[]

@@ -77,6 +77,16 @@ Base.@kwdef mutable struct PolicyTelemetry
     #                       the cache), and how many sweeps ran. Accounting only.
     rhs_plan_sweep_ns::Float64 = 0.0
     rhs_plan_sweeps_total::Int64 = 0
+    # A/B confirmation of a freshly pinned plan (SPACEAGORA_RHS_CALIBRATE_CONFIRM,
+    # rhs_calibration.jl): :none (off / not applicable) | :confirming | :kept |
+    # :demoted, the per-arm sample target K, samples taken so far and the arms'
+    # median whole-solve wall times (0 until the arm has samples). Accounting only.
+    rhs_confirm_state::Symbol = :none
+    rhs_confirm_k::Int64 = 0
+    rhs_confirm_n_pin::Int64 = 0
+    rhs_confirm_n_heur::Int64 = 0
+    rhs_confirm_pin_median_ns::Float64 = 0.0
+    rhs_confirm_heur_median_ns::Float64 = 0.0
     # Pre-solve density-callback width calibration (V2): the pinned width (0 =
     # static per-call decision retained) and the static width it was measured
     # against. Accounting only.

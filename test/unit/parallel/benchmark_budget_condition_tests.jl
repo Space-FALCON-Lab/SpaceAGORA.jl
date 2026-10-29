@@ -229,5 +229,17 @@ end
     @test delete!(copy(b), "SPACEAGORA_RHS_REGION_WIDTH") == a
 end
 
+@testset "predictive_notuner_confirm differs from predictive_notuner only in confirm and sweep_ns floor" begin
+    specs = ppc_mode_specs()
+    cfg = PPCConfig(process_workers=4)
+    env(m) = Dict(ppc_mode_env_pairs(specs[m], cfg))
+    a, b = env("predictive_notuner"), env("predictive_notuner_confirm")
+    @test b["SPACEAGORA_RHS_CALIBRATE_CONFIRM"] == "1"
+    @test b["SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR"] == "1"
+    @test b["SPACEAGORA_RHS_REGION_WIDTH"] == "off"
+    @test !haskey(a, "SPACEAGORA_RHS_CALIBRATE_CONFIRM")
+    @test delete!(delete!(copy(b), "SPACEAGORA_RHS_CALIBRATE_CONFIRM"), "SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR") == a
+end
+
 end
 end # module

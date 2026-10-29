@@ -281,6 +281,27 @@ function ppc_mode_specs()::Dict{String, PPCModeSpec}
             allow_inner_with_outer=true,
             extra_env=["SPACEAGORA_RHS_REGION_WIDTH" => "off"]
         ),
+        # `predictive_notuner` plus the A/B confirmation of freshly pinned plans and the
+        # sweep_ns floor (the control arm is predictive_notuner + SWEEP_NS_FLOOR=1).
+        "predictive_notuner_confirm" => PPCModeSpec(
+            name="predictive_notuner_confirm",
+            profile="R7",
+            backend="auto",
+            outer_active=true,
+            policy_adaptive=true,
+            rhs_batch="auto",
+            density="auto",
+            control="auto",
+            thermal="auto",
+            multibody="auto",
+            effector="auto",
+            scheduler="static",
+            persistent=true,
+            allow_inner_with_outer=true,
+            extra_env=["SPACEAGORA_RHS_REGION_WIDTH" => "off",
+                       "SPACEAGORA_RHS_CALIBRATE_CONFIRM" => "1",
+                       "SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR" => "1"]
+        ),
         (("force_" * key) => PPCModeSpec(
             name="force_" * key, profile="R7", backend="auto", outer_active=true,
             policy_adaptive=true, rhs_batch="auto", density="auto", control="auto",

@@ -185,3 +185,89 @@ end
         end
     end
 end
+
+@testset "A/B confirmation: env parsing, off unchanged, kept, demoted, heuristic skip, restart" begin
+    withenv("SPACEAGORA_RHS_CALIBRATE_CONFIRM" => nothing, "SPACEAGORA_RHS_CALIBRATE_CONFIRM_SOLVES" => nothing,
+            "SPACEAGORA_RHS_CALIBRATE_CONFIRM_MARGIN" => nothing) do
+        @test !SEng._rhs_calibrate_confirm()
+        @test SEng._rhs_calibrate_confirm_solves() == 2
+        @test SEng._rhs_calibrate_confirm_margin() == 0.0
+    end
+    withenv("SPACEAGORA_RHS_CALIBRATE_CONFIRM" => "1", "SPACEAGORA_RHS_CALIBRATE_CONFIRM_SOLVES" => "3",
+            "SPACEAGORA_RHS_CALIBRATE_CONFIRM_MARGIN" => "0.1") do
+        @test SEng._rhs_calibrate_confirm()
+        @test SEng._rhs_calibrate_confirm_solves() == 3
+        @test SEng._rhs_calibrate_confirm_margin() == 0.1
+    end
+    for bad in ("0", "x"); withenv("SPACEAGORA_RHS_CALIBRATE_CONFIRM_SOLVES" => bad) do
+        @test_throws ArgumentError SEng._rhs_calibrate_confirm_solves()
+    end; end
+    @test_throws ArgumentError withenv(() -> SEng._rhs_calibrate_confirm_margin(), "SPACEAGORA_RHS_CALIBRATE_CONFIRM_MARGIN" => "1")
+
+    sig = "confirm_test"
+    plan = (mode = :flat_constellation_effector_queue, allotment = 4, scheduler = :static)
+    other = (mode = :flat_constellation_effector_queue, allotment = 8, scheduler = :static)
+    mktempdir() do dir
+      withenv("SPACEAGORA_RHS_CALIBRATION_PATH" => joinpath(dir, "s.toml"),
+              "SPACEAGORA_RHS_CALIBRATE_CONFIRM_SOLVES" => "2", "SPACEAGORA_RHS_CALIBRATE_CONFIRM_MARGIN" => nothing) do
+        SEng._rhs_calib_load!()
+        # drive the verdict directly with chosen walls instead of real timing
+        function run_arms!(pin_ns, heur_ns)
+            arms = Symbol[]
+            for w in (pin_ns..., heur_ns...)
+                arm = SEng._rhs_confirm_begin!(sig)
+                push!(arms, arm)
+                lock(SEng._rhs_calib_lock) do
+                    SEng._rhs_confirm_sample!(sig, Float64(w))
+                end
+            end
+            return arms
+        end
+        function fresh!(p)
+            lock(SEng._rhs_calib_lock) do
+                delete!(SEng._rhs_calib_cache, sig); delete!(SEng._rhs_confirm_state, sig)
+            end
+            SEng._rhs_calib_store!(sig, p, 1.0; sweep_ns = 1.0e9)
+        end
+        # pin faster -> kept; arms run pin, pin, heuristic, heuristic
+        fresh!(plan)
+        @test run_arms!((5.0, 6.0), (9.0, 10.0)) == [:pin, :pin, :heuristic, :heuristic]
+        @test SEng._rhs_confirm_state[sig].phase == :kept
+        @test SEng._rhs_calib_cache[sig]["mode"] == "flat_constellation_effector_queue"
+        @test SEng._rhs_confirm_begin!(sig) === nothing          # kept: normal path
+        # a re-sweep re-pinning the kept plan leaves the verdict; a different pin flips to heuristic
+        SEng._rhs_calib_store!(sig, plan, 1.0)
+        @test SEng._rhs_confirm_state[sig].phase == :kept
+        # pin slower (and a tie) -> demoted to heuristic
+        for (pin, heur) in (((9.0, 10.0), (5.0, 6.0)), ((5.0, 5.0), (5.0, 5.0)))
+            fresh!(plan)
+            run_arms!(pin, heur)
+            @test SEng._rhs_confirm_state[sig].phase == :demoted
+            @test SEng._rhs_calib_cache[sig]["mode"] == SEng._CALIB_HEURISTIC_MODE
+            @test SEng._rhs_calib_cache[sig]["sweep_ns"] == 1.0e9
+            @test SEng._rhs_confirm_begin!(sig) === nothing      # heuristic row skips the mechanism
+            # a later re-sweep that pins again restarts confirmation from scratch
+            SEng._rhs_calib_store!(sig, other, 1.0)
+            @test !haskey(SEng._rhs_confirm_state, sig)
+            @test SEng._rhs_confirm_begin!(sig) === :pin
+            @test SEng._rhs_confirm_state[sig].phase == :confirming && isempty(SEng._rhs_confirm_state[sig].pin)
+        end
+        # heuristic-plan row: no state at all
+        lock(SEng._rhs_calib_lock) do; delete!(SEng._rhs_calib_cache, sig); delete!(SEng._rhs_confirm_state, sig); end
+        SEng._rhs_calib_store_heuristic!(sig, 1.0)
+        @test SEng._rhs_confirm_begin!(sig) === nothing && !haskey(SEng._rhs_confirm_state, sig)
+        # the real solve-end hook feeds the running arm
+        fresh!(plan)
+        @test SEng._rhs_confirm_begin!(sig) === :pin
+        lock(SEng._rhs_calib_lock) do
+            SEng._rhs_calib_solve_start[sig] = time_ns() - UInt64(1_000_000)
+        end
+        SEng._rhs_calib_record_solve_time!()
+        @test length(SEng._rhs_confirm_state[sig].pin) == 1 && SEng._rhs_confirm_state[sig].running === :none
+        # a different pin while confirming restarts it
+        SEng._rhs_calib_store!(sig, other, 1.0)   # flips to heuristic (two different pins) and drops state
+        @test !haskey(SEng._rhs_confirm_state, sig)
+        lock(SEng._rhs_calib_lock) do; delete!(SEng._rhs_calib_cache, sig); delete!(SEng._rhs_confirm_state, sig); end
+      end
+    end
+end

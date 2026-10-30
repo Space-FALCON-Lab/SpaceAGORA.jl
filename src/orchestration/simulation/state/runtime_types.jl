@@ -786,6 +786,8 @@ export RhsEffectorDecision, RhsExecutionPlan
         flat_packet_heterogeneity_threshold::Float64
         flat_packet_overhead_disable_ratio::Float64
         flat_packet_overhead_min_samples::Int
+        # SPACEAGORA_RHS_PLAN_STEP_CACHE, snapshotted so the per-call plan lookup does not parse ENV.
+        plan_step_cache::Bool
     end
 
     # Concrete shape of the per-RHS-call execution plan returned by

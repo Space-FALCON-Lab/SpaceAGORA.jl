@@ -864,22 +864,28 @@ function aerodynamic_coefficient_fM(
     cosβ = cos(β)
     sinβ = sin(β)
     sinα = sin(α)
+    erfA = erf(S*cosα*cosβ)
+    erfB = erf(S*sinβ)
+    erfC = erf(S*sinα*cosβ)
+    expA = exp(-S^2*cosα^2*cosβ^2)
+    expB = exp(-S^2*sinβ^2)
+    expC = exp(-S^2*sinα^2*cosβ^2)
     # The Hart et al. coefficients are derived in body axes, then rotated into wind axes below.
-    CA = ((2-σN)/(S*sqrt_π)*cosα*cosβ+sign(cosα*cosβ)*σN/(2*S^2)*√(Tw/T))*exp(-S^2*cosα^2*cosβ^2) +
-            (2-σN)*(cosα^2*cosβ^2+1/(2*S^2)) * (sign(cosα*cosβ)+erf(S*cosα*cosβ)) + 
-            (σN/(2*S)*cosα*cosβ*√(π*Tw/T)) * (1+sign(cosα*cosβ)*erf(S*cosα*cosβ)) +
-            σT*cosα*cosβ*(lx_over_ly*(1/(S*sqrt_π)*exp(-S^2*sinβ^2)+sinβ*(sign(sinβ)+erf(S*sinβ))) +
-            lx_over_lz*(1/(S*sqrt_π)*exp(-S^2*sinα^2*cosβ^2)+sinα*cosβ*(sign(sinα*cosβ)+erf(S*sinα*cosβ))))
-    CS = lx_over_ly*(((2-σN)/(S*sqrt_π)*sinβ+sign(sinβ)*σN/(2*S^2)*√(Tw/T))*exp(-S^2*sinβ^2) +
-                (2-σN)*(sinβ^2+1/(2*S^2)) * (sign(sinβ)+erf(S*sinβ)) + 
-                (σN/(2*S)*sinβ*√(π*Tw/T)) * (1+sign(sinβ)*erf(S*sinβ))) +
-                σT*sinβ*(1/(S*sqrt_π)*exp(-S^2*cosα^2*cosβ^2) + cosα*cosβ*(sign(cosα*cosβ)+erf(S*cosα*cosβ)) + 
-                lx_over_lz*(1/(S*sqrt_π)*exp(-S^2*sinα^2*cosβ^2) + sinα*cosβ*(sign(sinα*cosβ)+erf(S*sinα*cosβ))))
-    CN = lx_over_lz*((((2-σN)/(S*sqrt_π)*sinα*cosβ+sign(sinα*cosβ)*σN/(2*S^2)*√(Tw/T))*exp(-S^2*sinα^2*cosβ^2) +
-                (2-σN)*(sinα^2*cosβ^2+1/(2*S^2)) * (sign(sinα*cosβ)+erf(S*sinα*cosβ)) + 
-                (σN/(2*S)*sinα*cosβ*√(π*Tw/T)) * (1+sign(sinα*cosβ)*erf(S*sinα*cosβ)))) +
-                σT*sinα*cosβ*(lx_over_ly*(1/(S*sqrt_π)*exp(-S^2*sinβ^2) + sinβ*(sign(sinβ)+erf(S*sinβ))) + 
-                (1/(S*sqrt_π)*exp(-S^2*cosα^2*cosβ^2) + cosα*cosβ*(sign(cosα*cosβ)+erf(S*cosα*cosβ))))
+    CA = ((2-σN)/(S*sqrt_π)*cosα*cosβ+sign(cosα*cosβ)*σN/(2*S^2)*√(Tw/T))*expA +
+            (2-σN)*(cosα^2*cosβ^2+1/(2*S^2)) * (sign(cosα*cosβ)+erfA) + 
+            (σN/(2*S)*cosα*cosβ*√(π*Tw/T)) * (1+sign(cosα*cosβ)*erfA) +
+            σT*cosα*cosβ*(lx_over_ly*(1/(S*sqrt_π)*expB+sinβ*(sign(sinβ)+erfB)) +
+            lx_over_lz*(1/(S*sqrt_π)*expC+sinα*cosβ*(sign(sinα*cosβ)+erfC)))
+    CS = lx_over_ly*(((2-σN)/(S*sqrt_π)*sinβ+sign(sinβ)*σN/(2*S^2)*√(Tw/T))*expB +
+                (2-σN)*(sinβ^2+1/(2*S^2)) * (sign(sinβ)+erfB) + 
+                (σN/(2*S)*sinβ*√(π*Tw/T)) * (1+sign(sinβ)*erfB)) +
+                σT*sinβ*(1/(S*sqrt_π)*expA + cosα*cosβ*(sign(cosα*cosβ)+erfA) + 
+                lx_over_lz*(1/(S*sqrt_π)*expC + sinα*cosβ*(sign(sinα*cosβ)+erfC)))
+    CN = lx_over_lz*((((2-σN)/(S*sqrt_π)*sinα*cosβ+sign(sinα*cosβ)*σN/(2*S^2)*√(Tw/T))*expC +
+                (2-σN)*(sinα^2*cosβ^2+1/(2*S^2)) * (sign(sinα*cosβ)+erfC) + 
+                (σN/(2*S)*sinα*cosβ*√(π*Tw/T)) * (1+sign(sinα*cosβ)*erfC))) +
+                σT*sinα*cosβ*(lx_over_ly*(1/(S*sqrt_π)*expB + sinβ*(sign(sinβ)+erfB)) + 
+                (1/(S*sqrt_π)*expA + cosα*cosβ*(sign(cosα*cosβ)+erfA)))
 
     CL = -sinα*CA + cosα*CN
     CD = cosα*cosβ*CA + sinβ*CS + sinα*cosβ*CN

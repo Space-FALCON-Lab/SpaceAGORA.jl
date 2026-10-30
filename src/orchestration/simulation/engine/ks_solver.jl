@@ -31,6 +31,9 @@ function _ks_extension()
     return extension
 end
 
+# Not checked on purpose: guidance, navigation and scheduling models act only
+# through accepted-step callbacks, never inside the right-hand side, and SRP
+# facets are read only by SRP models, which the trial-safety walk refuses.
 function _validate_ks_config!(args)
     length(args.dynamics_model.spacecraft)==1 || throw(ArgumentError("The initial KS route supports exactly one spacecraft."))
     args.mission_configuration.orientation_sim && throw(ArgumentError("The initial KS route does not yet qualify propagated attitude; use orientation_sim=false."))
@@ -75,6 +78,7 @@ end
 
 function _validate_ks_runtime!(p)
     cb = SimulationModel.SimulationCallbacks._callback_env_config(p)
+    isempty(p.shared_buffers.density_models) || throw(ArgumentError("KS trial evaluation admits only analytic atmospheres; this run created per-run density model instances."))
     cb.density_history_dependent && throw(ArgumentError("KS trial evaluation does not support history-dependent density."))
     density = p.args.environment_model.density_model
     if !(density isa SimulationModel.NoAtmosphereModel)

@@ -1,9 +1,20 @@
+# Optional KS route. Qualified with the KSPropagator package at revision
+# c905ef5b068b3cb52c5c3901a80e91b49fa144e8 (a separate repository) and with the
+# 4.19 series of OrdinaryDiffEqCore, whose integrator interface this file uses
+# directly. The core package's compat admits the whole major series so that
+# ordinary environments are not pinned; the series check below applies to this
+# route only, and nothing in CI compiles this file.
 module SpaceAGORAKSPropagatorExt
 using SpaceAGORA, KSPropagator
 import OrdinaryDiffEqCore as OC
 const SE = SpaceAGORA.SimulationEngine
 
+const _QUALIFIED_CORE_SERIES = (v"4.19.0", v"4.20.0")
+
 function require_capability()
+    core = pkgversion(OC)
+    _QUALIFIED_CORE_SERIES[1] <= core < _QUALIFIED_CORE_SERIES[2] || throw(ArgumentError(
+        "The KS route is qualified against the 4.19 series of OrdinaryDiffEqCore, whose integrator interface it uses; this environment has $(core). The ordinary solver modes remain available."))
     isdefined(KSPropagator,:coupled_cartesian_step_doubling) &&
         isdefined(KSPropagator,:CoupledMidpointFailure) || throw(ArgumentError(
             "This KSPropagator source does not provide the qualified coupled stepping API. Install the documented integration source; legacy 0.1 sources are insufficient."))

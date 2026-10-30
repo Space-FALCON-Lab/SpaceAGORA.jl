@@ -173,8 +173,8 @@ When `solver_config` is left as `nothing`, `run_simulation` reads the engine
 settings in effect when it is called, so `SPACEAGORA_SOLVER_MODE` (or a
 `SimulationEngineConfig` override) applies. The mode chosen either way decides
 both the integrator and the callbacks the run installs. The accepted modes are
-`:tsit5`, `:gravity_backbone_split`, `:dp8`, `:auto_stiff`, `:rodas5p`,
-`:split_imex`, `:multirate` and `:multirate_mri`. IMEX (`:split_imex`) and
+`:tsit5`, `:ks` (with the optional KSPropagator extension), `:gravity_backbone_split`,
+`:dp8`, `:auto_stiff`, `:rodas5p`, `:split_imex`, `:multirate` and `:multirate_mri`. IMEX (`:split_imex`) and
 multirate integration run only when selected this way; nothing in the dynamics
 model or routing profile switches a run to them.
 
@@ -294,14 +294,23 @@ you intend to run.
 
 ## Optional KS propagation candidate
 
-A separate optional KSPropagator extension provides
-`SolverConfig(solver_mode=:ks)` for the bounded one-spacecraft development
-candidate. SpaceAGORA supplies configured physical forces and retains physical
-time, scheduling, events, checkpoints and outputs. KSPropagator supplies the
-coordinate transformation and coupled numerical stepping. See
-[`verification/optional_ks/README.md`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/blob/feature/optional-ks-propagation/verification/optional_ks/README.md)
-for the exact KS installation source, supported models, guards and reproducible
-qualification commands. Consult the candidate's source-specific report and capability table for the
-verified initial scope, failed settings and installation limitations. The bounded
-performance study found a large observed two-body cost and inconclusive J2-plus-
-drag wall timing; see the independently reviewed performance findings in that directory.
+The optional KSPropagator extension provides `SolverConfig(solver_mode=:ks)`
+for one rigid spacecraft. SpaceAGORA supplies the configured physical forces,
+heating and mass flow and keeps physical time, scheduling, events, checkpoints
+and outputs; the KSPropagator package supplies the coordinate transformation
+and the coupled numerical stepping. The extension loads only when the package
+is installed, at the revision recorded in the extension's header, and the mode
+is refused when the package is absent or the solver library is outside the
+series the extension was qualified against.
+
+The route is experimental. It admits central or J2 gravity, no atmosphere or a
+deterministic exponential atmosphere, and the ideal-actuation control models
+that declare `trial_rhs_safe`; every other configuration is refused before the
+run starts. A custom model joins the route only by declaring
+`SpaceAGORA.trial_rhs_safe(::MyModel) = true`, which states that its
+right-hand side can be evaluated at trial states and times without advancing
+physical, random or controller history; it is a contract, not a validation of
+the physics. In the tested one-day cases only the finest tolerance settings met
+the accuracy target against the Cartesian reference, and coarser settings did
+not. Its run time was much longer than the ordinary solvers' in the two-body
+comparison, and its timing with J2 and drag was not resolved.

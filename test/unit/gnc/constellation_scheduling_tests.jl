@@ -1,11 +1,11 @@
-module PaperConstellationTests
+module ConstellationSchedulingTests
 using Test, LinearAlgebra, SpaceAGORA
 const CS=SpaceAGORA.ConstellationScheduling
 const KS=SpaceAGORA.SimulationModel.DynamicsKS
 const OE=SpaceAGORA.OrbitalElementSensitivity
 
-@testset "Paper constellation integration" begin
-    c=paper_walker_constellation();p=c.config.planet;y=CS.initial_ks(c,0.)[1:10]
+@testset "Constellation scheduling integration" begin
+    c=walker27_constellation();p=c.config.planet;y=CS.initial_ks(c,0.)[1:10]
     x=KS.ks_state_to_cartesian(y);r=x.position_ii_m;v=x.velocity_ii_m
     @test y[9] ≈ -(dot(v,v)/2-p.μ/norm(r))
     m=KS.ks_physical_tangent(y,p)
@@ -43,7 +43,7 @@ const OE=SpaceAGORA.OrbitalElementSensitivity
         (c.config.mass_kg*299792458.)*g[1].direction atol=1e-12
     @test target_change+emitter_change ≈ zeros(6) atol=1e-12
     state[11:20].=KS.cartesian_to_ks_state(-r,-v,p)
-    @test !laser_geometry(state,paper_walker_constellation(LaserSchedulingConfig(max_range_m=2e7)))[1].available
+    @test !laser_geometry(state,walker27_constellation(LaserSchedulingConfig(max_range_m=2e7)))[1].available
     F,V=CS.zoh([0. 1.;0. 0.],reshape([0.,1.],2,1),2.)
     @test F≈[1. 2.;0. 1.]
     @test V≈reshape([2.,2.],2,1)

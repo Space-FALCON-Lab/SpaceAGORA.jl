@@ -2,9 +2,9 @@
 using CSV, DataFrames, Test
 length(ARGS)==1 || error("Pass the original ZIP run's exact/ output directory.")
 original=ARGS[1]
-integrated=normpath(joinpath(@__DIR__,"..","..","outputs","paper_constellation_interlinks"))
+integrated=normpath(joinpath(@__DIR__,"..","..","outputs","constellation_terminal_gain_scheduling"))
 rows=NamedTuple[]
-@testset "Untouched paper ZIP versus SpaceAGORA integration" begin
+@testset "Archived scheduler baseline versus SpaceAGORA integration" begin
     for objective in ("a","i","omega","combined")
         folder="maximize_$objective"
         old=CSV.read(joinpath(original,folder,"history.csv"),DataFrame)

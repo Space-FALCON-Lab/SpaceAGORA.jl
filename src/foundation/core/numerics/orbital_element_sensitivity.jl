@@ -6,7 +6,7 @@ skew(x)=[0. -x[3] x[2];x[3] 0. -x[1];-x[2] x[1] 0.]
 
 """Analytical d[a,e,i,RAAN,argument of periapsis]/d[r,v], SI and radians.
 
-Adapted from the paper ZIP's classical_element_sensitivity.jl. The classical
+Adapted from the source archive's classical_element_sensitivity.jl. The classical
 angular derivatives require a noncircular, nonequatorial orbit.
 """
 function orbital_element_jacobian(r,v,mu)

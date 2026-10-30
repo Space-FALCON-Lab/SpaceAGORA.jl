@@ -1,6 +1,6 @@
 # SpaceAGORA.jl
 
-This integration branch adds the original finite-horizon paper scheduler using
+This integration branch adds the finite-horizon terminal-gain scheduler using
 SpaceAGORA's native interlink graph, laser physics and matching policy APIs.
 See [the integration guide](docs/constellation_controllability.md) for the
 verified upstream revision, equations, native replay example and regression results.

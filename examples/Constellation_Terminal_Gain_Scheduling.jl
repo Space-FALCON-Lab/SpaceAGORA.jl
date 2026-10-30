@@ -1,16 +1,16 @@
 ENV["GKSwstype"]="100"
 using SpaceAGORA, LinearAlgebra, CSV, DataFrames
-const PAPER_PLOTS=!("--no-plots" in ARGS || "--check" in ARGS)
-if PAPER_PLOTS
+const SCHEDULING_PLOTS=!("--no-plots" in ARGS || "--check" in ARGS)
+if SCHEDULING_PLOTS
     using Plots
 end
 BLAS.set_num_threads(1)
 
-function run_paper_constellation(;check=false)
-    case=paper_walker_constellation()
+function run_terminal_gain_scheduling(;check=false)
+    case=walker27_constellation()
     orbits=check ? .05 : 5.;n=check ? 12 : 1200
     times=collect(range(0.,orbits*case.period_s;length=n+1))
-    out=joinpath(@__DIR__,"..","outputs",check ? "paper_constellation_interlinks_smoke" : "paper_constellation_interlinks")
+    out=joinpath(@__DIR__,"..","outputs",check ? "constellation_terminal_gain_scheduling_smoke" : "constellation_terminal_gain_scheduling")
     mkpath(out)
     reference=replay_laser_schedule(case,times,zeros(Int,length(case.edges),n))
     nominal=laser_element_history(case,times,reference)
@@ -44,7 +44,7 @@ function run_paper_constellation(;check=false)
                 nonlinear=scale[j]*delta[j,end],active_intervals=sum(result.command),sampled_geometry_violations=violations))
         end
         @assert isapprox(sum(result.scores.*result.command),dot(result.weights,result.predicted[:,end]);rtol=1e-8,atol=1e-8)
-        if !check && PAPER_PLOTS
+        if !check && SCHEDULING_PLOTS
             labels=["Delta a (m)","Delta e","Delta i (deg)","Delta RAAN (deg)","Delta omega (deg)"]
             panels=[plot(times/case.period_s,scale[j]*delta[j,:];label="Nonlinear KS",
                 ylabel=labels[j],left_margin=10Plots.mm) for j in 1:5]
@@ -69,4 +69,4 @@ function run_paper_constellation(;check=false)
     println("Results: $(abspath(out))")
 end
 
-run_paper_constellation(;check="--check" in ARGS)
+run_terminal_gain_scheduling(;check="--check" in ARGS)

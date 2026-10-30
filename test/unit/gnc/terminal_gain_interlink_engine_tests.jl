@@ -1,17 +1,17 @@
-module PaperInterlinkEngineTests
+module TerminalGainInterlinkEngineTests
 using Test, SpaceAGORA, LinearAlgebra
 const CS=SpaceAGORA.ConstellationScheduling
 const KS=SpaceAGORA.SimulationModel.DynamicsKS
 
-@testset "Paper schedule through the native interlink engine" begin
-    case=paper_walker_constellation()
+@testset "Fixed-interval schedule through the native interlink engine" begin
+    case=walker27_constellation()
     # Deliberate emitter switch followed by coast, independent of optimization.
     times=[0.,10.,20.,30.]
     command=zeros(Int,26,3);command[1,1]=1;command[2,2]=1
     policy=TerminalGainPolicy(times,case.keys,command)
-    args=paper_simulation_configuration(case,policy)
+    args=constellation_replay_configuration(case,policy)
     native=run_simulation(args;return_solution=true,
-        extra_callback_factories=(paper_schedule_callback,))
+        extra_callback_factories=(terminal_gain_schedule_callback,))
     replay=replay_laser_schedule(case,times,command)
     @test native.t[end]==last(times)
     history=native.prob.p.args.interlink_model.history

@@ -9,7 +9,7 @@ import ..SimulationModel.SchedulingPolicies: candidate_score
 using ..SimulationModel.FrameTransforms: orbitalelemtorv, rvtoorbitalelement, rtn_dcm_from_inertial
 using ..OrbitalElementSensitivity: orbital_element_jacobian
 
-export LaserSchedulingConfig, paper_walker_constellation, plan_laser_schedule,
+export LaserSchedulingConfig, walker27_constellation, plan_laser_schedule,
     replay_laser_schedule, laser_element_history, laser_geometry, signed_link_schedule,
     TerminalGainPolicy
 
@@ -51,7 +51,7 @@ Base.@kwdef struct LaserSchedulingConfig
     tolerance::Float64=2e-12
 end
 
-function paper_walker_constellation(config=LaserSchedulingConfig())
+function walker27_constellation(config=LaserSchedulingConfig())
     slots=vcat([(0,0,0)],[(l,p,s) for l in -1:1 for p in -1:1 for s in -1:1 if (l,p,s)!=(0,0,0)])
     x=zeros(6,length(slots));elements=zeros(length(slots),10)
     for (id,(l,p,s)) in enumerate(slots)
@@ -172,7 +172,7 @@ function laser_element_history(case,times,sol)
     reduce(hcat,[elements(view(sol(t),slice(1)),case.config) for t in times])
 end
 
-"""Exact interval-separable solution of the paper's signed-gain binary MILP."""
+"""Exact interval-separable solution of the signed terminal-gain binary MILP."""
 function signed_link_schedule(scores,available)
     size(scores)==size(available) || throw(DimensionMismatch("Scores and availability differ."))
     all(isfinite,scores) || throw(ArgumentError("Scores must be finite."))
@@ -189,14 +189,14 @@ function signed_link_schedule(scores,available)
     u
 end
 
-"""Original all-off fixed-reference paper scheduler, not active-reference MPC.
+"""Original all-off fixed-reference terminal-gain scheduler, not active-reference MPC.
 
 Units: a in metres, angles in radians. Objectives :a, :i, :omega, :combined.
 Joint scales are 1000 m, one degree, one degree; weights are each 1/3.
 """
 function plan_laser_schedule(case,times;objective=:a,reference=nothing)
     objective in (:a,:i,:omega,:combined) || throw(ArgumentError("Unknown objective."))
-    all(s!=1 && t==1 for (s,t) in case.edges) || throw(ArgumentError("Paper star topology requires target ID 1."))
+    all(s!=1 && t==1 for (s,t) in case.edges) || throw(ArgumentError("Single-target star topology requires target ID 1."))
     c=case.config;n=length(times)-1;ne=length(case.edges)
     reference===nothing && (reference=replay_laser_schedule(case,times,zeros(Int,ne,n)))
     Fs=Matrix{Float64}[];Vs=Matrix{Float64}[];available=trues(ne,n)
@@ -227,7 +227,7 @@ function plan_laser_schedule(case,times;objective=:a,reference=nothing)
         Float64.((1:5).==(objective==:a ? 1 : objective==:i ? 3 : 5))
     scores=dropdims(sum(gains.*reshape(weights,5,1,1);dims=1);dims=1)
     # The shared target terminal makes native maximum-weight matching exactly
-    # the paper's at-most-one-positive-link problem, not an instantaneous policy.
+    # the single-target at-most-one-positive-link problem, not an instantaneous policy.
     policy=TerminalGainPolicy(times,case.keys,scores)
     scheduler=SchedulingPolicyModel(policy);graph=deepcopy(case.interlinks)
     command=zeros(Int,ne,n)

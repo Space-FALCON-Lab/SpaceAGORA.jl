@@ -1,8 +1,8 @@
-# Paper constellation scheduling integration
+# Constellation terminal-gain scheduling
 
 ## Scope and provenance
 
-This separate local repository integrates the original fixed-reference paper
+This separate local repository integrates the fixed-reference terminal-gain
 scheduler into SpaceAGORA. It is not the active-reference receding-horizon
 scheduler, nor the battery, temperature, or data-constrained variant.
 
@@ -10,16 +10,18 @@ Base: `SpaceAGORA_MPC_Integration` at
 `1af9cbab34452b277d9fd7efdd9038b36d3f4c9c`. On October 30, 2026, this exact
 commit was confirmed directly against GitHub using
 `git ls-remote upstream refs/heads/SpaceAGORA_MPC_Integration`.
-The corrected integration branch is `constellation-controllability-interlinks`.
+The published integration branch is `Constellation-Controllability` in
+`Space-FALCON-Lab/SpaceAGORA.jl`. The separate local integration checkout uses
+the branch `constellation-controllability-interlinks`.
 The older implementation is preserved on `constellation-controllability` at
 `8ed59ffac`, based on `3ddcf3f`; it is not the current implementation.
 
-The package name remains `SpaceAGORA`. No GitHub repository has been created or
-pushed. `upstream-local` points to the untouched original SpaceAGORA checkout;
+The package name remains `SpaceAGORA`; no separate GitHub repository is needed.
+In the local integration checkout, `upstream-local` points to the original SpaceAGORA checkout;
 `upstream` points to `https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git`.
 
-Scheduler source: `original_paper_scheduler.zip`, from
-`Constellation-Controllability/outputs/original_paper_scheduler_standalone/`.
+Scheduler source: the standalone fixed-reference scheduler archive, identified
+by the following checksum for reproducibility.
 SHA-256:
 `8205f28b9d0cd604491785cd09fd473f55e51608ec3260ecdf3fa57296f953e3`.
 The ZIP was extracted and run independently for regression comparison, not
@@ -33,21 +35,21 @@ From this repository, with Julia 1.12:
 ```bash
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
 julia --project=. test/unit/gnc/constellation_scheduling_tests.jl
-julia --project=. test/unit/gnc/paper_interlink_engine_tests.jl
-julia --project=. examples/Constellation_Controllability_Paper.jl --check
-julia --project=. examples/Constellation_Controllability_Paper.jl --no-plots
+julia --project=. test/unit/gnc/terminal_gain_interlink_engine_tests.jl
+julia --project=. examples/Constellation_Terminal_Gain_Scheduling.jl --check
+julia --project=. examples/Constellation_Terminal_Gain_Scheduling.jl --no-plots
 # Plotting dependencies belong to the existing examples environment, not core.
 julia --project=examples -e 'using Pkg; Pkg.instantiate()'
-julia --project=examples examples/Constellation_Controllability_Paper.jl
+julia --project=examples examples/Constellation_Terminal_Gain_Scheduling.jl
 julia --project=. examples/Constellation_Interlink_Replay.jl
 ```
 
 The full example runs four objectives, 27 satellites, five orbits and 1200
-intervals. It writes `outputs/paper_constellation_interlinks/`, including initial
+intervals. It writes `outputs/constellation_terminal_gain_scheduling/`, including initial
 conditions, physical-time binary schedules, per-link terminal contributions,
 linear and nonlinear element histories, terminal comparisons, and individual
 schedule and element-comparison PDFs. The short check uses 12 intervals over
-0.05 orbit and writes a separate `paper_constellation_interlinks_smoke/` folder.
+0.05 orbit and writes a separate `constellation_terminal_gain_scheduling_smoke/` folder.
 Compilation is included in the first invocation, not a propagation benchmark.
 
 ## Code ownership and reuse
@@ -62,21 +64,21 @@ Compilation is included in the first invocation, not a propagation benchmark.
 | New `src/models/dynamics/ks_dynamics/physical_tangent.jl` | Acceleration input lift, physical-time tangent, constrained inverse differential and Cartesian push-forward |
 | New `src/foundation/core/numerics/orbital_element_sensitivity.jl` | Analytical five-element output Jacobian |
 | New `src/models/gnc/control/constellation_scheduling/constellation_scheduling.jl` | Reference/replay, ZOH gains and terminal-gain policy |
-| New `src/orchestration/simulation/callbacks/paper_schedule.jl` | Native engine configuration and exact interval-boundary stops |
-| New `examples/Constellation_Controllability_Paper.jl` | Paper configuration, CSV exports and plots |
+| New `src/orchestration/simulation/callbacks/terminal_gain_schedule_replay.jl` | Native engine configuration and exact interval-boundary stops |
+| New `examples/Constellation_Terminal_Gain_Scheduling.jl` | Walker constellation configuration, CSV exports and plots |
 | New `test/unit/gnc/constellation_scheduling_tests.jl` | Map, Jacobian, native geometry, ZOH and selection checks |
-| New `test/unit/gnc/paper_interlink_engine_tests.jl` | Native engine emitter-switch/coast timing and KS trajectory agreement |
+| New `test/unit/gnc/terminal_gain_interlink_engine_tests.jl` | Native engine emitter-switch/coast timing and KS trajectory agreement |
 
 The existing drag-area input derivative is not a laser input matrix. The new
 acceleration lift supplies the correct three inertial acceleration columns.
 Likewise, the existing first-order Euler tangent is not substituted for the
-paper's exact frozen-matrix ZOH. No second implementation of SpaceAGORA's KS
+scheduler's exact frozen-matrix ZOH. No second implementation of SpaceAGORA's KS
 gravity/J2 dynamics or orbital/frame conversion is introduced.
 
 The planner now constructs real `SpacecraftModel` objects, one virtual terminal
 per spacecraft, an `InterlinkModel`, and native `LaserBeamLink` edges through
 `register_link!`. All candidate edges share target terminal `(1,1)`, making
-native terminal matching exactly the paper's at-most-one-link constraint.
+native terminal matching exactly the single-target at-most-one-link constraint.
 It calls `update_availability!`, `interlink_wrench`, `score_candidates!` and
 `select_interlinks!`; the nonlinear KS replay calls
 `interlink_force_on_spacecraft`. No custom laser force law or duplicate
@@ -95,25 +97,25 @@ Native integration requires no changes to the existing engine or force effectors
 
 ```julia
 using SpaceAGORA
-case = paper_walker_constellation()
+case = walker27_constellation()
 times = collect(range(0.0, 5case.period_s; length=1201))
 plan = plan_laser_schedule(case, times; objective=:a)
-args = paper_simulation_configuration(case, plan.policy)
+args = constellation_replay_configuration(case, plan.policy)
 solution = run_simulation(args; return_solution=true,
-    extra_callback_factories=(paper_schedule_callback,))
+    extra_callback_factories=(terminal_gain_schedule_callback,))
 ```
 
 The callback factory uses `PresetTimeCallback` only to impose activation-boundary
 stops. The existing interlink scheduler updates the selected graph at those times,
 and the existing engine applies its laser effects. Before the policy starts and
 at/after its final time, the policy returns zero. The native engine propagates
-Cartesian states; the paper reference and its primary replay remain nonlinear KS.
+Cartesian states; the planner reference and its primary replay remain nonlinear KS.
 The native replay example compares the two using identical schedules and each
 route's own no-laser baseline. Its `--full` option runs five orbits; the default
 is a short 0.05-orbit check.
 
 Native undirected keys are canonical, for example `((1,1),(2,1))`, even though
-the paper calls that emitter 2 illuminating target 1. The planner explicitly
+the directed schedule labels that as emitter 2 illuminating target 1. The planner explicitly
 selects the target endpoint's wrench; it does not assume the second key is the
 receiver. CSV schedules retain the original emitter-to-target labels. All
 spacecraft share the configured mass. If supplying custom initial states, keep
@@ -151,10 +153,10 @@ checks 11 samples per interval. These samples are not a continuous-time
 feasibility proof. Replay diagnostics use 20 interior/boundary samples per
 interval and report observed violations rather than claiming guaranteed clearance.
 
-The paper defaults are $P=10$ kW, $C_r=100$, $m=300$ kg,
+The simulation defaults are $P=10$ kW, $C_r=100$, $m=300$ kg,
 $\mu=3.986004418\cdot10^{14}$ SI, $R_E=6378136.3$ m and
 $J_2=1.08262668\cdot10^{-3}$. The coefficient $C_r$ is retained from the
-paper's effective force law; no additional reflected thermal or battery model
+configured effective force law; no additional reflected thermal or battery model
 is implied by it.
 
 ## Linearization and scheduling equations
@@ -286,12 +288,12 @@ $10^{-6}$ degrees. Linear limits are independently much tighter: $10^{-6}$ m,
 $10^{-12}$ in e, and $10^{-10}$ degrees. Exact schedule equality is required.
 
 The detailed measurements are in
-`outputs/paper_constellation_interlinks/archive_regression.csv`; terminal predictions and
+`outputs/constellation_terminal_gain_scheduling/archive_regression.csv`; terminal predictions and
 nonlinear results are in `terminal_comparison.csv` in the same directory.
 To repeat the independent comparison after running the untouched archive:
 
 ```bash
-julia --project=. test/validation/compare_paper_archive.jl /path/to/archive/output/exact
+julia --project=. test/validation/compare_scheduler_baseline.jl /path/to/archive/output/exact
 ```
 
 The archive comparison has 48 assertions. The new branch's existing reusable KS
@@ -311,7 +313,7 @@ The entire unrelated atmosphere, aerobraking and visualization suite was not run
 semi-major-axis plan through `run_simulation`, using the native interlink engine,
 plus its own no-laser baseline. Every recorded active link was checked against
 the same fixed plan. The comparison is in
-`outputs/paper_native_interlinks_5orbits/terminal_comparison.csv`, and the actual
+`outputs/constellation_native_interlinks_5orbits/terminal_comparison.csv`, and the actual
 engine selections are in `native_executed_schedule.csv` beside it.
 
 Both nonlinear implementations give approximately 728.582296 m in delta a.
@@ -327,5 +329,5 @@ Native Cartesian minus nonlinear KS terminal differences are:
 
 These are integration/coordinate-route agreement figures, not linear-prediction
 errors. The native-engine full-horizon comparison covers the a objective; the
-four-objective paper/archive regression uses nonlinear KS replay with the native
+four-objective scheduler/archive regression uses nonlinear KS replay with the native
 SpaceAGORA link geometry and force functions.

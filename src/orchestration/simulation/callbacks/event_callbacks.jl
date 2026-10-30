@@ -503,7 +503,9 @@ function _run_clock_saving_callback(save_func, saved_values, rate::Float64)
         start = Float64(t)
         stop = hasproperty(integrator.p, :shared_buffers) ?
             integrator.p.shared_buffers.solve_segment_end_time[] : NaN
-        isfinite(stop) || (stop = Float64(last(integrator.sol.prob.tspan)))
+        # The engine sets the segment end before every solve; a stale value from a
+        # parameter set solved outside the engine falls back to the problem span.
+        isfinite(stop) && stop >= start || (stop = Float64(last(integrator.sol.prob.tspan)))
         isfinite(origin) || (origin = start)
         isfinite(horizon) || (horizon = stop)
         segment[] = make_segment(_segment_output_times(origin, start, stop, rate; horizon))

@@ -4,7 +4,7 @@
 # Solver names SolverConfig accepts. The SPACEAGORA_SOLVER_* parsers
 # (engine/adapters/from_env.jl) check against these same tuples, so the typed
 # and environment paths cannot accept different names.
-const _SOLVER_MODES = (:tsit5, :gravity_backbone_split, :dp8, :auto_stiff, :rodas5p, :split_imex, :multirate, :multirate_mri)
+const _SOLVER_MODES = (:tsit5, :ks, :gravity_backbone_split, :dp8, :auto_stiff, :rodas5p, :split_imex, :multirate, :multirate_mri)
 const _SPLIT_IMEX_SOLVERS = (:kencarp4, :kencarp47, :kencarp58)
 const _MULTIRATE_SOLVERS = (:tsit5, :dp8, :auto_stiff, :rodas5p, :kencarp4)
 
@@ -52,7 +52,7 @@ gravity-backbone mode; it is not a fully symplectic whole-system solve.
 The constructor checks the settings and throws an `ArgumentError` naming the
 accepted values for an unknown name:
 
-- `solver_mode`: `:tsit5`, `:gravity_backbone_split`, `:dp8`, `:auto_stiff`,
+- `solver_mode`: `:tsit5`, `:ks` (optional KSPropagator extension), `:gravity_backbone_split`, `:dp8`, `:auto_stiff`,
   `:rodas5p`, `:split_imex`, `:multirate`, `:multirate_mri`. `:symplectic` is refused; use
   `:gravity_backbone_split`.
 - `split_imex_solver`: `:kencarp4`, `:kencarp47`, `:kencarp58`.

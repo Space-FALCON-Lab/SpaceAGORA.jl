@@ -501,6 +501,7 @@ end
     # Reuse the cached integrator only when it was init'ed with the same save
     # options this call resolved; otherwise fall through and re-init the cache.
     if solver_cache !== nothing && solver_cache.integrator !== nothing && callback_type_matches &&
+       typeof(solver_cache.integrator.alg) === typeof(alg) &&
        _solver_cache_options_match(solver_cache, save_everystep, save_on, save_start, save_end, dtmax_use)
         integ = solver_cache.integrator
         integ.p = prob.p
@@ -848,6 +849,21 @@ function _solve_with_solver_policy(prob, cfg::SolverConfig, args, reltol_tol, ab
     solver_cache::Union{Nothing, SolverIntegratorCache}=nothing,
     needs_full_solution::Bool=true)
     mode = _solver_policy_mode(cfg)
+    if mode === :ks
+        _validate_ks_config!(args)
+        prob.p isa SimulationModel.ODEParams || throw(ArgumentError("KS currently requires a normal SpaceAGORA physical-state problem."))
+        _validate_ks_runtime!(prob.p)
+        extension = _ks_extension()
+        alg = Base.invokelatest(extension.algorithm, prob, args)
+        # KS reconstructs numerical state from authoritative physical boundaries.
+        # Do not retain another run's central parameter or diagnostic runtime.
+        solver_cache !== nothing && (solver_cache.integrator = nothing)
+        # Loading an optional extension here may add algorithm methods in a newer world.
+        sol = Base.invokelatest(_solve_with_explicit_solver,prob,cfg,args,alg,reltol_tol,abstol_tol;
+            solver_cache=solver_cache,needs_full_solution=needs_full_solution)
+        return sol,(solver="KS(CoupledMidpoint)",initial_solver="KS(CoupledMidpoint)",
+            fallback_used=false,trigger_retcode=missing)
+    end
     if mode == :gravity_backbone_split
         reject_reason = _gravity_backbone_reject_reason(args)
         isnothing(reject_reason) || throw(ArgumentError(reject_reason))

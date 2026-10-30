@@ -65,10 +65,10 @@ module Planets
         return nothing
     end
 
-    @inline function _furnsh_once(kernel_path::String)
+    @inline function _furnsh_once(kernel_path::String; force::Bool=false)
         resolved = abspath(kernel_path)
         lock(_SPICE_BODY_LOCK) do
-            resolved in _FURNISHED_KERNELS && return nothing
+            !force && resolved in _FURNISHED_KERNELS && return nothing
             furnsh(resolved)
             _SPICE_KERNEL_POOL_GENERATION[] += UInt(1)
             push!(_FURNISHED_KERNELS, resolved)

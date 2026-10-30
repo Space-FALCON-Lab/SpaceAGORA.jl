@@ -174,13 +174,14 @@ mutable struct KeptCountSensor <: AbstractSensor
     latest_time_s::Float64
     count::Int
     initialized_at::Vector{Float64}
+    restored_rng::Any
 end
-KeptCountSensor() = KeptCountSensor(1.0, 1, nothing, SVector(NaN), NaN, 0, Float64[])
+KeptCountSensor() = KeptCountSensor(1.0, 1, nothing, SVector(NaN), NaN, 0, Float64[], nothing)
 SpaceAGORA.sensor_dimension(::KeptCountSensor) = 1
 SpaceAGORA.sensor_measure(s::KeptCountSensor, truth::SensorTruth, ctx, rng) = SVector(Float64(s.count += 1))
 SpaceAGORA.initialize_sensor!(s::KeptCountSensor, truth::SensorTruth, ctx, rng) = (s.count = 0; push!(s.initialized_at, truth.t_s); nothing)
 L.checkpoint_state(s::KeptCountSensor) = (count=s.count,)
-L.restore_checkpoint_state!(s::KeptCountSensor, data) = (s.count = data.count; nothing)
+L.restore_checkpoint_state!(s::KeptCountSensor, data) = (s.count = data.count; s.restored_rng = s.rng; nothing)
 # A kind that keeps state only when its parameter says so.
 mutable struct MaybeKept <: AbstractNavigationModel
     keeps::Bool
@@ -532,6 +533,9 @@ hinge_seer(hinge) = DiscreteCallback((u, t, integrator) -> false, integrator -> 
         @test early_sensor.count == 4 && straight_sensor.count == 7           # samples at 0..3 s and at 0..6 s
         @test sensor.count == straight_sensor.count                           # each sample of the run counted once
         @test sensor_measurement(sensor) == sensor_measurement(straight_sensor)
+        # A custom restore may reconnect internal state to the generic sensor
+        # RNG. Generic restoration must not replace that object afterwards.
+        @test sensor.rng === sensor.restored_rng
         @test isempty(sensor.initialized_at)                                  # no initialize_sensor! on a resume
         # Another model at the position is refused, and so is a checkpoint
         # holding no state for a model that keeps some.

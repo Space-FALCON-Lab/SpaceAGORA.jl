@@ -1,0 +1,117 @@
+# Planet generality at Venus (development set). Every named value is labeled SOURCED / DERIVED / ASSUMED.
+# Plan and pre-registered expectations: tasks/2026-10-15_periapsis-region-border-targeting/venus_generality_plan.md
+# (written before any Venus truth run). The estimators (v3, v5) are frozen; nothing here is a coefficient of an estimator.
+# Same schema as mars_generality_config_g20.toml so that mars_common.jl is reused unchanged (venus_common.jl only swaps the planet).
+
+[meta]
+# Location below the results root (a location, not a model value).
+subdir = "venus"
+
+[planet]
+# SOURCED: Venus("", SPICE_PATH) in src/models/environment/ephemerides/planets.jl: radii from pck00011.tpc, mu from the planetary
+# constants kernel when present (else the struct value 3.24858599e14), spin -2.99e-7 rad/s (retrograde), IAU pole.
+name = "Venus"
+spice_center = "VENUS"
+third_bodies = ["Sun"]            # ASSUMED: the Sun only (as Mars; Earth and Jupiter tides are not modeled in truth or estimator)
+
+[gravity]
+# SOURCED: MGNP180U.csv (the GMAT 70x70 truncation of Konopliv et al. 1999; header GM 3.24858592079e14 m3/s2, reference radius 6,051,000 m).
+# Degree and order 20 = the 20x20 truth used at Earth and Mars (user directive 2026-10-17).
+coefficient_file = "data/planets/gravity/MGNP180U.csv"
+degree = 20
+order = 20
+
+[atmosphere]
+# Truth and estimator atmosphere: ONE exponential layer, rho(h) = rho_ref exp(-(h - h_ref)/H) at geodetic altitude, zero wind, no GRAM.
+# The Venus() struct constants (rho_ref 65 kg/m3 at h_ref 0, H 15.9 km) are a surface fit; they put the Q band at 372 km altitude (hand arithmetic in the plan),
+# outside every Venus aerobraking altitude, and are NOT used. The constants below are DERIVED from the repo's flight-derived Venus Express table.
+pass_table = "benchmarks/studies/telemetry_validation/manifests/vex_final/step2pp.csv"
+# Rule (computed at run time by venus_common.jl): H = scale_height_km of the table (SOURCED, constant 3.5 km over all 55 passes);
+# h_ref = median of h_peri_km; rho_i = 2 pdyn_i / Vp_i^2 with Vp_i the vis-viva periapsis speed (rp_i = Rp_e + h_peri_i, ra = vex_apoapsis_radius_m, mu = file GM)
+# [the inversion pass_exponential_density uses, test/unit/environment/pass_exponential_density_tests.jl]; rho_ref = median_i( rho_i exp((h_i - h_ref)/H) ).
+vex_apoapsis_radius_m = 7.2651770e7   # SOURCED: manifests/vex_orvm_f.toml ra_m (only the vis-viva speed uses it; changing ra from 72,651.77 to 72,051.8 km moved the median rho_ref by 0.07% in a hand run)
+# ASSUMED: the upper node of the fit (only defines the node span of the CorridorAtmosphereFit; the layer is extended, density does not depend on it).
+fit_top_altitude_m = 400000.0
+temperature_k = 170.0             # placeholder, never used for drag
+
+[orbit]
+# SOURCED: vex_orvm_f.toml (ESA elements at 2014-05-19 04:00 UTC): ra_m = apoapsis RADIUS, i_deg 89.876. The periapsis altitude is CALIBRATED per cell (as Earth and Mars).
+apoapsis_radius_m = 72651770.0
+vex_inclination_deg = 89.876
+# ASSUMED: first guess of the periapsis altitude for the peak-Q calibration (only the start of the iteration; hand arithmetic in the plan gives about 135 km).
+initial_periapsis_altitude_guess_m = 135000.0
+true_anomaly_deg = 180.0
+
+[vehicle]
+# SOURCED: vex_orvm_f.toml [scenarios.spacecraft]: bus 2.05 x 3.7 x 2.8 m, 630 kg; two panels 0.01 x 2.85 x 1.0 m, 10 kg each; no propellant modeled (open loop).
+bus_dims_m = [2.05, 3.7, 2.8]
+panel_dims_m = [0.01, 2.85, 1.0]
+bus_mass_kg = 630.0
+panel_mass_each_kg = 10.0
+panel_offset_y_m = 2.45
+prop_mass_kg = 0.0
+# DERIVED: reference area = bus (dims1 x dims3) + 2 panels (dims2 x dims3) = 5.74 + 5.70 = 11.44 m2: the same rule as Earth and Mars, and the same area as the Earth study (11.44 m2).
+# ASSUMED: free-molecular drag coefficient (as Earth and Mars), panels broadside.
+cd = 2.2
+beta_override_kg_m2 = 0.0         # 0 = derive beta = 650 / (2.2 x 11.44) = 25.82 kg/m2
+# Fields read by mars_args (closed-loop arm only; not used by the open-loop runs here).
+thrust_n = 4.0
+specific_impulse_s = 220.0
+max_burn_delta_v_mps = 10.0
+max_burn_duration_s = 1800.0
+total_delta_v_budget_mps = 100.0
+planning_lead_deg = 12.0
+predictor_monotone_tolerance_m = 0.5
+
+[band]
+# SOURCED: study_config.toml [band] (Odyssey main-phase corridor and flight allowable, Hanna). The same absolute numbers at all three planets, so that the
+# fractions of the hard limit (Q_hard/Q_hi = 1.6875, w_Q = ln(Q_hi/Q_lo) = 0.8267) are identical by construction (the Earth and Mars rule).
+q_low_w_cm2 = 0.14
+q_high_w_cm2 = 0.32
+q_hard_w_cm2 = 0.54
+w_cm2_to_w_m2 = 1.0e4
+
+[environment]
+EI_km = 250.0                      # SOURCED: as Earth, Mars and vex_orvm_f.toml (EI_km = 250)
+
+[integration]
+# SOURCED: examples/periapsis_corridor_config.toml [integration] (as Mars).
+reltol = 1.0e-9
+abstol = 1.0e-11
+dt_max_orbit_s = 30.0
+dt_max_atmosphere_s = 1.0
+solver_mode = "tsit5"
+
+[calibration]
+max_iterations = 6
+q_tolerance_relative = 1.0e-3
+horizon_fraction_of_period = 0.65
+
+[grid]
+# DERIVED / SOURCED inclination set: 39.2 deg = arccos(sqrt(3/5)) = 39.23 deg, the third-body (Kozai) critical inclination RELATIVE TO THE PERTURBER PLANE;
+# the Sun's orbit-normal pole is within 2.64 deg of the Venus pole, so that plane is the Venus equator to 2.6 deg (the analog of Mars 25.2 deg is i = 2.6 deg, excluded: near-equatorial);
+# 63.4 and 116.6 deg = the J2 critical inclinations (as Earth and Mars); 89.876 deg = Venus Express (SOURCED).
+inclination_deg = [39.2, 63.4, 89.876, 116.6]
+raan_deg = [0.0, 90.0, 180.0, 270.0]
+omega_deg = [0.0, 90.0]
+# SOURCED: the Venus Express ORVM epoch (vex_orvm_f.toml). A single epoch: RAAN in the body-equator frame already scans the Sun-node phase (the Sun's direction moves 96 deg in 60 d).
+epochs_utc = ["2014-05-19T04:00:00"]
+horizon_days = 60.0
+workers = 4                        # ASSUMED, modest on the workstation
+
+[analysis]
+# Reporting constants shared with the Stage C analysis (lookahead bins, impact altitude).
+impact_altitude_m = 50000.0        # SOURCED: IMPACT_ALTITUDE_M, event_callbacks.jl
+lookahead_bin_edges_days = [0.0, 5.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
+critical_inclinations_deg = [63.4, 116.6]
+
+[estimator_numerics]
+# Resolution rule (pre-registered; uses no truth), as Mars: the default 32 drag nodes per side are accepted only if the maximum altitude change against a 4x refined
+# reference is < 100 m; otherwise the smallest of 64, 128 that passes. v5 window: default (32 steps per half window, 8 back steps) against (192, 16): accepted
+# only if the maximum altitude change is < 100 m and the maximum pass-time change < 10 s; otherwise 192/16 is used (a resolution, not a fit).
+drag_nodes_candidates = [32, 64, 128]
+convergence_tolerance_m = 100.0
+v5_window_default = [32, 8]
+v5_window_refined = [192, 16]
+v5_altitude_tolerance_m = 100.0
+v5_passtime_tolerance_s = 10.0

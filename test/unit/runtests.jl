@@ -261,3 +261,21 @@ include("visualization/output_preservation_tests.jl")
 include(joinpath(@__DIR__, "visualization", "mission_history_contract_tests.jl"))
 
 include("gnc/companion_panel_interfaces_tests.jl")
+
+module PeriapsisCorridorMeanUnitTests
+include(joinpath(@__DIR__, "mission", "periapsis_corridor_mean_tests.jl"))
+end
+
+module PeriapsisCorridorMissionUnitTests
+include(joinpath(@__DIR__, "mission", "periapsis_corridor_tests.jl"))
+end
+
+module PeriapsisCorridorPolicyUnitTests
+include(joinpath(@__DIR__, "gnc", "periapsis_corridor_policy_tests.jl"))
+end
+
+# This test file already declares its own `PeriapsisCorridorRuntimeTests` module.
+include(joinpath(@__DIR__, "gnc", "periapsis_corridor_runtime_tests.jl"))
+
+# Declares its own `PeriapsisCorridorGramTests` module; the GRAM-gated part skips with a message.
+include(joinpath(@__DIR__, "gnc", "periapsis_corridor_gram_tests.jl"))

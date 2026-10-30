@@ -1,0 +1,215 @@
+# Venus gate V-G(V) (plan: tasks/2026-10-15_periapsis-region-border-targeting/analytic_framework_and_transfer_plan.md, Revision 8 R8.3, R8.4; scoring R4.3, R4.4, R5.1, U19).
+# Venus counterpart of stageg3_config.toml (frozen Mars gate, sha256 4f93a816...db18, NOT edited). [stagef], [analysis] and [common.*] are copied from it (only results_subdir and planets differ); [planets.venus.*] is copied from stagel_config.toml.
+# Labels: SOURCED (cited file or paper), DERIVED (computed from sourced values), ASSUMED (named choice, flagged). The Venus heat cap has NO sourced value in the repo (see [stageg3v.heat_cap]).
+[stagef]
+results_subdir = "stageg3v"       # below the results root; per-planet folders below it
+planets = ["venus"]
+cell_seed = 20261019               # ASSUMED: numpy default_rng seed of the cell draw (stagef_cells.py)
+n_epochs = 3                       # ASSUMED (user: >= 3 epochs / local-time sectors)
+n_per_group = 4                    # ASSUMED: cells drawn per (epoch, inclination); 3 x 4 x 4 = 48 cells per planet (user: >= 20 cells)
+n_dev_per_group = 2                # ASSUMED: of the 4 drawn cells per group, 2 development, 2 held out
+workers = 4                        # ASSUMED, modest on the workstation
+perturbation_mode = "pass"         # SPACEAGORA_GRAM_DENSITY_PERTURBATION value for the perturbed arm
+perturbation_reseed = "1"          # SPACEAGORA_GRAM_DENSITY_PERTURBATION_PASS_RESEED: pass k's random stream depends only on (cell seed, k)
+fixed_margin_m = 1000.0            # ASSUMED (the value used by the Stage E / Stage C closed loops): the fixed margin under test
+policy = "near_passive"            # SOURCED: Stage E / C closed loops
+predictor = "v5"                   # frozen estimator v5, one-pass prediction (run_mars_closedloop.jl --predictor=v5 form)
+
+
+[analysis]
+# Pre-registered thresholds, identical across planets (plan section 5). ASSUMED unless noted.
+min_scored_passes_per_cell = 20    # a cell counts toward T2/primary only with this many scored one-pass-ahead pairs (user: >= 20 passes)
+min_cells = 20
+coverage_levels = [0.841, 0.95, 0.99]   # nominal one-sided coverages (Gaussian k = 1, 1.64, 2.33 in the earlier study)
+coverage_tolerance_below = 0.03    # R1 passes if empirical LOCO-quantile coverage >= nominal - this
+percell_tolerance = 0.10           # R2 per-cell band at 95%
+percell_fraction_required = 0.70   # R2 fraction of qualifying cells inside the band
+half_band_fraction = 0.5           # R3: one-sided 95% buffer <= half_band_fraction * ln(Q_hi/Q_lo)
+information_ratio_max = 0.5        # R4: sigma(best)/sigma(P0s) (T4 of the earlier study)
+ewma_gain_threshold = 0.05         # R5: EWMA "beats" persistence if sigma ratio <= 1 - this
+generality_factor = 2.0            # R7: planets' 95% buffers in scale heights within this factor of each other
+lag1_white_threshold = 0.10        # R6: |lag-1| of the random component below this counts as white
+adapt_coverage = 0.95              # F2 adaptive rule: one-sided quantile level on each limit
+adapt_min_band_m = 200.0           # F2: minimum width of the adaptive corridor; below it the corridor is collapsed to its predicted-median center
+win_cost_tolerance = 0.10          # F2 X: adaptive may lose at most this fraction of apoapsis decay per day and add at most this fraction of dV
+bootstrap_draws = 10000
+bootstrap_seed = 20261020
+
+# ------------------------------------------------------------------------------------------------------------------------------
+[common.atmosphere]
+fit_top_altitude_m = 400000.0       # ASSUMED (as venus_gram_config.toml)
+temperature_k = 170.0               # placeholder, never used for drag
+
+[common.atmosphere_gram]
+entry_interface_km = 2000.0         # SOURCED: GRAM extension zero-density ceiling; GRAM sampled wherever it is sampled (venus_gram_config.toml)
+density = "mean"
+
+[common.band]
+q_low_w_cm2 = 0.05                  # SOURCED (paper): lower corridor edge; below it = "low" tier (campaign-length cost only)
+q_high_w_cm2 = 0.25                 # SOURCED (paper): upper corridor edge = soft-violation threshold; the controller's thermal edge
+q_target_w_cm2 = 0.15               # SOURCED (paper): target heat rate; used as the first-pass calibration target (Stage F used the geometric mean of the band)
+q_medium_w_cm2 = 0.30               # SOURCED (paper): soft tier 0.25 to 0.30, medium tier above it
+q_hard_w_cm2 = 0.45                 # SOURCED (paper): medium tier 0.30 to 0.45, hard tier (mission failure) above it
+w_cm2_to_w_m2 = 1.0e4
+
+[common.guess]
+fixed_point_iterations = 3          # ASSUMED (venus_gram_config.toml)
+root_bracket_m = [80000.0, 300000.0]
+root_tolerance_m = 1.0
+
+[common.fit]
+window_below_m = 15000.0            # ASSUMED (venus_gram_config.toml): the in-window rule of the density-buffer analysis
+window_above_m = 25000.0
+step_m = 1000.0
+node_spacing_m = 2000.0
+local_scale_height_step_m = 500.0
+
+[common.calibration]
+max_iterations = 8
+q_tolerance_relative = 1.0e-3
+horizon_fraction_of_period = 0.65
+
+[common.integration]
+reltol = 1.0e-9                     # SOURCED: examples/periapsis_corridor_config.toml [integration]
+abstol = 1.0e-11
+dt_max_orbit_s = 30.0
+dt_max_atmosphere_s = 1.0
+solver_mode = "tsit5"
+
+[common.analysis]
+impact_altitude_m = 50000.0         # SOURCED: IMPACT_ALTITUDE_M, event_callbacks.jl
+
+[common.closedloop]
+policy = "near_passive"
+margin_m = 1000.0
+
+# ------------------------------------------------------------------------------------------------------------------------------# ------------------------------------------------------------------------------------------------------------------------------
+[planets.venus.planet]
+name = "Venus"                      # SOURCED: venus_generality_config.toml (via stagel_config.toml)
+spice_center = "VENUS"
+third_bodies = ["Sun"]
+[planets.venus.gravity]
+coefficient_file = "data/planets/gravity/MGNP180U.csv"   # SOURCED: venus_generality_config.toml (20x20)
+degree = 20
+order = 20
+[planets.venus.orbit]
+# apoapsis_radius_m is injected from [stageg3v.table] start.ra0_m by the loader (one source of truth); the start is at apoapsis.
+apoapsis_radius_m = 72651770.0      # SOURCED: vex_orvm_f.toml (checked against the table start by the loader)
+true_anomaly_deg = 180.0            # ASSUMED: start at apoapsis, study convention
+[planets.venus.guess]
+initial_altitude_m = 135000.0       # ASSUMED start of the Pi-rule fixed point (venus_gram_config.toml)
+[planets.venus.vehicle]
+bus_dims_m = [2.05, 3.7, 2.8]       # SOURCED: venus_generality_config.toml
+panel_dims_m = [0.01, 2.85, 1.0]
+bus_mass_kg = 630.0
+panel_mass_each_kg = 10.0
+panel_offset_y_m = 2.45
+prop_mass_kg = 50.0                 # ASSUMED: as stagel_config.toml (the Venus open-loop config models no propellant; the closed loop needs some; 50 kg is the Mars Stage C value)
+cd = 2.2
+beta_override_kg_m2 = 0.0
+thrust_n = 4.0                      # ASSUMED: Stage C Mars controller values reused (as stagel_config.toml)
+specific_impulse_s = 220.0
+max_burn_delta_v_mps = 10.0
+max_burn_duration_s = 1800.0
+total_delta_v_budget_mps = 100.0
+planning_lead_deg = 12.0
+predictor_monotone_tolerance_m = 0.5
+[planets.venus.grid]
+# Single epoch for all three gate geometries (offset 0 = the Venus Express anchor epoch). Kept because the shared helpers index it.
+epochs_utc = ["2014-05-19T04:00:00"]   # SOURCED: vex_orvm_f.toml epoch (the Venus ranking anchor); taken as the time of the starting apoapsis (ASSUMED as at Mars)
+horizon_days = 60.0                 # unused by the gate (each case carries its own horizon); kept for the shared helpers
+
+[stageg3v]
+base_epoch_utc = "2014-05-19T04:00:00"   # SOURCED: geometry_rank_venus_config.toml [anchor] epoch_utc. Geometry epochs are this plus epoch_off_d (all 0 here)
+band_name = "venus_carried"         # the carried Odyssey band, see [stageg3v.band]
+keeper_margin_m = 1000.0            # SOURCED: Stage O fixed keeper margin (stageo_config.toml); Stage L Venus flew fm01000 (fm04000 failed: the Venus corridor is narrower than 8 km, stagel_results.md)
+horizon_days = 110.0                # ASSUMED: 2 x D_ref (55.1 d), as the Mars gate (130 d for 64.2 d); a horizon limit only, a flight stops at the first apoapsis at or below ra_target_m
+burn_response_ratio = 1.0           # DERIVED (halflever_twin_results.md, R4.1); the named field of every config (F2). Used by the analysis lever weights and the burn reconstruction
+decision_speed = "relative"         # U15 (R5.1, CONFIRMED): the keeper's decision quantity is the atmosphere-relative speed at the osculating periapsis
+seeds = [101, 102]                  # ASSUMED (R8.3: as the Mars gate): GRAM seeds of the gate flights
+seed_tag_prefix = "V3s"             # ASSUMED: GRAM seed string = "venus" * prefix * k through the FNV stagef_seed; keeper and zero-burn flights of one geometry share the seed string (paired perturbations)
+workers = 3                         # ASSUMED (the Mars gate flew 3 workers); the command line may lower it
+keeper_seeds_per_geometry = 2       # R8.3
+zero_burn_roles = ["VG1"]           # R8.3: zero-burn flights at VG1 only
+zero_burn_seeds = 2                 # R8.3
+smoke_forced_safety_q_w_cm2 = 0.01  # ASSUMED (as the Mars gate): the smoke flight lowers the Q safety threshold so the terminate path fires on pass 1. Never used by a gate flight
+cal_gram_tag = "VG_cal"             # ASSUMED (as stageo cal_gram_tag): seed string tag of the fit-only calibration cases (mean density, perturbation off)
+smoke_days = 3.0                    # ASSUMED (as stageo): length of the smoke flights (3 passes at the 1 d Venus period)
+solver_maxiters = 20000000          # ASSUMED (as stageo): generous step limit, a safety limit
+peak_gate_altitude_m = 500000.0     # ASSUMED (as stageo): density is sampled for the per-pass peak only below this altitude
+
+[stageg3v.start]
+# The start orbit comes from the geometry table (config [stageg3v.table]); these are the values the loader checks the table against.
+ra0_m = 72651770.0                  # SOURCED: vex_orvm_f.toml ra_m (apoapsis radius)
+ra_target_m = 68985188.05126949     # DERIVED: geometry_rank_venus.derive_campaign (model integration of the flown VEX passes 2950 to 3005); a flight stops at the first apoapsis at or below it
+true_anomaly_deg = 180.0            # ASSUMED
+
+[stageg3v.band]
+# HEAT CAP: NO Venus, Magellan or Venus Express heat-rate limit is stated in the repo (grep of the telemetry_validation tree, the Venus plans and results, docs). Every value below is the Odyssey/Mars number CARRIED to Venus, as the Venus
+# study cells and the Venus ranking already do (venus_generality_plan.md: "the same absolute band at all three planets"; geometry_rank_venus_config.toml [band]). They are ASSUMED to transfer. The VEX flown record gives only the
+# range actually flown (DERIVED: q = pdyn x V_p, flown mean 0.156 and max 0.568 W/cm2, venus_geometry_rank_results.md), not a limit.
+q_low_w_cm2 = 0.14                  # ASSUMED (carried from Odyssey: SOURCED Hanna p. 3, Fig. 5; Takashima p. 3; Tartabini p. 11)
+q_high_w_cm2 = 0.32                 # ASSUMED (carried): the keeper's thermal edge
+q_target_w_cm2 = 0.212              # DERIVED: geometric mean sqrt(0.14 x 0.32) (Stage F rule); the first-pass calibration target
+q_medium_w_cm2 = 0.54               # ASSUMED (carried: Odyssey flight allowable, Hanna p. 3)
+q_hard_w_cm2 = 0.54                 # ASSUMED (carried)
+q_qualification_w_cm2 = 0.65        # ASSUMED (carried: Odyssey qualification limit, reported tier only)
+w_cm2_to_w_m2 = 1.0e4
+
+[stageg3v.heat_cap]
+q_cap_mean_w_cm2 = 0.234            # ASSUMED (carried): the ranking's mean-heat-rate cap (geometry_rank_venus_config.toml [band] q_cap_mean_w_cm2, the Mars knee value); it is read there, repeated here for the record only
+q_never_exceed_qs_w_cm2 = 0.65      # ASSUMED (carried): pass-maximum Q_s on V_rel never-exceed value (U15, U19)
+source = "NONE: no Venus heat-rate limit found in the repo; all heat-cap values are ASSUMED (Odyssey numbers carried, as the Venus ranking and cells do)"
+
+[stageg3v.safety]
+# Zero-burn safety stop (R4.3, U19; R8.3 same rule): terminate at the closing apoapsis of a pass whose maximum Q_s on V_rel exceeds q_stop, or at a periapsis whose geodetic altitude is more than n_hloc x H_local below the first-pass
+# periapsis altitude (the calibrated start). H_local = hloc_at_hg_m of the geometry's calibration (guess.csv).
+q_stop_w_cm2 = 0.65                 # ASSUMED (U19, carried)
+n_hloc = 3.0                        # ASSUMED (U19)
+
+[stageg3v.rotation]
+w_rot_rad_s = -2.99e-7              # SOURCED: planets.jl Venus struct (retrograde; geometry_rank_venus_config.toml [venus]). Used ONLY by the selftest's identity checks; flights use planet.omega of the engine
+mu_m3s2 = 3.24858592079e14          # SOURCED: gravity file MGNP180U (geometry_rank_venus_config.toml [venus] tesseral_degree note). Selftest only
+
+[stageg3v.criteria]
+# V-G pass criteria (R4.3, U19 CONFIRMED values, R8.3 same thresholds): ASSUMED values. To be frozen with the code (Freeze A(V)).
+smooth_passes = 15                  # SOURCED: geometry_rank_venus_config.toml [band] fast_window_passes
+min_correlation = 0.85              # ASSUMED (U19)
+range_factor = 1.5                  # ASSUMED (U19)
+range_abs_ln = 0.15                 # ASSUMED (U19): absolute alternative when both ranges are below W_eff
+floor_abs_mps = 0.3                 # ASSUMED (U19)
+floor_rel = 0.30                    # ASSUMED (U19)
+min_passes_scored = 30              # ASSUMED (as the Mars gate): fewer flown passes = INSUFFICIENT, counts as not passed. The Venus model campaign has 57 passes
+flights_rule = "all"                # ASSUMED (as the Mars gate): a geometry passes only if every scored flight of it passes
+meanfield_dir = "venus_meanfield"   # DERIVED: GRAM mean-field samples (mf_*.csv, keyed by the geometry id) of stageg3v_meanfield.jl, relative to the task directory
+meanfield_dir_fallback = ""         # none at Venus
+
+[stageg3v.sampling]
+# Venus mean-field sampling (the T10 counterpart; stageg3v_meanfield.jl). Three altitudes around h_ref for H(h) and ln rho at every pass of each gate geometry's predicted track, plus a wider altitude profile for the profile shape.
+alt_offsets_m = [-2000.0, 0.0, 2000.0]   # ASSUMED: +-2 km (Mars used +-5 km at H of about 10 km; Venus H is 3.86 km, so the same fraction of H)
+profile_alt_min_m = 90000.0         # ASSUMED: profile sweep floor (the flown VEX periapsis altitudes were 129 to 187 km)
+profile_alt_max_m = 220000.0        # ASSUMED
+profile_alt_step_m = 2500.0         # ASSUMED
+gram_seed_string = "venus_meanfield"   # ASSUMED: seed of the mean-field model (perturbations off, so the seed only fixes the model construction)
+workers = 3                         # ASSUMED
+route_hint_mission_s = 5184000.0    # ASSUMED: campaign_route_features hint (as the Mars sampler)
+
+[stageg3v.table]
+path = "geometry_gate_table_venus.json"   # relative to the task directory tasks/2026-10-15_periapsis-region-border-targeting (found by walking up from this file; env SPACEAGORA_BORDER_TASK_DIR overrides)
+sha256 = "5de6d2d68b20d75a1a8817cd10282fbdd26e8810542198e334699473964c6b93"   # SOURCED: geometry_gate_table_venus.json.sha256 (stageg3v_select.py, 2026-10-27)
+
+[stageg3v.plan_counts]
+# R8.3 flight list (the dry run is checked against these): 6 keeper flights + 2 zero-burn flights = 8; a calibration case per geometry; a 2-case smoke.
+keeper = 6
+zero_burn = 2
+gate = 8
+cal_cases = 3                       # one fit-only calibration case per geometry (not flights)
+smoke = 2                           # one forced-stop zero-burn flight at VG1 plus one keeper padding flight (a one-case campaign plans route none); outside the 8
+
+[stageg3v.cost]
+# Cost basis of the dry run (not used by any flight). SOURCED from Stage L Venus flights: <local Stage L output dir>/summary_held_venus_lheld_venus_sf3.csv (96 flights, sf3, 3 workers, dt_max_atmosphere 1.0 s, same
+# integrator settings as this gate) and summary_dev_venus_ldev_venus_sf3.csv (185 ok flights): median run_wall_s / passes = 0.43 s per pass (mean 0.44, max 0.79), about 27 s per 62-pass flight; contended, not a performance number.
+s_per_pass_median = 0.43            # SOURCED (above)
+s_per_pass_max = 0.79               # SOURCED (above)
+cal_s_median = 1.46                 # SOURCED: wall_s of 148 Stage I Venus calibration cases (guess.csv), median 1.46 s, max 32.5 s
+phase_startup_s = 60.0              # SOURCED: Mars gate record (stageg3_results.md): smoke 60 s and calibration 46 s wall for 2 and 3 cases, dominated by worker start-up

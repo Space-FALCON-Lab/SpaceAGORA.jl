@@ -1,0 +1,67 @@
+# Periapsis border switchability study. Every value is labeled:
+#   SOURCED  = cited; DERIVED = computed from sourced values; ASSUMED = named choice.
+
+# Results root shared by the Julia drivers (default --out) and the Python scripts (default). A location, not a model value.
+# Override with env SPACEAGORA_BORDER_RESULTS (Julia) or --results-root / that env var (Python). Relative paths resolve against the repo root.
+results_root = "output/periapsis_border_switchability"
+
+[band]
+# SOURCED: Odyssey main-phase heat-rate corridor and flight allowable (Hanna, plan.md revision 6/8).
+q_low_w_cm2 = 0.14
+q_high_w_cm2 = 0.32
+q_hard_w_cm2 = 0.54
+w_cm2_to_w_m2 = 1.0e4
+# ASSUMED (named choice): the first-pass peak Q of every calibrated geometry is the geometric mean of the band limits.
+q_target_rule = "geometric_mean"
+
+[heat_rate]
+# Q = 0.5 * rho * V_rel^3, V_rel = atmosphere-relative speed (planet-fixed velocity, rotating atmosphere, zero wind),
+# rho = the piecewise US76 fit of examples/periapsis_corridor_config.toml evaluated at geodetic altitude.
+definition = "Q = 0.5*rho*V_rel^3 at the radial-event periapsis (peak free-stream heat rate, Hanna Eq. 1)"
+
+[vehicle]
+# DERIVED geometry: examples/AGORA_Earth.jl three-link reference areas.
+bus_ref_area_m2 = 5.74        # 2.05 * 2.8
+wing_ref_area_m2 = 2.85       # 5.7 * 1.0 / 2, two wings
+n_wings = 2
+# ASSUMED: free-molecular drag coefficient of the planner hand estimate (not computed from the fM tables).
+cd = 2.2
+# 0 = derive beta = wet_mass / (cd * area) with the wet mass of the corridor config (620 + 200 kg); > 0 overrides.
+beta_override_kg_m2 = 0.0
+
+[third_bodies]
+bodies = ["Moon", "Sun"]
+spice_kernel_relpath = "spk/planets/de430.bsp"   # first kernel Earth("", SPICE_PATH) furnishes
+other_kernel_relpaths = ["lsk/naif0012.tls", "pck/pck00011.tpc"]
+
+[grid]
+inclination_deg = 50.0
+raan_deg = [0.0, 90.0, 180.0, 270.0]
+omega_deg = [0.0, 90.0, 180.0, 270.0]
+# ASSUMED: three start epochs about 45 days apart (base epoch of the corridor example first).
+epochs_utc = ["2020-01-01T00:00:00", "2020-02-15T00:00:00", "2020-04-01T00:00:00"]
+horizon_days = 60.0
+workers = 2
+
+[calibration]
+max_iterations = 6
+q_tolerance_relative = 1.0e-3
+initial_periapsis_altitude_guess_m = 127000.0
+horizon_fraction_of_period = 0.65
+
+[switch]
+# ASSUMED probe values.
+probe_dv_mps = [0.05, 0.2, 1.0]
+directions = ["tangential", "radial", "normal"]
+# apoapsis = start of the leg; approach = inbound geodetic altitude crossing; nu135 = outbound true anomaly 135 deg.
+locations = ["apoapsis", "approach", "nu135"]
+approach_altitude_m = 2.0e6
+true_anomaly_deg = 135.0
+propagate_days = 15.0
+start_campaign_day = 0.0
+mid_campaign_day = 30.0
+target_delta_rate_km_day = [0.1, 0.5]
+direct_step_km = 10.0
+# ASSUMED proposal: a border orbit is worth carrying forward only if switch_dv <= this fraction of the direct-step cost.
+switch_dv_max_fraction_of_direct_step = 0.5
+hand_apse_rotation_rad_per_mps = 2.09e-4

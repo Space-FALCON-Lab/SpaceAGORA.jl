@@ -1,0 +1,121 @@
+[mission]
+name = "Earth 60-day physical periapsis corridor"
+horizon_s = 5184000.0
+corridor_min_altitude_m = 95000.0
+reference_altitude_m = 97500.0
+corridor_max_altitude_m = 100000.0
+safety_margin_m = 250.0
+# Corridor, target, margin, periapsis events, fit and diagnostics are all geodetic
+# height above the planet ellipsoid (Bowring, the routine the engine feeds to GRAM).
+altitude_reference = "geodetic height above the planet ellipsoid"
+
+[orbit]
+# Seed of the Keplerian initial state (radius above Earth.Rp_e, SPHERICAL; not a
+# corridor quantity). The run calibrates initial_periapsis_altitude_m until the
+# first physical radial-event periapsis is the reference altitude, GEODETIC.
+apoapsis_altitude_m = 60500000.0
+initial_periapsis_altitude_m = 86171.47277
+inclination_deg = 50.0
+raan_deg = 27.0
+argument_of_periapsis_deg = 90.0
+true_anomaly_deg = 180.0
+
+[vacuum_orbit]
+mean_semi_major_axis_m = 7078136.6
+mean_eccentricity = 0.001
+inclination_deg = 50.0
+raan_deg = 27.0
+argument_of_periapsis_deg = 90.0
+mean_true_anomaly_deg = 180.0
+# Vacuum diagnostic band is RADIAL (spherical radius above Earth.Rp_e): it checks the
+# J2 mean-to-osculating map in radius, not a geodetic corridor.
+diagnostic_band_half_width_m = 5000.0
+
+[vehicle]
+dry_mass_kg = 620.0
+propellant_mass_kg = 200.0
+ballistic_coefficient_kg_m2 = 1000.0
+drag_coefficient = 2.0
+thrust_n = 4.0
+specific_impulse_s = 300.0
+
+[atmosphere]
+# Truth (and controller predictor) atmosphere backend: "us76_piecewise" (the fit
+# below) or "gram" (Earth-GRAM mean density through the repo's atmosphere
+# sample path; see [atmosphere_gram]). The `--atmosphere=` flag overrides it.
+backend = "us76_piecewise"
+model = "piecewise exponential fit to the 1976 U.S. Standard Atmosphere"
+source = "PDAS, Tables of the U.S. Standard Atmosphere 1976, Table 1 (SI units), geometric altitude Z and density, https://www.pdas.com/bigtables.html"
+# Table rows (Z in m, density in kg/m3), copied verbatim from the PDAS table, 80-150 km.
+table_altitudes_m = [80000.0, 85000.0, 90000.0, 95000.0, 100000.0, 105000.0, 110000.0, 115000.0, 120000.0, 125000.0, 130000.0, 135000.0, 140000.0, 145000.0, 150000.0]
+table_density_kg_m3 = [1.8458e-5, 8.2195e-6, 3.4400e-6, 1.3873e-6, 5.6044e-7, 2.3325e-7, 9.6734e-8, 4.2794e-8, 2.2199e-8, 1.2918e-8, 8.1494e-9, 5.4647e-9, 3.8313e-9, 2.7805e-9, 2.0752e-9]
+# Layer boundaries: a subset of the table altitudes. Each layer between two
+# consecutive nodes is one exponential through the table densities at both
+# nodes, so density is continuous at every boundary. Table rows that are not
+# nodes are held out and used to measure the fit error.
+node_altitudes_m = [80000.0, 90000.0, 95000.0, 100000.0, 110000.0, 120000.0, 130000.0, 150000.0]
+# Behavior outside [first node, last node]: "extend" continues the nearest
+# layer's exponential; "zero" returns zero density.
+below_bottom_node = "extend"
+above_top_node = "extend"
+# Geodetic height above the planet ellipsoid, the same reference as the corridor and as GRAM.
+altitude_reference = "geodetic height above the planet ellipsoid"
+# Table temperature at Z = 100 km (195.081 K); a placeholder only, never used for drag.
+temperature_k = 195.08
+
+[atmosphere_gram]
+# Used only when backend = "gram". Dynamics read the GRAM MEAN density only;
+# GRAM seeds and perturbation scales do not enter the trajectory.
+planet_name = "earth"
+# EnvironmentModel.EI for the GRAM backend. The GRAM extension evaluates GRAM
+# only below EI and uses the planet polynomial fit above it, and it hard-codes
+# zero density above 2000 km (ext/SpaceAGORAGRAMSuiteExt.jl, getDensity). Setting
+# EI to that 2000 km ceiling means GRAM is sampled at every altitude it is
+# evaluated at all; no entry-interface shortcut to a different density source.
+entry_interface_km = 2000.0
+
+[calibration]
+# Initial-periapsis calibration against the physical radial-event periapsis
+# (geodetic altitude at the event).
+tolerance_m = 1.0
+max_iterations = 3
+horizon_fraction_of_period = 0.65
+
+[gravity]
+coefficient_file = "data/planets/gravity/EarthGGM05C.csv"
+degree = 3
+order = 0
+source_model = "GGM05C"
+include_central = true
+conversion_model = "first-order Vallado-Kwok J2 short-period map; J3 remains in truth propagation"
+
+[integration]
+reltol = 1.0e-9
+abstol = 1.0e-11
+dt_max_orbit_s = 30.0
+dt_max_atmosphere_s = 1.0
+solver_mode = "tsit5"
+
+[comparison]
+smoke_orbits = 2
+planning_lead_deg = 12.0
+frequent_deadband_m = 100.0
+near_passive_deadband_m = 1000.0
+target_periapsis_altitude_m = 97500.0
+# ASSUMED (not sourced): tolerance of the predictor monotonicity check. Measured
+# predictor jitter was ~0.2 m (burns of ~7e-4 m/s, frequent case, pass 5); 0.5 m covers it.
+predictor_monotone_tolerance_m = 0.5
+max_burn_delta_v_mps = 10.0
+max_burn_duration_s = 1800.0
+total_delta_v_budget_mps = 100.0
+
+[sweep]
+# Used only by examples/periapsis_corridor_sweep.jl (CLI flags override these).
+# Critical inclinations 63.4 and 116.6 deg (J2 apsidal drift vanishes where
+# 5 cos^2(i) = 1, i = 63.435 and 116.565 deg): derived, not sourced from data.
+# The other inclinations and the 45 deg omega spacing are assumed grid choices.
+inclinations_deg = [30.0, 50.0, 63.4, 80.0, 98.0, 116.6]
+argument_of_periapsis_deg = [0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0]
+# ASSUMED (not sourced): Phase B runs cells whose passive minimum margin to the
+# lower corridor bound is below this value, or that breach.
+margin_threshold_m = 500.0

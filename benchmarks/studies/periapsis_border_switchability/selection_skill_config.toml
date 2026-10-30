@@ -1,0 +1,59 @@
+# Estimator v1 and offline selection-skill validation (task A2). Labels: SOURCED / DERIVED / ASSUMED / USER-SET.
+# Everything else (band, vehicle, third bodies, epochs, calibration rule) comes from study_config.toml; the policy and
+# labels from oracle_config.toml and oracle_lib.py.
+
+[estimator]
+# ASSUMED numerical resolutions, each with a convergence check in the results note.
+n_tide_nodes = 64                    # eccentric-anomaly nodes of the averaged tide (the attribution check converged to 14 digits from 32)
+n_drag_nodes_per_half = 32           # Gauss-Legendre nodes per side of periapsis for the drag integral
+drag_window_km = 250.0               # drag integrated while the orbit is within this altitude above the periapsis radius
+# ASSUMED: epoch of the Sun/Moon positions of an apoapsis-to-apoapsis orbit window = the pass (periapsis) time ("periapsis") or half an orbit later.
+body_epoch = "periapsis"
+horizon_days = 60.0                  # SOURCED: the truth runs' 60-day horizon
+calibration_tol_m = 1.0              # ASSUMED: seed calibration tolerance (periapsis altitude, first pass)
+calibration_max_iter = 8
+# SOURCED: IMPACT_ALTITUDE_M of the engine's impact callback (spherical radius above Rp_e at which the run terminates).
+impact_altitude_m = 50000.0
+margin_km = 1.0                      # ASSUMED, as oracle_config.toml (band shrunk 1 km per side before the policy)
+
+[policy]
+# A1 labels: lazy-to-edge with overshoot s = 0 is the reference label policy; near_passive is reported too.
+reference = "lazy_s0"
+
+[timing]
+n_cells = 24                         # ASSUMED: cells spread over the 336 for the warm per-candidate timing
+repeats = 5
+
+[scan]
+# USER-SET by the task: candidate geometry grid.
+inclination_deg = [23.4, 50.0, 63.4, 116.6]
+raan_start_deg = 0.0
+raan_step_deg = 15.0
+raan_stop_deg = 315.0
+omega_start_deg = 0.0
+omega_step_deg = 15.0
+omega_stop_deg = 345.0
+epochs = [1, 2, 3]
+top_n = 5
+
+[thresholds]
+# USER-APPROVED recommended go/no-go fields (plan.md decision 1).
+max_false_safe_rate = 0.0
+max_selection_regret_mps = 0.76          # conservative end of the measured direct 10 km step (0.72-0.76 m/s)
+max_selection_regret_mps_low = 0.72      # reported alongside
+top_fraction = 0.10                      # k = 10% of the fold (rounded up, at least 1)
+
+[baselines]
+# ASSUMED: random-ranking draws and seed.
+random_draws = 2000
+random_seed = 20261016
+# SOURCED (plan.md): the measured quiet set. [inclination deg, RAAN deg].
+quiet_set = [[63.4, 180.0], [116.6, 0.0]]
+
+[lookahead]
+# ASSUMED bins (days) for the estimator error versus lookahead.
+bin_edges_days = [0.0, 5.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
+
+[splits]
+# SOURCED (plan.md): leave-one-epoch-out (3 folds); RAAN halves both directions; the pooled set.
+raan_halves = [[0.0, 45.0, 90.0, 135.0], [180.0, 225.0, 270.0, 315.0]]

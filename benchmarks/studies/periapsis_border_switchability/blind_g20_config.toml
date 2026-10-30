@@ -1,0 +1,26 @@
+# Blind test of estimator v3 on NEW cells at >= 20x20 truth gravity (step 4). Labels: SOURCED / DERIVED / ASSUMED.
+# Written and used by select_blind_g20.py BEFORE any blind truth run; nothing here is changed after seeing a blind result.
+# The estimator (estimator_v3.jl, ZonalOpts defaults) is frozen; no value below is a coefficient of it.
+
+[mars]
+# ASSUMED named seed (numpy default_rng). Cells are drawn so that RAAN, omega and the epoch are all different from the 128-cell development set
+# (RAAN, omega not multiples of 90 deg; epochs not E1, E2 of mars_generality_config.toml).
+seed = 20261018
+# Inclinations (deg) and cells per inclination: the four development inclinations plus two new ones (45 and 80 deg; SOURCED by the task statement).
+inclination_deg = [25.2, 63.4, 93.522, 116.6, 45.0, 80.0]
+cells_per_inclination = [11, 11, 11, 11, 10, 10]
+# Four new epochs: E1 (2001-11-06T19:00:32, the Odyssey record epoch) + these offsets in days, drawn with the seed from integers 3..120,
+# excluding offsets within 3 d of 0 and 45 d (E1, E2 of the development set), all distinct, sorted.
+n_epochs = 4
+epoch_offset_range_days = [3, 120]
+base_epoch_utc = "2001-11-06T19:00:32"
+
+[earth]
+seed = 20261019
+inclination_deg = [23.4, 30.0, 63.4, 80.0, 116.6]
+cells_per_inclination = [12, 7, 7, 7, 7]
+# RAAN, omega integer degrees not multiples of 45 (RAAN) / 90 (omega); three new epochs = 2020-01-01T00:00:00 + offsets in days drawn from integers 3..150,
+# excluding offsets within 3 d of 0, 45 and 91 d (the three development epochs).
+n_epochs = 3
+epoch_offset_range_days = [3, 150]
+base_epoch_utc = "2020-01-01T00:00:00"

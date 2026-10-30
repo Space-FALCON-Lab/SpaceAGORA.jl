@@ -1,0 +1,52 @@
+# Oracle-schedule experiment (task A1). Labels: SOURCED / DERIVED / ASSUMED / MEASURED.
+# Lengths in meters unless the key says otherwise.
+
+[model]
+# ASSUMED: superposition. A burn shifts the next periapsis by lever * dv and leaves the later passive drift unchanged.
+# ASSUMED: one tangential burn opportunity at the apoapsis before every pass (including pass 1: the runs start at apoapsis).
+# ASSUMED: burn size is unbounded (no max_burn_delta_v_mps) and execution is exact.
+
+[band]
+# DERIVED from the stored per-pass band edges h_qhigh_m / h_qlow_m (Q = 0.32 / 0.14 W/cm^2 at the pass's V_rel).
+# ASSUMED (the previous correction-cost study's value): margin shrunk from each edge.
+margin_km = 1.0
+# SOURCED (Hanna via plan.md): the hard limit; used only for flags.
+q_hard_w_cm2 = 0.54
+q_high_w_cm2 = 0.32
+q_low_w_cm2 = 0.14
+w_cm2_to_w_m2 = 1.0e4
+
+[cells]
+# A cell completed if its engine return code is Success (all 172 completed grid cells end at 59.2-60 d;
+# all 116 early-ended grid cells end at 14.6-54.8 d, so the split is unambiguous).
+horizon_days = 60.0
+
+[dp]
+# The main DP is EXACT (state set = candidate offsets {0, A_j, B_j}; no resolution). A uniform offset grid is used only
+# (i) for the minimum-burn constraint, at dvmin_grid_res_m, (ii) to reproduce the scoping run, at scoping_grid_res_m,
+# and (iii) to show convergence by halving over convergence_res_m on a subset. All three are ASSUMED named parameters.
+dvmin_grid_res_m = 31.25
+scoping_grid_res_m = 250.0
+convergence_res_m = [1000.0, 500.0, 250.0, 125.0, 62.5, 31.25, 15.625]
+convergence_n_cells = 12
+# ASSUMED: largest burn count for the exact burn-budget curve (the lazy policy needs at most 81 on the 336 histories).
+budget_cmax = 100
+# ASSUMED: tiny burn penalty (m/s per burn) used only to break ties toward fewer burns; not counted in dV.
+tie_lambda_mps = 1.0e-6
+# ASSUMED: burn penalties (m/s per burn) for the dV vs burn-count frontier.
+lambda_mps = [0.0, 0.002, 0.005, 0.01, 0.02, 0.035, 0.05, 0.075, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 5.0, 10.0]
+
+[policies]
+# ASSUMED: overshoot (km inside the violated edge) for lazy-to-edge; capped at the band center (so s >= half width = near_passive).
+overshoot_km = [0.0, 1.0, 2.0, 4.0, 6.0]
+# ASSUMED probe values (m/s) for the minimum-burn constraint.
+min_burn_dv_mps = [0.01, 0.05, 0.1]
+
+# ASSUMED: forecast reach (passes, including the current one) for the limited-forecast hold policy; 0 = unlimited.
+hold_forecast_passes = [1, 2, 3, 4, 6, 8, 12, 16, 24, 0]
+
+[race]
+# ASSUMED: horizons (d) at which the race histories are scored.
+horizons_days = [60.0, 180.0]
+# ASSUMED: relative lever tilt per horizon used only to break ties of the constant-lever DP toward earlier or later burns.
+tie_tilt = 1.0e-6

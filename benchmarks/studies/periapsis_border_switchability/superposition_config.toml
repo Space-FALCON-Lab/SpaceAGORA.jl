@@ -1,0 +1,48 @@
+# Part 3 (task B1): superposition check. Labels: SOURCED / DERIVED / ASSUMED / USER-SET / MEASURED.
+# THE CELL-SELECTION RULE WAS FIXED BEFORE ANY SUPERPOSITION RUN AND IS NOT CHANGED AFTER SEEING RESULTS.
+# Assumption under test: a tangential-at-apoapsis step changes the next-pass periapsis by the lever times dV and does not change the
+# later passive drift.
+
+[selection]
+# USER-SET scope (8 cells, completed, spanning the four inclinations); ASSUMED rule: per inclination, among the completed cells of the A1
+# labels (oracle_cell_labels.csv, 203), the cell whose exact-DP dV is nearest the 10th percentile ("quiet") and the 90th percentile
+# ("high_drift") of that inclination's completed cells; ties by tag. Realized epochs are reported (two cells have epoch 1, six epoch 2, so
+# the start Moon phase differs for two of the eight; the 13.66 d oscillation phase itself is fitted and reported).
+inclinations_deg = [23.4, 50.0, 63.4, 116.6]
+quantile_quiet = 0.10
+quantile_high_drift = 0.90
+# ASSUMED rule for the finite-burn cell: the cell whose lazy s=0 dV is the lower median of the 8.
+finite_burn_cell_rule = "lower_median_lazy_s0_dv"
+
+[schedules]
+# Schedules computed by the A1 library on the passive truth history (iteration 0): lazy-to-edge s = 0 and near_passive.
+names = ["lazy_s0", "near_passive"]
+# ASSUMED: band shrunk 1 km per side, Keplerian lever per pass (as A1).
+margin_km = 1.0
+
+[repair]
+# ASSUMED: number of repair iterations (recompute the schedule on the closed-loop history, add the increment, replay again).
+max_iterations = 2
+# ASSUMED: a replay counts as repaired when no pass is outside the shrunk band by more than this (m).
+tolerance_m = 1.0
+
+[run]
+horizon_days = 60.0
+workers = 4
+
+[fd_lever]
+# ASSUMED (the static sweep's value): tangential probe size of the central finite difference (m/s).
+probe_dv_mps = 0.2
+
+[analysis]
+# DERIVED: the Moon oscillation of the periapsis is twice the lunar sidereal rate: 27.32 d / 2 (attribution_results.md measured 13.6-13.8 d).
+moon_oscillation_period_days = 13.66
+# ASSUMED: kicks smaller than this in periapsis shift (m) are excluded from the per-kick effective-lever statistics (noise floor of the
+# pass-to-pass difference).
+min_kick_shift_m = 200.0
+# ASSUMED named superposition tolerance for the verdict: relative dV error (final repaired dV over the A1 estimate minus 1).
+dv_error_acceptable = 0.10
+
+[finite_burn]
+# SOURCED: examples/periapsis_corridor_config.toml (thrust 4 N, Isp 300 s, planning lead 12 deg); read from that file at run time.
+note = "values read from examples/periapsis_corridor_config.toml"

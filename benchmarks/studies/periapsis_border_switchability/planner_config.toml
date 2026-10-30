@@ -1,0 +1,1117 @@
+# Planner arms (WP-P2): B-ODY, ladder L0 to L3, open-loop OL and online-replanned OL-R. Plan: tasks/2026-10-15_periapsis-region-border-targeting/analytic_framework_and_transfer_plan.md,
+# R4.5 to R4.10 (arms, criteria, freeze items F9 to F13), R7.3, R7.4 (OL, D6), R8.1, R8.2 (OL-R, D7). NOT FROZEN: Freeze B has not happened; every ASSUMED value below is a named field the coordinator may change before it.
+# Same keys as stageg3_config.toml for the shared helpers ([stagef], [analysis], [common.*], [planets.mars.*], [stageo], [stageg3]); planner_lib.py --selftest asserts that these sections equal stageg3_config.toml's
+# (the only difference is results_subdir = "planner"). The planner's own tables are [planner] and below.
+# Labels: SOURCED (cited file or paper), DERIVED (computed from sourced values), ASSUMED (named choice, flagged), NUMERICAL (a numerical tolerance, not a modeling choice).
+[stagef]
+results_subdir = "planner"       # below the results root; per-planet folders below it
+planets = ["mars"]
+cell_seed = 20261019               # ASSUMED: numpy default_rng seed of the cell draw (stagef_cells.py)
+n_epochs = 3                       # ASSUMED (user: >= 3 epochs / local-time sectors)
+n_per_group = 4                    # ASSUMED: cells drawn per (epoch, inclination); 3 x 4 x 4 = 48 cells per planet (user: >= 20 cells)
+n_dev_per_group = 2                # ASSUMED: of the 4 drawn cells per group, 2 development, 2 held out
+workers = 4                        # ASSUMED, modest on the workstation
+perturbation_mode = "pass"         # SPACEAGORA_GRAM_DENSITY_PERTURBATION value for the perturbed arm
+perturbation_reseed = "1"          # SPACEAGORA_GRAM_DENSITY_PERTURBATION_PASS_RESEED: pass k's random stream depends only on (cell seed, k)
+fixed_margin_m = 1000.0            # ASSUMED (the value used by the Stage E / Stage C closed loops): the fixed margin under test
+policy = "near_passive"            # SOURCED: Stage E / C closed loops
+predictor = "v5"                   # frozen estimator v5, one-pass prediction (run_mars_closedloop.jl --predictor=v5 form)
+
+
+[analysis]
+# Pre-registered thresholds, identical across planets (plan section 5). ASSUMED unless noted.
+min_scored_passes_per_cell = 20    # a cell counts toward T2/primary only with this many scored one-pass-ahead pairs (user: >= 20 passes)
+min_cells = 20
+coverage_levels = [0.841, 0.95, 0.99]   # nominal one-sided coverages (Gaussian k = 1, 1.64, 2.33 in the earlier study)
+coverage_tolerance_below = 0.03    # R1 passes if empirical LOCO-quantile coverage >= nominal - this
+percell_tolerance = 0.10           # R2 per-cell band at 95%
+percell_fraction_required = 0.70   # R2 fraction of qualifying cells inside the band
+half_band_fraction = 0.5           # R3: one-sided 95% buffer <= half_band_fraction * ln(Q_hi/Q_lo)
+information_ratio_max = 0.5        # R4: sigma(best)/sigma(P0s) (T4 of the earlier study)
+ewma_gain_threshold = 0.05         # R5: EWMA "beats" persistence if sigma ratio <= 1 - this
+generality_factor = 2.0            # R7: planets' 95% buffers in scale heights within this factor of each other
+lag1_white_threshold = 0.10        # R6: |lag-1| of the random component below this counts as white
+adapt_coverage = 0.95              # F2 adaptive rule: one-sided quantile level on each limit
+adapt_min_band_m = 200.0           # F2: minimum width of the adaptive corridor; below it the corridor is collapsed to its predicted-median center
+win_cost_tolerance = 0.10          # F2 X: adaptive may lose at most this fraction of apoapsis decay per day and add at most this fraction of dV
+bootstrap_draws = 10000
+bootstrap_seed = 20261020
+
+# ------------------------------------------------------------------------------------------------------------------------------
+[common.atmosphere]
+fit_top_altitude_m = 400000.0       # ASSUMED (as venus_gram_config.toml)
+temperature_k = 170.0               # placeholder, never used for drag
+
+[common.atmosphere_gram]
+entry_interface_km = 2000.0         # SOURCED: GRAM extension zero-density ceiling; GRAM sampled wherever it is sampled (venus_gram_config.toml)
+density = "mean"
+
+[common.band]
+q_low_w_cm2 = 0.05                  # SOURCED (paper): lower corridor edge; below it = "low" tier (campaign-length cost only)
+q_high_w_cm2 = 0.25                 # SOURCED (paper): upper corridor edge = soft-violation threshold; the controller's thermal edge
+q_target_w_cm2 = 0.15               # SOURCED (paper): target heat rate; used as the first-pass calibration target (Stage F used the geometric mean of the band)
+q_medium_w_cm2 = 0.30               # SOURCED (paper): soft tier 0.25 to 0.30, medium tier above it
+q_hard_w_cm2 = 0.45                 # SOURCED (paper): medium tier 0.30 to 0.45, hard tier (mission failure) above it
+w_cm2_to_w_m2 = 1.0e4
+
+[common.guess]
+fixed_point_iterations = 3          # ASSUMED (venus_gram_config.toml)
+root_bracket_m = [80000.0, 300000.0]
+root_tolerance_m = 1.0
+
+[common.fit]
+window_below_m = 15000.0            # ASSUMED (venus_gram_config.toml): the in-window rule of the density-buffer analysis
+window_above_m = 25000.0
+step_m = 1000.0
+node_spacing_m = 2000.0
+local_scale_height_step_m = 500.0
+
+[common.calibration]
+max_iterations = 8
+q_tolerance_relative = 1.0e-3
+horizon_fraction_of_period = 0.65
+
+[common.integration]
+reltol = 1.0e-9                     # SOURCED: examples/periapsis_corridor_config.toml [integration]
+abstol = 1.0e-11
+dt_max_orbit_s = 30.0
+dt_max_atmosphere_s = 1.0
+solver_mode = "tsit5"
+
+[common.analysis]
+impact_altitude_m = 50000.0         # SOURCED: IMPACT_ALTITUDE_M, event_callbacks.jl
+
+[common.closedloop]
+policy = "near_passive"
+margin_m = 1000.0
+
+# ------------------------------------------------------------------------------------------------------------------------------
+[planets.mars.planet]
+name = "Mars"                       # SOURCED: mars_generality_config.toml
+spice_center = "MARS"
+third_bodies = ["Sun"]
+[planets.mars.gravity]
+coefficient_file = "data/planets/gravity/Mars50c.csv"    # SOURCED: mars_generality_config_g20.toml (Mars50c truncated to degree 20, order 20; the Stage F run used degree 3, order 0)
+degree = 20
+order = 20
+[planets.mars.orbit]
+# apoapsis_radius_m is injected from [stageo].ra0_m by the loader (one source of truth); the start is at apoapsis.
+true_anomaly_deg = 180.0            # ASSUMED: start at apoapsis, study convention since Stage C (plan R1.1)
+[planets.mars.guess]
+initial_altitude_m = 109000.0       # ASSUMED start (mars_generality_config.toml initial_periapsis_altitude_guess_m)
+[planets.mars.vehicle]
+bus_dims_m = [2.2, 2.6, 1.7]        # SOURCED: mars_generality_config.toml (Odyssey)
+panel_dims_m = [0.01, 1.945, 1.7]
+bus_mass_kg = 391.0
+panel_mass_each_kg = 10.0
+panel_offset_y_m = 2.2725
+prop_mass_kg = 50.0
+cd = 2.2
+beta_override_kg_m2 = 0.0
+thrust_n = 4.0
+specific_impulse_s = 220.0
+max_burn_delta_v_mps = 10.0
+max_burn_duration_s = 1800.0
+total_delta_v_budget_mps = 100.0
+planning_lead_deg = 12.0
+predictor_monotone_tolerance_m = 0.5
+[planets.mars.grid]
+# Single geometry. Element values are in [stageo]; epochs_utc is kept because the shared helpers index it.
+epochs_utc = ["2001-11-06T19:00:32"]   # SOURCED: odyssey_tolson.toml [scenarios.initial_time]; taken as the time of the starting apoapsis (ASSUMED, plan R1.1: shifts the clock by about half an orbit)
+horizon_days = 90.0                 # unused by Stage O (each case carries its own horizon from [stageo.arms]); kept for the shared helpers
+
+[stageo]
+# Only what stageo_load / the shared helpers read. The start orbit's inclination, RAAN and omega come from the geometry table (config [stageg3.table]), the epoch from the table (checked against base_epoch_utc + epoch_off_d).
+ra0_m = 28533000.0                  # SOURCED: Smith and Bell 2005 via Falcone and Putnam 2023 Table III, main phase 1 start (stageo_config.toml)
+ra_target_m = 7408000.0             # SOURCED: Table III, end of main phase 2; a flight stops at the first apoapsis at or below it
+cal_gram_tag = "ODY_cal"            # ASSUMED (as stageo): seed string tag of the fit-only calibration cases (mean density, perturbation off)
+smoke_days = 3.0                    # ASSUMED (as stageo): length of the smoke flights
+solver_maxiters = 20000000          # ASSUMED (as stageo): generous step limit, a safety limit not a tuned value
+peak_gate_altitude_m = 500000.0     # ASSUMED (as stageo): density is sampled for the per-pass peak only below this altitude
+track_vrel = false                  # unused here (the gate's own decision_speed below replaces it); the key is kept because stageo_load's callers read the [stageo] table
+
+[stageo.bands.odyssey]
+q_low_w_cm2 = 0.14                  # SOURCED: Hanna p. 3, Fig. 5; Takashima p. 3; Tartabini p. 11 (stageo_config.toml)
+q_high_w_cm2 = 0.32                 # SOURCED: same
+q_target_w_cm2 = 0.212              # DERIVED: geometric mean sqrt(0.14 x 0.32) (Stage F rule)
+q_medium_w_cm2 = 0.54               # SOURCED: flight allowable (175 C), Hanna p. 3
+q_hard_w_cm2 = 0.54                 # SOURCED: plan section 3 hard (failure) 0.54
+q_qualification_w_cm2 = 0.65        # SOURCED: Hanna p. 3 (195 C); reported tier only
+w_cm2_to_w_m2 = 1.0e4
+
+[stageg3]
+base_epoch_utc = "2001-11-06T19:00:32"   # SOURCED: odyssey_tolson.toml (stageo_config.toml [planets.mars.grid] epochs_utc); the starting apoapsis (ASSUMED there). Geometry epochs are this plus epoch_off_d
+band = "odyssey"                    # SOURCED: R4.3 flies the Stage O F-O keeper (Odyssey band 0.14 to 0.32 W/cm2)
+keeper_margin_m = 1000.0            # SOURCED: Stage O fixed keeper margin (stageo_config.toml [stageo.n2] fixed_margin_m)
+horizon_days = 130.0                # ASSUMED (as Stage O F-O): horizon limit only; a flight stops at the first apoapsis at or below ra_target_m
+burn_response_ratio = 1.0           # DERIVED (halflever_twin_results.md, R4.1): GRAM-on twin test; the named field of every config (F2). Used by the analysis lever weights and the burn reconstruction
+decision_speed = "relative"         # U15 (R5.1, CONFIRMED): the keeper's decision quantity is the atmosphere-relative speed at the osculating periapsis. "first_pass" = the first-pass relative speed held fixed (Stage O track_vrel = false)
+seeds = [101, 102]                  # ASSUMED: GRAM seeds of the gate flights, outside the dev (1 to 12 of Stage O; 1 to 8 of the held-study dev) and held (13 to 28) seed sets so the gate never reuses a study seed
+seed_tag_prefix = "G3s"             # ASSUMED: GRAM seed string = "mars" * prefix * k through the FNV stagef_seed; the same seed string is used by the keeper and the zero-burn flight of one geometry (paired perturbations)
+workers = 4                         # ASSUMED (R4.3: 4 workers, MemoryMax 24G, host quiet)
+keeper_seeds_per_geometry = 2       # R4.3
+zero_burn_roles = ["G1", "G2"]      # R4.3: zero-burn flights at G1 and G2 only
+zero_burn_seeds = 2                 # R4.3: 2 zero-burn flights each
+smoke_forced_safety_q_w_cm2 = 0.01  # ASSUMED: the smoke flight lowers the Q safety threshold to this value so the terminate path fires on pass 1 (F4: safety terminate tested on a smoke flight). Never used by a gate flight
+
+[stageg3.safety]
+# Zero-burn safety stop (R4.3, U19, CONFIRMED but ASSUMED values): terminate at the closing apoapsis of a pass whose maximum Q_s on V_rel exceeds q_stop, or at a periapsis whose geodetic altitude is
+# more than n_hloc x H_local below the first-pass periapsis altitude (the calibrated start). H_local = hloc_at_hg_m of the geometry's calibration (guess.csv).
+q_stop_w_cm2 = 0.65                 # ASSUMED (U19); numerically the Odyssey qualification limit (SOURCED Hanna p. 3)
+n_hloc = 3.0                        # ASSUMED (U19)
+
+[stageg3.rotation]
+w_rot_rad_s = 7.08823596e-5         # SOURCED: planets.jl Mars struct (geometry_rank_config.toml [mars] w_rot_rad_s). Used ONLY by the selftest's identity checks; flights use planet.ω of the engine
+mu_m3s2 = 42828.375e9               # SOURCED: stageo_analysis.py MU (R1.2); selftest and the inertial Q_s form only
+
+[stageg3.criteria]
+# V-G pass criteria (R4.3, U19 CONFIRMED; the numbers are ASSUMED values). Frozen at Freeze A with the code.
+smooth_passes = 15                  # SOURCED: geometry_rank_config.toml [band] fast_window_passes (the 15-pass smoothing of R4.3 (a))
+min_correlation = 0.85              # ASSUMED (U19)
+range_factor = 1.5                  # ASSUMED (U19)
+range_abs_ln = 0.15                 # ASSUMED (U19): absolute alternative when both ranges are below W_eff
+floor_abs_mps = 0.3                 # ASSUMED (U19)
+floor_rel = 0.30                    # ASSUMED (U19)
+min_passes_scored = 30              # ASSUMED: a flight with fewer flown passes is reported INSUFFICIENT (not scored, counts as not passed); the 15-pass smoothing needs a few windows
+flights_rule = "all"                # ASSUMED: a geometry passes only if every scored flight of it passes (keeper and zero-burn); R4.3 does not say how seeds combine. Stricter than a mean
+meanfield_dir = "analytic_data/meanfield_fine"   # DERIVED: GRAM mean-field samples of the 8,064-candidate ranking (mf_*.csv, keyed by the geometry id = field_id); relative to the task directory. Missing = the prediction runs without the field and says so
+meanfield_dir_fallback = "analytic_data/meanfield"   # DERIVED: the earlier cut-256 samples (ids of that grid); used only if an id is not found in meanfield_dir
+
+# Geometry candidates (R4.3): FINAL table from the coordinator's file geometry_gate_table.json (selected by the user-confirmed defaults from the 8,064-candidate jitter-ensemble ranking, Sun channel from the engine-sourced table).
+# The elements, epochs, roles and ids are READ FROM THAT FILE at load (Julia and Python); this config stores only its location and sha256, and loading ERRORS on a hash mismatch. The elements are DERIVED (ranking); ids are labels.
+[stageg3.table]
+path = "geometry_gate_table.json"   # relative to the task directory tasks/2026-10-15_periapsis-region-border-targeting (found by walking up from this file; env SPACEAGORA_BORDER_TASK_DIR overrides)
+sha256 = "ac02be4d9be0a88ba1051444b13bf19717f5f854fb763a87dec71f5895908fc8"   # SOURCED: geometry_gate_table.json.sha256 (coordinator, 2026-10-26)
+include_g3 = false                  # the table's optional G3 (G8020, 160 deg, best overall) is listed but not flown by default; true adds 2 keeper flights for it (no zero-burn)
+
+[stageg3.plan_counts]
+# R4.3 flight list, as written in the plan (the dry run is checked against these): 6 keeper flights + 4 zero-burn flights.
+keeper = 6
+zero_burn = 4
+gate = 10
+cal_cases = 3                       # one fit-only calibration case per geometry (default set) (not flights)
+smoke = 2                           # one forced-stop zero-burn flight at G1 plus one keeper padding flight (a one-case campaign plans route none); outside the 10
+
+# ==============================================================================================================================
+# Planner tables
+# ==============================================================================================================================
+[planner]
+burn_response_ratio = 1.0           # DERIVED (halflever_twin_results.md, R4.1): named field; equals [stageg3] burn_response_ratio (selftest asserts)
+q_cap_mean_w_cm2 = 0.2503            # DERIVED (calibration, Revision 12 workflow): R1.2 cap at E = 0.5 for sigma_p 0.0452, interpolated from the plan's own table (caps 0.255, 0.234, 0.213 at sigma_p 0, 0.10, 0.15): ln(0.54/q) = f(0) + 3.446 (sqrt(0.188^2 + sigma_p^2) - 0.188); this form reproduces the 0.15 entry to 0.1%. Was 0.234 at the ASSUMED sigma_p 0.10
+E_budget = 0.5                      # SOURCED (R4.5 settings): expected number of passes above q_exceed_ref per campaign (the knee)
+sigma_p = 0.0452                    # MEASURED (dev seeds 1 to 8, planner_calibration.py: pooled sd of the one-pass prediction error of ln q_mean, 8 flights x 4 arms). Was ASSUMED 0.10 (U14)
+q_exceed_ref_w_cm2 = 0.54           # SOURCED: flight allowable, Hanna p. 3 (the exceedance counted against E)
+q_never_exceed_qs_w_cm2 = 0.65      # ASSUMED USE of a SOURCED value (U12, flagged): pass-maximum Q_s on V_rel above this terminates the flight (terminal check, F10). Value SOURCED: qualification limit, Hanna p. 3
+slack_band_factor = 2.0             # ASSUMED reading of plan R1.3 (geometry_rank_config.toml [band]): tube width W = factor x ln(q_cap / q_req); W is read from the ground table (per geometry)
+fast_reserve_ln = 0.257             # DERIVED (plan R3.2; geometry_rank_config.toml fast_width_ln_at_ratio_1): 5-95% width of the fast part of the path; half is kept free at each tube edge for planned steps beyond the next pass
+l0_width_ln = 0.6202                # DERIVED: N2's band-width cap w_cap_m = 4000 m (SOURCED stageo_config.toml [stageo.n2]) / h_fallback_m = 6450 m (DERIVED, geometry_rank_config.toml [decay]); ASSUMED reading of R2.2 "N2-I's planned band at E 0.5"
+d_ref_days = 70.4                   # MEASURED (dev seeds 1 to 8): median over seeds of min(B-ODY, F-O dev); F-O dev flights (Stage O seeds 1 to 8) are all slower, so it is the B-ODY dev median 70.40 d. Planning value only (sets q_req in the ground table); C1 is scored per seed on held (U13). Was DERIVED 64.2 d
+h_local_fallback_m = 6450.0         # DERIVED (geometry_rank_config.toml [decay] h_fallback_m): scale height of the lever weights when a ground table has no mean-field H
+tail_passes = 50                    # ASSUMED guard: plan steps beyond the ground table's last pass hold the last increments (zero) and weights; a flight may outlast the model campaign (it ran 4 to 5% long in the ranking selftest)
+seed_tag_prefix = "ODY_s"           # SOURCED (stageo_config.toml [stageo] seed_prefix): GRAM seed string = "mars" * prefix * k, the SAME string as the baselines' so perturbation streams pair across arms
+dev_seeds = [1, 8]                  # SOURCED (R4.5): dev seeds 1 to 8
+held_seeds = [13, 28]               # SOURCED (R4.5): held seeds 13 to 28 (16)
+horizon_days = 130.0                # ASSUMED (as stageo F-O): horizon limit only; a flight stops at the first apoapsis at or below ra_target_m
+smoke_days = 3.0                    # SOURCED (R1.4): smoke flights are 3 d
+smoke_seeds = [1, 2]                # ASSUMED (F12: 2 seeds): dev seeds
+repro_seeds = [13, 14]              # ASSUMED (R1.4: repro 2): the first two held seeds of L3 at G1, flown a second time
+xhost_seed = 13                     # ASSUMED (F13): first held seed of L3 at G1, flown on both hosts
+workers = 4                         # ASSUMED, modest on the workstation (R4.9: 4 workers, MemoryMax 24G; sf3 at most 3 workers, 16G)
+
+[planner.calibration]
+# Calibration freeze (U13, U14; calibration_freeze.md): the three values above (sigma_p, d_ref_days, q_cap_mean_w_cm2) replaced the placeholders after the dev flights. No code or logic changed for this, except that
+# planner_predictions.py applies q_cap_mean_w_cm2 and d_ref_days to the ranking context in memory instead of asserting equality with the frozen geometry_rank_config.toml.
+old_sigma_p = 0.10
+old_d_ref_days = 64.2
+old_q_cap_mean_w_cm2 = 0.234
+dev_seeds = [1, 8]
+
+[planner.dp]
+# The exact dynamic program (planner_lib.dp_plan / planner_common.jl planner_dp): minimize sum_m L_m |nu_m - nu_{m-1}| over cumulative ln-q offsets nu_m inside [A_m, B_m] (superposition: a burn shifts the whole later path).
+tie_eps = 1.0e-6                    # NUMERICAL: weights L_m (1 + tie_eps (n - m) / n) make an early burn slightly dearer than the same burn later (lazy tie-break; no effect on the objective beyond 1e-6 relative)
+min_burn_mps = 0.001                # ASSUMED (numerical): a planned burn below this is not commanded (dust of the tie-break); the executed offset bookkeeping uses what was commanded
+tol = 1.0e-9                        # NUMERICAL: feasibility tolerance of the offset bounds
+burn_penalty_mps = 0.01             # ASSUMED (user decision 2026-10-27, held-run default): fixed dV-equivalent cost per burn in the DP, taken from ONE noise-free model replay (planner_predictions.json burn_penalty_sensitivity: OL-R 8 burns at 2.06 m/s and OL 7 burns at 1.98 m/s at Odyssey, against 120 and 116 burns with 0). Not tuned on flights. Arms L3Z and OLRZ (penalty 0) are the sensitivity arms
+
+[planner.update]
+# OL-R drift-path update (R8.1: the estimator and the update rule are the planner's own; no meta-learning). Residual r_i = realized ln q_mean,i - (ground-table path_i + executed burn offset_i); the slope of r over the last `window` passes
+# (least squares) is added to the table's slow increments for the next `cap_passes` planned steps, times `gain`.
+window = 15                         # SOURCED value (geometry_rank_config.toml fast_window_passes), ASSUMED use as the update window
+gain = 1.0                          # ASSUMED (named field; dev may tune it before Freeze B)
+cap_passes = 15                     # ASSUMED: the update acts on the next 15 planned steps only (a slope fitted on 15 noisy residuals is not extrapolated across the campaign)
+
+[planner.body]
+# B-ODY (plan section 7, U10): the Odyssey operating posture inside our truth.
+q_low_qs_w_cm2 = 0.14               # SOURCED: Odyssey corridor, Hanna p. 3, Fig. 5; Takashima p. 3; Tartabini p. 11
+q_high_qs_w_cm2 = 0.32              # SOURCED: same
+q_target_mp1_qs_w_cm2 = 0.24        # SOURCED: Table III phase median, MP1 (plan section 7)
+q_target_mp2_qs_w_cm2 = 0.20        # SOURCED: Table III phase median, MP2
+qs_over_qmean = 1.372               # DERIVED (plan R1.1): mean of Q_s / q_mean (pass maximum over the mean-field heat rate at the event); converts the Q_s band to the planner's mean-field coordinate
+cadence_s = 86400.0                 # SOURCED: at most one burn per 24 h (Tartabini p. 7-8)
+mp1_passes_flown = 108              # SOURCED: Table III main phase 1 passes (stageo_config.toml [stageo.flown] comment)
+total_passes_flown = 153            # SOURCED: Table III passes P19-171
+total_passes_ref = 200              # DERIVED (plan R1.2): B-ODY flies about 200 passes in our truth
+mp1_last_pass = 141                 # DERIVED: round(108 / 153 x 200). ASSUMED mapping of Odyssey's MP1/MP2 split onto our pass count (the B-ODY target switches from the MP1 to the MP2 value after this pass)
+
+[planner.safety]
+# Safety stop (reuses stageg3_common.jl SafetyStop). "q": pass-maximum Q_s on V_rel above q_never_exceed terminates at the closing apoapsis. "q_alt": additionally a periapsis more than n_hloc x H_local below the first-pass altitude (the zero-burn rule, U19).
+n_hloc = 3.0                        # ASSUMED (U19, confirmed by the user)
+
+# Arms. mode: body | online | ol | olr. slack: tube of width W (ground table) with the fast reserve, else the L0 band of width l0_width_ln. ff: drift feed-forward from the ground table (else persistence of the one-pass prediction).
+# early: true lever weights of the table (the DP sees the shrinking lever, so it prepays), else the current lever for every step (lazy). update: OL-R drift update. horizon: planned passes (0 = to the end of the table + tail).
+[planner.arms.BODY]
+mode = "body"
+slack = false
+ff = false
+early = false
+update = false
+horizon = 0
+safety = "q"
+runner = "planner"
+host_default = "ws"
+note = "Odyssey-style emulation (U10): Q_s band 0.14 to 0.32, targets 0.24 MP1 / 0.20 MP2, one burn per 24 h"
+[planner.arms.L0]
+mode = "online"
+slack = false
+ff = false
+early = false
+update = false
+horizon = 1
+safety = "q"
+runner = "planner"
+host_default = "ws"
+note = "R2.2 L0: planner reset-to-edge rule, no slack (band of width l0_width_ln), no feed-forward, no prepayment"
+[planner.arms.L1]
+mode = "online"
+slack = true
+ff = false
+early = false
+update = false
+horizon = 1
+safety = "q"
+runner = "planner"
+host_default = "ws"
+note = "L1: slack band, zero drift beyond the one-pass prediction"
+[planner.arms.L2]
+mode = "online"
+slack = true
+ff = true
+early = false
+update = false
+horizon = 30                        # ASSUMED (named): planned passes of the online ladder arms
+safety = "q"
+runner = "planner"
+host_default = "ws"
+note = "L2: slack + drift feed-forward (ground table), current lever for every step (no prepayment)"
+[planner.arms.L3]
+mode = "online"
+slack = true
+ff = true
+early = true
+update = false
+horizon = 30
+safety = "q"
+runner = "planner"
+host_default = "ws"
+note = "L3: full planner; true lever weights so the DP prepays while the lever is large"
+[planner.arms.OL]
+mode = "ol"
+slack = true
+ff = true
+early = true
+update = false
+horizon = 0
+safety = "q_alt"
+runner = "planner"
+host_default = "sf3"
+note = "R7.3 / R8.1: ground-computed DP schedule from the ground table, flown blind; only the zero-burn safety stop acts"
+[planner.arms.OLT]
+# Revision 20b: OL + the Revision 14 terminal aim (same constants, [planner.terminal]); before the aim activates it is OL exactly. Differs from OLRT3 only by the replanning.
+mode = "ol"
+slack = true
+ff = true
+early = true
+update = false
+horizon = 0
+terminal = true
+safety = "q_alt"
+runner = "planner"
+host_default = "ws"
+note = "Revision 20b: ground a priori schedule flown blind (as OL) plus the terminal aim; clean test of replanning against the terminal aim"
+
+[planner.arms.OLR]
+mode = "olr"
+slack = true
+ff = true
+early = true
+update = true
+horizon = 0
+safety = "q"
+runner = "planner"
+host_default = "ws"
+note = "R8.1: the same DP re-solved at every apoapsis from the measured state over the whole remaining table, with the drift update; one orbit of burns executed at a time"
+[planner.arms.FO]
+mode = "baseline"
+runner = "stageo_run.jl (frozen)"
+host_default = "sf3"
+note = "Stage O F-O (fixed 1000 m margin keeper), Odyssey band; existing code, held seeds new"
+[planner.arms.N2I]
+mode = "baseline"
+runner = "stageo_run.jl (frozen)"
+host_default = "sf3"
+note = "Stage O N2-I (chance-constrained keeper, iso-risk), Odyssey band; existing code, held seeds new"
+
+[planner.arms.L3Z]
+mode = "online"
+slack = true
+ff = true
+early = true
+update = false
+horizon = 30
+safety = "q"
+burn_penalty_mps = 0.0              # sensitivity arm: L3 with no burn penalty (the unconstrained-cadence planner of U11)
+runner = "planner"
+host_default = "ws"
+note = "sensitivity: L3 with burn penalty 0"
+[planner.arms.OLRZ]
+mode = "olr"
+slack = true
+ff = true
+early = true
+update = true
+horizon = 0
+safety = "q"
+burn_penalty_mps = 0.0              # sensitivity arm: OL-R with no burn penalty
+runner = "planner"
+host_default = "ws"
+note = "sensitivity: OL-R with burn penalty 0"
+
+[planner.arms.OLRT]
+mode = "olr"
+slack = true
+ff = true
+early = true
+update = true
+horizon = 0
+terminal = true                     # Revision 14: terminal-apoapsis aim in the last passes (see [planner.terminal])
+safety = "q"
+runner = "planner"
+host_default = "ws"
+note = "Revision 14: OL-R with the terminal aim; identical to OL-R until the terminal regime starts"
+
+[planner.arms.OLRT1]
+mode = "olr"
+slack = true
+ff = true
+early = true
+update = true
+horizon = 0
+terminal = true                     # Revision 14: terminal-apoapsis aim in the last passes (see [planner.terminal])
+safety = "q"
+runner = "planner"
+host_default = "ws"
+rev_window_orbits = 4
+rev_deadband_ln = 0.25
+note = "Revision 15 remedy 1 on OLRT (constants above are ASSUMED)"
+
+[planner.arms.OLRT2]
+mode = "olr"
+slack = true
+ff = true
+early = true
+update = true
+horizon = 0
+terminal = true                     # Revision 14: terminal-apoapsis aim in the last passes (see [planner.terminal])
+safety = "q"
+runner = "planner"
+host_default = "ws"
+burn_penalty_mps = 0.05
+min_burn_arm_mps = 0.05
+note = "Revision 15 remedy 2 on OLRT (constants above are ASSUMED)"
+
+[planner.arms.OLRT3]
+mode = "olr"
+slack = true
+ff = true
+early = true
+update = true
+horizon = 0
+terminal = true                     # Revision 14: terminal-apoapsis aim in the last passes (see [planner.terminal])
+safety = "q"
+runner = "planner"
+host_default = "ws"
+dev_thr_mps = 0.15
+note = "Revision 15 remedy 3 on OLRT (constants above are ASSUMED)"
+
+[planner.arms."OLRT3-W"]
+# Revision 20c validation arm: OLRT3 + guard v2 (switch ttg_guard) + the S-fixed initial condition of the pinned IC plan (switch ic_scenario). Everything else is OLRT3.
+mode = "olr"
+slack = true
+ff = true
+early = true
+update = true
+horizon = 0
+terminal = true
+safety = "q"
+runner = "planner"
+host_default = "ws"
+dev_thr_mps = 0.15
+ttg_guard = true
+guard_set = "v2"
+ic_scenario = "S-fixed"
+note = "Revision 20c: OLRT3 + time-to-go guard v2 + S-fixed initial condition (AC8 validation)"
+
+[planner.arms.OLRT3-WF]
+# Revision 21: OLRT3-W with the S-free initial condition (first pass calibrated to exp(x0); needs --phase=calx0 first). guard_set selects the constants of the guard ([planner.guard] = "v2", the default).
+mode = "olr"
+slack = true
+ff = true
+early = true
+update = true
+horizon = 0
+terminal = true
+safety = "q"
+runner = "planner"
+host_default = "ws"
+dev_thr_mps = 0.15
+ttg_guard = true
+guard_set = "v2"
+ic_scenario = "S-free"
+note = "Revision 21: OLRT3 + time-to-go guard + S-free initial condition"
+
+[planner.arms.OLRT3-W3]
+# Revision 21: OLRT3 + the frozen guard v3 (results_rev21_guard.md section 4: s_frac 0.25, terminal-aim emulation in the arrival prediction) + the S-fixed initial condition.
+mode = "olr"
+slack = true
+ff = true
+early = true
+update = true
+horizon = 0
+terminal = true
+safety = "q"
+runner = "planner"
+host_default = "ws"
+dev_thr_mps = 0.15
+ttg_guard = true
+guard_set = "v3"
+ic_scenario = "S-fixed"
+note = "Revision 21: OLRT3 + guard v3 + S-fixed initial condition"
+
+[planner.arms.OLRT3-WF3]
+# Revision 21: OLRT3 + the frozen guard v3 (results_rev21_guard.md section 4: s_frac 0.25, terminal-aim emulation in the arrival prediction) + the S-free initial condition.
+mode = "olr"
+slack = true
+ff = true
+early = true
+update = true
+horizon = 0
+terminal = true
+safety = "q"
+runner = "planner"
+host_default = "ws"
+dev_thr_mps = 0.15
+ttg_guard = true
+guard_set = "v3"
+ic_scenario = "S-free"
+note = "Revision 21: OLRT3 + guard v3 + S-free initial condition"
+
+[planner.arms.OLRT4]
+mode = "olr"
+slack = true
+ff = true
+early = true
+update = true
+horizon = 0
+terminal = true                     # Revision 14: terminal-apoapsis aim in the last passes (see [planner.terminal])
+safety = "q"
+runner = "planner"
+host_default = "ws"
+smooth_beta = 0.5
+note = "Revision 15 remedy 4 on OLRT (constants above are ASSUMED)"
+
+[planner.arms.OLRT5]
+mode = "olr"
+slack = true
+ff = true
+early = true
+update = true
+horizon = 0
+terminal = true                     # Revision 14: terminal-apoapsis aim in the last passes (see [planner.terminal])
+safety = "q"
+runner = "planner"
+host_default = "ws"
+lower_margin_ln = 0.30
+note = "Revision 15 remedy 5 on OLRT (constants above are ASSUMED)"
+
+[planner.arms.OLRT35]
+mode = "olr"
+slack = true
+ff = true
+early = true
+update = true
+horizon = 0
+terminal = true                     # Revision 14: terminal-apoapsis aim in the last passes (see [planner.terminal])
+safety = "q"
+runner = "planner"
+host_default = "ws"
+lower_margin_ln = 0.30
+dev_thr_mps = 0.15
+note = "Revision 15 combination of remedies 3 and 5 on OLRT (the screen's top two; constants above are ASSUMED)"
+
+[planner.arms.BODYT]
+mode = "body"
+slack = false
+ff = false
+early = false
+update = false
+horizon = 0
+terminal = true                     # Revision 16: B-ODY plus the identical terminal aim
+safety = "q"
+runner = "planner"
+host_default = "ws"
+note = "Revision 16: B-ODY with the terminal aim"
+
+[planner.arms.N2IT]
+mode = "n2it"
+terminal = true                     # Revision 16: the Stage O N2-I keeper, unchanged, plus the identical terminal aim (TerminalWrap)
+safety = "q"
+runner = "planner"
+host_default = "ws"
+n2_kr = 0.11305485166305403         # SOURCED: stagen_flight_data/kalman_params.csv (Stage N-flight, unchanged)
+n2_kq = 0.00011305485166305402
+n2_km0 = 0.029485994526556255
+n2_kv0 = 0.006346630405993858
+n2_t_mult = 1.371                   # SOURCED: stageo_data/dev/calibrated_arms.csv, arm N2-I
+n2_aim = 0.1                        # SOURCED: same (g_a)
+n2_w_m = 4000.0                     # SOURCED: stageo_config.toml [stageo.n2] w_cap_m
+n2_track_vrel = true                # SOURCED: stageo_config.toml [stageo] track_vrel (the flown Stage O setting)
+note = "Revision 16: N2-I with the terminal aim"
+
+[planner.arms.N2I0]
+mode = "n2it"
+terminal = false                    # reproduction gate: the wrapper only delegates; must equal the Stage O N2-I flight
+safety = "q"
+runner = "planner"
+host_default = "ws"
+n2_kr = 0.11305485166305403
+n2_kq = 0.00011305485166305402
+n2_km0 = 0.029485994526556255
+n2_kv0 = 0.006346630405993858
+n2_t_mult = 1.371
+n2_aim = 0.1
+n2_w_m = 4000.0
+n2_track_vrel = true
+note = "Revision 16 gate: N2-I through the wrapper with the terminal aim off"
+
+[planner.terminal]
+# Revision 14 (pre-registered before any flight of OLRT). All ASSUMED, named; dev iterations may change only these five.
+term_aim_below_m = 12500.0          # ASSUMED: aim this far below the target (half of the ASSUMED 25 km tolerance)
+term_step_m = 40000.0               # ASSUMED: largest planned apoapsis drop per terminal pass
+term_activate_steps = 3             # ASSUMED: the terminal aim starts when (R + aim) is within this many steps
+term_min_q_factor = 0.25            # ASSUMED: lowest heat rate of the aim = this x q_cap (the cap and 0.65 are never relaxed)
+term_c_window = 6                   # ASSUMED: the drop / q_mean ratio is the median of the last this-many passes
+tolerance_km = 25.0                 # ASSUMED (no sourced apoapsis tolerance): success needs the final error in [-tolerance, 0] km
+
+[planner.terminal_periapsis]
+# Revision 19 A5 (terminal-periapsis term of the DP). Switch per arm: fb_term = true (default false; no arm sets it). With fb_term off every code path is the one that existed before the term.
+fb_weight = 1.0                     # ASSUMED (scale of the term for sensitivity; 1 = the exact price H dFB/drp of the first burn)
+h_des_m = 250000.0                  # ASSUMED (Revision 19 A1: desired periapsis altitude of the first burn; used by the scoring and the IC selection; the DP slope is independent of it, an identity)
+kappa_file = "rev21_data/position/kappa_generic.json"   # relative to the task directory; MEASURED kappa_med of the generic geometries with flights (G0975, 20 gen1 flights); geometries without an accepted entry use kappa_default
+kappa_default = 1.0                 # ASSUMED: drop-per-q calibration factor of geometries without a flight calibration (as KAPPA_G0975 in planner_rev20_ic.py)
+[planner.terminal_periapsis.kappa]
+ODY = 0.9967520763650508            # MEASURED: rev19_data/rev18_calibrate.json geometry ODY kappa_med (Revision 19 B)
+G5863 = 0.879308559055656           # MEASURED: same file, geometry G1 (gate id G5863)
+
+[planner.guard]
+# Revision 20c, guard v2, FROZEN (results_rev20_guard_v2.md section 4; planner_rev20_replay.GUARD_V2). All ASSUMED (tuned on 27 dev paths), named; the switch is the per-arm ttg_guard (default false).
+# Fixed in the code: actuator = tube (the bisected fraction tightens the tube edge on the needed side, the upper edge is never raised), infeasible mode = pin (fly the largest-tightening plan), kappa statistic = median, edge margin 0.
+pen_g = 0.1                         # ASSUMED: fixed cost per burn (m/s) in the guard's DP solves
+rel_slack = 0.15                    # ASSUMED: slack grows with the predicted time to go
+s_frac = 0.5                        # ASSUMED: slack = s_frac x W_max + rel_slack x (time to go)
+aim_frac = 0.5                      # ASSUMED: the bisection stops when the prediction is within t* +/- aim_frac x s
+anchor_k = 15                       # ASSUMED: level forecast anchored on the mean residual of the last anchor_k passes
+anchor_from_pass = 6                # ASSUMED: the anchored forecast is used from this decision on
+bias_steps = 60                     # ASSUMED: the observed drift bias is persisted this many steps
+k_window = 20                       # ASSUMED: median of the last k_window drop ratios (kappa_hat)
+ema_beta = 0.5                      # ASSUMED: smoothing of the predicted arrival over decisions
+eps_max = 1.0                       # ASSUMED: fraction of the tube width the edge may move at the largest tightening
+max_solves = 12                     # SOURCED: Revision 18 design (b)
+dev_thr_g = 0.05                    # ASSUMED (m/s): the guard's burn replaces the planner's own only when it differs by more than this
+start_pass = 2                      # ASSUMED: guard active from the first decision
+node_check = false                  # Revision 22 item 2: node check, DISABLED; enabling it requires a value for node_tol_deg (none given: the key is deliberately absent)
+w_max_periods = 3.0                 # ASSUMED (Revision 18): W_max = 3 final-orbit periods
+w_rp_m = 3480000.0                  # ASSUMED: periapsis radius of the nominal closing orbit, the basis of W_max (GUARD_W_RP_M)
+[planner.guard.t_offset_d]
+ODY = 0.15                          # ASSUMED (days): aim offset measured on dev (early bias of the level forecast), Revision 20c
+G5863 = 0.0                         # G1
+
+[planner.guard_sets.v3]
+# Revision 21, guard v3 FROZEN (results_rev21_guard.md section 4; planner_rev21_guard.GUARD_V3 = GUARD_V2 + s_frac 0.25 + term_model). Selected per arm by guard_set = "v3"; [planner.guard] stays v2.
+pen_g = 0.1
+rel_slack = 0.15
+s_frac = 0.25                       # ASSUMED (v3; v2 0.5): slack = s_frac x W_max + rel_slack x (time to go)
+aim_frac = 0.5
+anchor_k = 15
+anchor_from_pass = 6
+bias_steps = 60
+k_window = 20
+ema_beta = 0.5
+eps_max = 1.0
+max_solves = 12
+dev_thr_g = 0.05
+start_pass = 2
+node_check = false                  # see [planner.guard]
+w_max_periods = 3.0
+w_rp_m = 3480000.0
+term_model = true                   # ASSUMED switch (v3): the arrival prediction emulates the terminal aim with the [planner.terminal] constants (equal drops inside term_activate_steps steps of the target)
+[planner.guard_sets.v3.t_offset_d]
+ODY = 0.15
+G5863 = 0.0
+
+[planner.ic]
+# Revision 20 (WP1) initial-condition plan: a per-arm ic_scenario = "ref" (default, the unchanged flight) | "S-fixed" | "S-free". The plan (x0, nu_pre, w_pre) is read from a pinned JSON dump of planner_rev20_ic.select_ic
+# (headline.json layout: a list `plans`, each entry with geom, scenario, x0, nu_pre, w_pre, fb_term, horizon, delta_ln, h_des_m, t_star_d); no number is retyped here. Loading ERRORS on a sha256 mismatch.
+path = "rev20_data/ic/headline_rev23.json"     # relative to the task directory; Revision 21: headline.json (ODY, G1, G0975 unchanged) plus the G0063 plans
+sha256 = "323892159965a085d23b08beb511f3e859bbac6d8adbd6af26461f1116b27384"   # headline_rev23.json = headline_rev21.json (entries byte-for-byte unchanged) + the G0528, G0890, G0975M, G0063M plans
+fb_term = false                     # selectors of the entry in the dump (the plan the arm flies)
+horizon = "arrival"
+delta_ln = 0.0
+h_des_m = 250000.0
+use_insertion_node = false          # Revision 25 (Rev 22 item 4, default off): a plan field insertion_node_deg replaces the geometry Omega0 in the initial state (the first-pass calibration must be made at that node)
+use_plan_t_star = false             # Revision 25 (default off): the guard t* is the plan field t_star_d (selector t_star_d below, absent = the plans without a target time) instead of the nominal arrival
+# t_star_d = 70.0                   # selector: only plans computed for this arrival target (days); absent = null
+cal_tokens = ["ODY", "G1"]          # geometries of --phase=calx0 (S-free calibrations: first pass calibrated to exp(x0))
+
+[planner.geometry.ODY]
+# SOURCED: stageo_config.toml [stageo] (Odyssey reference elements, body-equator inertial); epoch = base epoch. The reference entry of geometry_gate_table.json carries the same numbers.
+id = "ODY"
+role = "ODY"
+inc_deg = 93.522
+omega_deg = 109.7454
+raan_deg = 28.1517
+epoch_off_d = 0.0
+epoch_utc = "2001-11-06T19:00:32"
+field_id = "ODY"
+
+[planner.geometry.G0063]
+# Revision 16 generic orbit GA: drawn by default_rng(20261028), one candidate per inclination class of the plan R2.3 grid (results_rev16_design.md); elements and epoch (base epoch + offset) DERIVED from the grid
+id = "G0063"
+role = "GA"
+inc_deg = 25.2
+omega_deg = 210.0
+raan_deg = 315.0
+epoch_off_d = 0.0
+epoch_utc = "2001-11-06T19:00:32"
+field_id = "G0063"
+
+[planner.target]
+# Revision 25: the apoapsis target as a parameter. Every key is optional and its default is the current value; [planner.targets.<name>] entries override per target, a geometry selects one with `target = "<name>"`.
+ra_target_m = 7408000.0             # SOURCED: stageo_config.toml ra_target_m (Table III end of main phase 2; a RADIUS); equals [stageo] ra_target_m
+tail_passes = 50                    # the table tail (passes past the target in the DP horizon); equals [planner] tail_passes
+event = "apoapsis"                  # Revision 22 item 5: the decision/closing event is the apoapsis; any other value is an error (not implemented)
+apo_one_sided = false               # Revision 22 item 3 switch (default off): one-sided apoapsis tolerance ABOVE the target radius (a circle at r_t needs r_a >= r_t, Rev 22b): closing pass = first apoapsis <= target + apo_tol_m, success error in [0, +apo_tol_m]
+apo_tol_m = 25000.0                 # ASSUMED (the current tolerance width, unchanged): width of the one-sided band above the target radius
+apo_aim_above_frac = 0.5            # ASSUMED: the terminal aim sits this fraction of the band above the target (0.5 x 25 km = 12.5 km above); the default (switch off) aim is 12.5 km below
+apo_shortfall_slope_mps_per_km = 0.056   # DERIVED (results_rev22_rendezvous.md): tracking cost per km of closing-apoapsis shortfall below the target circle
+
+[planner.targets.T2000]
+target_id = "CRIT63_2000km"
+# target circle CRIT63_2000km of target_orbits.json (e7c791e3dae795ae): ra_target_m = R_eq 3396190 m + altitude (circle_r_km 5396.19); the stop, the terminal aim, the guard and the table tail use it. Tail, terminal-aim and guard constants are the defaults (ASSUMED to transfer).
+ra_target_m = 5396190.0
+
+[planner.targets.T1000]
+target_id = "CRIT117_1000km"
+# target circle CRIT117_1000km of target_orbits.json (e7c791e3dae795ae): ra_target_m = R_eq 3396190 m + altitude (circle_r_km 4396.19); the stop, the terminal aim, the guard and the table tail use it. Tail, terminal-aim and guard constants are the defaults (ASSUMED to transfer).
+ra_target_m = 4396190.0
+
+[planner.targets.T500]
+target_id = "ODY_500km"
+# target circle ODY_500km of target_orbits.json (e7c791e3dae795ae): ra_target_m = R_eq 3396190 m + altitude (circle_r_km 3896.19); the stop, the terminal aim, the guard and the table tail use it. Tail, terminal-aim and guard constants are the defaults (ASSUMED to transfer).
+ra_target_m = 3896190.0
+
+[planner.node_check]
+# Revision 22 item 2 (guard node check, DISABLED: no tolerance has been given). Kaula Mars J2 and R (planner_rev20_window.py: J2, RJ) for the secular node rate.
+J2 = 0.001958616126805748
+R_m = 3394200.0
+
+[planner.rev25]
+cal_tokens = ["GG", "GH", "GI"]     # Revision 25 low-altitude geometries (--phase=calR25)
+
+[planner.rev23]
+cal_tokens = ["GE", "GF", "GAM"]    # Revision 23b: first-pass calibrations of G0528, G0890, G0063M (--phase=calR23)
+
+[planner.geometry.G0528]
+# Revision 23b geometry GE (63.4 deg class): elements and epoch (base epoch + 90 d) from the table file planner_ground_tables_rev23.json (inc_deg, omega_deg, raan_deg, epoch_off_d)
+id = "G0528"
+role = "GE"
+inc_deg = 63.4
+omega_deg = 180.0
+raan_deg = 0.0
+epoch_off_d = 90.0
+epoch_utc = "2002-02-04T19:00:32"
+field_id = "G0528"
+
+[planner.geometry.G0890]
+# Revision 23b geometry GF (93.5 deg, omega0 90)
+id = "G0890"
+role = "GF"
+inc_deg = 93.5
+omega_deg = 90.0
+raan_deg = 90.0
+epoch_off_d = 90.0
+epoch_utc = "2002-02-04T19:00:32"
+field_id = "G0890"
+
+[planner.geometry.G0063M]
+# Revision 23b: the orbit of G0063 (GA) with the mean-field ground table (key G0063M); role GAM so that its cal directory and cells are distinct from G0063
+id = "G0063M"
+role = "GAM"
+inc_deg = 25.2
+omega_deg = 210.0
+raan_deg = 315.0
+epoch_off_d = 0.0
+epoch_utc = "2001-11-06T19:00:32"
+field_id = "G0063"
+
+[planner.geometry.G0486]
+# Revision 25 geometry GG (63.4 deg class, circle target 2,000 km): elements from rev23_data/cut256_table.json (inc, omega0, raan0, epoch); epoch = base epoch + 90 d
+id = "G0486"
+role = "GG"
+inc_deg = 63.4
+omega_deg = 0.0
+raan_deg = 270.0
+epoch_off_d = 90.0
+epoch_utc = "2002-02-04T19:00:32"
+field_id = "G0486"
+target = "T2000"
+
+[planner.geometry.G1230]
+# Revision 25 geometry GH (116.6 deg, circle target 1,000 km); epoch = base epoch
+id = "G1230"
+role = "GH"
+inc_deg = 116.6
+omega_deg = 270.0
+raan_deg = 270.0
+epoch_off_d = 0.0
+epoch_utc = "2001-11-06T19:00:32"
+field_id = "G1230"
+target = "T1000"
+
+[planner.geometry.G1038]
+# Revision 25 geometry GI (93.5 deg, circle target 500 km); epoch = base epoch + 180 d
+id = "G1038"
+role = "GI"
+inc_deg = 93.5
+omega_deg = 270.0
+raan_deg = 270.0
+epoch_off_d = 180.0
+epoch_utc = "2002-05-05T19:00:32"
+field_id = "G1038"
+target = "T500"
+
+[planner.geometry.G0390]
+# Revision 16 generic orbit GB: drawn by default_rng(20261028), one candidate per inclination class of the plan R2.3 grid (results_rev16_design.md); elements and epoch (base epoch + offset) DERIVED from the grid
+id = "G0390"
+role = "GB"
+inc_deg = 63.4
+omega_deg = 0.0
+raan_deg = 270.0
+epoch_off_d = 0.0
+epoch_utc = "2001-11-06T19:00:32"
+field_id = "G0390"
+
+[planner.geometry.G0975]
+# Revision 16 generic orbit GC: drawn by default_rng(20261028), one candidate per inclination class of the plan R2.3 grid (results_rev16_design.md); elements and epoch (base epoch + offset) DERIVED from the grid
+id = "G0975"
+role = "GC"
+inc_deg = 93.5
+omega_deg = 30.0
+raan_deg = 315.0
+epoch_off_d = 180.0
+epoch_utc = "2002-05-05T19:00:32"
+field_id = "G0975"
+
+[planner.geometry.G1216]
+# Revision 16 generic orbit GD: drawn by default_rng(20261028), one candidate per inclination class of the plan R2.3 grid (results_rev16_design.md); elements and epoch (base epoch + offset) DERIVED from the grid
+id = "G1216"
+role = "GD"
+inc_deg = 116.6
+omega_deg = 240.0
+raan_deg = 0.0
+epoch_off_d = 0.0
+epoch_utc = "2001-11-06T19:00:32"
+field_id = "G1216"
+
+[planner.analysis]
+bootstrap_draws = 10000             # SOURCED: stageo_config.toml [analysis]
+bootstrap_seed = 20261020           # SOURCED: same
+ci_percent = 90.0                   # SOURCED: all plan criteria use 90% intervals
+c1_tolerance = 1.02                 # ASSUMED (R1.4 C1)
+d2_min_share = 0.25                 # ASSUMED (R2.2 D2, R4.6)
+c4abs_tol_mps = 0.3              # SOURCED (stageg3_config.toml floor_abs_mps; Revision 12): reported-only C4abs, median dV within +-0.3 m/s of the predicted floor
+c5_net_tolerance = 0.30             # SOURCED (R1.4 C5): burn-sum within +-30% of the net natural drift
+c5_oppose_max = 0.20                # SOURCED (R1.4 C5): fewer than 20% of burn dV opposes the predicted 10-pass drift
+c5_lookahead_passes = 10            # SOURCED (R1.4 C5)
+c6_min_ev = 0.85                    # SOURCED (R1.4 P7 / C6)
+c7_q99_dev = 0.707                  # SOURCED (R1.1: q99 of ln(Q_s / q_mean) in the dev pool)
+c7_tolerance = 0.05                 # SOURCED (R1.4 C7)
+c7_dev_rate_gt065 = -1.0            # ASSUMED: dev rate of passes above 0.65 per pass for the Poisson check; negative = not yet measured (the check is then reported, not scored)
+violation_levels_qs = [0.32, 0.65]  # SOURCED (R8.2): heat violations counted over 0.32 and over 0.65
+mu_mars_m3s2 = 42828.375e9          # SOURCED: stageo_analysis.py MU (inertial Q_s form, comparison only)
+ra_target_m = 7408000.0             # SOURCED: Table III end of main phase 2
+
+[planner.ground_table]
+path = "planner_ground_tables.json" # relative to the task directory; written by planner_predictions.py --tables
+sha256 = "7476b6cd8018dfb499a23e959a6ccc902798e40d9502ba4455b9a8dc2a5e367c"   # sha256 of planner_ground_tables.json as written by planner_predictions.py --tables (deterministic: two runs gave the same hash); loading ERRORS on a mismatch
+
+[planner.ground_table_generic]
+path = "planner_ground_tables_generic.json"   # Revision 16: ground tables of the generic orbits (no GRAM mean-field term: preview model), written by planner_generic_tables.py
+sha256 = "4e9c7b0b06796c3d2254456ba299ceb4af98465a222d4f2d094662e6189c3401"
+
+[planner.ground_table_rev23]
+path = "planner_ground_tables_rev23.json"   # Revision 23b: ground tables WITH the mean-field term for G0528, G0890, G0975M, G0063M (planner_rev23b_prep.py tables); the older files are unchanged
+sha256 = "8abde05404da2eb0f7b9e48e6354f3e2641cf1208cdee7e8e8cbc97fd48a00d4"
+
+[planner.ground_table_rev25]
+# Revision 25 low-altitude targets: preview tables (no mean field) of G0486, G1230, G1038 (WP25-P); every table carries ra_target_m, target_alt_km, target_id. TO SWITCH to the mean-field tables written after sampling (planner_select_geometry.py build),
+# change ONLY path and sha256 here and in [planner.ic_extra.rev25]: path = "planner_ground_tables_rev25mf.json" (same keys), headline_rev25mf.json.
+path = "planner_ground_tables_rev25mf.json"      # mean-field tables (field_mode meanfield; n 273/305/308); the preview file was planner_ground_tables_rev25.json (sha 475679a7...)
+sha256 = "196d085403f4f54ca7f2eb5ba1fab18954105602d027e699c11e2aa761e5c173"
+
+[planner.ic_extra.rev25]
+path = "rev20_data/ic/headline_rev25mf.json"     # 36 plans (G0486, G1230, G1038 x scenarios x horizons x fb_term); appended to the plans of [planner.ic]; the mean-field file is headline_rev25mf.json
+sha256 = "a6d6f188a51ac87a3fa9088d51591e9b6dc8d77a35bdc9260d57695b02e05dca"   # mean-field plans (the preview file headline_rev25.json was e963f5a3...)
+
+[planner.predictions]
+path = "planner_predictions.json"   # relative to the task directory; written by planner_predictions.py
+sha256 = "db2f63fe61599665a4016ae0fdeff3c2666265af5ebabf450cd2111d0fc10038"   # sha256 of planner_predictions.json as written by planner_predictions.py --predict (F9). The analysis reads the predictions; it does not verify this hash yet (planner_lib selftest does)
+
+# Flight list (R4.5 amended by R7.3 and R8.2). One row per (block, host, seed set); cells = arm@geometry pairs; seeds: "dev" | "held" | "smoke" | "repro" | "xhost" | "gate";
+# count = len(cells) x seeds x len(host list), checked by planner_lib.py. Geometry G1/G2/Gworst are the roles of geometry_gate_table.json (G5863, G2348, G3503); ODY is the Odyssey reference.
+# Host assignment is ASSUMED (R4.5 gives ws + sf3 split for baselines and geometry only): ws takes the ladder, L3/L1/OL-R and B-ODY at Odyssey, sf3 the Stage O baselines, B-ODY at G1 and OL.
+[planner.plan_counts]
+total = 274                         # R8.2: 274 flights (R7.3: 242; R8.2: +32 OL-R), including the 10 gate flights already specified by stageg3
+gate = 10
+smoke = 4
+repro = 2
+xhost = 2
+dev = 32
+held = 224
+sens = 32                           # sensitivity arms L3Z, OLRZ at ODY and G1, 8 paired seeds each (user, 2026-10-27); NOT in the 274
+total_with_sens = 306
+
+[planner.seedsets]
+gate = [101, 102]                   # SOURCED: stageg3_config.toml [stageg3] seeds
+dev = [1, 2, 3, 4, 5, 6, 7, 8]
+held = [13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28]
+smoke = [1, 2]
+repro = [13, 14]
+xhost = [13]
+gen4 = [13, 14, 15, 16]               # Revision 16b: seeds of the first generic geometry (13 to 18 reserved, 17 and 18 optional phase 2)
+gate2 = [13, 14]                    # Revision 16 gate flights
+sens = [13, 14, 15, 16, 17, 18, 19, 20]   # ASSUMED: the first 8 held seeds, so the sensitivity arms pair with the main arms
+
+[[planner.flight]]
+block = "gate"
+cells = ["FO@G1", "FO@G2", "FO@Gworst", "ZB@G1", "ZB@G2"]
+seeds = "gate"
+hosts = ["ws"]
+count = 10                          # stageg3_run.jl --phase=gate (frozen, Freeze A): 6 keeper + 4 zero-burn. Specified and flown by stageg3, not by the planner runner
+[[planner.flight]]
+block = "smoke"
+cells = ["BODY@ODY", "L3@G1"]
+seeds = "smoke"
+hosts = ["ws"]
+count = 4                           # F12: 2 seeds x {B-ODY, L3 at G1}, 3 d each
+[[planner.flight]]
+block = "repro"
+cells = ["L3@G1"]
+seeds = "repro"
+hosts = ["ws"]
+count = 2
+[[planner.flight]]
+block = "xhost"
+cells = ["L3@G1"]
+seeds = "xhost"
+hosts = ["ws", "sf3"]
+count = 2                           # F13: one new-arm flight on both hosts
+[[planner.flight]]
+block = "dev"
+cells = ["BODY@ODY", "L1@ODY", "L3@ODY", "L3@G1"]
+seeds = "dev"
+hosts = ["ws"]
+count = 32
+[[planner.flight]]
+block = "held_baselines"
+cells = ["BODY@ODY"]
+seeds = "held"
+hosts = ["ws"]
+count = 16
+[[planner.flight]]
+block = "held_baselines"
+cells = ["FO@ODY", "N2I@ODY"]
+seeds = "held"
+hosts = ["sf3"]
+count = 32
+[[planner.flight]]
+block = "held_ladder"
+cells = ["L0@ODY", "L1@ODY", "L2@ODY", "L3@ODY"]
+seeds = "held"
+hosts = ["ws"]
+count = 64
+[[planner.flight]]
+block = "held_geometry"
+cells = ["L3@G1", "L1@G1"]
+seeds = "held"
+hosts = ["ws"]
+count = 32
+[[planner.flight]]
+block = "held_geometry"
+cells = ["BODY@G1"]
+seeds = "held"
+hosts = ["sf3"]
+count = 16
+[[planner.flight]]
+block = "held_ol"
+cells = ["OL@ODY", "OL@G1"]
+seeds = "held"
+hosts = ["sf3"]
+count = 32                          # R7.3: OL at Odyssey geometry and at G1
+[[planner.flight]]
+block = "held_olr"
+cells = ["OLR@ODY", "OLR@G1"]
+seeds = "held"
+hosts = ["ws"]
+count = 32                          # R8.2: OL-R at Odyssey geometry and at G1
+
+[[planner.extra]]
+# NOT in the 274 (R7.7 says "F12 smoke adds OL"; the R7.3 / R8.2 counts keep the R4.9 smoke envelope of 8). Listed for the coordinator's decision.
+block = "smoke_ol"
+cells = ["OL@G1", "OLR@G1"]
+seeds = "smoke"
+hosts = ["ws"]
+count = 4
+
+[[planner.sensitivity]]
+# Penalty-0 sensitivity arms (user decision 2026-10-27): 4 cells x 8 seeds = 32 flights; the main count (274) is unchanged, 306 in all. Hosts ASSUMED (ws; the remote host is kept for the baselines and OL).
+block = "sens"
+cells = ["L3Z@ODY", "L3Z@G1", "OLRZ@ODY", "OLRZ@G1"]
+seeds = "sens"
+hosts = ["ws"]
+count = 32
+
+[[planner.terminal_flight]]
+block = "devT"
+cells = ["OLRT@ODY", "OLRT@G1"]
+seeds = "dev"
+hosts = ["ws"]
+count = 16
+[[planner.terminal_flight]]
+block = "heldT"
+cells = ["OLRT@ODY", "OLRT@G1"]
+seeds = "held"
+hosts = ["ws"]
+count = 32
+
+[[planner.terminal_flight]]
+block = "devR"
+cells = ["OLRT1@ODY", "OLRT2@ODY", "OLRT3@ODY", "OLRT4@ODY", "OLRT5@ODY", "OLRT1@G1", "OLRT2@G1", "OLRT3@G1", "OLRT4@G1", "OLRT5@G1", "OLRT35@ODY", "OLRT35@G1"]
+seeds = "dev"
+hosts = ["ws"]
+count = 96                          # upper bound; the screen flies seeds 1, 2, 3, 5, 7 at Odyssey only (--cells, --seeds)
+
+[[planner.terminal_flight]]
+block = "gen1"
+cells = ["BODYT@GC", "N2IT@GC", "OLRT3@GC", "OLRT5@GC", "OLRT35@GC"]
+seeds = "gen4"
+hosts = ["ws"]
+count = 20                          # Revision 16b: ONE geometry (GC = G0975), 4 seeds, 5 arms
+[[planner.terminal_flight]]
+block = "genG"
+cells = ["N2I0@ODY"]
+seeds = "gate2"
+hosts = ["ws"]
+count = 2                           # bit-identical gate of the baseline wrapper (terminal off) against the Stage O N2-I flights, ODY seeds 13 and 14
+
+# ---- Revision 17b: table error versus the replanner (plan Revisions 17, 17a, 17b; results_rev17_design.md, results_rev17_probe.md) ----
+# Flight GRAM keywords per dispersion level; the table, calibration, fit and a priori schedule are NOT changed (they come from the baseline cal files and the pinned ground table). L0 = no keywords (the unchanged flight).
+[planner.dispersion.L0]
+note = "nominal: GRAM defaults"
+[planner.dispersion.L1]
+gram_perturbation_scales = [1.5, 1.0, 1.0, 1.0]       # ASSUMED (user, Revision 17b): density scale 1.5 (probe: sd of ln r 0.57 against 0.34 at 1.0; the density scale saturates at 2.0)
+[planner.dispersion.L2]
+mars_mgcm_dust_levels = [0.3385, 0.3, 1.0]            # DERIVED (gram_dust_levels_rev17.jl bisection): constant MGCM dust optical depth 0.3385 gives a measured mean ln(rho/rho_base) = +0.2231 (min +0.2083, max +0.2265) over the first 40 Odyssey periapsis points; target +0.223 ln (ASSUMED +25%)
+[planner.dispersion.L3]
+mars_mgcm_dust_levels = [0.2298, 0.3, 1.0]            # DERIVED: tau 0.2298 gives -0.2231 (min -0.2265, max -0.2083); target -0.223 ln
+[planner.dispersion.L2p]
+# Revision 21: the +0.2231 ln dust level of a generic geometry (same rule as L2: constant dust optical depth whose mean ln(rho/rho_base) over the first 40 periapsis points of the nominal flight is +0.2231); one sub-table per gate id.
+note = "up-offset level of the generic geometries; keywords in the sub-table of the geometry id"
+[planner.dispersion.L2p.G0975]
+mars_mgcm_dust_levels = [1.0042, 0.3, 1.0]            # DERIVED (gram_dust_levels_rev21.jl, probe_rev21/dust_levels_G0975.json): mean +0.2231 (min +0.2174, max +0.2317) over 40 points of G0975_PL_OLRT3_pert_ODY_s13
+[planner.dispersion.L2p.G0063]
+mars_mgcm_dust_levels = [0.9176, 0.3, 1.0]            # DERIVED (gram_dust_levels_rev21.jl, probe_rev21/dust_levels_G0063.json): mean +0.2231 (min +0.1822, max +0.2477) over 40 points of a 35-day OL nominal flight (tag ODY_s13) flown inside the probe
+# L3p (the down level) does not exist: GRAM clamps the dust optical depth at 0.1, which gives only -0.0634 ln at G0975 and -0.0688 at G0063 (probe_rev21/dust_levels_G0*.json scan).
+[planner.dispersion.L4]
+gram_perturbation_scales = [1.5, 1.0, 1.0, 1.0]       # L2 offset plus the L1 noise
+mars_mgcm_dust_levels = [0.3385, 0.3, 1.0]
+
+[[planner.terminal_flight]]
+block = "rev20olt"
+# Revision 20b: arm OLT at Odyssey with the Revision 17 per-level GRAM keywords, 13 flights. The flights fixed by the OL identity (OL stopped on safety_q more than 107.5 km above the target) are not flown, except the identity gate L0 s16.
+cells = ["OLT@ODY@L0", "OLT@ODY@L1", "OLT@ODY@L2", "OLT@ODY@L3"]
+seeds = "gen4"                                          # overridden per cell by cell_seeds
+hosts = ["ws"]
+count = 13
+cell_seeds = { "OLT@ODY@L0" = [13, 14, 15, 16], "OLT@ODY@L1" = [14, 15, 16], "OLT@ODY@L2" = [14, 15, 16], "OLT@ODY@L3" = [13, 15, 16] }   # s16 at L0 is the identity gate against OL
+
+[[planner.terminal_flight]]
+block = "rev25low"
+# Revision 25 low-altitude validation: OLRT3-W3 (guard v3, S-fixed) at L0, seeds 13-16, at G0486 (GG, target 2,000 km), G1230 (GH, 1,000 km), G1038 (GI, 500 km) = 12 flights, plus the regression flight OLRT3 at Odyssey L4 seed 14 with every switch off (AC7 gate). 13 flights. Needs the rev25 tables/IC pins and --phase=calR25.
+cells = ["OLRT3-W3@GG@L0", "OLRT3-W3@GH@L0", "OLRT3-W3@GI@L0", "OLRT3@ODY@L4"]
+seeds = "gen4"
+hosts = ["ws"]
+count = 13
+cell_seeds = { "OLRT3-W3@GG@L0" = [13, 14, 15, 16], "OLRT3-W3@GH@L0" = [13, 14, 15, 16], "OLRT3-W3@GI@L0" = [13, 14, 15, 16], "OLRT3@ODY@L4" = [14] }
+
+[[planner.terminal_flight]]
+block = "rev23geo"
+# Revision 23b geometry validation: OLRT3-W3 (guard v3, S-fixed, mean-field tables and IC plans of headline_rev23.json) at L0, seeds 13-16, at G0528 (GE), G0890 (GF) and G0063M (GAM). 12 flights. Needs --phase=calR23 first.
+cells = ["OLRT3-W3@GE@L0", "OLRT3-W3@GF@L0", "OLRT3-W3@GAM@L0"]
+seeds = "gen4"
+hosts = ["ws"]
+count = 12
+
+[[planner.terminal_flight]]
+block = "rev21c"
+# Revision 21 B21-1 comparators (no guard): OLRT3 at G0975 L0 and L2p seeds 13-16 (8); B-ODY-T and N2-I-T at G0975 L2p seeds 13-16 (8); OLRT3 at Odyssey L0 and L2 seeds 17-20 (8); OLRT3, B-ODY-T, N2-I-T at G0063 L0 seeds 13-16 (12). Total 36.
+cells = ["OLRT3@GC@L0", "OLRT3@GC@L2p", "BODYT@GC@L2p", "N2IT@GC@L2p", "OLRT3@ODY@L0", "OLRT3@ODY@L2", "OLRT3@GA@L0", "BODYT@GA@L0", "N2IT@GA@L0"]
+seeds = "gen4"
+hosts = ["ws"]
+count = 36
+cell_seeds = { "OLRT3@GC@L0" = [13, 14, 15, 16], "OLRT3@GC@L2p" = [13, 14, 15, 16], "BODYT@GC@L2p" = [13, 14, 15, 16], "N2IT@GC@L2p" = [13, 14, 15, 16], "OLRT3@ODY@L0" = [17, 18, 19, 20], "OLRT3@ODY@L2" = [17, 18, 19, 20], "OLRT3@GA@L0" = [13, 14, 15, 16], "BODYT@GA@L0" = [13, 14, 15, 16], "N2IT@GA@L0" = [13, 14, 15, 16] }
+
+[[planner.terminal_flight]]
+block = "rev21v"
+# Revision 21 B21-2 validation, rebuilt after the adoption of guard v3 (52 flights, all v3): OLRT3-W3 at Odyssey L0 and L2 seeds 13-20 (16: seeds 17-20 new, 13-16 re-validation) and L1, L3, L4 seeds 13-16 (12); at G0975 L0 and L2p seeds 13-16 (8); at G0063 L0 seeds 13-16 (4); at G1 L0 seeds 13-16 (4); OLRT3-WF3 (S-free) at Odyssey and G1 L0 seeds 13-16 (8). OLRT3-W / OLRT3-WF (v2) stay defined but are not flown here.
+cells = ["OLRT3-W3@ODY@L0", "OLRT3-W3@ODY@L1", "OLRT3-W3@ODY@L2", "OLRT3-W3@ODY@L3", "OLRT3-W3@ODY@L4", "OLRT3-W3@GC@L0", "OLRT3-W3@GC@L2p", "OLRT3-W3@GA@L0", "OLRT3-W3@G1@L0", "OLRT3-WF3@ODY@L0", "OLRT3-WF3@G1@L0"]
+seeds = "gen4"
+hosts = ["ws"]
+count = 52
+cell_seeds = { "OLRT3-W3@ODY@L0" = [13, 14, 15, 16, 17, 18, 19, 20], "OLRT3-W3@ODY@L1" = [13, 14, 15, 16], "OLRT3-W3@ODY@L2" = [13, 14, 15, 16, 17, 18, 19, 20], "OLRT3-W3@ODY@L3" = [13, 14, 15, 16], "OLRT3-W3@ODY@L4" = [13, 14, 15, 16], "OLRT3-W3@GC@L0" = [13, 14, 15, 16], "OLRT3-W3@GC@L2p" = [13, 14, 15, 16], "OLRT3-W3@GA@L0" = [13, 14, 15, 16], "OLRT3-W3@G1@L0" = [13, 14, 15, 16], "OLRT3-WF3@ODY@L0" = [13, 14, 15, 16], "OLRT3-WF3@G1@L0" = [13, 14, 15, 16] }
+
+[[planner.terminal_flight]]
+block = "rev20val"
+# Revision 20c validation (AC8): OLRT3-W at Odyssey, held seeds 13-16, Rev 17 levels L0-L4 (20 flights); OLRT3-W and OLRT3 at G1, seeds 13-16, L0 only (8 flights, dust levels are calibrated for Odyssey only). Total 28.
+cells = ["OLRT3-W@ODY@L0", "OLRT3-W@ODY@L1", "OLRT3-W@ODY@L2", "OLRT3-W@ODY@L3", "OLRT3-W@ODY@L4", "OLRT3-W@G1@L0", "OLRT3@G1@L0", "OLRT3@ODY@L4"]
+seeds = "gen4"
+hosts = ["ws"]
+count = 29
+# OLRT3@ODY@L4 s14 is the AC7 regression flight: all Revision 20 switches off, must equal the Rev 17 OLRT3 L4 s14 flight bit for bit on shared columns
+cell_seeds = { "OLRT3-W@ODY@L0" = [13, 14, 15, 16], "OLRT3-W@ODY@L1" = [13, 14, 15, 16], "OLRT3-W@ODY@L2" = [13, 14, 15, 16], "OLRT3-W@ODY@L3" = [13, 14, 15, 16], "OLRT3-W@ODY@L4" = [13, 14, 15, 16], "OLRT3-W@G1@L0" = [13, 14, 15, 16], "OLRT3@G1@L0" = [13, 14, 15, 16], "OLRT3@ODY@L4" = [14] }
+
+[[planner.terminal_flight]]
+block = "rev17"
+cells = ["OL@ODY@L0", "OL@ODY@L1", "OL@ODY@L2", "OL@ODY@L3", "OL@ODY@L4", "OLR@ODY@L0", "OLR@ODY@L1", "OLR@ODY@L2", "OLR@ODY@L3", "OLR@ODY@L4", "OLRT3@ODY@L0", "OLRT3@ODY@L1", "OLRT3@ODY@L2", "OLRT3@ODY@L3", "OLRT3@ODY@L4"]
+seeds = "gen4"                                          # held seeds 13-16, released by the user for Revision 17
+hosts = ["ws"]
+count = 60                                              # Revision 17b: 3 arms x 5 levels x 4 seeds, Odyssey; B-ODY-T and the dust-storm level are not flown

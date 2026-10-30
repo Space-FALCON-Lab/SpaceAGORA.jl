@@ -1,0 +1,213 @@
+# Stage N2: edge-aimed chance-constrained controller with a calibrated aim offset. Identical to stagen_flight_config.toml except: this header, results_subdir, and the [stagen2] table (verify with diff).
+# Band: Falcone and Putnam 2023 (IEEE TAES 59(3), PR-DRL) corridor 0.05 to 0.25 W/cm2 with target 0.15 and graded tiers (SOURCED, paper). ASSUMED: heat-rate comparability with the paper (as Stage I).
+# Labels: SOURCED (cited file or paper), DERIVED (computed from sourced values), ASSUMED (named choice, flagged). Plan (frozen before any run):
+# tasks/2026-10-15_periapsis-region-border-targeting/stagen2_plan.md. Cells, seeds, epochs, vehicles, gravity, controller limits, horizons, calibration: the Stage I tree (READ from <root>/stagei, not redone).
+
+[stagef]
+results_subdir = "stagen2"        # below the results root; per-planet folders below it
+planets = ["venus", "mars", "earth"]
+cell_seed = 20261019               # ASSUMED: numpy default_rng seed of the cell draw (stagef_cells.py)
+n_epochs = 3                       # ASSUMED (user: >= 3 epochs / local-time sectors)
+n_per_group = 4                    # ASSUMED: cells drawn per (epoch, inclination); 3 x 4 x 4 = 48 cells per planet (user: >= 20 cells)
+n_dev_per_group = 2                # ASSUMED: of the 4 drawn cells per group, 2 development, 2 held out
+workers = 4                        # ASSUMED, modest on the workstation
+perturbation_mode = "pass"         # SPACEAGORA_GRAM_DENSITY_PERTURBATION value for the perturbed arm
+perturbation_reseed = "1"          # SPACEAGORA_GRAM_DENSITY_PERTURBATION_PASS_RESEED: pass k's random stream depends only on (cell seed, k)
+fixed_margin_m = 1000.0            # ASSUMED (the value used by the Stage E / Stage C closed loops): the fixed margin under test
+policy = "near_passive"            # SOURCED: Stage E / C closed loops
+predictor = "v5"                   # frozen estimator v5, one-pass prediction (run_mars_closedloop.jl --predictor=v5 form)
+
+[analysis]
+# Pre-registered thresholds, identical across planets (plan section 5). ASSUMED unless noted.
+min_scored_passes_per_cell = 20    # a cell counts toward T2/primary only with this many scored one-pass-ahead pairs (user: >= 20 passes)
+min_cells = 20
+coverage_levels = [0.841, 0.95, 0.99]   # nominal one-sided coverages (Gaussian k = 1, 1.64, 2.33 in the earlier study)
+coverage_tolerance_below = 0.03    # R1 passes if empirical LOCO-quantile coverage >= nominal - this
+percell_tolerance = 0.10           # R2 per-cell band at 95%
+percell_fraction_required = 0.70   # R2 fraction of qualifying cells inside the band
+half_band_fraction = 0.5           # R3: one-sided 95% buffer <= half_band_fraction * ln(Q_hi/Q_lo)
+information_ratio_max = 0.5        # R4: sigma(best)/sigma(P0s) (T4 of the earlier study)
+ewma_gain_threshold = 0.05         # R5: EWMA "beats" persistence if sigma ratio <= 1 - this
+generality_factor = 2.0            # R7: planets' 95% buffers in scale heights within this factor of each other
+lag1_white_threshold = 0.10        # R6: |lag-1| of the random component below this counts as white
+adapt_coverage = 0.95              # F2 adaptive rule: one-sided quantile level on each limit
+adapt_min_band_m = 200.0           # F2: minimum width of the adaptive corridor; below it the corridor is collapsed to its predicted-median center
+win_cost_tolerance = 0.10          # F2 X: adaptive may lose at most this fraction of apoapsis decay per day and add at most this fraction of dV
+bootstrap_draws = 10000
+bootstrap_seed = 20261020
+
+# ------------------------------------------------------------------------------------------------------------------------------
+[common.atmosphere]
+fit_top_altitude_m = 400000.0       # ASSUMED (as venus_gram_config.toml)
+temperature_k = 170.0               # placeholder, never used for drag
+
+[common.atmosphere_gram]
+entry_interface_km = 2000.0         # SOURCED: GRAM extension zero-density ceiling; GRAM sampled wherever it is sampled (venus_gram_config.toml)
+density = "mean"
+
+[common.band]
+q_low_w_cm2 = 0.05                  # SOURCED (paper): lower corridor edge; below it = "low" tier (campaign-length cost only)
+q_high_w_cm2 = 0.25                 # SOURCED (paper): upper corridor edge = soft-violation threshold; the controller's thermal edge
+q_target_w_cm2 = 0.15               # SOURCED (paper): target heat rate; used as the first-pass calibration target (Stage F used the geometric mean of the band)
+q_medium_w_cm2 = 0.30               # SOURCED (paper): soft tier 0.25 to 0.30, medium tier above it
+q_hard_w_cm2 = 0.45                 # SOURCED (paper): medium tier 0.30 to 0.45, hard tier (mission failure) above it
+w_cm2_to_w_m2 = 1.0e4
+
+[common.guess]
+fixed_point_iterations = 3          # ASSUMED (venus_gram_config.toml)
+root_bracket_m = [80000.0, 300000.0]
+root_tolerance_m = 1.0
+
+[common.fit]
+window_below_m = 15000.0            # ASSUMED (venus_gram_config.toml): the in-window rule of the density-buffer analysis
+window_above_m = 25000.0
+step_m = 1000.0
+node_spacing_m = 2000.0
+local_scale_height_step_m = 500.0
+
+[common.calibration]
+max_iterations = 8
+q_tolerance_relative = 1.0e-3
+horizon_fraction_of_period = 0.65
+
+[common.integration]
+reltol = 1.0e-9                     # SOURCED: examples/periapsis_corridor_config.toml [integration]
+abstol = 1.0e-11
+dt_max_orbit_s = 30.0
+dt_max_atmosphere_s = 1.0
+solver_mode = "tsit5"
+
+[common.analysis]
+impact_altitude_m = 50000.0         # SOURCED: IMPACT_ALTITUDE_M, event_callbacks.jl
+
+[common.closedloop]
+policy = "near_passive"
+margin_m = 1000.0
+
+# ------------------------------------------------------------------------------------------------------------------------------
+[planets.venus.planet]
+name = "Venus"                      # SOURCED: venus_generality_config.toml
+spice_center = "VENUS"
+third_bodies = ["Sun"]
+[planets.venus.gravity]
+coefficient_file = "data/planets/gravity/MGNP180U.csv"   # SOURCED: venus_generality_config.toml (20x20)
+degree = 20
+order = 20
+[planets.venus.orbit]
+apoapsis_radius_m = 72651770.0      # SOURCED: vex_orvm_f.toml via venus_generality_config.toml
+true_anomaly_deg = 180.0
+[planets.venus.guess]
+initial_altitude_m = 135000.0       # ASSUMED start of the Pi-rule fixed point (venus_gram_config.toml)
+[planets.venus.vehicle]
+bus_dims_m = [2.05, 3.7, 2.8]       # SOURCED: venus_generality_config.toml
+panel_dims_m = [0.01, 2.85, 1.0]
+bus_mass_kg = 630.0
+panel_mass_each_kg = 10.0
+panel_offset_y_m = 2.45
+prop_mass_kg = 50.0                 # ASSUMED: the Venus config models no propellant (open loop); the closed loop needs some; 50 kg is the Mars Stage C value
+cd = 2.2
+beta_override_kg_m2 = 0.0
+thrust_n = 4.0                      # ASSUMED: Stage C Mars controller values reused (venus_generality_config.toml carries the same)
+specific_impulse_s = 220.0
+max_burn_delta_v_mps = 10.0
+max_burn_duration_s = 1800.0
+total_delta_v_budget_mps = 100.0
+planning_lead_deg = 12.0
+predictor_monotone_tolerance_m = 0.5
+[planets.venus.grid]
+inclination_deg = [39.2, 63.4, 89.876, 116.6]    # SOURCED: venus_generality_config.toml
+raan_deg = [0.0, 90.0, 180.0, 270.0]
+omega_deg = [0.0, 90.0, 180.0, 270.0]            # ASSUMED: four values (the earlier Venus grid used two)
+epochs_utc = ["2014-05-19T04:00:00", "2014-07-03T04:00:00", "2014-08-17T04:00:00"]   # E1 SOURCED (VEX ORVM epoch); E2, E3 = E1 + 45, + 90 d (ASSUMED, the Earth/Mars spacing)
+horizon_days = 60.0
+
+[planets.mars.planet]
+name = "Mars"                       # SOURCED: mars_generality_config.toml
+spice_center = "MARS"
+third_bodies = ["Sun"]
+[planets.mars.gravity]
+coefficient_file = "data/planets/gravity/Mars50c.csv"    # SOURCED: mars_generality_config_g20.toml (Mars50c truncated to degree 20, order 20; the Stage F run used degree 3, order 0)
+degree = 20
+order = 20
+[planets.mars.orbit]
+apoapsis_radius_m = 28559615.0      # SOURCED: odyssey_tolson.toml via mars_generality_config.toml
+true_anomaly_deg = 180.0
+[planets.mars.guess]
+initial_altitude_m = 109000.0       # ASSUMED start (mars_generality_config.toml initial_periapsis_altitude_guess_m)
+[planets.mars.vehicle]
+bus_dims_m = [2.2, 2.6, 1.7]        # SOURCED: mars_generality_config.toml (Odyssey)
+panel_dims_m = [0.01, 1.945, 1.7]
+bus_mass_kg = 391.0
+panel_mass_each_kg = 10.0
+panel_offset_y_m = 2.2725
+prop_mass_kg = 50.0
+cd = 2.2
+beta_override_kg_m2 = 0.0
+thrust_n = 4.0
+specific_impulse_s = 220.0
+max_burn_delta_v_mps = 10.0
+max_burn_duration_s = 1800.0
+total_delta_v_budget_mps = 100.0
+planning_lead_deg = 12.0
+predictor_monotone_tolerance_m = 0.5
+[planets.mars.grid]
+inclination_deg = [25.2, 63.4, 93.522, 116.6]    # SOURCED: mars_generality_config.toml
+raan_deg = [0.0, 90.0, 180.0, 270.0]
+omega_deg = [0.0, 90.0, 180.0, 270.0]
+epochs_utc = ["2001-11-06T19:00:32", "2001-12-21T19:00:32", "2002-02-04T19:00:32"]   # E1 SOURCED (Odyssey record epoch), E2 = +45 d (SOURCED in Stage C), E3 = +90 d (ASSUMED)
+horizon_days = 30.0                 # ASSUMED: shortened from 60 d for compute (period 0.6 d gives about 50 passes, above the 20 required); Venus and Earth use 60 d
+
+[planets.earth.planet]
+name = "Earth"                      # SOURCED: study_config.toml [third_bodies]
+spice_center = "EARTH"
+third_bodies = ["Moon", "Sun"]
+[planets.earth.gravity]
+coefficient_file = "data/planets/gravity/EarthGGM05C.csv"   # SOURCED: run_earth_g20.jl truth (GGM05C truncated to degree 20, order 20; the Stage F run used degree 3, order 0)
+degree = 20
+order = 20
+[planets.earth.orbit]
+apoapsis_altitude_m = 60500000.0    # SOURCED: examples/periapsis_corridor_config.toml [orbit] (altitude above Rp_e)
+true_anomaly_deg = 180.0
+[planets.earth.guess]
+initial_altitude_m = 127000.0       # ASSUMED start (study_config.toml [calibration])
+[planets.earth.vehicle]
+# DERIVED to reproduce the Stage E vehicle: bus 2.05 x 3.7 x 2.8 and wings 0.01 x 2.85 x 1.0 give the 5.74 + 2 x 2.85 = 11.44 m2 of study_config.toml;
+# dry 620 kg = 600 + 2 x 10 (ASSUMED split), propellant 200 kg, wet 820 kg as examples/periapsis_corridor_config.toml [vehicle].
+bus_dims_m = [2.05, 3.7, 2.8]
+panel_dims_m = [0.01, 2.85, 1.0]
+bus_mass_kg = 600.0
+panel_mass_each_kg = 10.0
+panel_offset_y_m = 2.45
+prop_mass_kg = 200.0
+cd = 2.2                            # SOURCED: study_config.toml [vehicle]
+beta_override_kg_m2 = 0.0
+thrust_n = 4.0                      # SOURCED: examples/periapsis_corridor_config.toml [vehicle]
+specific_impulse_s = 300.0
+max_burn_delta_v_mps = 10.0         # SOURCED: [comparison]
+max_burn_duration_s = 1800.0
+total_delta_v_budget_mps = 100.0
+planning_lead_deg = 12.0
+predictor_monotone_tolerance_m = 0.5
+[planets.earth.grid]
+inclination_deg = [50.0, 63.4, 98.0, 116.6]      # 50 SOURCED (Stage E); 63.4, 116.6 J2 critical; 98 near-polar retrograde (ASSUMED)
+raan_deg = [0.0, 90.0, 180.0, 270.0]
+omega_deg = [0.0, 90.0, 180.0, 270.0]
+epochs_utc = ["2020-01-01T00:00:00", "2020-02-15T00:00:00", "2020-04-01T00:00:00"]   # SOURCED: study_config.toml [grid]
+horizon_days = 60.0
+
+[stagen2]
+# Stage N2 (plan stagen2_plan.md). Same filter, edge, epsilon and cap as Stage N-flight (constants read from <root>/stagen_flight/mars/kalman_params.csv); only the aim point changes:
+# target density = 2 Q_high / V^3 exp(-(m + c + g_a)), clamped to [lo + 10 m, hi - 10 m] (a target exactly on the edge can land 1 cm outside it and the burn is then dropped as infeasible); g_a >= 0 is the aim offset in ln Q below the chance-constrained edge (g_a = 0 aims AT the edge).
+epsilon = 0.01                      # ASSUMED (task): single 1% tier P(Q > 0.25); the two-tier version is NOT used
+t_mult = 1.9024464352457662         # DERIVED: empirical 1% quantile of the dev standardized innovations (Stage N-flight kalman_params.csv t_emp_01), repeated here for the offline calibration
+w_cap_m = 4000.0                    # Stage N dev selection, unchanged
+g_grid = [0.05, 0.10, 0.20]         # ASSUMED: aim offsets (ln Q below the edge) of the 1% arms; the edge multiplier t is solved for each so that the predicted overall over-0.25 fraction is 1% (calibrate)
+g_diag = 0.10                       # ASSUMED: aim offset of the 5% diagnostic arm (flown on dev only, not eligible)
+mc_draws = 20000                    # ASSUMED: simulated runs per evaluation
+mc_seed = 20261025
+dev_over_ceiling = 0.02             # ASSUMED (2 x epsilon), dev selection feasibility
+dv_factor = 2.0                     # task C3
+decay_fraction_min = 0.90           # task C4
+over_cmp_fixed = 0.0393             # SOURCED: Stage I held-out fixed 1000 m arm
+bootstrap_draws = 10000
+bootstrap_seed = 20261025

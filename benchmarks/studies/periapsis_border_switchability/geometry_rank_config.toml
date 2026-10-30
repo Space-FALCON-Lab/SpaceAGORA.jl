@@ -1,0 +1,103 @@
+# WP-G1: geometry ranking by the dV floor (geometry_rank.py) and the GRAM mean-field sampling job (meanfield_sample.jl).
+# Plan: analytic_framework_and_transfer_plan.md (local note), R2.3 (grid, sampling job), R3.1 to R3.6 (metric, regimes, pre-check, decision rule).
+# Every value is labeled SOURCED (file or note named), DERIVED (computed from sourced inputs, named), or ASSUMED (named choice, no source).
+
+[grid]
+# R2.3 candidate grid, ASSUMED (U9 may narrow it). 12 x 8 x 4 x 4 = 1,536 candidates.
+omega0_step_deg = 30.0              # ASSUMED (R2.3)
+raan0_step_deg = 45.0               # ASSUMED (R2.3); sets the local solar time
+epoch_offsets_days = [0.0, 90.0, 180.0, 270.0]   # ASSUMED (R2.3); sets L_s and the tesseral phase
+inclinations_deg = [25.2, 63.4, 93.5, 116.6]     # SOURCED (Stage K cell inclinations, via R2.3)
+# Reduced grid if the probe exceeds probe_limit_ms. The plan text says "omega0 every 60 deg, Omega0 every 90 deg: 256 candidates", but
+# 6 x 4 x 4 x 4 = 384, not 256. 256 needs omega0 every 90 deg (4 x 4 x 4 x 4). Both are implemented; cut_mode picks one (ASSUMED: 256, the count the plan states).
+cut_mode = "256"                    # "256" (omega 90, Omega 90) or "384" (omega 60, Omega 90)
+cut256_omega_step_deg = 90.0
+cut256_raan_step_deg = 90.0
+cut384_omega_step_deg = 60.0
+cut384_raan_step_deg = 90.0
+
+[grid_fine]
+# Follow-up (user resolved U9: any inclination allowed). 21 inclinations x 12 omega0 x 8 Omega0 x 4 epochs = 8,064 candidates. ASSUMED set.
+# 20 to 160 every 10 deg (15), the Stage K cell inclinations 25.2, 63.4, 93.5, 116.6 (SOURCED, via R2.3), and the ends of the paper's range 88.6 and 98.6 (ASSUMED, for reference).
+inclinations_deg = [20.0, 25.2, 30.0, 40.0, 50.0, 60.0, 63.4, 70.0, 80.0, 88.6, 90.0, 93.5, 98.6, 100.0, 110.0, 116.6, 120.0, 130.0, 140.0, 150.0, 160.0]
+
+[anchor]
+# The Odyssey geometry, added as one extra candidate (the grid values do not contain it); used by the R3.3 pre-check and as F_ODY in R3.5.
+inclination_deg = 93.522            # SOURCED: stageo_config.toml [stageo]
+raan_deg = 28.1517                  # SOURCED: same
+omega_deg = 109.7454                # SOURCED: same
+epoch_utc = "2001-11-06T19:00:32"   # SOURCED: stageo_config.toml [planets.mars.grid] epochs_utc (taken as the starting apoapsis, ASSUMED there)
+
+[orbit]
+ra0_m = 28533000.0                  # SOURCED: stageo_config.toml [stageo] ra0_m
+ra_target_m = 7408000.0             # SOURCED: stageo_config.toml [stageo] ra_target_m
+h_ref_m = 105319.6                  # SOURCED: Stage O dev N2-I seed 1 pass 1 geodetic altitude (alt_m); the tube level and the GRAM sampling center. ASSUMED to transfer to other geometries (the keeper holds Q, not altitude)
+max_passes = 400                    # ASSUMED guard on the schedule loop (the dev flights run 207 to 267 passes)
+
+[mars]
+r_eq_m = 3396190.0                  # SOURCED: pck00011.tpc BODY499_RADII (SPICE kernel in the GRAM tree)
+r_pol_m = 3376200.0                 # SOURCED: same
+w_rot_rad_s = 7.08823596e-5         # SOURCED: planets.jl Mars struct (as stagek_tess.py)
+pm_w0_deg = 176.049863              # SOURCED: pck00011.tpc BODY499_PM
+pm_rate_deg_day = 350.891982443297  # SOURCED: same
+theta_offset_deg = 0.843            # DERIVED: constant of (lam - lon_body) minus W(t) over dev N2-I seed 1 passes (spread under 0.001 deg). Explained: the engine uses the IAU 2000 Mars rotation (W0 176.630, +0.58 deg against pck00011's 176.0499) plus 0.26 deg for TDB-UTC (64 s). Checked in the selftest
+j_zonal_max_degree = 6              # ASSUMED: highest zonal degree in the secular de/dt (J3 dominates, 46 m per pass, SOURCED Stage K); higher degrees are below 1 m per pass there
+tesseral_nodes = 128                # SOURCED: stagek_tess.py tess_kick default
+tesseral_degree = 20                # SOURCED: Mars50c 20x20 truth (stageo_config.toml)
+
+[vehicle]
+# SOURCED: stageo_config.toml [planets.mars.vehicle] (Odyssey)
+bus_dims_m = [2.2, 2.6, 1.7]
+panel_dims_m = [0.01, 1.945, 1.7]
+bus_mass_kg = 391.0
+panel_mass_each_kg = 10.0
+prop_mass_kg = 50.0
+cd = 2.2
+
+[decay]
+decay_scale = 1.13                  # DERIVED (plan R1.1): observed apoapsis drop over the K-theory drop map at q_mean, median 1.131 on the 48 dev runs. Re-measured in the selftest
+h_fallback_m = 6450.0               # DERIVED: median GRAM h_local_m over 10,925 dev passes (plan R3.1). Used only where no mean-field sample exists (preview mode)
+
+[band]
+q_cap_mean_w_cm2 = 0.234            # DERIVED (plan R1.2): q_mean,plan at E = 0.5, sigma_p = 0.10 (the knee). sigma_p replaced by the dev-measured value later (U14)
+q_never_exceed_qs_w_cm2 = 0.65      # SOURCED as the qualification limit (Hanna via Stage O 2.2); use as never-exceed is the user's choice (U12)
+ln_qs_over_qmean_max = 0.856        # DERIVED (plan R1.1): observed maximum of ln(Q_s/q_mean) in 10,925 dev passes
+d_ref_days = 64.2                   # DERIVED (plan R1.2): B-ODY campaign time in our truth (200 passes), the time reference D_ref at Odyssey geometry
+slack_band_factor = 2.0             # ASSUMED reading of plan R1.3: tube width W = factor x ln(q_cap / q_req) (0.72 = 2 x 0.36 at Odyssey). The harmonic-mean penalty is WP-A1's; this is the plan's own number
+odyssey_band_ln = 0.83              # SOURCED: Odyssey corridor 0.14 to 0.32 W/cm2, ln(0.32/0.14) (plan R3.2)
+fast_window_passes = 15             # DERIVED (plan R3.2): the fast part is the residual of a 15-pass centered mean; reproduces the measured fast widths (selftest)
+fast_width_ln_at_ratio_1 = 0.257    # DERIVED (plan R3.2): 5-95% width of the fast part, N2-I dev trajectories, formula lever
+fast_width_ln_at_ratio_054 = 0.221  # DERIVED (plan R3.6): same, realized lever 0.54
+fast_sd_ln_ody = 0.100              # DERIVED (plan R3.2): sd of the fast part (N2-I)
+
+[floor]
+include_sun = true               # DERIVED (addendum): adding the Sun channel to the dev-state model removes the +0.6 ln net residual on N2-I and F-O (to -0.04 / +0.06); the earlier hand estimate of about 2 m per pass was about 10x too small. --no-sun gives the earlier model
+burn_response_ratio = 1.0           # DERIVED (halflever_twin_results.md): GRAM-on twin test, realized/lever 1.0002 on all seeds; the earlier 0.5 was an estimator artifact. Named field kept; 0.54 reported as a sensitivity
+n_levels = 801                      # ASSUMED: grid levels of the exact tube DP (plan R3.2 used 41 levels and 25 start offsets; this is finer and has a free start)
+phase_jitter_frac = 0.05            # ASSUMED: half-range of the pass-epoch time-scale jitter of the anchor ensemble (the model runs 4 to 5% long against the flown days, selftest 10)
+phase_jitter_n = 12                 # SOURCED: 12 dev seeds behind the oracle floor (plan R3.2); the ensemble mimics their seed-to-seed spread of tesseral phase
+refine_stat = 300                   # ASSUMED: deterministic top candidates re-measured on the jitter ensemble to count those indistinguishable from the best
+refine_top = 20                     # ASSUMED: candidates re-measured on the jitter ensemble before the R3.5 rule is applied
+regime_tol_mps = 0.05               # ASSUMED: floors within this of the drift-free floor count as neutral
+
+[precheck]
+oracle_floor_ratio_1_mps = 1.54     # DERIVED (plan R3.2): dev N2-I oracle floor, formula lever
+oracle_floor_ratio_054_mps = 1.61   # DERIVED (plan R3.6): same, realized lever 0.54
+tolerance = 0.30                    # ASSUMED (plan R3.3)
+
+[decision]
+x_floor_ratio = 0.70                # ASSUMED, reasoned (plan R3.5)
+
+[sampling]
+passes_nominal = 200                # ASSUMED (plan R2.3 "about 200 passes"); the real count per candidate is model-derived and written to the tracks file
+alt_offsets_m = [-5000.0, 0.0, 5000.0]   # ASSUMED: three altitudes around h_ref_m for H_local and the field term (about 0.8 H either side)
+probe_calls = 1000                  # SOURCED: plan R2.3
+probe_workers = 2                   # ASSUMED: a one-case campaign plans route none, so the probe is two cases of probe_calls / 2
+probe_limit_ms = 5.0                # SOURCED: plan R2.3
+probe_warmup_calls = 10             # ASSUMED: calls excluded from the per-call statistics (first-call compilation)
+est_ms_per_call_low = 0.2           # ASSUMED (plan R2.3)
+est_ms_per_call_high = 2.0          # ASSUMED (plan R2.3)
+workers = 4                         # ASSUMED, modest on the workstation (stageo_config.toml [stagef] workers)
+cands_per_chunk = 8                 # ASSUMED: candidates per task (one output file each, resumable)
+route_hint_mission_s = 3600.0       # ASSUMED: only feeds campaign_route_features; not a result
+gram_seed_string = "marsMF_ODY"     # ASSUMED: FNV-hashed GRAM seed (mean density does not depend on it; perturbations are off)

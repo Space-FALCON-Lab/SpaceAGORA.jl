@@ -1,0 +1,237 @@
+# Stage O: the periapsis-corridor keeper against the flown Mars Odyssey main phase. Plan (frozen, with the 2026-10-24 revision and acceptance addendum):
+# tasks/2026-10-15_periapsis-region-border-targeting/odyssey_comparison_plan.md. Same keys as stagen2_config.toml (Mars only; [stagef], [analysis], [common.*], [planets.mars.*]) plus the [stageo] table.
+# Differences from stagen2_config.toml (verify with diff): this header, results_subdir, planets, the Mars orbit/grid (Odyssey parameters, one epoch, no cell grid), and [stageo] replacing [stagen2].
+# Labels: SOURCED (cited file or paper), DERIVED (computed from sourced values), ASSUMED (named choice, flagged).
+
+[stagef]
+results_subdir = "stageo"        # below the results root; per-planet folders below it
+planets = ["mars"]
+cell_seed = 20261019               # ASSUMED: numpy default_rng seed of the cell draw (stagef_cells.py)
+n_epochs = 3                       # ASSUMED (user: >= 3 epochs / local-time sectors)
+n_per_group = 4                    # ASSUMED: cells drawn per (epoch, inclination); 3 x 4 x 4 = 48 cells per planet (user: >= 20 cells)
+n_dev_per_group = 2                # ASSUMED: of the 4 drawn cells per group, 2 development, 2 held out
+workers = 4                        # ASSUMED, modest on the workstation
+perturbation_mode = "pass"         # SPACEAGORA_GRAM_DENSITY_PERTURBATION value for the perturbed arm
+perturbation_reseed = "1"          # SPACEAGORA_GRAM_DENSITY_PERTURBATION_PASS_RESEED: pass k's random stream depends only on (cell seed, k)
+fixed_margin_m = 1000.0            # ASSUMED (the value used by the Stage E / Stage C closed loops): the fixed margin under test
+policy = "near_passive"            # SOURCED: Stage E / C closed loops
+predictor = "v5"                   # frozen estimator v5, one-pass prediction (run_mars_closedloop.jl --predictor=v5 form)
+
+
+[analysis]
+# Pre-registered thresholds, identical across planets (plan section 5). ASSUMED unless noted.
+min_scored_passes_per_cell = 20    # a cell counts toward T2/primary only with this many scored one-pass-ahead pairs (user: >= 20 passes)
+min_cells = 20
+coverage_levels = [0.841, 0.95, 0.99]   # nominal one-sided coverages (Gaussian k = 1, 1.64, 2.33 in the earlier study)
+coverage_tolerance_below = 0.03    # R1 passes if empirical LOCO-quantile coverage >= nominal - this
+percell_tolerance = 0.10           # R2 per-cell band at 95%
+percell_fraction_required = 0.70   # R2 fraction of qualifying cells inside the band
+half_band_fraction = 0.5           # R3: one-sided 95% buffer <= half_band_fraction * ln(Q_hi/Q_lo)
+information_ratio_max = 0.5        # R4: sigma(best)/sigma(P0s) (T4 of the earlier study)
+ewma_gain_threshold = 0.05         # R5: EWMA "beats" persistence if sigma ratio <= 1 - this
+generality_factor = 2.0            # R7: planets' 95% buffers in scale heights within this factor of each other
+lag1_white_threshold = 0.10        # R6: |lag-1| of the random component below this counts as white
+adapt_coverage = 0.95              # F2 adaptive rule: one-sided quantile level on each limit
+adapt_min_band_m = 200.0           # F2: minimum width of the adaptive corridor; below it the corridor is collapsed to its predicted-median center
+win_cost_tolerance = 0.10          # F2 X: adaptive may lose at most this fraction of apoapsis decay per day and add at most this fraction of dV
+bootstrap_draws = 10000
+bootstrap_seed = 20261020
+
+# ------------------------------------------------------------------------------------------------------------------------------
+[common.atmosphere]
+fit_top_altitude_m = 400000.0       # ASSUMED (as venus_gram_config.toml)
+temperature_k = 170.0               # placeholder, never used for drag
+
+[common.atmosphere_gram]
+entry_interface_km = 2000.0         # SOURCED: GRAM extension zero-density ceiling; GRAM sampled wherever it is sampled (venus_gram_config.toml)
+density = "mean"
+
+[common.band]
+q_low_w_cm2 = 0.05                  # SOURCED (paper): lower corridor edge; below it = "low" tier (campaign-length cost only)
+q_high_w_cm2 = 0.25                 # SOURCED (paper): upper corridor edge = soft-violation threshold; the controller's thermal edge
+q_target_w_cm2 = 0.15               # SOURCED (paper): target heat rate; used as the first-pass calibration target (Stage F used the geometric mean of the band)
+q_medium_w_cm2 = 0.30               # SOURCED (paper): soft tier 0.25 to 0.30, medium tier above it
+q_hard_w_cm2 = 0.45                 # SOURCED (paper): medium tier 0.30 to 0.45, hard tier (mission failure) above it
+w_cm2_to_w_m2 = 1.0e4
+
+[common.guess]
+fixed_point_iterations = 3          # ASSUMED (venus_gram_config.toml)
+root_bracket_m = [80000.0, 300000.0]
+root_tolerance_m = 1.0
+
+[common.fit]
+window_below_m = 15000.0            # ASSUMED (venus_gram_config.toml): the in-window rule of the density-buffer analysis
+window_above_m = 25000.0
+step_m = 1000.0
+node_spacing_m = 2000.0
+local_scale_height_step_m = 500.0
+
+[common.calibration]
+max_iterations = 8
+q_tolerance_relative = 1.0e-3
+horizon_fraction_of_period = 0.65
+
+[common.integration]
+reltol = 1.0e-9                     # SOURCED: examples/periapsis_corridor_config.toml [integration]
+abstol = 1.0e-11
+dt_max_orbit_s = 30.0
+dt_max_atmosphere_s = 1.0
+solver_mode = "tsit5"
+
+[common.analysis]
+impact_altitude_m = 50000.0         # SOURCED: IMPACT_ALTITUDE_M, event_callbacks.jl
+
+[common.closedloop]
+policy = "near_passive"
+margin_m = 1000.0
+
+# ------------------------------------------------------------------------------------------------------------------------------
+[planets.mars.planet]
+name = "Mars"                       # SOURCED: mars_generality_config.toml
+spice_center = "MARS"
+third_bodies = ["Sun"]
+[planets.mars.gravity]
+coefficient_file = "data/planets/gravity/Mars50c.csv"    # SOURCED: mars_generality_config_g20.toml (Mars50c truncated to degree 20, order 20; the Stage F run used degree 3, order 0)
+degree = 20
+order = 20
+[planets.mars.orbit]
+# apoapsis_radius_m is injected from [stageo].ra0_m by the loader (one source of truth); the start is at apoapsis.
+true_anomaly_deg = 180.0            # ASSUMED: start at apoapsis, study convention since Stage C (plan R1.1)
+[planets.mars.guess]
+initial_altitude_m = 109000.0       # ASSUMED start (mars_generality_config.toml initial_periapsis_altitude_guess_m)
+[planets.mars.vehicle]
+bus_dims_m = [2.2, 2.6, 1.7]        # SOURCED: mars_generality_config.toml (Odyssey)
+panel_dims_m = [0.01, 1.945, 1.7]
+bus_mass_kg = 391.0
+panel_mass_each_kg = 10.0
+panel_offset_y_m = 2.2725
+prop_mass_kg = 50.0
+cd = 2.2
+beta_override_kg_m2 = 0.0
+thrust_n = 4.0
+specific_impulse_s = 220.0
+max_burn_delta_v_mps = 10.0
+max_burn_duration_s = 1800.0
+total_delta_v_budget_mps = 100.0
+planning_lead_deg = 12.0
+predictor_monotone_tolerance_m = 0.5
+[planets.mars.grid]
+# Single geometry. Element values are in [stageo]; epochs_utc is kept because the shared helpers index it.
+epochs_utc = ["2001-11-06T19:00:32"]   # SOURCED: odyssey_tolson.toml [scenarios.initial_time]; taken as the time of the starting apoapsis (ASSUMED, plan R1.1: shifts the clock by about half an orbit)
+horizon_days = 90.0                 # unused by Stage O (each case carries its own horizon from [stageo.arms]); kept for the shared helpers
+
+[stageo]
+ra0_m = 28533000.0                  # SOURCED: Smith and Bell 2005 via Falcone and Putnam 2023 Table III, main phase 1 start (plan R1.1, D9a)
+ra0_manifest_alt_m = 28559615.0     # SOURCED: odyssey_tolson.toml reference r_a (+0.09%); documented alternative, not used
+ra_target_m = 7408000.0             # SOURCED: Table III, end of main phase 2 (plan R1.1); the run stops at the first apoapsis at or below it
+inclination_deg = 93.522            # SOURCED: odyssey_tolson.toml reference elements (body-equator inertial)
+raan_deg = 28.1517                  # SOURCED: same
+omega_deg = 109.7454                # SOURCED: same
+seed_prefix = "ODY_s"               # ASSUMED (plan 2.6): GRAM seed string = "mars" * seed_prefix * k through the FNV stagef_seed
+cal_gram_tag = "ODY_cal"            # ASSUMED: seed string tag of the fit-only calibration cases (mean density, perturbation off)
+dev_seeds = [1, 12]                 # ASSUMED (plan 2.6): k = 1 to 12
+held_seeds = [13, 36]               # ASSUMED (plan 2.6): k = 13 to 36
+repro_n = 2                         # plan section 6: 2 repro flights (first two held seeds, arm N2-1)
+smoke_days = 3.0                    # plan section 6: "2 smoke flights (3 d)"
+gate_seed = 1                       # plan 4.5: seed ODY_s1
+gate_dt_s = [1.0, 0.2]              # plan 4.5: the two atmosphere steps of gate G1
+xhost_seed = 13                     # ASSUMED: first held seed; arm N2-1
+horizon_factor = 1.5                # ASSUMED (plan 2.6): horizon = horizon_factor x predicted days (Stage M convention)
+solver_maxiters = 20000000          # ASSUMED: step limit of the ODE solve (DiffEq default 1e5 stopped both gate flights with MaxIters, day 82 at 1 s and pass 62 at 0.2 s); generous, a safety limit not a tuned value
+peak_gate_altitude_m = 500000.0     # ASSUMED: density is sampled for the per-pass peak only below this altitude (the fit top is 400 km; density above is negligible against the peak)
+track_vrel = true                   # OPEN (orchestrator decision, see the Stage O log): false = N2 exactly as frozen (the Q-to-density conversion keeps the first-pass relative speed for the whole run);
+                                    # true = rescale that speed by the vis-viva periapsis speed of the current orbit (over the main phase the periapsis speed falls about 13%, i.e. Q at fixed density falls about 33%; DERIVED by hand from vis-viva)
+
+[stageo.ensemble]
+# Step-size ensemble (tasks/.../stageo_ensemble_plan.md, pre-registered before flying): F-O (phase ens) and N2-T (phase ensn), paired 1.0 s and 0.5 s atmosphere steps. Not part of the 176 plan flights.
+seeds = [1, 4]                      # ASSUMED: ODY_s1 to ODY_s4 (dev seeds; the gate seed is included)
+dts = [1.0, 0.5]                    # user-approved design; 0.5 s is the finer step (the 0.2 s gate flight cost 31 s per pass)
+horizon_days = 130.0                # ASSUMED: 1.5 x the 86.3 d the 1.0 s F-O gate flight needed to reach 7,408 km (268 passes), rounded; so that no flight is cut off first
+
+[stageo.flown]
+passes = 153                        # SOURCED: Table III main phase 1 + 2 (108 + 45), P19-171
+days = 49.0                         # SOURCED: Table III (41.8 + 7.2)
+dv_mps = 2.924                      # SOURCED: odyssey_tolson.toml [scenarios.maneuvers], 13 main-phase burns (D7)
+
+[stageo.plan_counts]
+# SOURCED: plan section 6 (flights per phase; --dry-run is checked against these). cal is 2 cases (one per band), not flights.
+smoke = 2
+gate = 2
+dev1 = 24
+dev2 = 24
+held = 72
+repro = 2
+heldp = 48
+xhost = 2
+total = 176
+cal_cases = 2
+
+[stageo.bands.odyssey]
+q_low_w_cm2 = 0.14                  # SOURCED: Hanna p. 3, Fig. 5; Takashima p. 3; Tartabini p. 11 (plan 2.2)
+q_high_w_cm2 = 0.32                 # SOURCED: same (flat bound, plan section 3)
+q_target_w_cm2 = 0.212              # DERIVED: geometric mean sqrt(0.14 x 0.32) = 0.2117 (Stage F rule), plan R1.1 and D9b
+q_medium_w_cm2 = 0.54               # SOURCED: flight allowable (175 C), Hanna p. 3; no soft tier in this band
+q_hard_w_cm2 = 0.54                 # SOURCED: plan section 3 "hard (failure) 0.54"
+q_qualification_w_cm2 = 0.65        # SOURCED: Hanna p. 3 (195 C); reported tier only
+w_cm2_to_w_m2 = 1.0e4
+
+[stageo.bands.paper]
+q_low_w_cm2 = 0.05                  # SOURCED: Falcone and Putnam 2023 (identical to [common.band]; the selftest checks)
+q_high_w_cm2 = 0.25
+q_target_w_cm2 = 0.15
+q_medium_w_cm2 = 0.30
+q_hard_w_cm2 = 0.45
+w_cm2_to_w_m2 = 1.0e4
+
+# Arms (plan 4.4). predicted_passes: plan section 6 basis (DERIVED there: N = 153 x 0.2238 / Q_mean with Q_mean ASSUMED 0.19 / 0.127 / 0.139); predicted days = passes x flown days / flown passes.
+# N2-T: N2 transferred unchanged (g_a and t SOURCED from stagen2_results.md, selected arm). N2-1 and N2-I take (g_a, t_mult) from <root>/stageo/mars/calibrated_arms.csv (columns arm,g_a,t_mult; written by the analysis calibrate step).
+[stageo.arms.FO]
+name = "F-O"
+band = "odyssey"
+ctrl = "fixed"
+predicted_passes = 180
+horizon_days = 130.0                 # ASSUMED: horizon limit only (flights stop at the first apoapsis at or below ra_target_m); Odyssey band 130 d as in the step-size ensemble (F-O needed 83 to 87 d)
+[stageo.arms.N2T]
+name = "N2-T"
+band = "odyssey"
+ctrl = "cc"
+eps = 0.01
+g_a = 0.10
+t_mult = 1.520
+predicted_passes = 180
+horizon_days = 130.0
+[stageo.arms.N21]
+name = "N2-1"
+band = "odyssey"
+ctrl = "cc"
+eps = 0.01
+calibrated = true
+predicted_passes = 180
+horizon_days = 130.0
+[stageo.arms.N2I]
+name = "N2-I"
+band = "odyssey"
+ctrl = "cc"
+eps = 0.118                         # DERIVED: 18 / 153, flown main-phase fraction with Q_s above 0.32 (plan R1.2); the q_eff threshold conversion is the analysis step's
+calibrated = true
+predicted_passes = 180
+horizon_days = 130.0
+[stageo.arms.FP]
+name = "F-P"
+band = "paper"
+ctrl = "fixed"
+predicted_passes = 246
+horizon_days = 195.0                 # ASSUMED: horizon limit only; 1.49 x the plan's 118 to 130 d (F-O's observed 268/180 pass overrun), rounded up
+[stageo.arms.N2P]
+name = "N2-P"
+band = "paper"
+ctrl = "cc"
+eps = 0.01
+g_a = 0.10
+t_mult = 1.520                      # N2 exactly as frozen (stagen2_results.md)
+predicted_passes = 270
+horizon_days = 195.0
+
+[stageo.n2]
+w_cap_m = 4000.0                    # Stage N dev selection, unchanged (SOURCED stagen2_config.toml [stagen2])
+fixed_margin_m = 1000.0             # Stage I fixed keeper (stagef_run_task), also [stagef].fixed_margin_m

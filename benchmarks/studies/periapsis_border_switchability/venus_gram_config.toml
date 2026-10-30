@@ -1,0 +1,41 @@
+# Venus with the native Venus-GRAM atmosphere as truth. OVERRIDES ONLY: every table of venus_generality_config.toml (planet, gravity, orbit, vehicle, band,
+# integration, grid, analysis, estimator_numerics) is inherited unchanged (same 32-cell grid, vehicle, 20x20 MGNP180U gravity, Sun third body, thresholds).
+# Only the tables below replace or extend it. Labels: SOURCED / DERIVED / ASSUMED. Plan (frozen before any GRAM truth run):
+# tasks/2026-10-15_periapsis-region-border-targeting/venus_gram_plan.md
+[meta]
+# Subdirectory below the results root. "venus" (not "venus_gram") so that the unchanged venus_analyze.py and venus_apoapsis_pi_check.py read the GRAM results root as-is.
+subdir = "venus"
+
+[atmosphere]
+# The exponential-world keys of the base config are not used for truth. Kept: vex_apoapsis_radius_m (unused here), temperature_k placeholder.
+fit_top_altitude_m = 400000.0       # ASSUMED: upper node of each per-cell fit (the single layer is extended; density does not depend on it)
+
+[atmosphere_gram]
+planet_name = "venus"               # SOURCED: GRAMAtmosphereModel(planet_name="venus"), as examples/AGORA_Vex.jl
+# SOURCED: EnvironmentModel.EI. The GRAM extension evaluates GRAM only below EI and a planet polynomial above it (ext/SpaceAGORAGRAMSuiteExt.jl, getDensity).
+# 2000 km is its zero-density ceiling, so GRAM is sampled wherever it is sampled at all (examples/periapsis_corridor_config.toml [atmosphere_gram]).
+entry_interface_km = 2000.0
+density = "mean"                    # MEAN density only: no density perturbation (SPACEAGORA_GRAM_DENSITY_PERTURBATION unset, off)
+
+[guess]
+# Pi-based initial-periapsis rule (plan section 2a). The altitude is the root of 0.5 rho_GRAM(h, lat_p, lon_p, t_p) V_rel^3 = Q_target at the first-periapsis
+# site (lat_p, lon_p, t_p from two-body geometry, no truth run), Q_target = sqrt(Q_low Q_high) (the Earth/Mars/exponential-Venus calibration target).
+initial_altitude_m = 135000.0       # ASSUMED start of the fixed-point (the exponential-Venus calibrated value, rounded); the rule iterates, so it is not an input of the result
+fixed_point_iterations = 3          # ASSUMED
+root_bracket_m = [80000.0, 300000.0]  # ASSUMED bracket of the bisection
+root_tolerance_m = 1.0
+
+[fit]
+# Estimator density input (plan section 2b): PRIMARY = piecewise exponential through GRAM MEAN density at nodes every node_spacing_m; SECONDARY = ONE exponential layer,
+# rho(h) = rho_g exp(-(h - h_g)/H) anchored at GRAM's density at h_g (rho_g), H by least squares on ln rho over the window. Both at the first-periapsis site over a window around the guess altitude h_g. Only data available at the cell's start (no truth trajectory). No refit during a run.
+window_below_m = 15000.0            # ASSUMED (the VEX flight table spans periapsis altitudes 129 to 187 km; this is a window around the guess, not tuned)
+window_above_m = 25000.0            # ASSUMED (the periapsis mostly rises in the exponential-world pilot; asymmetric on purpose)
+step_m = 1000.0                     # ASSUMED sample spacing
+node_spacing_m = 2000.0             # ASSUMED node spacing of the PRIMARY piecewise fit (GRAM values at the nodes, ln-linear between)
+local_scale_height_step_m = 500.0   # ASSUMED central-difference half step for H_local(h) = -1/(d ln rho/dh)
+
+[calibration]
+# Overrides the base table: GRAM is not a single exponential, so the Q-correction (exponential step, then secant) may need more iterations.
+max_iterations = 8                  # ASSUMED (base 6)
+q_tolerance_relative = 1.0e-3       # inherited value, restated
+horizon_fraction_of_period = 0.65   # inherited value, restated

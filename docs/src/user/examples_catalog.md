@@ -228,6 +228,10 @@ script configures, including scripts whose historical names say "Control":
 | `AGORA_Titan_Control_Test.jl` | Titan attitude propagation with J2 gravity and no active controller |
 | `AGORA_Vex_Control_Test.jl` | Venus aerodynamics in a constant-density atmosphere with no active controller |
 
+### Fixed-corridor aerobraking study
+
+For the Earth 95–100 km periapsis-corridor study, see [Earth Periapsis Corridor](periapsis_corridor.md). Its default run evaluates one 60-day favorable coast; `--case=all` runs all five configured cases, and `--smoke` checks reduced-duration startup and output only.
+
 ### RPO and robotics
 
 Prepare the optional HYPR companion environment once from the repository root,
@@ -386,6 +390,7 @@ flight-validation claim.
 | Robot-arm planning | `Robot_Arm_Planner_Cloth_Demo.jl` | `rpo_planner_env` and examples setup; no external data |
 | Writing a GNC algorithm | `gnc_algorithm_env/feedback_controller.jl`, `gnc_algorithm_env/estimator.jl`, `gnc_algorithm_env/rpo_planner.jl`, `gnc_algorithm_env/burn_planner.jl`, `gnc_algorithm_env/joint_planner.jl` | `gnc_algorithm_env` setup; no external data |
 | Extension walkthroughs | `walkthrough_env/my_effector.jl`, `walkthrough_env/my_actuator.jl` | `walkthrough_env` setup; no external data |
+| Corridor study | `AGORA_Earth_Periapsis_Corridor.jl` | Examples; no external data for the default US76 atmosphere, native GRAM and SPICE for `--atmosphere=gram` |
 
 The setup files under `rpo_planner_env/`, `odyssey_surrogate_env/`,
 `gnc_algorithm_env/` and `walkthrough_env/` prepare those four environments.
@@ -409,6 +414,7 @@ files are included by examples rather than run on their own:
   plotting helper.
 - `support/aerobraking_plot_errors.jl` calculates the RTN error components
   used by those plots.
+- `periapsis_corridor_support.jl`, `periapsis_corridor_mean_elements.jl`, `periapsis_corridor_plots.jl` and `periapsis_corridor_controller.jl` belong to the corridor study.
 
 The general CI example suite discovers the runnable scripts at the top of
 `examples/`, excluding `common.jl`, `setup.jl` and `odyssey_surrogate.jl`; the

@@ -31,7 +31,14 @@ end
 
 function list_examples()
     # setup.jl prepares the examples environment; it is not an example.
-    helper_files = Set(["common.jl", "setup.jl"])
+    helper_files = Set([
+        "common.jl",
+        "setup.jl",
+        "periapsis_corridor_support.jl",
+        "periapsis_corridor_mean_elements.jl",
+        "periapsis_corridor_plots.jl",
+        "periapsis_corridor_controller.jl",
+    ])
     # Odyssey uses its pinned example environment, not this repository environment.
     # surrogate-user.yml runs its full native-free passage and verifies the outputs.
     dedicated_environment_examples = Set(["odyssey_surrogate.jl"])

@@ -1,0 +1,44 @@
+# Static-region sweep (extension of the border switchability study). Labels: SOURCED / DERIVED / ASSUMED.
+# Everything else (band, vehicle, third bodies, epochs, calibration) comes from study_config.toml.
+
+[grid]
+# SOURCED by the task statement: the two critical inclinations (63.4 / 116.6 deg) and the ecliptic-obliquity inclination (23.4 deg).
+inclination_deg = [23.4, 63.4, 116.6]
+# ASSUMED: RAAN every 45 deg, omega every 90 deg (the 50-deg reference row used 90-deg steps for both).
+raan_deg = [0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0]
+omega_deg = [0.0, 90.0, 180.0, 270.0]
+horizon_days = 60.0
+workers = 4
+reference_dir = "output/periapsis_border_switchability"   # the 50-deg grid of the previous study (not rerun); override with env REF_DIR
+
+[static_window]
+# ASSUMED: X, half-width of the "stays near its initial altitude" test. About half of the 12.09 km altitude
+# width of the heat-rate band at the calibrated relative speed (DERIVED in study_config.toml notes).
+x_km = 6.0
+# A window is the longest run of consecutive passes with peak Q inside the band AND |alt - alt_0| <= X.
+# Its length is (time of last pass - time of first pass) of the run; a run of one pass has length 0.
+
+[control]
+# ASSUMED: paired no-third-body control for the best and worst cells by static window.
+n_best = 24
+n_worst = 24
+
+[race]
+# ASSUMED named horizon.
+horizon_days = 180.0
+n_best = 6
+n_worst = 2
+min_best_per_family = 2
+# ASSUMED: third-body authority is "down" when the 15-day-window slope of periapsis radius is below this.
+authority_rate_threshold_km_day = 0.1
+rate_window_days = 15.0
+# ASSUMED finite-difference probe at the last apoapsis of the race run (tangential, impulsive).
+fd_dv_mps = 0.2
+
+[cost]
+# ASSUMED: step-and-stay policy. A correction fires when the periapsis altitude leaves the heat-rate band
+# (current-pass band edges) shrunk by this margin on each side, and resets it to the opposite shrunken edge.
+deadband_margin_km = 1.0
+# SOURCED from the previous study (direct_step.csv): measured tangential-at-apoapsis cost at a ~ 36,000 km.
+lever_prev_low_mps_per_km = 0.072
+lever_prev_high_mps_per_km = 0.076

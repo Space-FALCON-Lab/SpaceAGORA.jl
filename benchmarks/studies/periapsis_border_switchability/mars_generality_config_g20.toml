@@ -1,0 +1,128 @@
+# Stage C: planet generality (Mars). Every named value is labeled SOURCED / DERIVED / ASSUMED. The plan and thresholds are in
+# tasks/2026-10-15_periapsis-region-border-targeting/mars_generality_plan.md (written before any Mars truth run).
+# The estimator is frozen: nothing here is a coefficient of the estimator. Values here define the Mars TRUTH scenario and the analysis.
+
+[meta]
+# Location of the results below the results root (a location, not a model value). The >= 20x20 truth lives under its OWN results root (so the analysis scripts run unchanged).
+subdir = "mars"
+
+[planet]
+# SOURCED: Mars("", SPICE_PATH) in src/models/environment/ephemerides/planets.jl supplies mu, Rp_e, Rp_p, spin, rho_ref, h_ref, H, J2 (struct), pole.
+name = "Mars"
+spice_center = "MARS"
+third_bodies = ["Sun"]            # SOURCED: AGORA_Odyssey.jl uses NBodyGravityModel(("Sun",), primary "Mars")
+
+[gravity]
+# Truth gravity for the >= 20x20 studies (user directive 2026-10-17): Mars50c (file degree/order 50x50), degree 20, order 20. The Stage C truth was degree 3 order 0.
+coefficient_file = "data/planets/gravity/Mars50c.csv"
+degree = 20
+order = 20
+
+[atmosphere]
+# SOURCED: the Mars() struct fields rho_ref, h_ref, H define the single-layer exponential (ExponentialAtmosphereModel(planet)); no GRAM.
+# ASSUMED: the upper node of the fit (only defines the node span of the CorridorAtmosphereFit; the layer is extended, density does not depend on it).
+fit_top_altitude_m = 400000.0
+temperature_k = 150.0             # placeholder, never used for drag (the struct's T_ref)
+
+[orbit]
+# SOURCED: benchmarks/studies/telemetry_validation/manifests/odyssey_tolson.toml (ra_m = apoapsis RADIUS from the planet center).
+apoapsis_radius_m = 28559615.0
+odyssey_inclination_deg = 93.522   # SOURCED: same manifest (i_deg); the task's 93.2 is not in the repo
+# ASSUMED: first guess of the periapsis altitude for the peak-Q calibration (only the start of the iteration).
+initial_periapsis_altitude_guess_m = 109000.0
+true_anomaly_deg = 180.0
+
+[vehicle]
+# SOURCED: odyssey_tolson.toml [scenarios.spacecraft]: bus 2.2 x 2.6 x 1.7 m, 391 kg; two panels 0.01 x 1.945 x 1.7 m, 10 kg each; propellant 50 kg.
+bus_dims_m = [2.2, 2.6, 1.7]
+panel_dims_m = [0.01, 1.945, 1.7]
+bus_mass_kg = 391.0
+panel_mass_each_kg = 10.0
+panel_offset_y_m = 2.2725
+prop_mass_kg = 50.0
+# DERIVED: reference area = bus (dims1 x dims3) + 2 panels (dims2 x dims3), the same bus + 2 wings rule as the Earth study.
+# ASSUMED: free-molecular drag coefficient (as the Earth study), panels broadside to the flow.
+cd = 2.2
+# 0 = derive beta = wet mass / (cd * area); > 0 overrides.
+beta_override_kg_m2 = 0.0
+# SOURCED: odyssey_tolson.toml (thrust_n, isp_s). Used by the closed-loop arm only.
+thrust_n = 4.0
+specific_impulse_s = 220.0
+# SOURCED: examples/periapsis_corridor_config.toml [comparison] (controller limits of the Earth example, unchanged).
+max_burn_delta_v_mps = 10.0
+max_burn_duration_s = 1800.0
+total_delta_v_budget_mps = 100.0
+planning_lead_deg = 12.0
+predictor_monotone_tolerance_m = 0.5
+
+[band]
+# SOURCED: study_config.toml [band] (Odyssey main-phase corridor and flight allowable, Hanna); the Earth band is the same absolute numbers.
+q_low_w_cm2 = 0.14
+q_high_w_cm2 = 0.32
+q_hard_w_cm2 = 0.54
+w_cm2_to_w_m2 = 1.0e4
+
+[environment]
+EI_km = 250.0                      # SOURCED: odyssey_tolson.toml
+
+[integration]
+# SOURCED: examples/periapsis_corridor_config.toml [integration].
+reltol = 1.0e-9
+abstol = 1.0e-11
+dt_max_orbit_s = 30.0
+dt_max_atmosphere_s = 1.0
+solver_mode = "tsit5"
+
+[calibration]
+# As the Earth study (study_config.toml [calibration]); the target is the geometric mean of the band, the iteration is on the first-pass peak Q.
+max_iterations = 6
+q_tolerance_relative = 1.0e-3
+horizon_fraction_of_period = 0.65
+
+[grid]
+# DERIVED: the Mars obliquity, angle between the SPICE pole and the Sun's orbit normal: 25.19 deg at both epochs (probe, plan), rounded to 0.1 deg.
+inclination_deg = [25.2, 63.4, 93.522, 116.6]
+raan_deg = [0.0, 90.0, 180.0, 270.0]
+omega_deg = [0.0, 90.0, 180.0, 270.0]
+# SOURCED: E1 = the Odyssey record epoch (odyssey_tolson.toml [scenarios.initial_time]); ASSUMED: E2 = E1 + 45 d (the Earth epoch spacing).
+epochs_utc = ["2001-11-06T19:00:32", "2001-12-21T19:00:32"]
+horizon_days = 60.0
+workers = 4                        # ASSUMED, modest on the workstation
+
+[analysis]
+margin_km = 1.0                    # as oracle_config.toml / selection_skill_config.toml
+margin_km_secondary = 0.43         # DERIVED diagnostic: 1 km x (5.2 / 12.09), the Mars/Earth band-width ratio
+top_fraction = 0.10
+random_draws = 2000
+random_seed = 20261016
+critical_inclinations_deg = [63.4, 116.6]
+earth_quiet_set = [[63.4, 180.0], [116.6, 0.0]]
+impact_altitude_m = 50000.0        # SOURCED: IMPACT_ALTITUDE_M, event_callbacks.jl
+lookahead_bin_edges_days = [0.0, 5.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
+raan_halves = [[0.0, 90.0], [180.0, 270.0]]
+
+[estimator_numerics]
+# The estimator settings are those of estimator_v2_config.toml. Convergence rule (pre-registered, uses no truth): the default
+# drag-node count is accepted at Mars only if the maximum altitude change against a 4x refined reference is < 100 m (0.1 margin);
+# otherwise the smallest of 64, 128 nodes that passes is used. This is a numerical resolution, not a fit.
+drag_nodes_candidates = [32, 64, 128]
+convergence_tolerance_m = 100.0
+
+[phobos_deimos]
+# LITERATURE, recalled (as estimator_v2_config.toml), NOT in the repo's SPICE data; used only for the validity guard a / r_b and an order-of-magnitude bound.
+phobos_gm_m3s2 = 7.087e5
+phobos_a_m = 9.376e6
+deimos_gm_m3s2 = 9.62e4
+deimos_a_m = 2.3463e7
+
+[closedloop]
+policy = "near_passive"
+margin_m = 1000.0                  # ASSUMED = the oracle margin (as the Earth closed loop)
+horizon_days = 60.0
+n_selected_best = 6
+n_typical = 6
+n_crit_not_top = 6
+n_odyssey_ref = 6
+seed = 20261017
+bootstrap_draws = 10000
+workers = 4

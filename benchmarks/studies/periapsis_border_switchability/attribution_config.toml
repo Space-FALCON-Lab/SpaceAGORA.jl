@@ -1,0 +1,21 @@
+# Attribution study (extension). Labels: SOURCED / DERIVED / ASSUMED. Everything else: study_config.toml, static_config.toml.
+[cells]
+# ASSUMED selection rule, fixed before any attribution run (data: border/ and border2/ CSVs):
+#  F2 null: I=23.4, RAAN 0, the four omegas, at the epoch with the largest mean |measured - hand| 60-day radius change (epoch 1: 77.1 km vs 37.4 / 66.1 km).
+#  F1 best: top-2 static window in each of I=116.6 RAAN 0 and I=63.4 RAAN 180.
+#  generic 50 deg: smallest and largest |Sun+Moon effect| among completed cells of the 50-deg grid.
+#  worst: the two shortest-window (0.81 d) cells of the 288 with the largest max deviation.
+# fields: [inclination_deg, raan_deg, omega_deg, epoch_idx, source_dir ("border2" or "border")]
+list = [
+ [23.4, 0.0, 0.0, 1, "border2"], [23.4, 0.0, 90.0, 1, "border2"], [23.4, 0.0, 180.0, 1, "border2"], [23.4, 0.0, 270.0, 1, "border2"],
+ [116.6, 0.0, 90.0, 2, "border2"], [116.6, 0.0, 0.0, 2, "border2"], [63.4, 180.0, 90.0, 2, "border2"], [63.4, 180.0, 180.0, 2, "border2"],
+ [50.0, 180.0, 180.0, 2, "border"], [50.0, 270.0, 90.0, 3, "border"],
+ [63.4, 270.0, 90.0, 2, "border2"], [63.4, 270.0, 270.0, 2, "border2"],
+]
+[variants]
+# v0 Sun+Moon J2/J3 drag (baseline); v1 Moon only; v2 Sun only; v3 neither; v4 Sun+Moon, gravity degree 2 (J3 off);
+# v5 Sun+Moon, drag off; v8 Moon only, drag off; v9 Sun only, drag off;
+# v6 Moon with ephemeris time frozen at the start epoch (one F2 cell); v7 Sun frozen likewise (same cell; ASSUMED addition).
+all_cells = ["v0", "v1", "v2", "v3", "v4", "v5", "v8", "v9"]
+frozen_cell = "I0234_R000_W090_E1"
+frozen = ["v6", "v7"]

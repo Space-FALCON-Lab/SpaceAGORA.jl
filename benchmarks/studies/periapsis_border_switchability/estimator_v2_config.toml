@@ -1,0 +1,48 @@
+# Estimator v2 (short-period terms) validation. Labels: SOURCED / DERIVED / ASSUMED / USER-SET. Everything not listed here comes from
+# study_config.toml, selection_skill_config.toml (thresholds, folds, baselines) and the A1 labels.
+
+[estimator]
+# As selection_skill_config.toml (same resolutions and conventions, so that v1 and v2 differ only by the short-period terms).
+n_tide_nodes = 64
+n_drag_nodes_per_half = 32
+drag_window_km = 250.0
+body_epoch = "periapsis"
+horizon_days = 60.0
+calibration_tol_m = 1.0
+calibration_max_iter = 8
+impact_altitude_m = 50000.0
+margin_km = 1.0
+
+[v2]
+# Headline v2 (declared before any residual of the 336 cells was inspected): third-body short period by quadrature of the exact tide,
+# J2 short period by the repo's first-order map (as v1).
+sp_tide = "exact"
+sp_j2 = "map"
+n_sp_nodes = 64                # ASSUMED resolution of the short-period quadrature (convergence check in the selftest)
+# Variants run for comparison (all derived options, declared up front): closed-form quadrupole Pi form for (a, e) only; J2 short period by quadrature.
+variants = ["quadrupole"]   # (j2quad, J2 short period by zero-mean quadrature, mixes mean-element conventions with the Brouwer secular rates: rejected in the selftest, not run)
+
+[timing]
+n_cells = 24                   # ASSUMED, as selection_skill_config.toml
+repeats = 5
+
+[oscillation]
+# The 12 attribution cells (attribution_config.toml); bodies analyzed; window midpoint rule for the harmonic parameters.
+window_days = 59.5             # the V8/V9 record length (drag-off runs last 59.5 d)
+use_midpoint = true            # ASSUMED: harmonics evaluated at the window midpoint
+
+[planets]
+# SOURCED from the repo planet structs (make_no_gram_planet): mu, equatorial radius, J2 of Earth, Mars, Venus; Sun mu from MU_BODY (the study table).
+# LITERATURE (not in the repo; values recalled from the cited compilations, not re-checked against the sources, flagged in the results note):
+#   mean heliocentric distances (AU = 1.495978707e11 m, IAU 2012): Mars 1.523679 AU, Venus 0.723332 AU;
+#   Phobos: GM 7.087e-4 km^3/s^2, mean orbital radius 9376 km; Deimos: GM 9.62e-5 km^3/s^2, mean orbital radius 23463 km (Jacobson and Lainey 2014 for GM; orbital radii mean values).
+au_m = 1.495978707e11
+mars_sun_distance_au = 1.523679
+venus_sun_distance_au = 0.723332
+phobos_gm_m3s2 = 7.087e8
+phobos_a_m = 9.376e6
+deimos_gm_m3s2 = 9.62e7
+deimos_a_m = 2.3463e7
+# ASSUMED illustrative orbits [semi-major axis (m), periapsis altitude (m)]: a large, Earth-cell-like one and a smaller aerobraking-like one.
+mars_orbits = [[20000.0e3, 120.0e3], [10000.0e3, 120.0e3]]
+venus_orbits = [[20000.0e3, 130.0e3], [10000.0e3, 130.0e3]]

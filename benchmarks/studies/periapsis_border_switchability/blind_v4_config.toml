@@ -1,0 +1,16 @@
+# Second blind Mars set for the estimator-v4 test (new cells, disjoint from the 128 development cells AND from the 64 cells of the v3 blind set that the
+# numerical-predictor test also used). Written and used by select_blind_v4.py BEFORE any truth run on it; nothing here is changed after seeing a result.
+# Labels: SOURCED = from the task statement or repo files, ASSUMED = a named choice made here.
+
+[mars]
+# ASSUMED named seed (numpy default_rng); different from blind_g20_config.toml (20261018).
+seed = 20261020
+# Inclinations (deg): the six of the task statement (25.2, 45, 63.4, 80, 93.5 = the Stage C 93.522, 116.6) with 64 cells in all.
+inclination_deg = [25.2, 45.0, 63.4, 80.0, 93.522, 116.6]
+cells_per_inclination = [11, 10, 11, 10, 11, 11]
+# Four new epochs: the Odyssey record epoch + offsets in days drawn with the seed from integers 3..120, excluding offsets within 3 d of the development
+# epochs (0, 45) and of the v3-blind epochs (72, 85, 103, 107, read from that set's config), all distinct, sorted.
+n_epochs = 4
+epoch_offset_range_days = [3, 120]
+base_epoch_utc = "2001-11-06T19:00:32"
+# RAAN and omega: integer degrees, not multiples of 90 (development grid), and NOT any RAAN / omega value used by the v3 blind set (stronger than disjoint tuples).

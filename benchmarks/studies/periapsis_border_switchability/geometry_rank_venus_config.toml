@@ -1,0 +1,112 @@
+# Venus analogue of geometry_rank_config.toml (frozen Mars config, sha256 eb98d0ef...c6fa, NOT edited). Used by geometry_rank_venus.py. No flights, no GRAM sampling.
+# Every value is labeled SOURCED (file or note named), DERIVED (computed from sourced inputs, rule named), ASSUMED (named choice, no source), or CARRIED (Mars value kept unchanged, see the label for why).
+# Section names follow the Mars file; the loader aliases [venus] to the key the Mars code reads.
+
+[grid]
+omega0_step_deg = 30.0              # CARRIED (Mars R2.3 design, ASSUMED there)
+raan0_step_deg = 45.0               # CARRIED
+epoch_offsets_days = [0.0, 90.0, 180.0, 270.0]   # CARRIED (Mars design). At Venus the Sun-direction period is the Venus year, 224.7 d, so the four offsets are phases 0, 144, 288, 72 deg of the Sun
+# SOURCED: venus_generality_config.toml [grid]: 39.2 (Sun-plane critical inclination; replaces Mars 25.2 = Mars obliquity), 63.4 and 116.6 (J2 critical), 89.876 (Venus Express). Same 4-inclination design as Mars.
+inclinations_deg = [39.2, 63.4, 89.876, 116.6]
+cut_mode = "256"                    # CARRIED (4 x 4 x 4 x 4 = 256, the count the Mars plan states)
+cut256_omega_step_deg = 90.0
+cut256_raan_step_deg = 90.0
+cut384_omega_step_deg = 60.0
+cut384_raan_step_deg = 90.0
+
+[grid_fine]
+# CARRIED design of the Mars follow-up (20 to 160 every 10 deg), plus the four Venus inclinations above. ASSUMED set; 19 inclinations.
+inclinations_deg = [20.0, 30.0, 39.2, 40.0, 50.0, 60.0, 63.4, 70.0, 80.0, 89.876, 90.0, 100.0, 110.0, 116.6, 120.0, 130.0, 140.0, 150.0, 160.0]
+
+[anchor]
+# The Venus analogue of "the Odyssey geometry": the Venus Express aerobraking orbit (the only flown Venus aerobraking record in the repo, and the orbit every Venus study cell uses).
+# SOURCED: telemetry_validation/manifests/vex_orvm_f.toml (ESA flight-dynamics elements at 2014-05-19 04:00 UTC, body-equator inertial frame).
+inclination_deg = 89.876
+raan_deg = 104.115
+omega_deg = 75.505
+epoch_utc = "2014-05-19T04:00:00"   # SOURCED: same (true anomaly 178 deg there; taken as the starting apoapsis, ASSUMED as at Mars)
+
+[campaign]
+# The Venus campaign (analogue of Mars ra0 -> ra_target, D_ref). mode "flown": the model integrates the Venus Express flown record (passes 2950 to 3005) from ra0 at the anchor geometry.
+mode = "flown"                      # ASSUMED choice of reference campaign ("constant_q" is the sensitivity: D_ref = horizon_days at constant q_ref)
+pass_table = "benchmarks/studies/telemetry_validation/manifests/vex_final/step2pp.csv"   # SOURCED: flown periapsis altitude and dynamic pressure per pass (55 of 56 passes)
+# Rule (geometry_rank_venus.py, flown_campaign): per flown pass q = pdyn x V_p with V_p the vis-viva periapsis speed of the model state (q = 0.5 rho V^3, pdyn = 0.5 rho V^2);
+# r_p = R_eq + flown altitude; apoapsis drop = decay_scale x K-theory drop at q (the Mars decay map, H = h_fallback_m); pass 2951 (missing) takes the mean q of its neighbors (ASSUMED).
+# ra_target = the apoapsis after the last flown pass; D_ref = elapsed model time (DERIVED, printed by --campaign; not hand-entered). No flown burns or thruster pulses are modeled (4 small VEX burns and 4 cm/s pulses are in the flown record).
+horizon_days = 60.0                 # SOURCED: venus_generality_config.toml [grid] horizon_days (used only by mode "constant_q")
+q_ref_w_cm2 = 0.2117                # SOURCED: sqrt(0.14 x 0.32), the Venus cells' calibration target (venus_gram_config.toml [guess], venus_gram_results.md section 6); used only by mode "constant_q"
+
+[orbit]
+ra0_m = 72651770.0                  # SOURCED: vex_orvm_f.toml ra_m (apoapsis RADIUS; also venus_generality_config.toml [orbit])
+ra_target_m = 0.0                   # DERIVED at load from [campaign] (0.0 here is a placeholder, overwritten by the loader)
+h_ref_m = 135150.0                  # SOURCED: venus_gram_results.md section 5, median first-pass altitude of the 32 Q-calibrated GRAM-mean cells (135.15 km); the tube level. ASSUMED to transfer along the campaign (the flown altitude went 187 to 129 km)
+max_passes = 400                    # CARRIED guard (the flown record has 56 passes)
+
+[venus]
+# w_rot, r_eq, r_pol: SOURCED src/models/environment/ephemerides/planets.jl Venus struct (omega z = -2.99e-7 rad/s, retrograde; Rp_e = Rp_p = 6,051,800 m, = pck00011 BODY299_RADII 6051.8 km). f = 0
+r_eq_m = 6051800.0
+r_pol_m = 6051800.0
+w_rot_rad_s = -2.99e-7
+pm_w0_deg = 160.20                  # SOURCED: pck00011.tpc BODY299_PM (check only: the model takes the rotation angle from the engine table, see [sun])
+pm_rate_deg_day = -1.4813688        # SOURCED: same
+pole_ra_deg = 272.76                # SOURCED: pck00011.tpc BODY299_POLE_RA (check only; the model uses the engine pole from the table)
+pole_dec_deg = 67.16                # SOURCED: BODY299_POLE_DEC (check only)
+theta_offset_deg = 0.0              # CARRIED as zero: the rotation angle comes from the engine's own frame matrix (table column pm_*), no offset needed
+j_zonal_max_degree = 6              # CARRIED (ASSUMED at Mars); the selftest prints the zonal de/dt at the anchor for degree 6 against degree 20
+tesseral_nodes = 128                # CARRIED (stagek_tess.py default)
+tesseral_degree = 20                # SOURCED: venus_generality_config.toml [gravity] degree/order 20 of MGNP180U (gravity file mu 3.24858592079e14, R 6,051,000 m, read by kaula_lib)
+
+[vehicle]
+# SOURCED: venus_generality_config.toml [vehicle] (Venus Express, from vex_orvm_f.toml); prop 0 as in the open-loop Venus cells
+bus_dims_m = [2.05, 3.7, 2.8]
+panel_dims_m = [0.01, 2.85, 1.0]
+bus_mass_kg = 630.0
+panel_mass_each_kg = 10.0
+prop_mass_kg = 0.0
+cd = 2.2                            # ASSUMED (as every study planet)
+
+[decay]
+decay_scale = 1.0168                # SOURCED: venus_gram_results.md section 4, D1V median observed/predicted apoapsis drop, GRAM mean truth (Mars analogue: 1.13 from the dev runs)
+h_fallback_m = 3860.0               # SOURCED: venus_gram_results.md section 5, median H_local at pass 1, 32 cells (3.86 km). Sensitivities: 3.5 km (VEX table), 4.49 km (start single-fit H). No mean-field sample exists for Venus, so H is constant (GRAM H_local varied 3 to 44 km along flown passes)
+
+[band]
+q_cap_mean_w_cm2 = 0.234            # CARRIED/ASSUMED: the Mars knee value (E = 0.5, sigma_p = 0.10). Venus pass-to-pass sigma is unmeasured for the controlled heat rate; the Venus study cells use the same absolute Odyssey numbers (venus_generality_config.toml [band]). Sensitivities 0.213 and 0.32
+q_never_exceed_qs_w_cm2 = 0.65      # CARRIED: SOURCED at Mars (qualification limit, Hanna); Venus study cells use q_hard 0.54 with the same Odyssey numbers (ASSUMED to transfer)
+ln_qs_over_qmean_max = 0.856        # CARRIED: Mars-dev observed maximum of ln(Q_s/q_mean); ASSUMED to transfer (affects only the feasibility flag)
+d_ref_days = 0.0                    # DERIVED at load from [campaign] (placeholder, overwritten by the loader)
+slack_band_factor = 2.0             # CARRIED (ASSUMED reading of plan R1.3)
+odyssey_band_ln = 0.83              # SOURCED: ln(0.32/0.14), the corridor of venus_generality_config.toml [band] (the same numbers as Odyssey)
+fast_window_passes = 15             # CARRIED (the 15-pass split of slow and fast; at Venus the campaign has about 55 passes)
+# Fast (white) width of ln q, 5 to 95%. Mars measured 0.257 (dev runs with GRAM perturbations). Venus has no measured value (the mean-density truth has none by construction). ASSUMED: Mars value scaled by the
+# ratio of the measured std ln rho at periapsis, Venus 0.125 / Mars 0.316 (analytic_framework_and_transfer_plan.md section 2, Stage F R6), = 0.396. Sensitivities: 0.0 and the Mars value 0.257.
+fast_width_ln_at_ratio_1 = 0.1016
+fast_width_ln_at_ratio_054 = 0.0874
+fast_sd_ln_ody = 0.0396             # Mars 0.100 x 0.396 (same scaling, ASSUMED); used only through the tesseral share, which is skipped (s_t_ody = None)
+
+[floor]
+include_sun = true                  # the Sun term dominates at Venus (Part 1: held-out EV 0.976 with zonal + T8 + drag)
+burn_response_ratio = 1.0           # CARRIED (halflever_twin_results.md, Mars; the lever is vis-viva geometry, planet independent)
+n_levels = 801                      # CARRIED
+phase_jitter_frac = 0.05            # CARRIED ASSUMED (+-5% time-scale jitter of the pass epochs, 12 realizations); at Venus it perturbs the Sun phase and the tesseral phase
+phase_jitter_n = 12                 # CARRIED
+refine_stat = 300                   # CARRIED
+refine_top = 20                     # CARRIED
+regime_tol_mps = 0.05               # CARRIED
+
+[precheck]
+# No Venus dev trajectories exist (no flights, no oracle floor): the R3.3 pre-check CANNOT be run. Placeholders keep the Mars code paths loadable; they are not used.
+oracle_floor_ratio_1_mps = 1.0
+oracle_floor_ratio_054_mps = 1.0
+tolerance = 0.30
+
+[decision]
+x_floor_ratio = 0.70                # CARRIED (plan R3.5)
+
+[sampling]
+# Unused (no GRAM mean field at Venus in this run). Kept so the Mars helper functions load.
+passes_nominal = 60
+alt_offsets_m = [-5000.0, 0.0, 5000.0]
+
+[sun]
+# Engine-sourced Sun and Venus frame table (sun_table_venus.jl, daily 2014-05-01 to 2015-07-01); directory relative to the notes dir, or SPACEAGORA_VENUS_SUN_TABLE.
+table_dir = "venus_rank_data/sun_table"

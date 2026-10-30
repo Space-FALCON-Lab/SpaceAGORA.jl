@@ -312,6 +312,7 @@ makedocs(
             "Troubleshooting" => "user/troubleshooting.md",
             "Recipes" => "user/recipes.md",
             "Examples Catalog" => "user/examples_catalog.md",
+            "Earth Periapsis Corridor" => "user/periapsis_corridor.md",
             "Upgrading" => "user/upgrading.md",
         ],
         "Extend SpaceAGORA" => Any[

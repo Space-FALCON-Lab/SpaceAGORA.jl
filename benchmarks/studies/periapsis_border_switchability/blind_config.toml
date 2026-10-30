@@ -1,0 +1,35 @@
+# Part 2: blind verification of the estimator-v1 picks. Labels: SOURCED / DERIVED / ASSUMED / USER-SET.
+# THE SELECTION RULE BELOW WAS FIXED BEFORE ANY BLIND TRUTH RUN AND IS NOT CHANGED AFTER SEEING RESULTS.
+# Estimator v1 is not retuned on these cells.
+
+[rule]
+# USER-SET: per epoch (1, 2, 3), from the estimator-v1 fine-grid scan (scan_candidates.csv: inclinations
+# 23.4/50/63.4/116.6, RAAN 0-315 step 15, omega 0-345 step 15, self-calibrated seed, 6,336 candidates).
+# Geometries that already have a truth cell in the 336 are excluded from every group (the next best is taken).
+n_top = 5                    # (a) predicted-cheapest, predicted to complete within the hard limit
+n_random_safe = 5            # (b) random among the other predicted-safe geometries (not in the top 5)
+n_random_unsafe = 5          # (c) random among predicted decayed or predicted breach
+# ASSUMED reading of "predicted to complete": scan pred_class == "safe" (completes 60 d, predicted passive peak Q <= 0.54).
+# ASSUMED ordering of (a): the scan's lazy s=0 predicted dV (A1 policy on the predicted history), ties broken by the
+# larger minimum margin to the shrunk band (the same tie-break as the A2 top-5 table).
+# ASSUMED stratification of (c): 3 predicted-decayed + 2 predicted-breach per epoch, so both unsafe classes are sampled
+# (a pure random draw from the union would give about 70% decayed).
+n_unsafe_decayed = 3
+n_unsafe_breach = 2
+# ASSUMED named seeds (numpy default_rng); the draws are made on the candidate lists sorted by (inc, raan, omega).
+seed_random_safe = 20261017
+seed_random_unsafe = 20261018
+
+[run]
+# SAME setup as the earlier sweeps (static_config.toml / study_config.toml): calibration to the band-center peak Q on a
+# truth run with Sun+Moon via SPICE, J2/J3, US76 fit drag, beta from study_config.toml, 60 days.
+horizon_days = 60.0
+workers = 4
+
+[evaluation]
+# ASSUMED proposal (named): relative margin on the predicted peak Q; a geometry is "predicted safe at margin m" if
+# Q_pred * (1 + m) <= 0.54. Default margin 10%.
+q_margin_default = 0.10
+q_margins = [0.0, 0.05, 0.10, 0.15]
+# ASSUMED: 10% fold fraction for top-k recall is not used here; the blind top-k is 5 of 45 (and 5 of 15 inside an epoch).
+top_k = 5

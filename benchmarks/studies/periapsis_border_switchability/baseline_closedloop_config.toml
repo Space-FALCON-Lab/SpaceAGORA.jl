@@ -1,0 +1,45 @@
+# Stage E part 2: closed-loop baseline comparison. Labels: SOURCED / DERIVED / ASSUMED.
+# The corridor example's controller (select_corridor_maneuver, policy near_passive, its own finite-thrust predictor) flies each cell
+# in the engine with Sun+Moon (SPICE), J2/J3, US76 fit drag, beta from study_config.toml. The full run is NOT launched by the preparing session.
+
+[selection]
+# ASSUMED: seed of the numpy default_rng used for every random stratum draw (the project's seed convention, see selection_skill_config.toml).
+seed = 20261016
+# ASSUMED strata sizes (user asked for "about 6" each). Order of draws: selected_best, worst_completed, median_cost, ref50, decayed_passive; strata are disjoint.
+n_selected_best = 6       # first 6 by estimator-v2 predicted lazy_s0 dV (compare_baselines.build_sets order); deterministic, no draw
+n_worst_completed = 6     # 6 largest DP dV among completed cells; deterministic, no draw
+n_median_cost = 6         # random draw from the B-median set (DP dV between q25 and q75 of completed cells)
+n_ref50 = 6               # random draw from the 48 inclination-50 cells (any passive status; ~35% of them decay passively)
+n_decayed_passive = 6     # random draw from the 133 cells that decayed in the passive 60-day run
+
+[controller]
+policy = "near_passive"   # SOURCED: user request; example controller policy symbol
+# ASSUMED = the oracle's band shrink (1 km per side), so the controller's safe band is the oracle's band. Example default is 250 m.
+margin_m = 1000.0
+# DERIVED per cell: corridor_{min,max}_altitude_m = geodetic altitudes where peak Q = 0.32 / 0.14 W/cm2 at the first-pass relative
+# speed (band_altitudes in common.jl); target = their midpoint. The band is FIXED at that speed for the whole run (the oracle used per-pass edges).
+# The example's own limits apply unchanged: max_burn_delta_v_mps, max_burn_duration_s, total_delta_v_budget_mps, planning_lead_deg
+# (examples/periapsis_corridor_config.toml [comparison]).
+
+[run]
+horizon_days = 60.0       # SOURCED: study horizon
+workers = 4               # ASSUMED, modest on the workstation
+# ASSUMED smoke settings: two cells whose open-loop passive history leaves the 1 km-shrunk band at pass 4 (day 2.8, from passes_3b.csv),
+# so a burn is exercised, and 5 days (about 6 passes at a = 36,900 km).
+smoke_tags = ["I0634_R270_W090_E3", "I0500_R000_W090_E2"]
+smoke_horizon_days = 5.0
+smoke_workers = 2         # a campaign of 1 sample is routed :none, so the smoke run needs >= 2 samples
+
+[followup]
+# Follow-up closed-loop test (written before any follow-up run). Strata are disjoint from the 30 cells of closedloop_cells.csv and from each other.
+# ASSUMED: seed of the numpy default_rng for the three random draws, in the order quiet_not_top, estimator_top_not_quiet, quiet_in_top.
+seed = 20261017
+# ASSUMED strata size (user asked for about 6); a stratum with fewer eligible cells takes all of them.
+n_per_stratum = 6
+# DERIVED: "top 10%" = the first ceil(0.10 * 336) = 34 cells of the estimator-v2 ranking (compare_baselines.build_sets order:
+# predicted lazy_s0 dV, predicted decays last, ties by predicted burns then tag). Quiet set = (63.4, RAAN 180) and (116.6, RAAN 0), any omega/epoch.
+top_fraction = 0.10
+# DERIVED finding: all 24 quiet-set cells rank inside the top 10% (top 34), so quiet_not_top is empty. FALLBACK (named, ASSUMED): stratum quiet_not_top5 =
+# quiet cells outside the top ceil(0.05 * 336) = 17, i.e. the quiet cells the estimator ranks lower. Drawn before quiet_in_top, so the strata stay disjoint.
+fallback_top_fraction = 0.05
+# quiet_in_top is drawn from quiet cells inside the top 5% (rank <= 17; all of them are inside the top 10%), so that its ranks do not overlap quiet_not_top5 (rank > 17).

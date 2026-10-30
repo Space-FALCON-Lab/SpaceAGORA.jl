@@ -160,13 +160,77 @@ end
 @inline _auto_stiff_smooth_gravity_eligible(cfg::SolverConfig, args)::Bool = isnothing(_auto_stiff_smooth_gravity_reject_reason(cfg, args))
 @inline _auto_stiff_smooth_gravity_eligible(args)::Bool = _auto_stiff_smooth_gravity_eligible(_active_solver_config(), args)
 
-# Consecutive stiff-detection events required before AutoTsit5 commits to Rodas5P.
-# The OrdinaryDiffEq default is 5, which can trigger during brief atmospheric passes
-# where the entry/exit density gradient looks locally stiff.  A higher value requires
-# sustained stiffness across many steps before switching, avoiding unnecessary implicit
-# solves during aerobraking passages.
+# AutoSwitch `switch_max`: number of successive non-stiff diagnostics after which
+# the integrator's error check (check_error!) is re-enabled. It is NOT the number of
+# stiff detections needed to leave Tsit5 (that is AutoSwitch's `maxstiffstep`, 10).
 @inline _auto_stiff_switch_max(cfg::SolverConfig)::Int = cfg.auto_stiff_switch_max
 @inline _auto_stiff_switch_max()::Int = _auto_stiff_switch_max(_active_solver_config())
+
+# Stiffness estimate for the Tsit5 phase of AutoTsit5.
+#
+# Tsit5's own estimate (OrdinaryDiffEqTsit5) is the componentwise Inf norm of
+# (k7 - k6) ./ (g7 - g6). A state component that does not change over the
+# stage interval (a constant mass, an idle heat load, an unmoved attitude
+# rate) gives 0/0 = NaN, and the NaN makes the whole estimate NaN. AutoSwitch
+# reads `!(NaN <= tol)` as "stiff", so on such a state every Tsit5 step was
+# flagged stiff and the solver left Tsit5 after maxstiffstep + 1 steps. The
+# Rodas5P phase then returned only when dt * ||J||_inf / 3.5 <= 0.9; ||J||_inf
+# is at least 1 s^-1 for any state that carries a position (d r/dt = v), so
+# Rodas5P was held for every step with dt > 3.2 s, i.e. through whole vacuum arcs.
+#
+# This probe replaces only the Tsit5-phase estimate with Hairer's original
+# norm form, |k7 - k6| / |g7 - g6|, taken in the error-weighting norm
+# (atol + rtol * |u|) so that mixed units (m, m/s, kg, J) are commensurate and
+# a constant component contributes zero to both norms. The Rodas5P phase is
+# unchanged (AutoSwitch's own ||J||_inf test). `SPACEAGORA_AUTO_STIFF_DETECTOR=legacy`
+# restores OrdinaryDiffEq's estimate.
+struct _Tsit5StiffnessProbe end
+
+# OrdinaryDiffEqCore is not a direct dependency; reach it through a type it owns.
+const _ODECore = parentmodule(typeof(AutoTsit5(Rodas5P())))
+
+_ODECore.alg_stability_size(::_Tsit5StiffnessProbe) = _ODECore.alg_stability_size(Tsit5())
+
+@inline function _weighted_hairer_rate(integrator)::Float64
+    c = integrator.cache.caches[1]
+    # Tsit5 in-place cache: stage derivative k6 and stage value g6 = tmp. The
+    # constant-cache form carries neither; keep OrdinaryDiffEq's own estimate there.
+    (hasproperty(c, :k6) && hasproperty(c, :tmp)) || return Float64(integrator.eigen_est)
+    k6, g6 = c.k6, c.tmp
+    k7, g7 = integrator.fsallast, integrator.u
+    atol, rtol = integrator.opts.abstol, integrator.opts.reltol
+    num = 0.0
+    den = 0.0
+    @inbounds for i in eachindex(g7)
+        w = (atol isa Number ? atol : atol[i]) + (rtol isa Number ? rtol : rtol[i]) * abs(g7[i])
+        dk = (k7[i] - k6[i]) / w
+        dg = (g7[i] - g6[i]) / w
+        num += dk * dk
+        den += dg * dg
+    end
+    return den > 0.0 ? sqrt(num / den) : 0.0
+end
+
+function _ODECore.is_stiff(integrator, alg::_Tsit5StiffnessProbe, ntol, stol, is_stiffalg)
+    rate = is_stiffalg ? integrator.eigen_est : _weighted_hairer_rate(integrator)
+    stiffness = abs(rate * integrator.dt / _ODECore.alg_stability_size(alg))
+    tol = is_stiffalg ? stol : ntol
+    bool = !(stiffness <= oneunit(stiffness) * tol)
+    cf = integrator.alg.choice_function
+    cf.successive_switches = bool ? 0 : cf.successive_switches + 1
+    integrator.do_error_check = cf.successive_switches > cf.switch_max || !bool || is_stiffalg
+    return bool
+end
+
+@inline _auto_stiff_ode_detector()::Bool =
+    lowercase(strip(_engine_env_get("SPACEAGORA_AUTO_STIFF_DETECTOR", "robust"))) == "legacy"
+
+# AutoTsit5(stiff_alg; kwargs...) with the Tsit5-phase estimate above, unless
+# OrdinaryDiffEq's own detector is requested (SPACEAGORA_AUTO_STIFF_DETECTOR=legacy).
+function _auto_tsit5(stiff_alg; kwargs...)
+    _auto_stiff_ode_detector() && return AutoTsit5(stiff_alg; kwargs...)
+    return _ODECore.CompositeAlgorithm((Tsit5(), stiff_alg), _ODECore.AutoSwitch(_Tsit5StiffnessProbe(), stiff_alg; kwargs...))
+end
 
 @inline function _gravity_backbone_structure_validated(effector)::Symbol
     structure = SimulationModel.gravity_backbone_structure(effector)
@@ -321,7 +385,7 @@ end
     ls = _sparse_linsolve_or_default(sparse_jac)
     mode === :tsit5     && return (alg=Tsit5(), label="Tsit5", auto_switch_capable=false)
     mode === :auto_stiff && return (
-        alg=AutoTsit5(Rodas5P(autodiff=AutoFiniteDiff(), linsolve=ls)),
+        alg=_auto_tsit5(Rodas5P(autodiff=AutoFiniteDiff(), linsolve=ls)),
         label="AutoTsit5(Rodas5P)",
         auto_switch_capable=true
     )
@@ -901,7 +965,7 @@ function _solve_with_solver_policy(prob, cfg::SolverConfig, args, reltol_tol, ab
 
         # True stiffness-aware autoswitching handled internally by OrdinaryDiffEq.
         # This replaces the manual "retry with Rodas5P on Tsit5 failure" policy.
-        autoswitch_alg = AutoTsit5(_rodas5p_alg(); switch_max=_auto_stiff_switch_max(cfg))
+        autoswitch_alg = _auto_tsit5(_rodas5p_alg(); switch_max=_auto_stiff_switch_max(cfg))
         # Detect the switch from the Jacobian count when nothing else needs the
         # trajectory (a fresh integrator, so zero stats and a non-stiff start;
         # only Rodas5P forms a Jacobian), so per-step storage is not forced.

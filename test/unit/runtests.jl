@@ -226,6 +226,8 @@ include("visualization/mission_demo_tests.jl")
 
 
 include(joinpath(@__DIR__, "simulation", "atmospheric_phase_tests.jl"))
+include(joinpath(@__DIR__, "simulation", "density_memo_tests.jl"))
+include(joinpath(@__DIR__, "simulation", "auto_stiff_switch_tests.jl"))
 
 include(joinpath(@__DIR__, "simulation", "gram_density_perturbation_tests.jl"))
 include(joinpath(@__DIR__, "simulation", "gram_density_perturbation_callback_tests.jl"))

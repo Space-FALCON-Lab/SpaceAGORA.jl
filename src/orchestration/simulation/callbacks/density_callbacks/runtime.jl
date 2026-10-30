@@ -242,7 +242,50 @@ function _density_state_from_kinematics_unmasked!(
             s.direct_calls += 1
         end)
     end
-    return getDensity(density_model, alt, lat, lon, t, EnvironmentModels._environment_wind_enabled(p), p)
+    wind_on = EnvironmentModels._environment_wind_enabled(p)
+    if _density_memo_eligible(p, density_model) && sat_idx <= length(p.shared_buffers.density_memos)
+        return _density_memoized(p.shared_buffers.density_memos, sat_idx, density_model, alt, lat, lon, t, wind_on) do
+            getDensity(density_model, alt, lat, lon, t, wind_on, p)
+        end
+    end
+    return getDensity(density_model, alt, lat, lon, t, wind_on, p)
+end
+
+# Exact-input memo of one satellite's last native GRAM mean query. A stiff
+# solver builds its finite-difference Jacobian with one RHS call per state
+# column, and only the three position columns change the density inputs, so
+# the rest would repeat a native call with bit-identical arguments; the density
+# callback and forced re-evaluations also re-ask for the step-end point.
+#
+# Only a deterministic native GRAM mean is memoized: repeated identical queries
+# must be able to return different values nowhere else on this path. Excluded:
+#   - a history-dependent model (perturbed winds advance GRAM's random walk on
+#     every update, so the same query returns different values);
+#   - any installed SPACEAGORA_GRAM_DENSITY_PERTURBATION mode, whose naive_rhs
+#     control reads the mean instance's state after its last update and so
+#     needs every update to really happen;
+#   - every model that is not native GRAM (cheap and pure, nothing to save, or
+#     a cache/surrogate that handles reuse itself).
+@inline function _density_memo_eligible(p, density_model)::Bool
+    density_model isa EnvironmentModels.GRAMAtmosphereModel || return false
+    hasproperty(p.shared_buffers, :density_memos) || return false
+    EnvironmentModels.density_model_history_dependent(density_model) && return false
+    return _installed_gram_perturbation_mode(p) === :off
+end
+
+# Return the stored result when the model and every input match bit for bit
+# (`===`), otherwise call `compute()` and store its result. The slot is
+# per satellite; a slot holds one immutable record, replaced as a whole.
+function _density_memoized(compute, memos, sat_idx::Int, model, alt::Float64, lat::Float64,
+                           lon::Float64, t::Float64, wind::Bool)::Tuple{Float64, Float64, SVector{3, Float64}}
+    m = @inbounds memos[sat_idx]
+    if m !== nothing && m.model === model && m.alt === alt && m.lat === lat &&
+       m.lon === lon && m.t === t && m.wind === wind
+        return m.rho, m.T, m.wind_vec
+    end
+    rho, T, wind_vec = compute()
+    @inbounds memos[sat_idx] = DensityQueryMemo(model, alt, lat, lon, t, wind, rho, T, wind_vec)
+    return rho, T, wind_vec
 end
 
 # The density the staged callback and every RHS-side atmosphere sample use: the

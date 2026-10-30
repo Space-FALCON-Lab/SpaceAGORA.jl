@@ -96,6 +96,11 @@ end
     return false
 end
 
+# Same signal as `_auto_stiff_switched` for a fresh integrator (it starts on the
+# non-stiff algorithm, and only the stiff one counts Jacobians), without
+# needing the per-step alg_choice record.
+@inline _auto_stiff_switched_by_jacobians(sol)::Bool = sol.stats.njacs > 0
+
 @inline _solver_maxiters(cfg::SolverConfig)::Union{Nothing, Int} = cfg.maxiters
 @inline _active_solver_config()::SolverConfig = begin
     active_config = _engine_active_config_ref[]
@@ -897,10 +902,17 @@ function _solve_with_solver_policy(prob, cfg::SolverConfig, args, reltol_tol, ab
         # True stiffness-aware autoswitching handled internally by OrdinaryDiffEq.
         # This replaces the manual "retry with Rodas5P on Tsit5 failure" policy.
         autoswitch_alg = AutoTsit5(_rodas5p_alg(); switch_max=_auto_stiff_switch_max(cfg))
-        # Keep per-step storage here regardless of needs_full_solution:
-        # _auto_stiff_switched inspects sol.alg_choice across saved steps.
-        sol = _solve_with_explicit_solver(prob, cfg, args, autoswitch_alg, reltol_tol, abstol_tol; solver_cache=solver_cache)
-        switched = _auto_stiff_switched(sol)
+        # Detect the switch from the Jacobian count when nothing else needs the
+        # trajectory (a fresh integrator, so zero stats and a non-stiff start;
+        # only Rodas5P forms a Jacobian), so per-step storage is not forced.
+        # A cached integrator carries its stats and its algorithm state into
+        # the next solve, and a caller that keeps the solution gets the
+        # alg_choice scan as before.
+        by_jacobians = !needs_full_solution && solver_cache === nothing
+        sol = by_jacobians ?
+            _solve_with_explicit_solver(prob, cfg, args, autoswitch_alg, reltol_tol, abstol_tol; needs_full_solution=false) :
+            _solve_with_explicit_solver(prob, cfg, args, autoswitch_alg, reltol_tol, abstol_tol; solver_cache=solver_cache)
+        switched = by_jacobians ? _auto_stiff_switched_by_jacobians(sol) : _auto_stiff_switched(sol)
         return sol, (
             solver="AutoTsit5(Rodas5P)",
             initial_solver="AutoTsit5",

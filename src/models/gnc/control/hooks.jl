@@ -37,6 +37,7 @@ module ControlHooks
 
     const config = Structure
 
+    export apply_panel_angle_of_attack!
     export update_control!, control_wrench, control_propellant_rate, control_wheel_torque
     export control_thruster_levels, touchdown_spec, refresh_burn!, mounted_burn_tick!, burn_edge
     export AerobrakingEnergyDepletionControlModel, SolarPanelAngleOfAttackControlModel

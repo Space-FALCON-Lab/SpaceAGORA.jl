@@ -178,11 +178,14 @@ end
 # is at least 1 s^-1 for any state that carries a position (d r/dt = v), so
 # Rodas5P was held for every step with dt > 3.2 s, i.e. through whole vacuum arcs.
 #
-# This probe replaces only the Tsit5-phase estimate with Hairer's original
-# norm form, |k7 - k6| / |g7 - g6|, taken in the error-weighting norm
-# (atol + rtol * |u|) so that mixed units (m, m/s, kg, J) are commensurate and
-# a constant component contributes zero to both norms. The Rodas5P phase is
-# unchanged (AutoSwitch's own ||J||_inf test). `SPACEAGORA_AUTO_STIFF_DETECTOR=legacy`
+# This probe replaces only the Tsit5-phase estimate. It keeps Tsit5's
+# componentwise Inf norm, max_i |(k7 - k6)_i / (g7 - g6)_i|, and skips the
+# components with g7_i == g6_i. That is the estimator's own definition without
+# the 0/0 terms. (Hairer's norm form and its error-weighted variant were tried
+# first: on a drag-stiff test case they underestimate the stiff rate by about
+# 10x, because the smooth orbital motion dominates both norms, and the switch
+# came after 106,708 Tsit5 steps instead of 9.) The Rodas5P phase is unchanged
+# (AutoSwitch's own ||J||_inf test). `SPACEAGORA_AUTO_STIFF_DETECTOR=legacy`
 # restores OrdinaryDiffEq's estimate.
 struct _Tsit5StiffnessProbe end
 
@@ -191,28 +194,23 @@ const _ODECore = parentmodule(typeof(AutoTsit5(Rodas5P())))
 
 _ODECore.alg_stability_size(::_Tsit5StiffnessProbe) = _ODECore.alg_stability_size(Tsit5())
 
-@inline function _weighted_hairer_rate(integrator)::Float64
+@inline function _tsit5_stiffness_rate(integrator)::Float64
     c = integrator.cache.caches[1]
     # Tsit5 in-place cache: stage derivative k6 and stage value g6 = tmp. The
     # constant-cache form carries neither; keep OrdinaryDiffEq's own estimate there.
     (hasproperty(c, :k6) && hasproperty(c, :tmp)) || return Float64(integrator.eigen_est)
     k6, g6 = c.k6, c.tmp
     k7, g7 = integrator.fsallast, integrator.u
-    atol, rtol = integrator.opts.abstol, integrator.opts.reltol
-    num = 0.0
-    den = 0.0
+    rate = 0.0
     @inbounds for i in eachindex(g7)
-        w = (atol isa Number ? atol : atol[i]) + (rtol isa Number ? rtol : rtol[i]) * abs(g7[i])
-        dk = (k7[i] - k6[i]) / w
-        dg = (g7[i] - g6[i]) / w
-        num += dk * dk
-        den += dg * dg
+        dg = g7[i] - g6[i]
+        dg == 0.0 || (rate = max(rate, abs((k7[i] - k6[i]) / dg)))
     end
-    return den > 0.0 ? sqrt(num / den) : 0.0
+    return rate
 end
 
 function _ODECore.is_stiff(integrator, alg::_Tsit5StiffnessProbe, ntol, stol, is_stiffalg)
-    rate = is_stiffalg ? integrator.eigen_est : _weighted_hairer_rate(integrator)
+    rate = is_stiffalg ? integrator.eigen_est : _tsit5_stiffness_rate(integrator)
     stiffness = abs(rate * integrator.dt / _ODECore.alg_stability_size(alg))
     tol = is_stiffalg ? stol : ntol
     bool = !(stiffness <= oneunit(stiffness) * tol)

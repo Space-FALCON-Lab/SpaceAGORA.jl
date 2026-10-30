@@ -1,13 +1,26 @@
 # Temporary diagnostic: record every allocation of one call with the allocation
 # profiler and print the distinct sites (type, size, stack), so a CI log shows
 # where an "allocation-free" right-hand side allocates on the CI platform.
-using Profile
+# Profile is loaded only when the first report runs, after the test's own
+# measurement, so that loading it cannot change which code the measurement sees.
+const _PROFILE = Ref{Module}()
+function _profile_module()
+    isassigned(_PROFILE) && return _PROFILE[]
+    _PROFILE[] = Base.require(Base.PkgId(Base.UUID("9abbd945-dff8-562f-b5e8-e1ebf5ef1b79"), "Profile"))
+    return _PROFILE[]
+end
 
 function _report_allocation_sites(f::F, label::AbstractString) where {F}
+    Profile = _profile_module()
     f()                                   # the closure itself is compiled before the profile
-    Profile.Allocs.clear()
-    Profile.Allocs.@profile sample_rate=1 f()
-    results = Profile.Allocs.fetch()
+    Base.invokelatest(Profile.Allocs.clear)
+    Base.invokelatest(Profile.Allocs.start; sample_rate=1)
+    try
+        f()
+    finally
+        Base.invokelatest(Profile.Allocs.stop)
+    end
+    results = Base.invokelatest(Profile.Allocs.fetch)
     sites = Dict{Tuple{Any, Int, String}, Int}()
     for a in results.allocs
         frames = String[]

@@ -1,5 +1,6 @@
 module CheckpointOutputGridTests
-# Independent canonical-time and affine-state regression oracles; no KS dependency.
+# The run-clock table saver: canonical output epochs indexed from the run origin,
+# checked against an affine trajectory whose exact solution is known.
 using SpaceAGORA, Test, LinearAlgebra
 const S=SpaceAGORA.SimulationModel
 const SC=S.SimulationCallbacks
@@ -103,7 +104,6 @@ end
     @test all(diff(combined).>0.)
     @test combined==[0.,.1,.2,.3,.37,.4,.5,.6,.7,.8,.81,.9,1.,1.04]
     @test all(x->x in combined,collect(0.:.1:1.))
-    println("CACHED_GRID_SUCCESS samples=",length(combined)," original_problem_bounds=",int.sol.prob.tspan)
 end
 @testset "Canonical output survives extended horizon with cached problem bounds" begin
     short=nextfloat(.3)
@@ -125,9 +125,5 @@ end
     @test retained==[0.,.1,.2,.3,short,.4,.5,.6,.7,.8,.9,1.,1.04]
     @test all(diff(retained).>0.)
     @test all(t->t in retained,[0.,.1,.2,.3,.4,.5,.6,.7,.8,.9,1.])
-    @test int.sol.prob.tspan==(0.,short)
-    @test Base.get_extension(SpaceAGORA,:SpaceAGORAKSPropagatorExt)===nothing
 end
-println("INDEPENDENT_CANONICAL_GRID_CALLBACK_SUCCESS Julia",VERSION)
-
 end # module

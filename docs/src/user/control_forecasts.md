@@ -35,7 +35,9 @@ packages defining controller types as `Base.PkgId` values in `packages`.
 
 Each evaluation starts from the same snapshot and a copy of the candidate.
 Disable replanning in that candidate. The result contains saved rows, final
-state, start/end times and the solver return code. Inspect the return code and
+state, start/end times and the solver return code. The saved rows lie on the
+run's output grid, counted in sample periods from the snapshot's clock origin,
+plus the snapshot time and the forecast end. Inspect the return code and
 required physical events; reaching the requested duration does not itself mean
 the plan is feasible. The helper removes its worker on return or failure.
 

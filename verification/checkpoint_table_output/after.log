@@ -1,7 +1,0 @@
-Precompiling packages...
-  64418.7 ms  ✓ SpaceAGORA
-  10601.8 ms  ✓ SpaceAGORA → SpaceAGORATestExt
-  2 dependencies successfully precompiled in 77 seconds. 329 already precompiled.
-Test Summary:                                  | Pass  Total  Time
-Ordinary checkpoint table retains mission grid |   13     13  0.3s
-ORDINARY_TABLE_PROBE_SUCCESS

@@ -10,6 +10,7 @@ using StaticArrays
 using DataFrames
 using SpaceAGORA
 using SpaceAGORA.TelemetryVerification: make_example_config
+Base.include(@__MODULE__, joinpath(@__DIR__, "..", "helpers", "allocation_sites.jl"))
 
 const SM = SpaceAGORA.SimulationModel
 const AB = SM.ArticulatedBody
@@ -678,6 +679,7 @@ end
         eval_rhs!(S, eff; forces=(0.1, 0.2, 0.3), torques=(0.01, 0.0, 0.02))
         f = MVector{3, Float64}(0.1, 0.2, 0.3); τ = MVector{3, Float64}(0.01, 0.0, 0.02)
         alloc = @allocated SE._assign_articulated_rhs!(S.du.sc[1], S.u.sc[1], S.art, S.p, 1, 0.0, f, τ, 0.0, eff)
+        _report_allocation_sites(() -> SE._assign_articulated_rhs!(S.du.sc[1], S.u.sc[1], S.art, S.p, 1, 0.0, f, τ, 0.0, eff), "live-pose RHS / $(nameof(typeof(aero)))")
         @info "live-pose RHS allocation" aero = nameof(typeof(aero)) alloc
         @test alloc == 0 skip = !_ALLOC_CHECKS
         @test any(!iszero, S.art.ws.ext_force[2])                                  # the loads are really evaluated

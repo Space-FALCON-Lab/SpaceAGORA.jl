@@ -11,6 +11,7 @@ using Serialization
 using TOML
 using SpaceAGORA
 using SpaceAGORA.TelemetryVerification: make_example_config
+Base.include(@__MODULE__, joinpath(@__DIR__, "..", "helpers", "allocation_sites.jl"))
 
 const SM = SpaceAGORA.SimulationModel
 const AB = SM.ArticulatedBody
@@ -536,6 +537,7 @@ end
         forces = MVector{3, Float64}(0.1, 0.2, 0.3); torques = MVector{3, Float64}(0.01, 0.0, 0.02)
         SE._assign_articulated_rhs!(du.sc[1], u.sc[1], art, p, 1, 0.0, forces, torques, 0.0, (eff,))    # warm-up
         alloc = _art_rhs_alloc(art, p, u, du, forces, torques, (eff,))
+        _report_allocation_sites(() -> SE._assign_articulated_rhs!(du.sc[1], u.sc[1], art, p, 1, 0.0, forces, torques, 0.0, (eff,)), "articulated RHS / $(nameof(typeof(eff)))")
         @info "articulated RHS allocation" effector = nameof(typeof(eff)) alloc
         @test alloc == 0 skip=!_ALLOC_CHECKS
         # gravity helper agrees with the effector acceleration at the root

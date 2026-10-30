@@ -10,6 +10,7 @@ using DataFrames
 using TOML
 using SpaceAGORA
 using SpaceAGORA.TelemetryVerification: make_example_config
+Base.include(@__MODULE__, joinpath(@__DIR__, "..", "helpers", "allocation_sites.jl"))
 
 const SM = SpaceAGORA.SimulationModel
 const AB = SM.ArticulatedBody
@@ -677,6 +678,7 @@ end
             forces = MVector{3, Float64}(0.0, 0.0, 0.0); torques = MVector{3, Float64}(0.0, 0.0, 0.0)
             SE._apply_attachments_rigid!(du.sc[1], u.sc[1], p, 1, 0.0, forces, torques, (eff,))     # warm-up
             alloc = _rigid_alloc(p, u, du, forces, torques, eff)
+            _report_allocation_sites(() -> SE._apply_attachments_rigid!(du.sc[1], u.sc[1], p, 1, 0.0, forces, torques, (eff,)), "rigid attachment RHS / $label / $(nameof(typeof(eff)))")
             @info "rigid attachment RHS allocation" label effector = nameof(typeof(eff)) alloc
             @test alloc == 0 skip=!_ALLOC_CHECKS
             @test any(!iszero, du.sc[1].att_v)                                  # the attachment actually has a derivative
@@ -703,6 +705,7 @@ end
             forces = MVector{3, Float64}(0.1, 0.2, 0.3); torques = MVector{3, Float64}(0.01, 0.0, 0.02)
             SE._assign_articulated_rhs!(du.sc[1], u.sc[1], art, p, 1, 0.0, forces, torques, 0.0, (eff,))
             alloc = _art_alloc(art, p, u, du, forces, torques, eff)
+            _report_allocation_sites(() -> SE._assign_articulated_rhs!(du.sc[1], u.sc[1], art, p, 1, 0.0, forces, torques, 0.0, (eff,)), "articulated attachment RHS / $label / $(nameof(typeof(eff)))")
             @info "articulated attachment RHS allocation" label effector = nameof(typeof(eff)) alloc
             @test alloc == 0 skip=!_ALLOC_CHECKS
         end

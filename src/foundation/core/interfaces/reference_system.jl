@@ -419,8 +419,11 @@ end
                                                      lon,
                                                      planet.A_topo)
     end
-    
-    return SVector{3, Float64}([alt, lat, lon])
+
+    # Built from its elements: a vector literal converted to a static vector
+    # is a heap allocation that only some compilations elide, and this runs
+    # on every planet-frame sample of the right-hand side.
+    return SVector{3, Float64}(alt, lat, lon)
 end
 
 function rtolatlong(r_p::SVector{3, Float64}, planet, ephemerides_model)
@@ -441,7 +444,7 @@ function rtolatlongrad(r_p, planet)
     
     r = norm(r_p)
     
-    return SVector{3, Float64}([r, lat, lon])
+    return SVector{3, Float64}(r, lat, lon)
 end
 
 function latlongtoNED(H_LAN_LON)

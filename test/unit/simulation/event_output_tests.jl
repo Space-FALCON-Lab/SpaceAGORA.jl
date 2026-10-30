@@ -37,6 +37,20 @@ expected_battery(t) = max(0.5 * (1.0 - t / 6.1), 0.0)
         @test result.table.sc1_battery_wh ≈ expected_battery.(result.table.time) atol=1e-10
         @test result.table.sc1_battery_wh[7] ≈ expected_battery(6.0) atol=1e-10
     end
+    # An event after several reinitializations must drain the CURRENT inner
+    # table saver. Noncommensurate checkpoints leave nominal5s/6s samples
+    # inside the4.6..6.9s segment that contains depletion at6.1s.
+    checkpoint_args = SM.SimConfig._with_configuration(battery_run();
+        simulation_settings=SimulationSettings(results=false, generate_plots=false,
+            verbose=false, normalize=false, results_directory=mktempdir(),
+            checkpoint_enabled=true, checkpoint_interval_s=2.3))
+    checkpoint_result = run_simulation(checkpoint_args; return_results=true, return_solution=false)
+    @test all(t -> t in checkpoint_result.table.time, 0.0:1.0:12.0)
+    @test checkpoint_result.table.sc1_battery_wh ≈
+        expected_battery.(checkpoint_result.table.time) atol=1e-10
+    six = findfirst(==(6.0), checkpoint_result.table.time)
+    @test checkpoint_result.table.sc1_battery_wh[six] ≈ expected_battery(6.0) atol=1e-10
+
     # The preallocated recorder shares the correction even when it is the
     # only saver. Its custom fields still use the same SaveField getters.
     args = battery_run()

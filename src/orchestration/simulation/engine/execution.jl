@@ -872,6 +872,7 @@ function run_simulation(
         args = SimulationModel.SimConfig._with_configuration(args; solver_config=solver_cfg)
     end
     solver_mode = solver_cfg.solver_mode
+    solver_mode === :ks && _validate_ks_config!(args)
 
     _validate_run_models!(args, solver_mode)
     if args.interlink_model !== nothing

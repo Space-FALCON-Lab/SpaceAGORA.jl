@@ -27,5 +27,7 @@ export ks_linear_implicit_midpoint_step, ks_first_order_tangent_map
 include(joinpath(@__DIR__, "transform.jl"))
 include(joinpath(@__DIR__, "nonlinear_dynamics.jl"))
 include(joinpath(@__DIR__, "linearized_dynamics.jl"))
+include(joinpath(@__DIR__, "physical_tangent.jl"))
+export ks_acceleration_input_matrix, ks_physical_tangent
 
 end # module DynamicsKS

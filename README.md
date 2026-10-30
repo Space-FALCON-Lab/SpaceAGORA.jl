@@ -1,5 +1,10 @@
 # SpaceAGORA.jl
 
+This integration branch adds the original finite-horizon paper scheduler using
+SpaceAGORA's native interlink graph, laser physics and matching policy APIs.
+See [the integration guide](docs/constellation_controllability.md) for the
+verified upstream revision, equations, native replay example and regression results.
+
 [![Julia CI](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/actions/workflows/julia-ci.yml/badge.svg?branch=main)](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/actions/workflows/julia-ci.yml)
 [![Documentation](https://img.shields.io/badge/docs-online-blue.svg)](https://space-falcon-lab.github.io/SpaceAGORA.jl/)
 [![Julia 1.12](https://img.shields.io/badge/julia-1.12-9558b2.svg)](https://julialang.org/downloads/)

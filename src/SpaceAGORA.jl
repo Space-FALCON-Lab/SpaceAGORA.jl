@@ -13,6 +13,14 @@ include(joinpath(@__DIR__, "interfaces", "analysis", "visualization", "visualize
 include(joinpath(@__DIR__, "orchestration", "simulation", "runtime_services.jl"))
 include(joinpath(@__DIR__, "orchestration", "simulation", "callback_services.jl"))
 include(joinpath(@__DIR__, "orchestration", "simulation", "composition", "simulation_model.jl"))
+include(joinpath(@__DIR__, "foundation", "core", "numerics", "orbital_element_sensitivity.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "control", "constellation_scheduling", "constellation_scheduling.jl"))
+using .ConstellationScheduling
+include(joinpath(@__DIR__, "orchestration", "simulation", "callbacks", "paper_schedule.jl"))
+using .PaperScheduleReplay
+export LaserSchedulingConfig, paper_walker_constellation, plan_laser_schedule,
+    replay_laser_schedule, laser_element_history, laser_geometry, signed_link_schedule,
+    TerminalGainPolicy, paper_schedule_callback, paper_simulation_configuration
 include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "direct_planner.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "companions", "hypr", "rpo_planner_adapter.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "comparison", "planner_contract.jl"))

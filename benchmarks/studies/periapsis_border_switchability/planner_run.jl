@@ -17,8 +17,8 @@ include(joinpath(@__DIR__, "planner_common.jl"))
 const META = planner_meta(CFGP); const PL = META["planner"]; const G3 = META["stageg3"]
 const ROOT = abspath(get(CLI, "results-root", ".")); const SFS = joinpath(ROOT, String(META["stagef"]["results_subdir"]))
 const HOST = get(CLI, "host", "local"); const HOSTROLE = get(CLI, "hostrole", "")
-const PHASES = ["cal", "smoke", "smoke_ol", "repro", "xhost", "dev", "held", "sens", "devT", "heldT", "devR", "calG", "gen1", "genG", "rev17", "calx0", "rev20olt", "rev20val", "rev21c", "rev21v", "calR23", "rev23geo", "calR25", "rev25low", "mf25"]
-const PHASE_BLOCKS = Dict("smoke" => ["smoke"], "smoke_ol" => ["smoke_ol"], "repro" => ["repro"], "xhost" => ["xhost"], "dev" => ["dev"], "sens" => ["sens"], "devT" => ["devT"], "heldT" => ["heldT"], "devR" => ["devR"], "rev17" => ["rev17"], "gen1" => ["gen1"], "genG" => ["genG"], "rev20olt" => ["rev20olt"], "rev20val" => ["rev20val"], "rev21c" => ["rev21c"], "rev21v" => ["rev21v"], "rev23geo" => ["rev23geo"], "rev25low" => ["rev25low"],
+const PHASES = ["cal", "smoke", "smoke_ol", "repro", "xhost", "dev", "held", "sens", "devT", "heldT", "devR", "calG", "gen1", "genG", "rev17", "calx0", "rev20olt", "rev20val", "rev21c", "rev21v", "calR23", "rev23geo", "calR25", "rev25low", "mf25", "rev27ei", "rev27low", "rev27b", "rev26val", "rev26val2", "rev28t", "calR28", "rev29aim", "rev30seed", "rev31pos", "rev31node", "rev31g1230", "calR31", "rev31cls", "rev31ext", "rev32dev", "rev31ext2"]
+const PHASE_BLOCKS = Dict("smoke" => ["smoke"], "smoke_ol" => ["smoke_ol"], "repro" => ["repro"], "xhost" => ["xhost"], "dev" => ["dev"], "sens" => ["sens"], "devT" => ["devT"], "heldT" => ["heldT"], "devR" => ["devR"], "rev17" => ["rev17"], "gen1" => ["gen1"], "genG" => ["genG"], "rev20olt" => ["rev20olt"], "rev20val" => ["rev20val"], "rev21c" => ["rev21c"], "rev21v" => ["rev21v"], "rev23geo" => ["rev23geo"], "rev25low" => ["rev25low"], "rev27ei" => ["rev27ei"], "rev27b" => ["rev27b"], "rev26val" => ["rev26val"], "rev26val2" => ["rev26val2"], "rev28t" => ["rev28t"], "rev29aim" => ["rev29aim"], "rev30seed" => ["rev30seed"], "rev31pos" => ["rev31pos"], "rev31node" => ["rev31node"], "rev31g1230" => ["rev31g1230"], "rev31cls" => ["rev31cls"], "rev31ext" => ["rev31ext"], "rev32dev" => ["rev32dev"], "rev31ext2" => ["rev31ext2"], "rev27low" => ["rev27low"],
     "held" => ["held_baselines", "held_geometry", "held_ladder", "held_ol", "held_olr"])
 const PLANNER_ARMS = [k for (k, a) in PL["arms"] if String(a["runner"]) == "planner"]
 workers() = haskey(CLI, "workers") ? parse(Int, CLI["workers"]) : Int(PL["workers"])
@@ -28,7 +28,7 @@ seedset(name) = Int.(PL["seedsets"][name])
 """Config rows (flight rows, plus the extra rows for smoke_ol) of the blocks of a phase, optionally filtered by --hostrole and --blocks."""
 function plan_rows(phase)
     blocks = PHASE_BLOCKS[phase]; haskey(CLI, "blocks") && (blocks = filter(b -> b in split(CLI["blocks"], ","), blocks))
-    rows = phase == "smoke_ol" ? PL["extra"] : phase == "sens" ? PL["sensitivity"] : phase in ("devT", "heldT", "devR", "gen1", "genG", "rev17", "rev20olt", "rev20val", "rev21c", "rev21v", "rev23geo", "rev25low") ? PL["terminal_flight"] : PL["flight"]
+    rows = phase == "smoke_ol" ? PL["extra"] : phase == "sens" ? PL["sensitivity"] : phase in ("devT", "heldT", "devR", "gen1", "genG", "rev17", "rev20olt", "rev20val", "rev21c", "rev21v", "rev23geo", "rev25low", "rev27ei", "rev27low", "rev27b", "rev26val", "rev26val2", "rev28t", "rev29aim", "rev30seed", "rev31pos", "rev31node", "rev31g1230", "rev31cls", "rev31ext", "rev32dev", "rev31ext2") ? PL["terminal_flight"] : PL["flight"]
     return [r for r in rows if String(r["block"]) in blocks]
 end
 
@@ -44,8 +44,8 @@ end
 """All flights of a phase: planner-arm cells only (baseline cells are listed by the dry run but flown by stageo_run.jl)."""
 function cases(phase)
     out = NamedTuple[]
-    if phase in ("cal", "calG", "calR23", "calR25")
-        for tok in (phase == "cal" ? ("ODY", "G1") : phase == "calR23" ? String.(PL["rev23"]["cal_tokens"]) : phase == "calR25" ? String.(PL["rev25"]["cal_tokens"]) : ("GA", "GB", "GC", "GD")); gid = planner_gid(META, tok)
+    if phase in ("cal", "calG", "calR23", "calR25", "calR28", "calR31")
+        for tok in (phase == "cal" ? ("ODY", "G1") : phase == "calR23" ? String.(PL["rev23"]["cal_tokens"]) : phase == "calR25" ? String.(PL["rev25"]["cal_tokens"]) : phase == "calR28" ? String.(PL["rev28"]["cal_tokens"]) : phase == "calR31" ? String.(PL["rev31"]["cal_tokens"]) : ("GA", "GB", "GC", "GD")); gid = planner_gid(META, tok)
             push!(out, (; config_path=CFGP, gid, gram_tag=String(META["stageo"]["cal_gram_tag"]), out=joinpath(SFS, "cal"), run_id="cal_$gid", role="cal", grole=tok)); end
         return out
     end
@@ -72,8 +72,8 @@ function dry_run(which)
     pc = PL["plan_counts"]; ok = true
     for ph in which
         cs = try; cases(ph); catch err; ok = false; println(rpad(ph, 9), "ERROR: ", first(sprint(showerror, err), 300)); continue; end; n = flights(cs); done = count(ondisk, cs)
-        if ph in ("cal", "calG", "calx0", "calR23", "calR25")
-            println(rpad(ph, 9), "cases=$(length(cs)) (fit-only calibrations)  gids=[$(join([c.gid for c in cs], ", "))]", ph == "calx0" ? "  cal dirs=[$(join([c.cal_name for c in cs], ", "))]" : "", done > 0 ? "  [$done on disk]" : ""); ok &= length(cs) == (ph == "cal" ? 2 : ph == "calG" ? 4 : ph == "calR23" ? length(PL["rev23"]["cal_tokens"]) : ph == "calR25" ? length(PL["rev25"]["cal_tokens"]) : length(PL["ic"]["cal_tokens"])); continue
+        if ph in ("cal", "calG", "calx0", "calR23", "calR25", "calR28", "calR31")
+            println(rpad(ph, 9), "cases=$(length(cs)) (fit-only calibrations)  gids=[$(join([c.gid for c in cs], ", "))]", ph == "calx0" ? "  cal dirs=[$(join([c.cal_name for c in cs], ", "))]" : "", done > 0 ? "  [$done on disk]" : ""); ok &= length(cs) == (ph == "cal" ? 2 : ph == "calG" ? 4 : ph == "calR23" ? length(PL["rev23"]["cal_tokens"]) : ph == "calR25" ? length(PL["rev25"]["cal_tokens"]) : ph == "calR28" ? length(PL["rev28"]["cal_tokens"]) : ph == "calR31" ? length(PL["rev31"]["cal_tokens"]) : length(PL["ic"]["cal_tokens"])); continue
         end
         arms = sort(unique(c.arm for c in cs)); println(rpad(ph, 9), "planner flights=$n  arms=$(arms)  hosts=$(sort(unique(c.host for c in cs)))  horizon_days=$(join(sort(unique(getfield.(cs, :horizon_days))), "/"))", done > 0 ? "  [$done on disk]" : "")
         ids = [(c.out, c.run_id) for c in cs]; ok &= length(unique(ids)) == length(ids)
@@ -153,7 +153,7 @@ function selftest()
         planner_switches(META, "OLRT4").smooth_beta == 0.5 && planner_switches(META, "OLRT5").lower_margin == 0.30 && planner_constants(META, 1.0e4, 6450.0, "OLRT2")[1].dp_burn_penalty_mps == 0.05 && planner_switches(META, "OLRT1").terminal
     ia = planner_inputs(swm("L1"), tab, P, 2, -1.8, 2.0); ib = planner_inputs(swm("L1"), tab, P, 2, -1.8, 2.0; lower_margin=0.3); @assert approx(ib.lo[1] - ia.lo[1], 0.3) && ib.hi == ia.hi
     # arms and the flight list
-    @assert Set(PLANNER_ARMS) == Set(["BODY", "L0", "L1", "L2", "L3", "OL", "OLR", "L3Z", "OLRZ", "OLRT", "OLRT1", "OLRT2", "OLRT3", "OLRT4", "OLRT5", "OLRT35", "BODYT", "N2IT", "N2I0", "OLT", "OLRT3-W", "OLRT3-WF", "OLRT3-W3", "OLRT3-WF3"]) && [(planner_switches(META, k).slack, planner_switches(META, k).ff, planner_switches(META, k).early) for k in ("L0", "L1", "L2", "L3")] ==
+    @assert Set(PLANNER_ARMS) == Set(["BODY", "L0", "L1", "L2", "L3", "OL", "OLR", "L3Z", "OLRZ", "OLRT", "OLRT1", "OLRT2", "OLRT3", "OLRT4", "OLRT5", "OLRT35", "BODYT", "N2IT", "N2I0", "OLT", "OLRT3-W", "OLRT3-WF", "OLRT3-W3", "OLRT3-WF3", "OLRT3-W3E", "OLRT3-W4", "OLRT3-W4L", "OLRT3-W3L", "OLRT3-W4LN", "OLRT3-W3T", "OLRT3-W3E5", "OLRT3-W3L5", "OLRT3-W4L5", "OLRT3-W4LN5", "OLRT3-W3E7"]) && [(planner_switches(META, k).slack, planner_switches(META, k).ff, planner_switches(META, k).early) for k in ("L0", "L1", "L2", "L3")] ==
         [(false, false, false), (true, false, false), (true, true, false), (true, true, true)]
     @assert plan_total() == Int(PL["plan_counts"]["total"]) == 274
     @assert sum(Int(r["count"]) for r in PL["sensitivity"]) == Int(PL["plan_counts"]["sens"]) == 32 && Int(PL["plan_counts"]["total_with_sens"]) == 306 && length(cases("sens")) == 32
@@ -165,7 +165,7 @@ function selftest()
     c17 = cases("rev17"); @assert length(c17) == 60 && length(unique(c.run_id for c in c17)) == 60 && all(c.gid == "ODY" && c.disp in ("L0", "L1", "L2", "L3", "L4") && endswith(c.run_id, "_" * c.disp) for c in c17) && Set(c.arm for c in c17) == Set(["OL", "OLR", "OLRT3"]) && sort(unique(parse(Int, split(c.tag, "s")[end]) for c in c17)) == [13, 14, 15, 16]
     @assert all(!hasproperty(c, :disp) || c.disp == "" for c in cases("gen1")) && cases("gen1")[1].run_id == "G0975_PL_BODYT_pert_ODY_s13"
     # Revision 20b / 20 / 19 (WP5): the OLT arm, the IC and FB switches; every pre-existing arm keeps the old switches and decisions
-    @assert all(!planner_switches(META, k).fb_term && planner_switches(META, k).ic_scenario == "ref" for k in keys(PL["arms"]) if String(PL["arms"][k]["runner"]) == "planner" && !(k in ("OLRT3-W", "OLRT3-WF", "OLRT3-W3", "OLRT3-WF3"))) && "OLT" in PLANNER_ARMS
+    @assert all(!planner_switches(META, k).fb_term && planner_switches(META, k).ic_scenario == "ref" for k in keys(PL["arms"]) if String(PL["arms"][k]["runner"]) == "planner" && !(k in ("OLRT3-W", "OLRT3-WF", "OLRT3-W3", "OLRT3-WF3", "OLRT3-W3E", "OLRT3-W4", "OLRT3-W4L", "OLRT3-W3L", "OLRT3-W4LN", "OLRT3-W3T", "OLRT3-W3E5", "OLRT3-W3L5", "OLRT3-W4L5", "OLRT3-W4LN5", "OLRT3-W3E7"))) && "OLT" in PLANNER_ARMS
     sO = planner_switches(META, "OL"); sT = planner_switches(META, "OLT"); @assert sT.terminal && !sO.terminal && (sT.slack, sT.ff, sT.early, sT.update, sT.horizon) == (sO.slack, sO.ff, sO.early, sO.update, sO.horizon) && String(PL["arms"]["OLT"]["mode"]) == "ol" && String(PL["arms"]["OLT"]["safety"]) == String(PL["arms"]["OL"]["safety"])
     @assert planner_constants(META, 1.0e4, 6450.0, "OLT")[1] == planner_constants(META, 1.0e4, 6450.0, "OL")[1]
     c20 = cases("rev20olt"); @assert length(c20) == 13 && length(unique(c.run_id for c in c20)) == 13 && all(c.gid == "ODY" && c.arm == "OLT" && endswith(c.run_id, "_" * c.disp) && startswith(c.run_id, "ODY_PL_OLT_pert_") for c in c20)
@@ -197,7 +197,7 @@ function selftest()
     @assert abs(icF.x0 - (-1.7707)) < 1e-3 && abs(icX.dv_pre_charged - 0.1043) < 1e-3 && abs(icG.x0 - (-1.5199)) < 1e-3 && planner_ic_cal_name("ODY", icF.x0) == "ODY__x0_$(round(icF.x0; digits=5))" && planner_ic_token("G5863", "G1") == "G1" && planner_ic_token("G0975", "GC") == "G0975"
     @assert (try; planner_ic_plan(META, "ODY", "S-free"; file=joinpath(mktempdir(), "none.json")); false; catch; true; end)
     # Revision 20c (WP5 Part B): guard v2 and the validation block; default off everywhere except the validation arm
-    @assert all(!planner_switches(META, k).ttg_guard for k in keys(PL["arms"]) if String(PL["arms"][k]["runner"]) == "planner" && !(k in ("OLRT3-W", "OLRT3-WF", "OLRT3-W3", "OLRT3-WF3"))) && planner_switches(META, "OLRT3-W").ttg_guard && planner_switches(META, "OLRT3-W").ic_scenario == "S-fixed" && planner_switches(META, "OLRT3-W").terminal
+    @assert all(!planner_switches(META, k).ttg_guard for k in keys(PL["arms"]) if String(PL["arms"][k]["runner"]) == "planner" && !(k in ("OLRT3-W", "OLRT3-WF", "OLRT3-W3", "OLRT3-WF3", "OLRT3-W3E", "OLRT3-W4", "OLRT3-W4L", "OLRT3-W3L", "OLRT3-W4LN", "OLRT3-W3T", "OLRT3-W3E5", "OLRT3-W3L5", "OLRT3-W4L5", "OLRT3-W4LN5", "OLRT3-W3E7"))) && planner_switches(META, "OLRT3-W").ttg_guard && planner_switches(META, "OLRT3-W").ic_scenario == "S-fixed" && planner_switches(META, "OLRT3-W").terminal
     s3 = planner_switches(META, "OLRT3"); sW = planner_switches(META, "OLRT3-W"); @assert Base.structdiff(s3, (; ttg_guard=false, ic_scenario="")) == Base.structdiff(sW, (; ttg_guard=false, ic_scenario="")) && planner_constants(META, 1.0e4, 6500.0, "OLRT3")[1] == planner_constants(META, 1.0e4, 6500.0, "OLRT3-W")[1]
     cv = cases("rev20val"); @assert length(cv) == 29 && length(unique(c.run_id for c in cv)) == 29 && count(c -> c.arm == "OLRT3" && c.gid == "ODY" && c.disp == "L4", cv) == 1 && count(c -> c.arm == "OLRT3-W" && c.gid == "ODY", cv) == 20 && count(c -> c.arm == "OLRT3-W" && c.gid == "G5863", cv) == 4 && count(c -> c.arm == "OLRT3" && c.gid == "G5863", cv) == 4 &&
         all(c.disp == "L0" for c in cv if c.gid == "G5863") && sort(unique(c.disp for c in cv if c.gid == "ODY")) == ["L0", "L1", "L2", "L3", "L4"] && sort(unique(parse(Int, split(c.tag, "s")[end]) for c in cv)) == [13, 14, 15, 16] && all(startswith(c.run_id, c.gid * "_PL_" * c.arm * "_pert_ODY_s") for c in cv)
@@ -255,7 +255,108 @@ function selftest()
         @assert Pg.ra_target_m == Float64(gtr[gid]["ra_target_m"]) && abs(tg.tstar_nominal_d - gts[gid]["guard_tstar_d"]) < 1.0e-6 && tg.kappa == 1.0 && tg.tstar_s == tg.tstar_nominal_d * 86400.0 "$gid t* $(tg.tstar_nominal_d) vs $(gts[gid]["guard_tstar_d"])"
     end
     @assert planner_ic_plan(META, "G0528", "S-fixed") !== nothing && planner_ic_plan(META, "ODY", "S-fixed").x0 == planner_ic_plan(META, "ODY", "S-fixed").x0
+    # Revision 27: entry interface as a study parameter (default untouched), arm OLRT3-W3E, blocks rev27ei (4) and rev27low (13)
+    @assert all(!haskey(PL["arms"][k], "ei_km") for k in keys(PL["arms"]) if !(k in ("OLRT3-W3E", "OLRT3-W3T", "OLRT3-W3E5", "OLRT3-W3E7"))) && PL["arms"]["OLRT3-W3E"]["ei_km"] == 150.0 && planner_switches(META, "OLRT3-W3E") == planner_switches(META, "OLRT3-W3") && String(PL["arms"]["OLRT3-W3E"]["guard_set"]) == "v3"
+    @assert planner_ei_km(META, PL["arms"]["OLRT3-W3"], nothing) === nothing && planner_ei_km(META, PL["arms"]["OLRT3-W3E"], "T2000") == 150.0 && planner_ei_km(META, PL["arms"]["OLRT3"], "T500") === nothing
+    m6 = deepcopy(META); m6["planner"]["targets"]["T500"]["ei_km"] = 300.0; @assert planner_ei_km(m6, PL["arms"]["OLRT3-W3"], "T500") == 300.0 && planner_ei_km(m6, PL["arms"]["OLRT3-W3E"], "T500") == 150.0 && planner_ei_km(m6, PL["arms"]["OLRT3-W3"], "T2000") === nothing
+    c27 = cases("rev27ei"); @assert length(c27) == 4 && all(c.arm == "OLRT3-W3E" && c.gid == "ODY" && c.disp == "L0" for c in c27) && sort([parse(Int, split(c.tag, "s")[end]) for c in c27]) == [13, 14, 15, 16]
+    c27l = cases("rev27low"); @assert length(c27l) == 13 && length(unique(c.run_id for c in c27l)) == 13 && count(c -> c.arm == "OLRT3-W3E" && c.disp == "L0", c27l) == 12 && sort(unique(c.gid for c in c27l if c.arm == "OLRT3-W3E")) == ["G0486", "G1038", "G1230"] && count(c -> c.arm == "OLRT3" && c.gid == "ODY" && c.disp == "L4" && endswith(c.tag, "s14"), c27l) == 1
+    cb = cases("rev27b"); @assert length(cb) == 2 && Set(c.arm for c in cb) == Set(["OLRT3-W3", "OLRT3-W3E"]) && all(c.gid == "ODY" && c.disp == "mean" && endswith(c.run_id, "_s13_mean") for c in cb)
+    @assert planner_disp_perturbed(META, "") && planner_disp_perturbed(META, "L0") && planner_disp_perturbed(META, "L2") && planner_disp_perturbed(META, "L2p") && !planner_disp_perturbed(META, "mean") && planner_disp_kwargs(META, "mean"; gid="ODY") == (;)
+    # Revision 27 / user 2026-10-30: EI 150 is the default for NEW flights only (arms with ei_default = "new"); every existing block resolves as before (2000, or its explicit ei_km)
+    @assert PL["ei_km_new_default"] == 150.0 && all(String(get(a, "ei_default", "")) == "" for (k, a) in PL["arms"] if !(k in ("OLRT3-W4", "OLRT3-W4L", "OLRT3-W3L", "OLRT3-W4LN", "OLRT3-W3L5", "OLRT3-W4L5", "OLRT3-W4LN5")))
+    for rows in (PL["flight"], PL["terminal_flight"], PL["extra"], PL["sensitivity"]), r in rows, cell in String.(r["cells"])
+        pp = String.(split(cell, "@")); haskey(PL["arms"], pp[1]) || continue; eik = planner_ei_km(META, PL["arms"][pp[1]], planner_geometry_target(META, planner_gid(META, pp[2])))
+        @assert (eik === nothing) == !(pp[1] in ("OLRT3-W3E", "OLRT3-W3T", "OLRT3-W3E5", "OLRT3-W3E7", "OLRT3-W3L5", "OLRT3-W4L5", "OLRT3-W4LN5", "OLRT3-W4", "OLRT3-W4L", "OLRT3-W3L", "OLRT3-W4LN")) && (eik === nothing || eik == 150.0) "block $(r["block"]) cell $cell resolves to EI $eik"
+    end
+    m7 = deepcopy(META); m7["planner"]["arms"]["OLRT3-W3"]["ei_default"] = "new"; @assert planner_ei_km(m7, m7["planner"]["arms"]["OLRT3-W3"], nothing) == 150.0 && planner_ei_km(m7, m7["planner"]["arms"]["OLRT3"], nothing) === nothing
+    m7["planner"]["arms"]["OLRT3-W3"]["ei_km"] = 300.0; @assert planner_ei_km(m7, m7["planner"]["arms"]["OLRT3-W3"], nothing) == 300.0          # an explicit ei_km wins
+    # Revision 26 (WP26-B): guard v4 (position stage), L1, default t*, node check ON (1.0 deg) in the new arms only; all default off
+    NEW26 = ("OLRT3-W4", "OLRT3-W4L", "OLRT3-W3L", "OLRT3-W4LN", "OLRT3-W3L5", "OLRT3-W4L5", "OLRT3-W4LN5")
+    @assert all(String(get(PL["arms"][k], "ei_default", "")) == (k in NEW26 ? "new" : "") for k in keys(PL["arms"])) && all(planner_ei_km(META, PL["arms"][k], nothing) == 150.0 for k in NEW26)
+    sw26 = Dict(k => planner_switches(META, k) for k in NEW26); @assert all(sw26[k].ttg_guard && sw26[k].ic_scenario == "S-fixed" && sw26[k].terminal && !sw26[k].default_tstar for k in NEW26) && sw26["OLRT3-W4L"].l1 && sw26["OLRT3-W3L"].l1 && sw26["OLRT3-W4LN"].l1 && !sw26["OLRT3-W4"].l1
+    @assert all(!planner_switches(META, k).l1 && !planner_switches(META, k).default_tstar for k in keys(PL["arms"]) if String(PL["arms"][k]["runner"]) == "planner" && !(k in NEW26) && k != "OLRT3-W3T")
+    G4 = planner_guard_constants(META; set="v4"); G3n = planner_guard_constants(META; set="v3n"); G3p = planner_guard_constants(META; set="v3")
+    @assert G4.pos_stage && !G4.node_check && G4.node_tol_deg == 1.0 && !G3n.node_check && G3n.node_tol_deg == 1.0 && !G3n.pos_stage && !G3p.pos_stage && !G3p.node_check && !planner_guard_constants(META).node_check && G3p.pos === nothing &&
+        G4.pos.pos_band_deg == 0.3 && G4.pos.kC_deg_per_d == 0.03 && G4.pos.M_frac == 0.5 && G4.pos.min_steps == 12 && G4.pos.shift_scale == 0.3 && G4.pos.fd_step == 0.3 && G4.pos.hw == 0.15 && G4.pos.nit == 3 && G4.pos.max_solves == 14 &&
+        G4.s_frac == G3p.s_frac && G4.term_model == G3p.term_model && G4.t_offset_d == G3p.t_offset_d && G4.pen_g == G3p.pen_g
+    c26b = cases("rev26val2"); @assert length(c26b) == 17 && [c.run_id for c in c26b] == [c.run_id for c in cases("rev26val")] && all(endswith(c.out, "rev26val2") for c in c26b)
+    c26 = cases("rev26val"); @assert length(c26) == 17 && length(unique(c.run_id for c in c26)) == 17 && count(c -> c.arm == "OLRT3-W4L" && c.gid == "ODY", c26) == 8 && count(c -> c.arm == "OLRT3-W3L" && c.gid == "G0528" && c.disp == "L0", c26) == 4 && count(c -> c.arm == "OLRT3-W4L" && c.gid == "G5863", c26) == 4 &&
+        count(c -> c.arm == "OLRT3" && c.gid == "ODY" && c.disp == "L4" && endswith(c.tag, "s14"), c26) == 1 && sort(unique(c.disp for c in c26 if c.arm == "OLRT3-W4L" && c.gid == "ODY")) == ["L0", "L2"]
+    # pure functions: geometry, J2 track, L1, default t*
+    u1 = planner_apo_hat(0.7, 1.1, 1.6); u2 = planner_apo_hat(0.8, 1.15, 1.6); @assert approx(norm(u1), 1.0) && approx(norm(planner_logmap(u1, u2)), planner_ang(u1, u2)) && abs(dot(planner_tproj(u1, u2), u1)) < 1e-12 && norm(planner_logmap(u1, u1)) == 0.0
+    muJ = 42828.375e9; J2k = 0.001958616126805748; Rk = 3394200.0; tt_ = [1.0e5 * k for k in 1:20]; trk = planner_j2_track(tt_, fill(1.6e7, 20), fill(0.7, 20), fill(1.0, 20), 0.5, 1.0, 1.0, muJ, J2k, Rk)
+    @assert trk.n == 20 && approx(planner_j2_at(trk, 0.0)[1], 0.5) && planner_j2_at(trk, 1.0e5 * 20)[1] > planner_j2_at(trk, 1.0e5 * 10)[1] && approx(norm(planner_j2_apo(trk, 5.0e5)), 1.0) && norm(planner_j2_rate_vec(trk, 5.0e5)) > 0
+    E_ = SVector(0.01, 0.02, 0.0); s_ = SVector(1.0, 0.0, 0.0); l1a = planner_l1(E_, s_, 1.0, 0.0, 0.5); @assert approx(l1a.along_deg, rad2deg(0.01)) && 0.0 <= l1a.tau_d <= 0.5 && l1a.err_deg <= rad2deg(norm(E_)) + 1e-12 && planner_l1(E_, s_, 1.0, 5.0, 0.5).tau_d == 0.0 && planner_l1(E_, s_, 1.0, 5.0, 0.5).err_deg == rad2deg(norm(E_))
+    gO = planner_table(META, "ODY"); PO, _ = planner_constants(META, 1.0e4, 6500.0, "OLRT3-W4L"); kO = META["planner"]["terminal_periapsis"]["kappa"]["ODY"]; rg = planner_arrival_range(gO, PO, 42828.375e9, kO, log(0.212)); dg = planner_default_tstar(gO, PO, 42828.375e9, kO, log(0.212), 6.0)
+    @assert rg.fast_d < planner_ttg_setup(META, "ODY", gO, PO, 42828.375e9, log(0.212)).tstar_nominal_d < rg.slow_d && dg.tstar_d == clamp(rg.fast_d + 6.0, rg.fast_d, rg.slow_d) && META["planner"]["tstar_margin_d"] == 6.0
+    nomO = planner_nominal_track(gO, PO, 42828.375e9, kO, log(0.212), deg2rad(93.522), deg2rad(109.7454), deg2rad(28.1517), J2k, Rk); @assert nomO.days == planner_arrival(gO, 42828.375e9, PO.ra_stop_m, vcat(log(0.212), planner_ol_plan(gO, PO, log(0.212)).level .+ planner_ol_plan(gO, PO, log(0.212)).nu), log(0.212), kO).days && nomO.N > 100
+    # Revision 26c: node check v2 (J2-track forecast, aim shift clamped to the window), default off; arm OLRT3-W4LN
+    G4n = planner_guard_constants(META; set="v4n"); @assert G4n.node_check_v2 && !G4n.node_check && G4n.node_tol_deg == 1.0 && G4n.pos_stage && !G4.node_check_v2 && !G3n.node_check_v2 && !planner_guard_constants(META).node_check_v2 && !planner_guard_constants(META; set="v3").node_check_v2
+    m8 = deepcopy(META); m8["planner"]["guard_sets"]["v4n"]["node_check"] = true; @assert (try; planner_guard_constants(m8; set="v4n"); false; catch err; occursin("mutually exclusive", sprint(showerror, err)); end)
+    m8b = deepcopy(META); delete!(m8b["planner"]["guard_sets"]["v4n"], "node_tol_deg"); @assert (try; planner_guard_constants(m8b; set="v4n"); false; catch err; occursin("no tolerance", sprint(showerror, err)); end)
+    @assert planner_node_v2_aim(0.5, 1e-6, 1e6, 1e6, 3e4, 1.0) == (; aim=1e6, ok=true) && planner_node_v2_aim(5.0, 1e-6, 1e6, 1e6, 3e4, 1.0) == (; aim=1e6 - 3e4, ok=false) && planner_node_v2_aim(-5.0, 1e-6, 1e6, 1e6, 3e4, 1.0) == (; aim=1e6 + 3e4, ok=false) && planner_node_v2_aim(2.0, 0.0, 1e6, 1e6, 3e4, 1.0) == (; aim=1e6, ok=false)
+    # growing-rate synthetic orbit: the J2 node rate grows as the orbit shrinks, so the linear extrapolation of the CURRENT rate (the rev26val defect) under-predicts the node motion that the forecast sees
+    tg = [8.0e4 * k for k in 1:80]; ag = [1.6e7 * (1 - 0.0075 * k) for k in 1:80]; trg = planner_j2_track(tg, ag, fill(0.7, 80), fill(1.2, 80), 0.3, 0.2, 1.2, muJ, J2k, Rk)
+    err_f, rate_f = planner_node_forecast(trg, tg[end], 0.0); lin_rate = rad2deg(planner_j2_node_rate(muJ, J2k, Rk, ag[10], 0.7, 1.2)); Om_f = rad2deg(planner_j2_at(trg, tg[end])[2]); Om_lin = rad2deg(planner_j2_at(trg, tg[10])[2]) + lin_rate * (tg[end] - tg[10])
+    @assert abs(rate_f) > 2.0 * abs(lin_rate) && abs(planner_wrap_deg(Om_f - Om_lin)) > 0.05 && approx(err_f, planner_wrap_deg(Om_f)) "growing-rate forecast: rate_f $(rate_f * 86400) deg/d vs current $(lin_rate * 86400)"
+    # Revision 28A: arm OLRT3-W3T (W3E + default t*), geometry G0975M (role GCM), blocks rev28t (37) and calR28; the default t* each geometry will get
+    sT = planner_switches(META, "OLRT3-W3T"); sE = planner_switches(META, "OLRT3-W3E"); @assert sT.default_tstar && !sE.default_tstar && Base.structdiff(sT, (; default_tstar=false)) == Base.structdiff(sE, (; default_tstar=false)) && PL["arms"]["OLRT3-W3T"]["ei_km"] == 150.0 && String(PL["arms"]["OLRT3-W3T"]["guard_set"]) == "v3" && !haskey(PL["arms"]["OLRT3-W3T"], "tstar_d") && PL["tstar_margin_d"] == 6.0
+    c28 = cases("rev28t"); @assert length(c28) == 37 && length(unique(c.run_id for c in c28)) == 37 && count(c -> c.arm == "OLRT3-W3T", c28) == 24 && count(c -> c.arm == "OLRT3-W3E", c28) == 12 && count(c -> c.arm == "OLRT3", c28) == 1 && count(c -> c.gid == "G0975M", c28) == 8 && count(c -> c.gid == "G1038", c28) == 4 && count(c -> c.gid == "G1230", c28) == 12 && count(c -> c.gid == "ODY", c28) == 13
+    @assert planner_gid(META, "GCM") == "G0975M" && Set(cases("calR28")[k].gid for k in 1:1) == Set(["G0975M"]) && planner_table(META, "G0975M").n > 200 && planner_ic_plan(META, "G0975M", "S-fixed") !== nothing && planner_fb_params(META, "G0975M", 42828.375e9).kappa == planner_fb_params(META, "G0975", 42828.375e9).kappa
+    println("default t* (model feasible arrival range, kappa, chosen = fast end + $(PL["tstar_margin_d"]) d), S-fixed anchor ln 0.211971 + nu_pre:")
+    for (gid, tk) in (("ODY", nothing), ("G0975M", nothing), ("G1038", "T500"), ("G1230", "T1000"))
+        tbl = planner_table(META, gid); Pq, _ = planner_constants(META, 1.0e4, 6500.0, "OLRT3-W3T"; target=tk); tok = gid == "ODY" ? "ODY" : gid; icq = planner_ic_plan(META, tok, "S-fixed"); kq = planner_fb_params(META, gid, 42828.375e9).kappa; x0q = log(0.211971) + icq.nu_pre
+        dq = planner_default_tstar(tbl, Pq, 42828.375e9, kq, x0q, PL["tstar_margin_d"]); nq = planner_ttg_setup(META, gid, tbl, Pq, 42828.375e9, x0q).tstar_nominal_d
+        println("  ", rpad(gid, 7), " fast ", round(dq.fast_d; digits=3), " d  slow ", round(dq.slow_d; digits=3), " d  chosen ", round(dq.tstar_d; digits=3), " d  (nominal ", round(nq; digits=3), " d, kappa ", round(kq; digits=4), ", x0 ", round(x0q; digits=4), ")")
+        @assert dq.fast_d < dq.tstar_d <= dq.slow_d && dq.tstar_d == clamp(dq.fast_d + PL["tstar_margin_d"], dq.fast_d, dq.slow_d) && dq.fast_d < nq
+    end
+    dO = planner_default_tstar(planner_table(META, "ODY"), planner_constants(META, 1.0e4, 6500.0, "OLRT3-W3T")[1], 42828.375e9, planner_fb_params(META, "ODY", 42828.375e9).kappa, log(0.211971), 6.0); @assert abs(dO.tstar_d - 53.9) < 0.1
+    # Revision 28a: term_aim_below_m 5,000 m for arms flagged aim_default = "new" (none yet); every existing cell keeps 12,500 m
+    @assert PL["terminal"]["term_aim_below_m_new"] == 5000.0 && all(!haskey(a, "aim_default") for (k, a) in PL["arms"] if !(k in ("OLRT3-W3E5", "OLRT3-W3L5", "OLRT3-W4L5", "OLRT3-W4LN5", "OLRT3-W3E7")))
+    for rows in (PL["flight"], PL["terminal_flight"], PL["extra"], PL["sensitivity"]), r in rows, cell in String.(r["cells"])
+        pp = String.(split(cell, "@")); haskey(PL["arms"], pp[1]) || continue; tkq = planner_geometry_target(META, planner_gid(META, pp[2]))
+        @assert planner_constants(META, 1.0e4, 6500.0, pp[1]; target=tkq)[1].term_aim_below_m == (pp[1] == "OLRT3-W3E7" ? 7500.0 : pp[1] in ("OLRT3-W3E5", "OLRT3-W3L5", "OLRT3-W4L5", "OLRT3-W4LN5") ? 5000.0 : 12500.0) "block $(r["block"]) cell $cell aims $(planner_constants(META, 1.0e4, 6500.0, pp[1]; target=tkq)[1].term_aim_below_m)"
+    end
+    m9 = deepcopy(META); m9["planner"]["arms"]["OLRT3-W3"]["aim_default"] = "new"; @assert planner_constants(m9, 1.0e4, 6500.0, "OLRT3-W3")[1].term_aim_below_m == 5000.0 && planner_constants(m9, 1.0e4, 6500.0, "OLRT3")[1].term_aim_below_m == 12500.0 && planner_constants(m9, 1.0e4, 6500.0, "OLRT3-W3"; target="T2000")[1].term_aim_below_m == 5000.0
+    m9["planner"]["target"]["apo_one_sided"] = true; @assert planner_constants(m9, 1.0e4, 6500.0, "OLRT3-W3")[1].term_aim_below_m == -12500.0          # the one-sided switch keeps its own aim
+    # Revision 29: arm OLRT3-W3E5 = OLRT3-W3E with the 5 km terminal aim; block rev29aim (21)
+    @assert planner_switches(META, "OLRT3-W3E5") == planner_switches(META, "OLRT3-W3E")
+    aE = Dict{String, Any}(PL["arms"]["OLRT3-W3E"]); aE5 = Dict{String, Any}(PL["arms"]["OLRT3-W3E5"]); delete!(aE, "note"); delete!(aE5, "note"); delete!(aE5, "aim_default"); @assert aE == aE5 && PL["arms"]["OLRT3-W3E5"]["aim_default"] == "new" && !haskey(PL["arms"]["OLRT3-W3E"], "aim_default")
+    @assert planner_constants(META, 1.0e4, 6500.0, "OLRT3-W3E5")[1].term_aim_below_m == 5000.0 && planner_constants(META, 1.0e4, 6500.0, "OLRT3-W3E")[1].term_aim_below_m == 12500.0 && planner_constants(META, 1.0e4, 6500.0, "OLRT3-W3E5"; target="T500")[1].term_aim_below_m == 5000.0 && planner_ei_km(META, PL["arms"]["OLRT3-W3E5"], nothing) == 150.0
+    @assert Base.structdiff(planner_constants(META, 1.0e4, 6500.0, "OLRT3-W3E5")[1], (; term_aim_below_m=0.0)) == Base.structdiff(planner_constants(META, 1.0e4, 6500.0, "OLRT3-W3E")[1], (; term_aim_below_m=0.0))
+    c29 = cases("rev29aim"); @assert length(c29) == 21 && length(unique(c.run_id for c in c29)) == 21 && count(c -> c.arm == "OLRT3-W3E5" && c.gid == "ODY", c29) == 8 && count(c -> c.arm == "OLRT3-W3E5" && c.gid == "G1038", c29) == 8 && count(c -> c.arm == "OLRT3-W3E" && c.gid == "G1038", c29) == 4 && count(c -> c.arm == "OLRT3" && c.gid == "ODY" && endswith(c.tag, "s14") && c.disp == "L4", c29) == 1
+    @assert all(planner_constants(META, 1.0e4, 6500.0, c.arm; target=planner_geometry_target(META, c.gid))[1].term_aim_below_m == (c.arm == "OLRT3-W3E5" ? 5000.0 : 12500.0) for c in c29)
+    # Revision 30.3: arms OLRT3-W3L5 / OLRT3-W4L5 (parents W3L / W4L plus the 5 km aim), block rev30seed (25)
+    for (par, ch) in (("OLRT3-W3L", "OLRT3-W3L5"), ("OLRT3-W4L", "OLRT3-W4L5"), ("OLRT3-W3E", "OLRT3-W3E5"))
+        ap = Dict{String, Any}(PL["arms"][par]); ac = Dict{String, Any}(PL["arms"][ch]); delete!(ap, "note"); delete!(ac, "note"); @assert ac["aim_default"] == "new" && !haskey(ap, "aim_default"); delete!(ac, "aim_default"); @assert ap == ac "arm $ch differs from $par beyond the aim"
+        @assert planner_switches(META, ch) == planner_switches(META, par) && planner_constants(META, 1.0e4, 6500.0, ch)[1].term_aim_below_m == 5000.0 && planner_constants(META, 1.0e4, 6500.0, par)[1].term_aim_below_m == 12500.0 &&
+            Base.structdiff(planner_constants(META, 1.0e4, 6500.0, ch)[1], (; term_aim_below_m=0.0)) == Base.structdiff(planner_constants(META, 1.0e4, 6500.0, par)[1], (; term_aim_below_m=0.0)) && planner_ei_km(META, PL["arms"][ch], nothing) == planner_ei_km(META, PL["arms"][par], nothing)
+    end
+    c30 = cases("rev30seed"); @assert length(c30) == 25 && length(unique(c.run_id for c in c30)) == 25 && count(c -> c.arm == "OLRT3-W3L5" && c.gid == "G0528", c30) == 8 && count(c -> c.arm == "OLRT3-W3E5" && c.gid == "G1230", c30) == 8 && count(c -> c.arm == "OLRT3-W4L5" && c.gid == "ODY", c30) == 8 && count(c -> c.arm == "OLRT3" && c.disp == "L4" && endswith(c.tag, "s14"), c30) == 1
+    @assert all(planner_constants(META, 1.0e4, 6500.0, c.arm; target=planner_geometry_target(META, c.gid))[1].term_aim_below_m == (c.arm == "OLRT3" ? 12500.0 : 5000.0) for c in c30)
+    # Revision 31: arms OLRT3-W4LN5 (W4LN + 5 km aim) and OLRT3-W3E7 (W3E5 + the arm's own 7.5 km aim, ASSUMED), blocks rev31pos (45), rev31node (25), rev31g1230 (9)
+    for (par, ch, extra) in (("OLRT3-W4LN", "OLRT3-W4LN5", "aim_default"), ("OLRT3-W3E5", "OLRT3-W3E7", "term_aim_below_m"))
+        ap = Dict{String, Any}(PL["arms"][par]); ac = Dict{String, Any}(PL["arms"][ch]); delete!(ap, "note"); delete!(ac, "note"); @assert haskey(ac, extra) && (extra == "term_aim_below_m" || !haskey(ap, extra)); delete!(ac, extra); @assert ap == ac "arm $ch differs from $par beyond $extra"
+        @assert planner_switches(META, ch) == planner_switches(META, par) && planner_ei_km(META, PL["arms"][ch], nothing) == 150.0 && Base.structdiff(planner_constants(META, 1.0e4, 6500.0, ch)[1], (; term_aim_below_m=0.0)) == Base.structdiff(planner_constants(META, 1.0e4, 6500.0, par)[1], (; term_aim_below_m=0.0))
+    end
+    @assert planner_constants(META, 1.0e4, 6500.0, "OLRT3-W4LN5")[1].term_aim_below_m == 5000.0 && planner_constants(META, 1.0e4, 6500.0, "OLRT3-W4LN")[1].term_aim_below_m == 12500.0 && planner_constants(META, 1.0e4, 6500.0, "OLRT3-W3E7")[1].term_aim_below_m == 7500.0 && planner_constants(META, 1.0e4, 6500.0, "OLRT3-W3E7"; target="T1000")[1].term_aim_below_m == 7500.0
+    m10 = deepcopy(META); m10["planner"]["targets"]["T1000"]["term_aim_below_m"] = 9000.0; @assert planner_constants(m10, 1.0e4, 6500.0, "OLRT3-W3E5"; target="T1000")[1].term_aim_below_m == 9000.0 && planner_constants(m10, 1.0e4, 6500.0, "OLRT3-W3E7"; target="T1000")[1].term_aim_below_m == 7500.0          # arm key > target > aim_default
+    G4nq = planner_guard_constants(META; set=String(PL["arms"]["OLRT3-W4LN5"]["guard_set"])); @assert G4nq.node_check_v2 && G4nq.node_tol_deg == 1.0 && !G4nq.node_check && PL["arms"]["OLRT3-W4LN5"]["l1"] && PL["arms"]["OLRT3-W4LN5"]["ei_default"] == "new"
+    cp = cases("rev31pos"); cn = cases("rev31node"); cg = cases("rev31g1230"); @assert length(cp) == 45 && length(cn) == 25 && length(cg) == 9 && length(unique(c.run_id for c in cp)) == 45 && length(unique(c.run_id for c in cn)) == 25
+    @assert count(c -> c.arm == "OLRT3-W4L5", cp) == 24 && count(c -> c.arm == "OLRT3-W3E5", cp) == 20 && sort(unique(c.gid for c in cp if c.arm == "OLRT3-W4L5")) == sort(["G5863", "G0975M", "G0063M", "G0890", "G0486", "G1038"]) && sort(unique(c.gid for c in cp if c.arm == "OLRT3-W3E5")) == sort(["G5863", "G0975M", "G0063M", "G0890", "G0486"])
+    @assert count(c -> c.arm == "OLRT3-W4LN5", cn) == 16 && count(c -> c.arm == "OLRT3-W4L5", cn) == 8 && all(c.gid in ("G5863", "G0975M") for c in cn if c.arm != "OLRT3") && count(c -> c.arm == "OLRT3-W3E7" && c.gid == "G1230", cg) == 8 && count(c -> c.arm == "OLRT3", cp) == 1 && count(c -> c.arm == "OLRT3", cn) == 1 && count(c -> c.arm == "OLRT3", cg) == 1
+    @assert all(planner_constants(META, 1.0e4, 6500.0, c.arm; target=planner_geometry_target(META, c.gid))[1].term_aim_below_m == (c.arm == "OLRT3" ? 12500.0 : c.arm == "OLRT3-W3E7" ? 7500.0 : 5000.0) for c in vcat(cp, cn, cg))
+    for gid in ("G5863", "G0975M", "G0063M", "G0890", "G0486", "G1038", "G1230"); @assert isfile(joinpath(stageg3_task_dir(), "planner_ground_tables_rev23.json")) && planner_table(META, gid).n > 100 && planner_ic_plan(META, gid == "G5863" ? "G1" : gid, "S-fixed") !== nothing; end
     cc25 = cases("calR25"); @assert sort([c.gid for c in cc25]) == ["G0486", "G1038", "G1230"]
+    # Revision 31.3: fine-grid geometries GJ/GK/GL/GM, phase calR31, block rev31cls (17); the table/IC pins are checked once [planner.ground_table_rev31] exists
+    cls = cases("rev31cls"); ccl = cases("calR31"); @assert length(cls) == 17 && length(unique(c.run_id for c in cls)) == 17 && count(c -> c.arm == "OLRT3-W4L5" && c.disp == "L0", cls) == 16 && count(c -> c.arm == "OLRT3", cls) == 1
+    @assert sort([c.gid for c in ccl]) == ["G0042_A2000", "G0140_AODY", "G3161_A2000", "G3257_AODY"] && sort(unique(c.gid for c in cls if c.arm == "OLRT3-W4L5")) == ["G0042_A2000", "G0140_AODY", "G3161_A2000", "G3257_AODY"]
+    @assert [planner_geometry_target(META, g) === nothing for g in ("G0140_AODY", "G3257_AODY")] == [true, true] && [planner_constants(META, 1.0e4, 6500.0, "OLRT3-W4L5"; target=planner_geometry_target(META, g))[1].ra_target_m for g in ("G0042_A2000", "G3161_A2000")] == [5396190.0, 5396190.0]
+    cx = cases("rev31ext"); @assert length(cx) == 13 && length(unique(c.run_id for c in cx)) == 13 && count(c -> c.arm == "OLRT3-W4L5" && c.disp == "L0", cx) == 8 && count(c -> c.arm == "OLRT3-W3E5" && c.gid == "G0486", cx) == 4 && count(c -> c.arm == "OLRT3", cx) == 1 && sort(unique(c.gid for c in cx if c.arm == "OLRT3-W4L5")) == ["G0486", "G1038"]
+    cv = cases("rev32dev"); @assert length(cv) == 13 && length(unique(c.run_id for c in cv)) == 13 && count(c -> c.arm == "OLRT3-W3E5" && c.disp == "L0", cv) == 12 && count(c -> c.arm == "OLRT3", cv) == 1 && sort(unique(c.gid for c in cv if c.arm == "OLRT3-W3E5")) == ["G0063M", "G0890", "G0975M"] && sort(unique(c.tag for c in cv if c.arm == "OLRT3-W3E5")) == sort(unique(seed_tag.(1:4)))
+    c2 = cases("rev31ext2"); @assert length(c2) == 9 && length(unique(c.run_id for c in c2)) == 9 && count(c -> c.arm == "OLRT3-W4L5" && c.disp == "L0", c2) == 8 && count(c -> c.arm == "OLRT3", c2) == 1 && sort(unique(c.gid for c in c2 if c.arm == "OLRT3-W4L5")) == ["G0140_AODY", "G3257_AODY"]
+    haskey(PL, "ground_table_rev31") && foreach(g -> (@assert planner_table(META, g).n > 100 && planner_ic_plan(META, g, "S-fixed") !== nothing), ("G0140_AODY", "G0042_A2000", "G3257_AODY", "G3161_A2000"))
     # guard v3: separate constant set (s_frac 0.25, term_model), v2 untouched; the terminal-aim emulation only acts through the set
     G3c = planner_guard_constants(META; set="v3"); G2c = planner_guard_constants(META); @assert G3c.s_frac == 0.25 && G3c.term_model && !G2c.term_model && G2c.s_frac == 0.5 && (G3c.pen_g, G3c.rel_slack, G3c.anchor_k, G3c.bias_steps, G3c.k_window, G3c.ema_beta, G3c.dev_thr_g, G3c.t_offset_d) == (G2c.pen_g, G2c.rel_slack, G2c.anchor_k, G2c.bias_steps, G2c.k_window, G2c.ema_beta, G2c.dev_thr_g, G2c.t_offset_d)
     @assert String(PL["arms"]["OLRT3-W3"]["guard_set"]) == "v3" == String(PL["arms"]["OLRT3-WF3"]["guard_set"]) && planner_switches(META, "OLRT3-W3") == planner_switches(META, "OLRT3-W") && planner_switches(META, "OLRT3-WF3") == planner_switches(META, "OLRT3-WF")
@@ -284,7 +385,7 @@ function selftest()
     @assert planner_ttg_kappa_hat(zeros(3), zeros(3), gt2, 20) === nothing && planner_ttg_lvl_alt(Gc, gt2, 5, lvl2, zeros(4), zeros(4), 0.0, 0.0) === nothing
     # guard policy-level: switch off = no ra_hist, no guard columns; on = the planner's own burn while the prediction is inside the window
     # Revision 20b OLT before activation equals OL: same decisions and logged fields (a policy built the way planner_run_task builds it, synthetic measurements, no flight)
-    olt_identity_selftest(); ttg_policy_selftest()
+    olt_identity_selftest(); ttg_policy_selftest(); v4_policy_selftest(); node_v2_policy_selftest()
     println("planner selftest ok: lever, DP offsets equal planner_lib.py, plan inputs, OL schedule, B-ODY rule, table loader, geometry injection (ODY), safety stop, OLT = OL before activation (policy-level), linear-cost DP (lin = zeros bit-identical), FB term (ODY N 216 -> 231, G1 unchanged), IC plans, rev20olt 13 flights, guard v2 core + rev20val 28 flights, $(plan_total()) flights in the plan")
 end
 
@@ -298,7 +399,7 @@ function selftest_policy(arm::AbstractString, apriori)
     meas = NamedTuple[]; vlog = NamedTuple[]
     fpol = StageFPolicy(inner, nothing, :fixed, pwf, 4700.0, 0.14 * w2m, 0.32 * w2m, 1000.0, meas, "", 0.0, 0.0, 100.0, NamedTuple[])
     P, B = planner_constants(meta, w2m, 6500.0, arm); sw = planner_switches(meta, arm); tab = planner_table(meta, "ODY")
-    return PlannerPolicy(fpol, Float64(ms.harm.gm_m3s2), t -> zeros(3), 4700.0, NaN, Symbol(String(meta["planner"]["arms"][arm]["mode"])), sw, P, B, tab, vlog, 6500.0, 0.212, 0.0, [0.0], apriori, -Inf, NaN, Float64[], 0.0, NamedTuple[], NaN, 0.0, 0, nothing, 0, nothing, nothing, Float64[], NaN, 0, nothing, nothing), P
+    return PlannerPolicy(fpol, Float64(ms.harm.gm_m3s2), t -> zeros(3), 4700.0, NaN, Symbol(String(meta["planner"]["arms"][arm]["mode"])), sw, P, B, tab, vlog, 6500.0, 0.212, 0.0, [0.0], apriori, -Inf, NaN, Float64[], 0.0, NamedTuple[], NaN, 0.0, 0, nothing, 0, nothing, nothing, Float64[], NaN, 0, nothing, nothing, nothing), P
 end
 
 function olt_identity_selftest()
@@ -341,6 +442,44 @@ function ttg_policy_selftest()
     dE = planner_decide(wW, 32, 1.5e5 * 31, pred, 4700.0, a, e); @assert dE.ttg_engaged && dE.ttg_solves >= 2 && dE.ttg_solves <= 12
 end
 
+function v4_policy_selftest()
+    gt = planner_table(META, "ODY"); Pb, _ = planner_constants(META, 1.0e4, 6500.0, "OLRT3-W4"); sched = planner_ol_schedule(gt, Pb, log(0.212)); mu = Float64(META["planner"]["analysis"]["mu_mars_m3s2"]); nc = META["planner"]["node_check"]
+    w, P = selftest_policy("OLRT3-W4", copy(sched)); @assert w.sw.ttg_guard && !w.sw.l1
+    kO = META["planner"]["terminal_periapsis"]["kappa"]["ODY"]; metaN = deepcopy(META); metaN["planner"]["guard_sets"]["v4"]["node_check"] = true; tt0 = planner_ttg_setup(metaN, "ODY", gt, P, mu, log(0.212); set="v4"); @assert tt0.G.pos_stage && tt0.G.node_check          # node check switched ON on a copy: exercises the node path
+    gc = (; om0=deg2rad(109.7454), Om0=deg2rad(28.1517), i0=deg2rad(93.522), J2=Float64(nc["J2"]), R=Float64(nc["R_m"]), rot=nothing)
+    nom = planner_nominal_track(gt, P, mu, kO, log(0.212), gc.i0, gc.om0, gc.Om0, gc.J2, gc.R)
+    w.ttg = tt0; w.pos = PlannerPosCtx(nom, gc, nom.days * 86400.0, Float64[], Float64[], Float64[], Float64[], gc.i0, (; fast_d=NaN, slow_d=NaN, tstar_d=nom.days, source="nominal"), true, NamedTuple[])
+    nctx = planner_node_ctx(metaN, nothing, nothing, w.sw, metaN["planner"]["arms"]["OLRT3-W4"]; pos=w.pos); @assert nctx.omega_target_deg == mod(rad2deg(planner_j2_at(nom.track, nom.days * 86400.0)[2]), 360.0) && nctx.J2 == gc.J2
+    rp = 3.49e6; pred = dv -> 1.1e5 + 300.0 * dv; nst = 0
+    for i in 1:60
+        ra = 2.4e7 - 3.4e5 * i; a = (ra + rp) / 2; e = (ra - rp) / (ra + rp); rho = 1.0e-8 * (1 + 0.3 * sin(0.7 * i))
+        push!(w.f.meas, (; t_s=1.2e5 * i, rho_mean=rho, alt_m=1.1e5 + 50 * i, lon_rad=0.1 * i)); push!(w.vlog, (; pass=i, vrel_p_mps=4700.0, vp_inertial_mps=4500.0))
+        w.node_now = (; omega_now_deg=28.0 + 0.01 * i, rate_deg_s=-1.0e-6, omega_target_deg=nctx.omega_target_deg)
+        d = planner_decide(w, i + 1, 1.2e5 * i, pred, 4700.0, a, e); @assert hasproperty(d, :ttg_engaged) && isfinite(d.dv)
+        d.dv != 0.0 && (w.nu_cum += -d.dv / d.w0); push!(w.nu_hist, w.nu_cum)
+    end
+    ps = w.pos; @assert length(ps.ka) == 60 && length(ps.de) == 60 && length(ps.inc) == 60 && length(ps.rp_hist) == 60 && all(isfinite, ps.ka) && all(isfinite, ps.de) && length(w.ra_hist) == 60 && all(0.8 .< ps.ka .< 1.2)
+    # result columns of a finished flight (synthetic last row) and the all-NaN default
+    last = (; a_m=4.45e6, e=0.215, i_rad=gc.i0, raan_rad=gc.Om0 + 0.3, omega_rad=gc.om0 + 0.2, time_s=nom.days * 86400.0 - 9.0e3, ra_m=5.4e6, rp_m=3.5e6)
+    pc = planner_pos_final(ps, mu, last); @assert isfinite(pc.pos_err_deg) && isfinite(pc.l1_err_deg) && pc.l1_err_deg <= pc.pos_err_deg + 1e-9 && isfinite(pc.pos_t_arr_d) && pc.pos_tstar_d == nom.days && pc.tstar_source == "nominal" && planner_pos_final(ps, mu, nothing).pos_err_deg |> isnan
+    @assert all(isnan(getfield(PLANNER_POS_NAN, k)) for k in keys(PLANNER_POS_NAN) if getfield(PLANNER_POS_NAN, k) isa Float64)
+end
+
+function node_v2_policy_selftest()
+    gt = planner_table(META, "ODY"); P, _ = planner_constants(META, 1.0e4, 6500.0, "OLRT3-W4LN"); sched = planner_ol_schedule(gt, P, log(0.212)); mu = Float64(META["planner"]["analysis"]["mu_mars_m3s2"]); nc = META["planner"]["node_check"]
+    w, _ = selftest_policy("OLRT3-W4LN", copy(sched)); kO = META["planner"]["terminal_periapsis"]["kappa"]["ODY"]; tt0 = planner_ttg_setup(META, "ODY", gt, P, mu, log(0.212); set="v4n"); @assert tt0.G.node_check_v2 && !tt0.G.node_check
+    gc = (; om0=deg2rad(109.7454), Om0=deg2rad(28.1517), i0=deg2rad(93.522), J2=Float64(nc["J2"]), R=Float64(nc["R_m"]), rot=nothing); nom = planner_nominal_track(gt, P, mu, kO, log(0.212), gc.i0, gc.om0, gc.Om0, gc.J2, gc.R)
+    w.ttg = tt0; w.pos = PlannerPosCtx(nom, gc, nom.days * 86400.0, Float64[], Float64[], Float64[], Float64[], gc.i0, (; fast_d=NaN, slow_d=NaN, tstar_d=nom.days, source="nominal"), true, NamedTuple[])
+    W3 = tt0.G.w_max_periods * planner_kepler_period(mu, P.ra_stop_m, tt0.G.w_rp_m); rp = 3.49e6; pred = dv -> 1.1e5 + 300.0 * dv
+    for i in 1:60
+        ra = 2.4e7 - 3.4e5 * i; a = (ra + rp) / 2; e = (ra - rp) / (ra + rp); rho = 1.0e-8 * (1 + 0.3 * sin(0.7 * i))
+        push!(w.f.meas, (; t_s=1.2e5 * i, rho_mean=rho, alt_m=1.1e5 + 50 * i, lon_rad=0.1 * i)); push!(w.vlog, (; pass=i, vrel_p_mps=4700.0, vp_inertial_mps=4500.0))
+        d = planner_decide(w, i + 1, 1.2e5 * i, pred, 4700.0, a, e); @assert hasproperty(d, :ttg_engaged) && isfinite(d.dv) && abs(d.ttg_tt_s - tt0.tstar_s) <= W3 + 1e-6 "aim $(d.ttg_tt_s) outside the window around $(tt0.tstar_s)"
+        d.dv != 0.0 && (w.nu_cum += -d.dv / d.w0); push!(w.nu_hist, w.nu_cum)
+    end
+    @assert length(w.pos.ka) == 60
+end
+
 function finish(res, phase)
     tag = phase * "_mars_" * HOST
     println("MC route=$(res.route) workers=$(res.threads) samples=$(length(res.samples)) failed=$(length(res.failed)) elapsed_s=$(round(res.elapsed_s; digits=1)) (contended wall time, not a performance number)")
@@ -353,7 +492,7 @@ function finish(res, phase)
     res.route === :process || error("route was $(res.route), not :process")
     bad = count(r -> r.status != "ok", rows); println("rows=$(length(rows)) not ok=$bad")
     for r in rows; r.status != "ok" && println("  $(get(r, :run_id, r.tag)): $(r.error)"); end
-    phase in ("cal", "calG", "calx0", "calR23", "calR25") ? foreach(r -> r.status == "ok" && println("  cal $(r.tag): seed_alt_m=$(round(r.seed_alt_m; digits=1)) q_first=$(round(r.q_first_w_cm2; digits=4)) target=$(r.q_target_w_cm2) vrel_first=$(round(r.vrel_first_mps; digits=1)) hloc=$(round(r.hloc_at_hg_m; digits=1))"), rows) :
+    phase in ("cal", "calG", "calx0", "calR23", "calR25", "calR28", "calR31") ? foreach(r -> r.status == "ok" && println("  cal $(r.tag): seed_alt_m=$(round(r.seed_alt_m; digits=1)) q_first=$(round(r.q_first_w_cm2; digits=4)) target=$(r.q_target_w_cm2) vrel_first=$(round(r.vrel_first_mps; digits=1)) hloc=$(round(r.hloc_at_hg_m; digits=1))"), rows) :
         foreach(r -> r.status == "ok" && println("  $(r.run_id): passes=$(r.passes) t_end_days=$(round(r.t_end_days; digits=2)) stop_reason=$(r.stop_reason) dv=$(round(r.total_dv_mps; digits=4)) burns=$(r.burns) core_epoch=$(r.gram_core_epoch)"), rows)
     (isempty(res.failed) && bad == 0) || error("failed or not-ok cases present")
 end
@@ -380,6 +519,6 @@ function main()
     summary = joinpath(SFS, "summary_$(phase)_mars_$(HOST).csv"); isfile(summary) && error("$summary exists: use a distinct --host stamp per call")
     seeds = filter(c -> !ondisk(c), cases(phase)); println("$phase: $(length(seeds)) cases to fly ($(length(cases(phase)) - length(seeds)) already on disk)")
     isempty(seeds) && error("no cases (all runs already on disk)")
-    finish(campaign(seeds, phase in ("cal", "calG", "calx0", "calR23", "calR25") ? 86400.0 : maximum(c.horizon_days for c in seeds) * 86400.0), phase)
+    finish(campaign(seeds, phase in ("cal", "calG", "calx0", "calR23", "calR25", "calR28", "calR31") ? 86400.0 : maximum(c.horizon_days for c in seeds) * 86400.0), phase)
 end
 main()

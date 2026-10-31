@@ -272,6 +272,39 @@ def ttg_predict(tab, mu, ra_target, kap, ra0, rp0, t0, x, rpp, term=None, ra_aim
     return float("nan"), 400
 
 
+def j2_orbit(a, e, inc, J2, R):
+    """Mirror of planner_j2_orbit: secular J2 change per orbit (d omega, d Omega) in rad."""
+    p = a * (1 - e * e); k = 3 * math.pi * J2 * (R / p) ** 2
+    return k * (2 - 2.5 * math.sin(inc) ** 2), -k * math.cos(inc)
+
+
+class J2TrackMirror:
+    """Mirror of PlannerJ2Track (planner_rev21_position.J2Track): per-orbit J2 increments spread over [lo_k, hi_k]; beyond the last orbit the last rate continues."""
+
+    def __init__(self, t, a, e, inc, om0, Om0, i0, mu, J2, R):
+        t = np.asarray(t, float); a = np.asarray(a, float); n = len(t); self.T = 2 * math.pi * np.sqrt(a ** 3 / mu); hi = np.empty(n); hi[:-1] = 0.5 * (t[:-1] + t[1:]); hi[-1] = t[-1] + 0.5 * self.T[-1]
+        self.hi = hi; self.lo = np.concatenate(([0.0], hi[:-1])); d = np.array([j2_orbit(a[k], e[k], inc[k], J2, R) for k in range(n)]); self.dom = d[:, 0]; self.dOm = d[:, 1]; self.om0 = om0; self.Om0 = Om0; self.i0 = i0; self.n = n
+
+    def at(self, t):
+        f = np.clip((t - self.lo) / (self.hi - self.lo), 0.0, 1.0); extra = max(0.0, t - self.hi[-1]) / self.T[-1]
+        return self.om0 + float(np.sum(f * self.dom)) + extra * self.dom[-1], self.Om0 + float(np.sum(f * self.dOm)) + extra * self.dOm[-1]
+
+
+def node_forecast(tr, ta, om_target_deg):
+    """Mirror of planner_node_forecast: (node error deg, node rate deg/s) at the predicted arrival ta from a J2 track."""
+    Om = math.degrees(tr.at(ta)[1]); k = int(np.clip(np.searchsorted(tr.hi, ta), 0, tr.n - 1))
+    return wrap_deg(Om - om_target_deg), math.degrees(tr.dOm[k] / tr.T[k])
+
+
+def node_v2_aim(err_deg, rate_deg_s, ta, tt, W, tol_deg):
+    """Mirror of planner_node_v2_aim (node check v2, Revision 26c): aim unchanged inside the tolerance, else moved toward the zero-error time ta - err / rate and clamped to [tt - W, tt + W]. Returns (aim, ok)."""
+    if abs(err_deg) <= tol_deg:
+        return float(tt), True
+    if rate_deg_s == 0.0:
+        return float(tt), False
+    return float(min(max(ta - err_deg / rate_deg_s, tt - W), tt + W)), False
+
+
 def interp1(x, xp, fp):
     """numpy.interp for ascending xp (clamped at the ends)."""
     return float(np.interp(x, xp, fp))
@@ -375,7 +408,8 @@ def flat_P(cfg, arm=None, target=None):
     for k in ("ra_target_m", "tail_passes", "term_step_m", "term_activate_steps", "term_min_q_factor", "term_c_window"):
         if k in T:
             P[k] = T[k]
-    P["term_aim_below_m"] = -tol * frac if one else float(T.get("term_aim_below_m", P["term_aim_below_m"]))                   # one-sided: the aim sits above the target
+    aim_new = arm is not None and cfg["planner"]["arms"].get(arm, {}).get("aim_default", "") == "new"                       # Revision 28a: arms flagged aim_default = "new" aim 5,000 m below the target
+    P["term_aim_below_m"] = -tol * frac if one else float(cfg["planner"]["arms"].get(arm, {}).get("term_aim_below_m", T.get("term_aim_below_m", cfg["planner"]["terminal"]["term_aim_below_m_new"] if aim_new else P["term_aim_below_m"])))                   # one-sided: the aim sits above the target
     P["ra_stop_m"] = float(P["ra_target_m"]) + (tol if one else 0.0); P["apo_one_sided"] = one; P["apo_tol_m"] = tol; P["apo_aim_above_frac"] = frac
     P["apo_shortfall_slope_mps_per_km"] = float(T.get("apo_shortfall_slope_mps_per_km", 0.056))
     P["update_gain"] = cfg["planner"]["update"]["gain"]; P["update_cap_passes"] = cfg["planner"]["update"]["cap_passes"]; P["update_window"] = cfg["planner"]["update"]["window"]
@@ -509,7 +543,7 @@ def selftest():
     for a_, n_ in (("BODY", 32), ("FO", 16), ("N2I", 16), ("L0", 16), ("L1", 32), ("L2", 16), ("L3", 32), ("OL", 32), ("OLR", 32)):
         assert arms.count(a_) == n_, (a_, arms.count(a_))
     assert sum(1 for r in L if r["block"] == "gate") == 10 and sum(1 for r in L if r["arm"] in ("L3", "L1") and r["geometry"] == "G1" and r["block"] == "held_geometry") == 32
-    assert {a_ for a_ in cfg["planner"]["arms"]} == {"BODY", "L0", "L1", "L2", "L3", "OL", "OLR", "FO", "N2I", "L3Z", "OLRZ", "OLRT", "OLRT1", "OLRT2", "OLRT3", "OLRT4", "OLRT5", "OLRT35", "BODYT", "N2IT", "N2I0", "OLT", "OLRT3-W", "OLRT3-WF", "OLRT3-W3", "OLRT3-WF3"}
+    assert {a_ for a_ in cfg["planner"]["arms"]} == {"BODY", "L0", "L1", "L2", "L3", "OL", "OLR", "FO", "N2I", "L3Z", "OLRZ", "OLRT", "OLRT1", "OLRT2", "OLRT3", "OLRT4", "OLRT5", "OLRT35", "BODYT", "N2IT", "N2I0", "OLT", "OLRT3-W", "OLRT3-WF", "OLRT3-W3", "OLRT3-WF3", "OLRT3-W3E", "OLRT3-W4", "OLRT3-W4L", "OLRT3-W3L", "OLRT3-W4LN", "OLRT3-W3T", "OLRT3-W3E5", "OLRT3-W3L5", "OLRT3-W4L5", "OLRT3-W4LN5", "OLRT3-W3E7"}
     # ladder switches (R2.2): L0 -> L3 adds slack, ff, early one at a time; OL / OL-R are L3 without / with replanning
     sw = {k: arm_switches(cfg, k) for k in ("L0", "L1", "L2", "L3", "OL", "OLR")}
     assert [(sw[k]["slack"], sw[k]["ff"], sw[k]["early"]) for k in ("L0", "L1", "L2", "L3")] == [(False, False, False), (True, False, False), (True, True, False), (True, True, True)]
@@ -581,7 +615,7 @@ def selftest():
     # Revision 20b / 20 / 19: the OLT arm, the IC and FB switches are default off; every pre-existing arm keeps the old switches
     a_olt = cfg["planner"]["arms"]["OLT"]; so = cfg["planner"]["arms"]["OL"]
     assert (a_olt["mode"], a_olt["terminal"], a_olt["safety"], a_olt["slack"], a_olt["ff"], a_olt["early"], a_olt["update"], a_olt["horizon"]) == (so["mode"], True, so["safety"], so["slack"], so["ff"], so["early"], so["update"], so["horizon"])
-    assert all(arm_switches(cfg, k)["fb_term"] is False and arm_switches(cfg, k)["ic_scenario"] == "ref" and arm_switches(cfg, k)["ttg_guard"] is False for k in cfg["planner"]["arms"] if k not in ("OLRT3-W", "OLRT3-WF", "OLRT3-W3", "OLRT3-WF3")) and (arm_switches(cfg, "OLRT3-W")["ttg_guard"], arm_switches(cfg, "OLRT3-W")["ic_scenario"], arm_switches(cfg, "OLRT3-W")["terminal"]) == (True, "S-fixed", True) and arm_switches(cfg, "OLT")["terminal"] and not arm_switches(cfg, "OL")["terminal"]
+    assert all(arm_switches(cfg, k)["fb_term"] is False and arm_switches(cfg, k)["ic_scenario"] == "ref" and arm_switches(cfg, k)["ttg_guard"] is False for k in cfg["planner"]["arms"] if k not in ("OLRT3-W", "OLRT3-WF", "OLRT3-W3", "OLRT3-WF3", "OLRT3-W3E", "OLRT3-W4", "OLRT3-W4L", "OLRT3-W3L", "OLRT3-W4LN", "OLRT3-W3T", "OLRT3-W3E5", "OLRT3-W3L5", "OLRT3-W4L5", "OLRT3-W4LN5", "OLRT3-W3E7")) and (arm_switches(cfg, "OLRT3-W")["ttg_guard"], arm_switches(cfg, "OLRT3-W")["ic_scenario"], arm_switches(cfg, "OLRT3-W")["terminal"]) == (True, "S-fixed", True) and arm_switches(cfg, "OLT")["terminal"] and not arm_switches(cfg, "OL")["terminal"]
     assert flat_P(cfg, "OLT")["dp_burn_penalty_mps"] == flat_P(cfg, "OL")["dp_burn_penalty_mps"]
     blk = [f for f in cfg["planner"]["terminal_flight"] if f["block"] == "rev20olt"][0]; cs = blk["cell_seeds"]
     assert sum(len(v) for v in cs.values()) == blk["count"] == 13 and sorted(cs) == sorted(blk["cells"]) and cs["OLT@ODY@L0"] == [13, 14, 15, 16] and 13 not in cs["OLT@ODY@L1"] and 13 not in cs["OLT@ODY@L2"] and 14 not in cs["OLT@ODY@L3"]
@@ -603,7 +637,30 @@ def selftest():
         pass
     assert wrap_deg(190.0) == -170.0 and wrap_deg(-180.0) == 180.0 and wrap_deg(720.0) == 0.0 and j2_node_rate(mu, 0.001958616126805748, 3394200.0, 1e7, 0.65, math.radians(93.5)) > 0 > j2_node_rate(mu, 0.001958616126805748, 3394200.0, 1e7, 0.65, math.radians(25.2))
     assert abs(node_error_deg(10.0, 1e-5, 0.0, 1e6, 20.0)) < 1e-12 and abs(node_aim(10.0, 1e-5, 0.0, 20.0, 5e5) - 1e6) < 1e-6 and node_aim(10.0, 0.0, 0.0, 20.0, 5.0) == 5.0
+    b28 = [f for f in cfg["planner"]["terminal_flight"] if f["block"] == "rev28t"][0]; assert b28["count"] == 37 == sum(len(v) for v in b28["cell_seeds"].values()) and cfg["planner"]["arms"]["OLRT3-W3T"]["default_tstar"] is True and cfg["planner"]["rev28"]["cal_tokens"] == ["GCM"] and cfg["planner"]["geometry"]["G0975M"]["role"] == "GCM"
+    assert cfg["planner"]["guard_sets"]["v4n"]["node_check_v2"] is True and cfg["planner"]["guard_sets"]["v4n"]["node_check"] is False and cfg["planner"]["guard_sets"]["v4n"]["node_tol_deg"] == 1.0 and cfg["planner"]["arms"]["OLRT3-W4LN"]["guard_set"] == "v4n" and "node_check_v2" not in cfg["planner"]["guard_sets"]["v4"]
+    assert node_v2_aim(0.5, 1e-6, 1e6, 1e6, 3e4, 1.0) == (1e6, True) and node_v2_aim(5.0, 1e-6, 1e6, 1e6, 3e4, 1.0) == (1e6 - 3e4, False) and node_v2_aim(-5.0, 1e-6, 1e6, 1e6, 3e4, 1.0) == (1e6 + 3e4, False) and node_v2_aim(2.0, 0.0, 1e6, 1e6, 3e4, 1.0) == (1e6, False)
     assert apo_slope(0.056, 40000.0) == 0.056 * 40.0 and "node_tol_deg" not in cfg["planner"]["guard"] and cfg["planner"]["guard"]["node_check"] is False and cfg["planner"]["guard_sets"]["v3"]["node_check"] is False
+    assert cfg["planner"]["arms"]["OLRT3-W3E"]["ei_km"] == 150.0 and all("ei_km" not in v for k, v in cfg["planner"]["arms"].items() if k not in ("OLRT3-W3E", "OLRT3-W3T", "OLRT3-W3E5", "OLRT3-W3E7"))
+    assert cfg["planner"]["guard_sets"]["v4"]["node_tol_deg"] == 1.0 and cfg["planner"]["guard_sets"]["v4"]["pos_stage"] is True and "pos_stage" not in cfg["planner"]["guard_sets"]["v3"] and cfg["planner"]["tstar_margin_d"] == 6.0
+    assert [f for f in cfg["planner"]["terminal_flight"] if f["block"] == "rev26val"][0]["count"] == 17 and [f for f in cfg["planner"]["terminal_flight"] if f["block"] == "rev26val2"][0]["cells"] == [f for f in cfg["planner"]["terminal_flight"] if f["block"] == "rev26val"][0]["cells"] and cfg["planner"]["guard_sets"]["v4"]["node_check"] is False and cfg["planner"]["guard_sets"]["v3n"]["node_check"] is False and all(cfg["planner"]["arms"][k]["ei_default"] == "new" for k in ("OLRT3-W4", "OLRT3-W4L", "OLRT3-W3L", "OLRT3-W4LN")) and all("ei_default" not in v for k, v in cfg["planner"]["arms"].items() if k not in ("OLRT3-W4", "OLRT3-W4L", "OLRT3-W3L", "OLRT3-W4LN", "OLRT3-W3L5", "OLRT3-W4L5", "OLRT3-W4LN5"))
+    assert cfg["planner"]["dispersion"]["mean"]["perturbed"] is False and all("perturbed" not in v for k, v in cfg["planner"]["dispersion"].items() if k != "mean") and [f for f in cfg["planner"]["terminal_flight"] if f["block"] == "rev27b"][0]["count"] == 2
+    assert cfg["planner"]["ei_km_new_default"] == 150.0 and all("ei_default" not in v for k, v in cfg["planner"]["arms"].items() if k not in ("OLRT3-W4", "OLRT3-W4L", "OLRT3-W3L", "OLRT3-W4LN", "OLRT3-W3L5", "OLRT3-W4L5", "OLRT3-W4LN5"))
+    cfg_n = json.loads(json.dumps(cfg)); cfg_n["planner"]["arms"]["OLRT3-W3"]["aim_default"] = "new"; assert flat_P(cfg_n, "OLRT3-W3")["term_aim_below_m"] == 5000.0 and flat_P(cfg_n, "OLRT3")["term_aim_below_m"] == 12500.0 and flat_P(cfg_n, None)["term_aim_below_m"] == 12500.0
+    assert cfg["planner"]["terminal"]["term_aim_below_m_new"] == 5000.0 and cfg["planner"]["terminal"]["term_aim_below_m"] == 12500.0 and all("aim_default" not in v for k, v in cfg["planner"]["arms"].items() if k not in ("OLRT3-W3E5", "OLRT3-W3L5", "OLRT3-W4L5", "OLRT3-W4LN5", "OLRT3-W3E7")) and cfg["planner"]["arms"]["OLRT3-W3E5"]["aim_default"] == "new" and flat_P(cfg, "OLRT3-W3E5")["term_aim_below_m"] == 5000.0 and flat_P(cfg, "OLRT3-W3E")["term_aim_below_m"] == 12500.0 and [f for f in cfg["planner"]["terminal_flight"] if f["block"] == "rev29aim"][0]["count"] == 21
+    for blk_, n_ in (("rev27ei", 4), ("rev27low", 13)):
+        b_ = [f for f in cfg["planner"]["terminal_flight"] if f["block"] == blk_][0]; assert b_["count"] == n_ and (blk_ == "rev27ei" or sum(len(v) for v in b_["cell_seeds"].values()) == n_)
+    for par_, ch_ in (("OLRT3-W3L", "OLRT3-W3L5"), ("OLRT3-W4L", "OLRT3-W4L5"), ("OLRT3-W3E", "OLRT3-W3E5")):
+        ap_ = {k: v for k, v in cfg["planner"]["arms"][par_].items() if k != "note"}; ac_ = {k: v for k, v in cfg["planner"]["arms"][ch_].items() if k not in ("note", "aim_default")}; assert ap_ == ac_ and cfg["planner"]["arms"][ch_]["aim_default"] == "new" and flat_P(cfg, ch_)["term_aim_below_m"] == 5000.0 and flat_P(cfg, par_)["term_aim_below_m"] == 12500.0
+    assert [f for f in cfg["planner"]["terminal_flight"] if f["block"] == "rev30seed"][0]["count"] == 25
+    assert {k: v for k, v in cfg["planner"]["arms"]["OLRT3-W3E7"].items() if k not in ("note", "term_aim_below_m")} == {k: v for k, v in cfg["planner"]["arms"]["OLRT3-W3E5"].items() if k != "note"} and flat_P(cfg, "OLRT3-W3E7")["term_aim_below_m"] == 7500.0 and flat_P(cfg, "OLRT3-W4LN5")["term_aim_below_m"] == 5000.0 and flat_P(cfg, "OLRT3-W4LN")["term_aim_below_m"] == 12500.0
+    assert {k: v for k, v in cfg["planner"]["arms"]["OLRT3-W4LN5"].items() if k not in ("note", "aim_default")} == {k: v for k, v in cfg["planner"]["arms"]["OLRT3-W4LN"].items() if k != "note"}
+    assert [[f for f in cfg["planner"]["terminal_flight"] if f["block"] == b_][0]["count"] for b_ in ("rev31pos", "rev31node", "rev31g1230")] == [45, 25, 9]
+    assert [f for f in cfg["planner"]["terminal_flight"] if f["block"] == "rev31ext"][0]["count"] == 13
+    assert [f for f in cfg["planner"]["terminal_flight"] if f["block"] == "rev32dev"][0]["count"] == 13
+    assert [f for f in cfg["planner"]["terminal_flight"] if f["block"] == "rev31ext2"][0]["count"] == 9
+    b31 = [f for f in cfg["planner"]["terminal_flight"] if f["block"] == "rev31cls"][0]; assert b31["count"] == 17 == sum(len(v) for v in b31["cell_seeds"].values()) and b31["cell_seeds"]["OLRT3@ODY@L4"] == [14] and cfg["planner"]["rev31"]["cal_tokens"] == ["GJ", "GK", "GL", "GM"]
+    assert [cfg["planner"]["geometry"][g]["role"] for g in ("G0140_AODY", "G0042_A2000", "G3257_AODY", "G3161_A2000")] == ["GJ", "GK", "GL", "GM"] and [cfg["planner"]["geometry"][g].get("target") for g in ("G0140_AODY", "G0042_A2000", "G3257_AODY", "G3161_A2000")] == [None, "T2000", None, "T2000"]
     b25 = [f for f in cfg["planner"]["terminal_flight"] if f["block"] == "rev25low"][0]; assert b25["count"] == 13 == sum(len(v) for v in b25["cell_seeds"].values()) and b25["cell_seeds"]["OLRT3@ODY@L4"] == [14] and cfg["planner"]["rev25"]["cal_tokens"] == ["GG", "GH", "GI"]
     td25 = task_dir()
     if td25 is not None:

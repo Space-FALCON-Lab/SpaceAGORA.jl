@@ -40,7 +40,7 @@ J2 = float(W.J2); RJ = float(W.RJ)       # SOURCED: Kaula Mars table (planner_re
 TOL_DEG = (0.5, 1.0, 2.0)        # tol_pos_deg = 1.0 ASSUMED (named), 0.5 and 2.0 shown
 TOL_BASE = 1.0
 W_ROT = 7.08823596e-5            # SOURCED planner_config / planets.jl Mars spin (rad/s)
-GEOM_ID = {"ODY": "ODY", "G5863": "G1", "G0975": "G0975", "G0063": "G0063", "G0390": "G0390", "G1216": "G1216", "G0528": "G0528", "G0890": "G0890", "G0975M": "G0975M", "G0063M": "G0063M", "G0486": "G0486", "G1230": "G1230", "G1038": "G1038"}      # run-id prefix -> planner token
+GEOM_ID = {"ODY": "ODY", "G5863": "G1", "G0975": "G0975", "G0063": "G0063", "G0390": "G0390", "G1216": "G1216", "G0528": "G0528", "G0890": "G0890", "G0975M": "G0975M", "G0063M": "G0063M", "G0486": "G0486", "G1230": "G1230", "G1038": "G1038", "G0140_AODY": "G0140_AODY", "G0042_A2000": "G0042_A2000", "G3257_AODY": "G3257_AODY", "G3161_A2000": "G3161_A2000"}      # run-id prefix -> planner token
 GATE_ID = {"G1": "G5863"}
 
 
@@ -77,7 +77,8 @@ def j2_orbit(a, e, inc):
 def _table_files():
     """Ground-table files of the task directory: the generic and Revision 23 files first, then any other planner_ground_tables_*.json (e.g. the Revision 25 low-altitude pins), SOURCED."""
     fs = [TD / "planner_ground_tables_generic.json", TD / "planner_ground_tables_rev23.json"]
-    return fs + [f for f in sorted(TD.glob("planner_ground_tables_*.json")) if f not in fs and f.name not in ("planner_ground_tables.json",)]
+    rest = [f for f in sorted(TD.glob("planner_ground_tables_*.json")) if f not in fs and f.name not in ("planner_ground_tables.json",)]
+    return fs + sorted(rest, key=lambda f: (0 if f.name.endswith("mf.json") else 1, f.name))      # mean-field tables (…mf.json, e.g. rev25mf) before the preview pins of the same tokens
 
 
 _TF = {}
@@ -170,12 +171,15 @@ def get_tab(tok):
     tab["_k_inc"] = np.arange(n, 0, -1, dtype=float)[::-1] * 1.0; tab["_kk"] = np.arange(1, n + 1, dtype=float); return tab
 
 
+KAPPA_ALIAS = {"G0975M": "G0975"}      # the flights' config maps the mean-field G0975M to the G0975 calibration (kappa 0.9518, MEASURED from the gen1 flights); logged guard t* of G0975M flights reproduces with it
+
+
 def kappa_for(tok):
     """Drop-per-q factor: MEASURED rev19 calibration (ODY, G1); a generic token's value from rev21_data/position/kappa_generic.json when its calibration was accepted (IQR tight), else 1.0 (ASSUMED)."""
     RP = _rp()
     if tok in ("ODY", "G1"): return RP.KAPPA[tok]
     try:
-        c = json.load(open(KAPPA_CAL)).get(tok)
+        c = json.load(open(KAPPA_CAL)).get(KAPPA_ALIAS.get(tok, tok))
         if c and c.get("accepted"): return float(c["kappa_med"])
     except Exception: pass
     return 1.0
@@ -200,10 +204,14 @@ KAPPA_IQR_MAX = 0.05      # ASSUMED acceptance: relative IQR of the per-flight k
 
 
 def headline_ic(tok):
-    """The flown S-fixed initial-condition plan of a geometry (headline.json; same selection as planner_rev20_score.ic_dv_pre)."""
-    f = TD / CFG["ic"]["path"]; J = json.load(open(f))
-    c = [p for p in J["plans"] if p["geom"] == tok and p["scenario"] == "S-fixed" and p["fb_term"] is False and p["horizon"] == "arrival" and abs(p["delta_ln"]) < 1e-12 and abs(p["h_des_m"] - 250000.0) < 1e-6 and p["t_star_d"] is None]
-    return c[0] if len(c) == 1 else None
+    """The flown S-fixed initial-condition plan of a geometry (same selection as planner_rev20_score.ic_dv_pre): the configured headline file first, then the other headline_*.json pins of the task directory (mean-field pins before preview pins), SOURCED."""
+    cand = [TD / CFG["ic"]["path"]] + sorted((f for f in (TD / "rev20_data" / "ic").glob("headline_*.json") if f != TD / CFG["ic"]["path"]), key=lambda f: (0 if f.stem.endswith("mf") else 1, f.name))
+    for f in cand:
+        try: J = json.load(open(f))
+        except Exception: continue
+        c = [p for p in J["plans"] if p["geom"] == tok and p["scenario"] == "S-fixed" and p["fb_term"] is False and p["horizon"] == "arrival" and abs(p["delta_ln"]) < 1e-12 and abs(p["h_des_m"] - 250000.0) < 1e-6 and p["t_star_d"] is None]
+        if len(c) == 1: return c[0]
+    return None
 
 
 def arrival_history(tab, x, q_first_ln, kappa, ra_target=RA_T):

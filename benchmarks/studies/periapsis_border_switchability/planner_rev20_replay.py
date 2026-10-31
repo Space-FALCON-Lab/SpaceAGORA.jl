@@ -344,11 +344,13 @@ def ic_shift(ic):
     return 0.0 if ic is None else float(ic["x0"]) - math.log(Q_FIRST)
 
 
-def replay(F, token, arm="OLRT3", ic=None, noise="pass", guard=None, tstar_d=None, h_des_m=H_DES_M, seed=0, trace=False, qs_cap=QS_LIMIT):
+def replay(F, token, arm="OLRT3", ic=None, noise="pass", guard=None, tstar_d=None, h_des_m=H_DES_M, seed=0, trace=False, qs_cap=QS_LIMIT, term_below_m=None, eps_pool=None, eps_seed=0):
     """Closed-loop counterfactual replay of `arm` on the natural path of flight F (output of extract). guard=None: no time guard; guard=dict(GUARD_DEFAULT overrides): the guard with target tstar_d (days).
     ic=None: reference start (first pass at the flown level, x_ref = ln 0.212 in the plan); ic=dict(x0=..., nu_pre=..., dv_pre_mps=...) shifts the whole natural level by u0 = x0 - ln q_first_ref
     (the first-pass level becomes x0; dv_pre_mps is added to the total, not to the campaign dV). Returns the score dict."""
     tab = get_tab(token); kap = KAPPA[token]; sw, P = arm_def(arm); gd = None if guard is None else {**GUARD_DEFAULT, **guard}
+    if term_below_m is not None:                                              # Revision 28B: the terminal-aim margin as a named parameter (ASSUMED 12.5 km in the config)
+        P = dict(P, term_aim_below_m=float(term_below_m))
     n0 = F["n"]; pmax = n0 + P_MAX_EXTRA + 5
     F = extend(F, pmax, seed)
     x_ref = math.log(QFIRST_CAL[token]); u0 = ic_shift(ic); x0 = x_ref + u0
@@ -423,7 +425,14 @@ def replay(F, token, arm="OLRT3", ic=None, noise="pass", guard=None, tstar_d=Non
                         cbar = float(np.mean([xs[q_ - 1] - (u0 + nuh[q_ - 1]) - PLB.tget(tab["path"], q_) for q_ in ii]))
                         lvl_alt = lvl.copy(); lvl_alt[1:] = u + cbar + np.array([PLB.tget(tab["slow"], p + m) for m in range(1, len(lvl))])
                     nu_ref = nu
-                    nu, engaged = guard_solve(tab, kap, gd, info, lam_log, p, lvl, A_, B_, L_, P, nu, ra_now, rp_now, ts[-1], tstar_s, c_hist_ratio(xs, ras, tab, ra_prev0=float(tab["ra"][0]), k=gd["k_window"], stat=gd["kappa_stat"]), bias, F["H"][i], lvl_alt)
+                    tstar_g = tstar_s
+                    if gd.get("aim_fn") is not None:                                       # Revision 26c node check v2 (planner_rev26_position): the aim time, clamped to the window
+                        tstar_g = gd["aim_fn"](dict(tab=tab, kap=kap, gd=gd, info=info, j=p, lvl=lvl, P=P, nu_ref=nu, ra_now=ra_now, rp_now=rp_now, ts=list(ts), ras=list(ras), rps=list(rps), tstar_s=tstar_s, kap_meas=c_hist_ratio(xs, ras, tab, ra_prev0=float(tab["ra"][0]), k=gd["k_window"], stat=gd["kappa_stat"]), bias=bias, H=F["H"][i], lvl_alt=lvl_alt))
+                        info["aim_shift_s"] = tstar_g - tstar_s
+                    nu, engaged = guard_solve(tab, kap, gd, info, lam_log, p, lvl, A_, B_, L_, P, nu, ra_now, rp_now, ts[-1], tstar_g, c_hist_ratio(xs, ras, tab, ra_prev0=float(tab["ra"][0]), k=gd["k_window"], stat=gd["kappa_stat"]), bias, F["H"][i], lvl_alt)
+                    if gd.get("pos_fn") is not None:                                       # Revision 26 position stage (planner_rev26_position): second objective on the accumulated apse rotation
+                        nu, engaged = gd["pos_fn"](dict(tab=tab, kap=kap, gd=gd, info=info, lam_log=lam_log, j=p, lvl=lvl, A_=A_, B_=B_, L_=L_, P=P, nu_ref=nu_ref, nu_t=nu, eng_t=engaged, ra_now=ra_now, rp_now=rp_now, ts=list(ts), ras=list(ras), rps=list(rps),
+                                                       tstar_s=tstar_g, kap_meas=c_hist_ratio(xs, ras, tab, ra_prev0=float(tab["ra"][0]), k=gd["k_window"], stat=gd["kappa_stat"]), bias=bias, H=F["H"][i], lvl_alt=lvl_alt))
                 def finish(nu_, eng_):
                     d_ = -float(nu_[0]) * w0
                     if sw["dev_thr"] > 0 and sw["mode"] == "olr" and not outside and not eng_:
@@ -452,7 +461,10 @@ def replay(F, token, arm="OLRT3", ic=None, noise="pass", guard=None, tstar_d=Non
         rpp = rpnat_p - F["H"][i] * u
         if p == 1:
             rpp = rpnat_p - F["H"][0] * u0
-        kd = Sd["eps"] * kap * d0_at(tab, ra_prev) * math.exp(xp) / tab["q_req"]
+        epsv = Sd["eps"]
+        if eps_pool is not None and ra_prev - RA_T <= 2.0e5:                    # Revision 28B: drop noise of the last passes drawn from a pool (a deterministic function of the pass index and the draw, common to all margins)
+            epsv = float(eps_pool[(eps_seed * 7919 + p * 104729) % len(eps_pool)])
+        kd = epsv * kap * d0_at(tab, ra_prev) * math.exp(xp) / tab["q_req"]
         ra_p = ra_prev - kd
         if p == 1:
             t_p = F["t"][0]

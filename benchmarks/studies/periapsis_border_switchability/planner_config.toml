@@ -196,6 +196,8 @@ smoke = 2                           # one forced-stop zero-burn flight at G1 plu
 # Planner tables
 # ==============================================================================================================================
 [planner]
+tstar_margin_d = 6.0                # ASSUMED (Revision 26 default-t* switch, off by default): margin (days) added to the fast end of the model's closed-loop feasible arrival range. Basis: the G0975 guard-cost curve (results_rev21_g0975_arrival.md): fast end about 50 d (1.6 m/s with the guard), 56 d the cheap interior (1.18 m/s), i.e. fast end + 6 d; one geometry only, to be re-measured
+ei_km_new_default = 150.0         # SOURCED: user 2026-10-30 ("EI 150 becomes the study default for NEW Mars flights"): applies ONLY to arms with ei_default = "new" (Revision 26 or later); every existing arm and block stays at the config entry_interface_km (2000) unless it sets ei_km itself (OLRT3-W3E)
 burn_response_ratio = 1.0           # DERIVED (halflever_twin_results.md, R4.1): named field; equals [stageg3] burn_response_ratio (selftest asserts)
 q_cap_mean_w_cm2 = 0.2503            # DERIVED (calibration, Revision 12 workflow): R1.2 cap at E = 0.5 for sigma_p 0.0452, interpolated from the plan's own table (caps 0.255, 0.234, 0.213 at sigma_p 0, 0.10, 0.15): ln(0.54/q) = f(0) + 3.446 (sqrt(0.188^2 + sigma_p^2) - 0.188); this form reproduces the 0.15 entry to 0.1%. Was 0.234 at the ASSUMED sigma_p 0.10
 E_budget = 0.5                      # SOURCED (R4.5 settings): expected number of passes above q_exceed_ref per campaign (the knee)
@@ -497,6 +499,228 @@ guard_set = "v3"
 ic_scenario = "S-fixed"
 note = "Revision 21: OLRT3 + guard v3 + S-fixed initial condition"
 
+[planner.arms.OLRT3-W3E]
+# Revision 27: OLRT3-W3 with the Mars entry interface at 150 km (ei_km, SOURCED: user 2026-10-30: "the point when gram starts being used should be approximately 150 km"); between 150 km and the 2000 km extension ceiling the planet fit applies and burns may occur there.
+mode = "olr"
+slack = true
+ff = true
+early = true
+update = true
+horizon = 0
+terminal = true
+safety = "q"
+runner = "planner"
+host_default = "ws"
+dev_thr_mps = 0.15
+ttg_guard = true
+guard_set = "v3"
+ic_scenario = "S-fixed"
+ei_km = 150.0
+note = "Revision 27: OLRT3 + guard v3 + S-fixed initial condition, entry interface 150 km"
+
+[planner.arms.OLRT3-W4]
+# Revision 26: OLRT3 + guard set "v4" + S-fixed initial condition + L1 passage choice; EI 150 (ei_default = "new").
+mode = "olr"
+slack = true
+ff = true
+early = true
+update = true
+horizon = 0
+terminal = true
+safety = "q"
+runner = "planner"
+host_default = "ws"
+dev_thr_mps = 0.15
+ttg_guard = true
+guard_set = "v4"
+ic_scenario = "S-fixed"
+ei_default = "new"
+note = "Revision 26: OLRT3 + guard v4 + S-fixed"
+
+[planner.arms.OLRT3-W4L]
+# Revision 26: OLRT3 + guard set "v4" + S-fixed initial condition + L1 passage choice; EI 150 (ei_default = "new").
+mode = "olr"
+slack = true
+ff = true
+early = true
+update = true
+horizon = 0
+terminal = true
+safety = "q"
+runner = "planner"
+host_default = "ws"
+dev_thr_mps = 0.15
+ttg_guard = true
+guard_set = "v4"
+ic_scenario = "S-fixed"
+ei_default = "new"
+l1 = true                          # L1: choose t* and the closing passage jointly with the target position (reported at arrival)
+note = "Revision 26: OLRT3 + guard v4 + S-fixed + L1"
+
+[planner.arms.OLRT3-W3L]
+# Revision 26: OLRT3 + guard set "v3n" + S-fixed initial condition + L1 passage choice; EI 150 (ei_default = "new").
+mode = "olr"
+slack = true
+ff = true
+early = true
+update = true
+horizon = 0
+terminal = true
+safety = "q"
+runner = "planner"
+host_default = "ws"
+dev_thr_mps = 0.15
+ttg_guard = true
+guard_set = "v3n"
+ic_scenario = "S-fixed"
+ei_default = "new"
+l1 = true                          # L1: choose t* and the closing passage jointly with the target position (reported at arrival)
+note = "Revision 26: OLRT3 + guard v3 (node check on) + S-fixed + L1"
+
+[planner.arms.OLRT3-W4LN]
+# Revision 26c: OLRT3 + guard set "v4n" (v4 + node check v2 at 1.0 deg) + S-fixed + L1; EI 150 (ei_default = "new"). No block yet.
+mode = "olr"
+slack = true
+ff = true
+early = true
+update = true
+horizon = 0
+terminal = true
+safety = "q"
+runner = "planner"
+host_default = "ws"
+dev_thr_mps = 0.15
+ttg_guard = true
+guard_set = "v4n"
+ic_scenario = "S-fixed"
+ei_default = "new"
+l1 = true
+note = "Revision 26c: OLRT3 + guard v4 + node check v2 + S-fixed + L1"
+
+[planner.arms.OLRT3-W3E5]
+# Revision 29: OLRT3-W3E (guard v3, S-fixed, ei_km 150, nominal t*) with the 5 km terminal aim (aim_default = "new" -> [planner.terminal] term_aim_below_m_new). Otherwise identical to OLRT3-W3E.
+mode = "olr"
+slack = true
+ff = true
+early = true
+update = true
+horizon = 0
+terminal = true
+safety = "q"
+runner = "planner"
+host_default = "ws"
+dev_thr_mps = 0.15
+ttg_guard = true
+guard_set = "v3"
+ic_scenario = "S-fixed"
+ei_km = 150.0
+aim_default = "new"
+note = "Revision 29: OLRT3-W3E with the 5 km terminal aim"
+
+[planner.arms.OLRT3-W3L5]
+# Revision 30: OLRT3-W3L with the 5 km terminal aim (aim_default = "new"). Otherwise identical to the parent.
+mode = "olr"
+slack = true
+ff = true
+early = true
+update = true
+horizon = 0
+terminal = true
+safety = "q"
+runner = "planner"
+host_default = "ws"
+dev_thr_mps = 0.15
+ttg_guard = true
+guard_set = "v3n"
+ic_scenario = "S-fixed"
+ei_default = "new"
+l1 = true                          # L1: choose t* and the closing passage jointly with the target position (reported at arrival)
+aim_default = "new"                 # Revision 30: the 5 km terminal aim (term_aim_below_m_new); otherwise identical to OLRT3-W3L
+note = "Revision 30: OLRT3-W3L with the 5 km aim"
+
+[planner.arms.OLRT3-W4L5]
+# Revision 30: OLRT3-W4L with the 5 km terminal aim (aim_default = "new"). Otherwise identical to the parent.
+mode = "olr"
+slack = true
+ff = true
+early = true
+update = true
+horizon = 0
+terminal = true
+safety = "q"
+runner = "planner"
+host_default = "ws"
+dev_thr_mps = 0.15
+ttg_guard = true
+guard_set = "v4"
+ic_scenario = "S-fixed"
+ei_default = "new"
+l1 = true                          # L1: choose t* and the closing passage jointly with the target position (reported at arrival)
+aim_default = "new"                 # Revision 30: the 5 km terminal aim (term_aim_below_m_new); otherwise identical to OLRT3-W4L
+note = "Revision 30: OLRT3-W4L with the 5 km aim"
+
+[planner.arms.OLRT3-W4LN5]
+# Revision 31: OLRT3-W4LN with the change below; otherwise identical to the parent.
+mode = "olr"
+slack = true
+ff = true
+early = true
+update = true
+horizon = 0
+terminal = true
+safety = "q"
+runner = "planner"
+host_default = "ws"
+dev_thr_mps = 0.15
+ttg_guard = true
+guard_set = "v4n"
+ic_scenario = "S-fixed"
+ei_default = "new"
+l1 = true
+aim_default = "new"                 # Revision 31: the 5 km terminal aim
+note = "Revision 31: OLRT3-W4LN with the 5 km aim"
+
+[planner.arms.OLRT3-W3E7]
+# Revision 31: OLRT3-W3E5 with the change below; otherwise identical to the parent.
+mode = "olr"
+slack = true
+ff = true
+early = true
+update = true
+horizon = 0
+terminal = true
+safety = "q"
+runner = "planner"
+host_default = "ws"
+dev_thr_mps = 0.15
+ttg_guard = true
+guard_set = "v3"
+ic_scenario = "S-fixed"
+ei_km = 150.0
+aim_default = "new"
+term_aim_below_m = 7500.0            # ASSUMED (Revision 31): this arm aims 7.5 km below the target; the arm key takes precedence over aim_default (5 km) and the default (12.5 km)
+note = "Revision 31: OLRT3-W3E5 with the 7.5 km aim"
+
+[planner.arms.OLRT3-W3T]
+# Revision 28A: OLRT3-W3E (guard v3, S-fixed, EI 150) with the default-t* switch: t* = the fast end of the model's closed-loop feasible arrival range + [planner] tstar_margin_d (6.0 d, ASSUMED, basis one geometry).
+mode = "olr"
+slack = true
+ff = true
+early = true
+update = true
+horizon = 0
+terminal = true
+safety = "q"
+runner = "planner"
+host_default = "ws"
+dev_thr_mps = 0.15
+ttg_guard = true
+guard_set = "v3"
+ic_scenario = "S-fixed"
+ei_km = 150.0
+default_tstar = true
+note = "Revision 28A: OLRT3-W3E with the default-t* switch"
+
 [planner.arms.OLRT3-WF3]
 # Revision 21: OLRT3 + the frozen guard v3 (results_rev21_guard.md section 4: s_frac 0.25, terminal-aim emulation in the arrival prediction) + the S-free initial condition.
 mode = "olr"
@@ -605,7 +829,8 @@ note = "Revision 16 gate: N2-I through the wrapper with the terminal aim off"
 
 [planner.terminal]
 # Revision 14 (pre-registered before any flight of OLRT). All ASSUMED, named; dev iterations may change only these five.
-term_aim_below_m = 12500.0          # ASSUMED: aim this far below the target (half of the ASSUMED 25 km tolerance)
+term_aim_below_m = 12500.0          # ASSUMED: aim this far below the target
+term_aim_below_m_new = 5000.0       # SOURCED: user approval 2026-10-30 (basis results_rev28_margin.md): the aim for arms flagged aim_default = "new" (flights from Revision 28 on); every existing arm and block keeps term_aim_below_m 12,500 m (half of the ASSUMED 25 km tolerance)
 term_step_m = 40000.0               # ASSUMED: largest planned apoapsis drop per terminal pass
 term_activate_steps = 3             # ASSUMED: the terminal aim starts when (R + aim) is within this many steps
 term_min_q_factor = 0.25            # ASSUMED: lowest heat rate of the aim = this x q_cap (the cap and 0.65 are never relaxed)
@@ -644,6 +869,99 @@ w_rp_m = 3480000.0                  # ASSUMED: periapsis radius of the nominal c
 [planner.guard.t_offset_d]
 ODY = 0.15                          # ASSUMED (days): aim offset measured on dev (early bias of the level forecast), Revision 20c
 G5863 = 0.0                         # G1
+
+[planner.guard_sets.v3n]
+# Revision 26: guard v3 constants with the node check ON (tolerance 1.0 deg), for the L1-only arm. Selected by guard_set = "v3n".
+pen_g = 0.1
+rel_slack = 0.15
+s_frac = 0.25                       # ASSUMED (v3; v2 0.5): slack = s_frac x W_max + rel_slack x (time to go)
+aim_frac = 0.5
+anchor_k = 15
+anchor_from_pass = 6
+bias_steps = 60
+k_window = 20
+ema_beta = 0.5
+eps_max = 1.0
+max_solves = 12
+dev_thr_g = 0.05
+start_pass = 2
+node_check = false                  # Revision 26c: node check OFF (rev26val: the linear-rate node aim pushed arrivals days late; node_check_v2 replaces it, default off). node_tol_deg kept for node_check_v2
+node_tol_deg = 1.0                 # SOURCED: user 2026-10-30 ("the guard's node-check tolerance is 1.0 deg", Revision 26)
+w_max_periods = 3.0
+w_rp_m = 3480000.0
+term_model = true                   # ASSUMED switch (v3): the arrival prediction emulates the terminal aim with the [planner.terminal] constants (equal drops inside term_activate_steps steps of the target)
+[planner.guard_sets.v3n.t_offset_d]
+ODY = 0.15
+G5863 = 0.0
+
+[planner.guard_sets.v4]
+# Revision 26, guard v4 FROZEN (results_rev26_position.md section 8; planner_rev26_position.GUARD_V4 / POS_V4): guard v3 plus the position stage and the node check ON (tolerance 1.0 deg).
+pen_g = 0.1
+rel_slack = 0.15
+s_frac = 0.25                       # ASSUMED (v3; v2 0.5): slack = s_frac x W_max + rel_slack x (time to go)
+aim_frac = 0.5
+anchor_k = 15
+anchor_from_pass = 6
+bias_steps = 60
+k_window = 20
+ema_beta = 0.5
+eps_max = 1.0
+max_solves = 12
+dev_thr_g = 0.05
+start_pass = 2
+node_check = false                  # Revision 26c: node check OFF (rev26val: the linear-rate node aim pushed arrivals days late; node_check_v2 replaces it, default off). node_tol_deg kept for node_check_v2
+node_tol_deg = 1.0                 # SOURCED: user 2026-10-30 ("the guard's node-check tolerance is 1.0 deg", Revision 26)
+w_max_periods = 3.0
+w_rp_m = 3480000.0
+term_model = true                   # ASSUMED switch (v3): the arrival prediction emulates the terminal aim with the [planner.terminal] constants (equal drops inside term_activate_steps steps of the target)
+pos_stage = true                    # Revision 26: the position stage (guard v4) is attached
+pos_band_deg = 0.3                  # ASSUMED (frozen, planner_rev26_position POS_DEFAULT): funnel base of the history term (deg)
+kC_deg_per_d = 0.03                 # ASSUMED (frozen): funnel slope per day of predicted time to go
+M_frac = 0.5                        # ASSUMED (frozen): the plan horizon splits in two segments at this fraction of the predicted passes
+pos_min_steps = 12                  # ASSUMED (frozen): no position stage with fewer predicted passes
+pos_shift_scale = 0.3               # ASSUMED (frozen POS_V4): level shift (ln q) per unit of the shape parameters
+pos_fd_step = 0.3                   # ASSUMED (frozen POS_V4): finite-difference step of the Newton iteration
+pos_hw = 0.15                       # ASSUMED (frozen POS_V4): half width (ln q) of the band the DP follows
+pos_nit = 3                         # ASSUMED (frozen): Newton iterations
+pos_max_solves = 14                 # ASSUMED (frozen): solves per apoapsis
+[planner.guard_sets.v4.t_offset_d]
+ODY = 0.15
+G5863 = 0.0
+
+[planner.guard_sets.v4n]
+# Revision 26, guard v4 FROZEN (results_rev26_position.md section 8; planner_rev26_position.GUARD_V4 / POS_V4): guard v3 plus the position stage and the node check ON (tolerance 1.0 deg).
+pen_g = 0.1
+rel_slack = 0.15
+s_frac = 0.25                       # ASSUMED (v3; v2 0.5): slack = s_frac x W_max + rel_slack x (time to go)
+aim_frac = 0.5
+anchor_k = 15
+anchor_from_pass = 6
+bias_steps = 60
+k_window = 20
+ema_beta = 0.5
+eps_max = 1.0
+max_solves = 12
+dev_thr_g = 0.05
+start_pass = 2
+node_check = false                  # v1 node check (linear rate) stays OFF
+node_check_v2 = true                # Revision 26c: node check v2 (J2-track forecast, aim shift clamped to the window); tolerance node_tol_deg below
+node_tol_deg = 1.0                 # SOURCED: user 2026-10-30 ("the guard's node-check tolerance is 1.0 deg", Revision 26)
+w_max_periods = 3.0
+w_rp_m = 3480000.0
+term_model = true                   # ASSUMED switch (v3): the arrival prediction emulates the terminal aim with the [planner.terminal] constants (equal drops inside term_activate_steps steps of the target)
+pos_stage = true                    # Revision 26: the position stage (guard v4) is attached
+pos_band_deg = 0.3                  # ASSUMED (frozen, planner_rev26_position POS_DEFAULT): funnel base of the history term (deg)
+kC_deg_per_d = 0.03                 # ASSUMED (frozen): funnel slope per day of predicted time to go
+M_frac = 0.5                        # ASSUMED (frozen): the plan horizon splits in two segments at this fraction of the predicted passes
+pos_min_steps = 12                  # ASSUMED (frozen): no position stage with fewer predicted passes
+pos_shift_scale = 0.3               # ASSUMED (frozen POS_V4): level shift (ln q) per unit of the shape parameters
+pos_fd_step = 0.3                   # ASSUMED (frozen POS_V4): finite-difference step of the Newton iteration
+pos_hw = 0.15                       # ASSUMED (frozen POS_V4): half width (ln q) of the band the DP follows
+pos_nit = 3                         # ASSUMED (frozen): Newton iterations
+pos_max_solves = 14                 # ASSUMED (frozen): solves per apoapsis
+[planner.guard_sets.v4n.t_offset_d]
+ODY = 0.15
+G5863 = 0.0
 
 [planner.guard_sets.v3]
 # Revision 21, guard v3 FROZEN (results_rev21_guard.md section 4; planner_rev21_guard.GUARD_V3 = GUARD_V2 + s_frac 0.25 + term_model). Selected per arm by guard_set = "v3"; [planner.guard] stays v2.
@@ -712,6 +1030,7 @@ event = "apoapsis"                  # Revision 22 item 5: the decision/closing e
 apo_one_sided = false               # Revision 22 item 3 switch (default off): one-sided apoapsis tolerance ABOVE the target radius (a circle at r_t needs r_a >= r_t, Rev 22b): closing pass = first apoapsis <= target + apo_tol_m, success error in [0, +apo_tol_m]
 apo_tol_m = 25000.0                 # ASSUMED (the current tolerance width, unchanged): width of the one-sided band above the target radius
 apo_aim_above_frac = 0.5            # ASSUMED: the terminal aim sits this fraction of the band above the target (0.5 x 25 km = 12.5 km above); the default (switch off) aim is 12.5 km below
+# ei_km (optional, absent = the config entry_interface_km, 2000): entry-interface override of the flights of this target (Revision 27; an arm `ei_km` takes precedence)
 apo_shortfall_slope_mps_per_km = 0.056   # DERIVED (results_rev22_rendezvous.md): tracking cost per km of closing-apoapsis shortfall below the target circle
 
 [planner.targets.T2000]
@@ -733,6 +1052,75 @@ ra_target_m = 3896190.0
 # Revision 22 item 2 (guard node check, DISABLED: no tolerance has been given). Kaula Mars J2 and R (planner_rev20_window.py: J2, RJ) for the secular node rate.
 J2 = 0.001958616126805748
 R_m = 3394200.0
+
+[planner.terminal_periapsis.kappa_alias]
+G0975M = "G0975"                    # Revision 28A: the mean-field token G0975M is the orbit of G0975 (flown 20 times, kappa MEASURED 0.9518); it uses that value (ASSUMED to transfer to the mean-field table)
+
+[planner.rev28]
+cal_tokens = ["GCM"]                # Revision 28A: first-pass calibration of G0975M (same orbit and epoch as G0975; --phase=calR28)
+
+[planner.geometry.G0975M]
+# Revision 28A: the orbit of G0975 (GC) with the mean-field ground table (key G0975M of planner_ground_tables_rev23.json); role GCM so that its cal directory and cells are distinct from G0975
+id = "G0975M"
+role = "GCM"
+inc_deg = 93.5
+omega_deg = 30.0
+raan_deg = 315.0
+epoch_off_d = 180.0
+epoch_utc = "2002-05-05T19:00:32"
+field_id = "G0975M"
+
+[planner.geometry.G0140_AODY]
+# Revision 31.3 WP24 fine-grid geometry AODY class EQ20 (Odyssey target 7,408 km): 20 deg, omega0 150, Omega0 180, epoch = base epoch + 90 d (rev31_data/selection.json); role GJ. Ground table: [planner.ground_table_rev31] (to be pinned)
+id = "G0140_AODY"
+role = "GJ"
+inc_deg = 20.0
+omega_deg = 150.0
+raan_deg = 180.0
+epoch_off_d = 90.0
+epoch_utc = "2002-02-04T19:00:32"
+field_id = "G0140_AODY"
+
+[planner.geometry.G0042_A2000]
+# Revision 31.3 WP24 fine-grid geometry EQ20 low target (circle 2,000 km): 20 deg, omega0 150, Omega0 90, epoch = base epoch; role GK
+id = "G0042_A2000"
+role = "GK"
+inc_deg = 20.0
+omega_deg = 150.0
+raan_deg = 90.0
+epoch_off_d = 0.0
+epoch_utc = "2001-11-06T19:00:32"
+field_id = "G0042_A2000"
+target = "T2000"
+
+[planner.geometry.G3257_AODY]
+# Revision 31.3 WP24 fine-grid geometry HIGH80 (Odyssey target 7,408 km): 80 deg, omega0 330, Omega0 45, epoch = base epoch + 90 d; role GL
+id = "G3257_AODY"
+role = "GL"
+inc_deg = 80.0
+omega_deg = 330.0
+raan_deg = 45.0
+epoch_off_d = 90.0
+epoch_utc = "2002-02-04T19:00:32"
+field_id = "G3257_AODY"
+
+[planner.geometry.G3161_A2000]
+# Revision 31.3 WP24 fine-grid geometry HIGH80 low target (circle 2,000 km): 80 deg, omega0 330, Omega0 45, epoch = base epoch; role GM
+id = "G3161_A2000"
+role = "GM"
+inc_deg = 80.0
+omega_deg = 330.0
+raan_deg = 45.0
+epoch_off_d = 0.0
+epoch_utc = "2001-11-06T19:00:32"
+field_id = "G3161_A2000"
+target = "T2000"
+
+[planner.rev31]
+cal_tokens = ["GJ", "GK", "GL", "GM"]     # Revision 31.3 fine-grid geometries (--phase=calR31)
+# PINS TO ADD AFTER THE SAMPLING BUILD (not present yet, so every existing path is unchanged; planner_table falls back to [planner.ground_table_rev31] for a gid missing from the rev25 tables when this section exists):
+# [planner.ground_table_rev31]  path = "planner_ground_tables_rev31.json", sha256 = "<64 hex>"
+# [planner.ic_extra.rev31]      path = "rev20_data/ic/headline_rev31.json", sha256 = "<64 hex>"
 
 [planner.rev25]
 cal_tokens = ["GG", "GH", "GI"]     # Revision 25 low-altitude geometries (--phase=calR25)
@@ -1043,6 +1431,10 @@ gram_perturbation_scales = [1.5, 1.0, 1.0, 1.0]       # ASSUMED (user, Revision 
 mars_mgcm_dust_levels = [0.3385, 0.3, 1.0]            # DERIVED (gram_dust_levels_rev17.jl bisection): constant MGCM dust optical depth 0.3385 gives a measured mean ln(rho/rho_base) = +0.2231 (min +0.2083, max +0.2265) over the first 40 Odyssey periapsis points; target +0.223 ln (ASSUMED +25%)
 [planner.dispersion.L3]
 mars_mgcm_dust_levels = [0.2298, 0.3, 1.0]            # DERIVED: tau 0.2298 gives -0.2231 (min -0.2265, max -0.2083); target -0.223 ln
+[planner.dispersion.mean]
+# Revision 27b diagnostic level: the GRAM density perturbation OFF (mean density only): stagef_env!(false, meta) sets SPACEAGORA_GRAM_DENSITY_PERTURBATION=off. No GRAM constructor keywords; the run id ends in _mean.
+perturbed = false
+
 [planner.dispersion.L2p]
 # Revision 21: the +0.2231 ln dust level of a generic geometry (same rule as L2: constant dust optical depth whose mean ln(rho/rho_base) over the first 40 periapsis points of the nominal flight is +0.2231); one sub-table per gate id.
 note = "up-offset level of the generic geometries; keywords in the sub-table of the geometry id"
@@ -1063,6 +1455,140 @@ seeds = "gen4"                                          # overridden per cell by
 hosts = ["ws"]
 count = 13
 cell_seeds = { "OLT@ODY@L0" = [13, 14, 15, 16], "OLT@ODY@L1" = [14, 15, 16], "OLT@ODY@L2" = [14, 15, 16], "OLT@ODY@L3" = [13, 15, 16] }   # s16 at L0 is the identity gate against OL
+
+[[planner.terminal_flight]]
+block = "rev31pos"
+# Revision 31.1 position flights (EI 150, 5 km aim, L0, seeds 13-16): OLRT3-W4L5 at G1 (cell token G1), G0975M (GCM), G0063M (GAM), G0890 (GF), G0486 (GG), G1038 (GI) (24); OLRT3-W3E5 at G1, GCM, GAM, GF, GG (20); the regression flight OLRT3 ODY L4 s14 at the old settings (1). 45 flights. Tables: G0890 and G0063M rev23, G0486 and G1038 rev25mf, G0975M rev23 with the kappa alias; every cal dir exists.
+cells = ["OLRT3-W4L5@G1@L0", "OLRT3-W4L5@GCM@L0", "OLRT3-W4L5@GAM@L0", "OLRT3-W4L5@GF@L0", "OLRT3-W4L5@GG@L0", "OLRT3-W4L5@GI@L0", "OLRT3-W3E5@G1@L0", "OLRT3-W3E5@GCM@L0", "OLRT3-W3E5@GAM@L0", "OLRT3-W3E5@GF@L0", "OLRT3-W3E5@GG@L0", "OLRT3@ODY@L4"]
+seeds = "gen4"
+hosts = ["ws"]
+count = 45
+cell_seeds = { "OLRT3-W4L5@G1@L0" = [13, 14, 15, 16], "OLRT3-W4L5@GCM@L0" = [13, 14, 15, 16], "OLRT3-W4L5@GAM@L0" = [13, 14, 15, 16], "OLRT3-W4L5@GF@L0" = [13, 14, 15, 16], "OLRT3-W4L5@GG@L0" = [13, 14, 15, 16], "OLRT3-W4L5@GI@L0" = [13, 14, 15, 16], "OLRT3-W3E5@G1@L0" = [13, 14, 15, 16], "OLRT3-W3E5@GCM@L0" = [13, 14, 15, 16], "OLRT3-W3E5@GAM@L0" = [13, 14, 15, 16], "OLRT3-W3E5@GF@L0" = [13, 14, 15, 16], "OLRT3-W3E5@GG@L0" = [13, 14, 15, 16], "OLRT3@ODY@L4" = [14] }
+
+[[planner.terminal_flight]]
+block = "rev31node"
+# Revision 31.2: OLRT3-W4LN5 (guard v4 + node check v2 at 1.0 deg + L1 + 5 km aim, EI 150) at G1 and G0975M (GCM), L0, seeds 13-20 (16); OLRT3-W4L5 at G1 and GCM, L0, seeds 17-20 (8); the regression flight (1). 25 flights.
+cells = ["OLRT3-W4LN5@G1@L0", "OLRT3-W4LN5@GCM@L0", "OLRT3-W4L5@G1@L0", "OLRT3-W4L5@GCM@L0", "OLRT3@ODY@L4"]
+seeds = "gen4"
+hosts = ["ws"]
+count = 25
+cell_seeds = { "OLRT3-W4LN5@G1@L0" = [13, 14, 15, 16, 17, 18, 19, 20], "OLRT3-W4LN5@GCM@L0" = [13, 14, 15, 16, 17, 18, 19, 20], "OLRT3-W4L5@G1@L0" = [17, 18, 19, 20], "OLRT3-W4L5@GCM@L0" = [17, 18, 19, 20], "OLRT3@ODY@L4" = [14] }
+
+[[planner.terminal_flight]]
+block = "rev31ext"
+# Revision 31.1 extension (pre-registered rule): OLRT3-W4L5 at G0486 (GG) and G1038 (GI), L0, seeds 17-20 (8); OLRT3-W3E5 at G0486, L0, seeds 17-20 (4); the regression flight OLRT3 ODY L4 s14 (1). 13 flights.
+cells = ["OLRT3-W4L5@GG@L0", "OLRT3-W4L5@GI@L0", "OLRT3-W3E5@GG@L0", "OLRT3@ODY@L4"]
+seeds = "gen4"
+hosts = ["ws"]
+count = 13
+cell_seeds = { "OLRT3-W4L5@GG@L0" = [17, 18, 19, 20], "OLRT3-W4L5@GI@L0" = [17, 18, 19, 20], "OLRT3-W3E5@GG@L0" = [17, 18, 19, 20], "OLRT3@ODY@L4" = [14] }
+
+[[planner.terminal_flight]]
+block = "rev32dev"
+# Revision 32a dev-seed flights (EI 150, 5 km aim): OLRT3-W3E5 at G0975M (GCM), G0063M (GAM), G0890 (GF), L0, dev seeds 1-4 (12) plus the regression flight OLRT3 ODY L4 s14 (1). 13 flights.
+cells = ["OLRT3-W3E5@GCM@L0", "OLRT3-W3E5@GAM@L0", "OLRT3-W3E5@GF@L0", "OLRT3@ODY@L4"]
+seeds = "dev"
+hosts = ["ws"]
+count = 13
+cell_seeds = { "OLRT3-W3E5@GCM@L0" = [1, 2, 3, 4], "OLRT3-W3E5@GAM@L0" = [1, 2, 3, 4], "OLRT3-W3E5@GF@L0" = [1, 2, 3, 4], "OLRT3@ODY@L4" = [14] }
+
+[[planner.terminal_flight]]
+block = "rev31ext2"
+# Revision 31b extension: OLRT3-W4L5 at G3257_AODY (GL) and G0140_AODY (GJ), L0, seeds 17-20 (8); the regression flight OLRT3 ODY L4 s14 (1). 9 flights.
+cells = ["OLRT3-W4L5@GL@L0", "OLRT3-W4L5@GJ@L0", "OLRT3@ODY@L4"]
+seeds = "gen4"
+hosts = ["ws"]
+count = 9
+cell_seeds = { "OLRT3-W4L5@GL@L0" = [17, 18, 19, 20], "OLRT3-W4L5@GJ@L0" = [17, 18, 19, 20], "OLRT3@ODY@L4" = [14] }
+
+[[planner.terminal_flight]]
+block = "rev31cls"
+# Revision 31.3 class flights (EI 150, 5 km aim, L0, seeds 13-16): OLRT3-W4L5 at G0140_AODY (GJ), G0042_A2000 (GK), G3257_AODY (GL), G3161_A2000 (GM) (16) plus the regression flight OLRT3 ODY L4 s14 at the old settings (1). 17 flights. Needs the rev31 table and IC pins.
+cells = ["OLRT3-W4L5@GJ@L0", "OLRT3-W4L5@GK@L0", "OLRT3-W4L5@GL@L0", "OLRT3-W4L5@GM@L0", "OLRT3@ODY@L4"]
+seeds = "gen4"
+hosts = ["ws"]
+count = 17
+cell_seeds = { "OLRT3-W4L5@GJ@L0" = [13, 14, 15, 16], "OLRT3-W4L5@GK@L0" = [13, 14, 15, 16], "OLRT3-W4L5@GL@L0" = [13, 14, 15, 16], "OLRT3-W4L5@GM@L0" = [13, 14, 15, 16], "OLRT3@ODY@L4" = [14] }
+
+[[planner.terminal_flight]]
+block = "rev31g1230"
+# Revision 31.3: OLRT3-W3E7 (7.5 km aim, ASSUMED) at G1230 (GH), L0, seeds 13-20 (8) plus the regression flight (1). 9 flights.
+cells = ["OLRT3-W3E7@GH@L0", "OLRT3@ODY@L4"]
+seeds = "gen4"
+hosts = ["ws"]
+count = 9
+cell_seeds = { "OLRT3-W3E7@GH@L0" = [13, 14, 15, 16, 17, 18, 19, 20], "OLRT3@ODY@L4" = [14] }
+
+[[planner.terminal_flight]]
+block = "rev30seed"
+# Revision 30.3 seed-count flights (EI 150, 5 km aim): OLRT3-W3L5 at G0528 (GE) L0 seeds 13-20 (8); OLRT3-W3E5 at G1230 (GH) L0 seeds 13-20 (8); OLRT3-W4L5 at ODY L0 seeds 13-20 (8); the regression flight OLRT3 ODY L4 s14 at the old settings (1). 25 flights. Tables and pins: G0528 rev23, G1230 rev25mf.
+cells = ["OLRT3-W3L5@GE@L0", "OLRT3-W3E5@GH@L0", "OLRT3-W4L5@ODY@L0", "OLRT3@ODY@L4"]
+seeds = "gen4"
+hosts = ["ws"]
+count = 25
+cell_seeds = { "OLRT3-W3L5@GE@L0" = [13, 14, 15, 16, 17, 18, 19, 20], "OLRT3-W3E5@GH@L0" = [13, 14, 15, 16, 17, 18, 19, 20], "OLRT3-W4L5@ODY@L0" = [13, 14, 15, 16, 17, 18, 19, 20], "OLRT3@ODY@L4" = [14] }
+
+[[planner.terminal_flight]]
+block = "rev29aim"
+# Revision 29 terminal-aim margin flights (EI 150, rev25mf pins for G1038): OLRT3-W3E5 (aim 5 km) at ODY L0 seeds 13-20 (8) and G1038 (GI) L0 seeds 13-20 (8); OLRT3-W3E (aim 12.5 km) at G1038 L0 seeds 17-20 (4; comparator rev27low s13-16); the regression flight OLRT3 ODY L4 s14 at the old settings (1). 21 flights.
+cells = ["OLRT3-W3E5@ODY@L0", "OLRT3-W3E5@GI@L0", "OLRT3-W3E@GI@L0", "OLRT3@ODY@L4"]
+seeds = "gen4"
+hosts = ["ws"]
+count = 21
+cell_seeds = { "OLRT3-W3E5@ODY@L0" = [13, 14, 15, 16, 17, 18, 19, 20], "OLRT3-W3E5@GI@L0" = [13, 14, 15, 16, 17, 18, 19, 20], "OLRT3-W3E@GI@L0" = [17, 18, 19, 20], "OLRT3@ODY@L4" = [14] }
+
+[[planner.terminal_flight]]
+block = "rev28t"
+# Revision 28A default-t* flights (all EI 150, mean-field tables G0975M / rev25mf): G0975M L0 W3T and W3E seeds 13-16 (8); G1038 L0 W3T seeds 13-16 (4); ODY L0 W3T seeds 13-20 (8) and W3E seeds 17-20 (4); G1230 L0 W3T seeds 13-20 (8) and W3E seeds 17-20 (4); the regression flight OLRT3 ODY L4 s14 at EI 2000 (1). 37 flights. Needs --phase=calR28 (G0975M calibration).
+cells = ["OLRT3-W3T@GCM@L0", "OLRT3-W3E@GCM@L0", "OLRT3-W3T@GI@L0", "OLRT3-W3T@ODY@L0", "OLRT3-W3E@ODY@L0", "OLRT3-W3T@GH@L0", "OLRT3-W3E@GH@L0", "OLRT3@ODY@L4"]
+seeds = "gen4"
+hosts = ["ws"]
+count = 37
+cell_seeds = { "OLRT3-W3T@GCM@L0" = [13, 14, 15, 16], "OLRT3-W3E@GCM@L0" = [13, 14, 15, 16], "OLRT3-W3T@GI@L0" = [13, 14, 15, 16], "OLRT3-W3T@ODY@L0" = [13, 14, 15, 16, 17, 18, 19, 20], "OLRT3-W3E@ODY@L0" = [17, 18, 19, 20], "OLRT3-W3T@GH@L0" = [13, 14, 15, 16, 17, 18, 19, 20], "OLRT3-W3E@GH@L0" = [17, 18, 19, 20], "OLRT3@ODY@L4" = [14] }
+
+[[planner.terminal_flight]]
+block = "rev26val"
+# Revision 26 validation: OLRT3-W4L (guard v4 + L1, node check 1.0 deg, EI 150) at Odyssey L0 and L2, seeds 13-16 (8); OLRT3-W3L (guard v3 + L1, node check on) at G0528 (GE) L0, seeds 13-16 (4); OLRT3-W4L at G1 L0, seeds 13-16 (4; expected to fail the position requirement: a control); the regression flight OLRT3 at Odyssey L4 seed 14 at the default EI 2000. 17 flights.
+cells = ["OLRT3-W4L@ODY@L0", "OLRT3-W4L@ODY@L2", "OLRT3-W3L@GE@L0", "OLRT3-W4L@G1@L0", "OLRT3@ODY@L4"]
+seeds = "gen4"
+hosts = ["ws"]
+count = 17
+cell_seeds = { "OLRT3-W4L@ODY@L0" = [13, 14, 15, 16], "OLRT3-W4L@ODY@L2" = [13, 14, 15, 16], "OLRT3-W3L@GE@L0" = [13, 14, 15, 16], "OLRT3-W4L@G1@L0" = [13, 14, 15, 16], "OLRT3@ODY@L4" = [14] }
+
+[[planner.terminal_flight]]
+block = "rev26val2"
+# Revision 26c re-run of rev26val with the node check OFF (same 17 cells, output dir rev26val2); original text:  OLRT3-W4L (guard v4 + L1, node check 1.0 deg, EI 150) at Odyssey L0 and L2, seeds 13-16 (8); OLRT3-W3L (guard v3 + L1, node check on) at G0528 (GE) L0, seeds 13-16 (4); OLRT3-W4L at G1 L0, seeds 13-16 (4; expected to fail the position requirement: a control); the regression flight OLRT3 at Odyssey L4 seed 14 at the default EI 2000. 17 flights.
+cells = ["OLRT3-W4L@ODY@L0", "OLRT3-W4L@ODY@L2", "OLRT3-W3L@GE@L0", "OLRT3-W4L@G1@L0", "OLRT3@ODY@L4"]
+seeds = "gen4"
+hosts = ["ws"]
+count = 17
+cell_seeds = { "OLRT3-W4L@ODY@L0" = [13, 14, 15, 16], "OLRT3-W4L@ODY@L2" = [13, 14, 15, 16], "OLRT3-W3L@GE@L0" = [13, 14, 15, 16], "OLRT3-W4L@G1@L0" = [13, 14, 15, 16], "OLRT3@ODY@L4" = [14] }
+
+[[planner.terminal_flight]]
+block = "rev27b"
+# Revision 27a plan B27-1b (diagnostic): OLRT3-W3 at EI 2000 and OLRT3-W3E at EI 150, Odyssey, seed 13, GRAM density perturbation OFF (level "mean"). 2 flights.
+cells = ["OLRT3-W3@ODY@mean", "OLRT3-W3E@ODY@mean"]
+seeds = "gen4"
+hosts = ["ws"]
+count = 2
+cell_seeds = { "OLRT3-W3@ODY@mean" = [13], "OLRT3-W3E@ODY@mean" = [13] }
+
+[[planner.terminal_flight]]
+block = "rev27ei"
+# Revision 27 B27-1: OLRT3-W3E (entry interface 150 km) at Odyssey L0, seeds 13-16 (4 flights); paired with the rev21v OLRT3-W3 flights at ei_km 2000.
+cells = ["OLRT3-W3E@ODY@L0"]
+seeds = "gen4"
+hosts = ["ws"]
+count = 4
+
+[[planner.terminal_flight]]
+block = "rev27low"
+# Revision 27 B27-2: OLRT3-W3E (ei_km 150) at G0486 (GG), G1230 (GH), G1038 (GI), L0, seeds 13-16 (12), plus the regression flight OLRT3 at Odyssey L4 seed 14 at the default 2000 (13 flights). Run only if B27-1 is small by the registered rule.
+cells = ["OLRT3-W3E@GG@L0", "OLRT3-W3E@GH@L0", "OLRT3-W3E@GI@L0", "OLRT3@ODY@L4"]
+seeds = "gen4"
+hosts = ["ws"]
+count = 13
+cell_seeds = { "OLRT3-W3E@GG@L0" = [13, 14, 15, 16], "OLRT3-W3E@GH@L0" = [13, 14, 15, 16], "OLRT3-W3E@GI@L0" = [13, 14, 15, 16], "OLRT3@ODY@L4" = [14] }
 
 [[planner.terminal_flight]]
 block = "rev25low"
@@ -1115,3 +1641,11 @@ cells = ["OL@ODY@L0", "OL@ODY@L1", "OL@ODY@L2", "OL@ODY@L3", "OL@ODY@L4", "OLR@O
 seeds = "gen4"                                          # held seeds 13-16, released by the user for Revision 17
 hosts = ["ws"]
 count = 60                                              # Revision 17b: 3 arms x 5 levels x 4 seeds, Odyssey; B-ODY-T and the dust-storm level are not flown
+
+[planner.ground_table_rev31]
+path = "planner_ground_tables_rev31.json"
+sha256 = "b692d98c3fc592e69a8701ee328e0e3959e192781cd59e850a4dc0d41f703462"
+
+[planner.ic_extra.rev31]
+path = "rev20_data/ic/headline_rev31.json"
+sha256 = "70cdeb47142da346a622df9b95b268108ccbfe5702a4c685e6ea478497267700"

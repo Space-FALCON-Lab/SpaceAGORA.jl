@@ -127,6 +127,9 @@ function planner_term_lin(tab, fb, P, mu::Real, ra_target::Real, j::Integer, N::
     lin[N - j + 1] += planner_apo_slope(P.apo_shortfall_slope_mps_per_km, drop); return lin
 end
 
+"""Extend a vector to length k with its last value (or truncate)."""
+planner_ext(v::AbstractVector{<:Real}, k::Integer) = k > 0 ? (length(v) >= k ? Float64.(v[1:k]) : vcat(Float64.(v), fill(Float64(v[end]), k - length(v)))) : Float64[]
+
 """1-D linear interpolation clamped at the ends (numpy.interp for ascending xp)."""
 function planner_interp1(x::Real, xp::AbstractVector{<:Real}, fp::AbstractVector{<:Real})
     x <= xp[1] && return Float64(fp[1]); x >= xp[end] && return Float64(fp[end])
@@ -219,6 +222,9 @@ function planner_table(meta, gid::AbstractString; allow_unhashed::Bool=false, fi
     if !haskey(T["geometries"], gid) && file === nothing && section == "ground_table_rev23" && haskey(meta["planner"], "ground_table_rev25")      # Revision 25: the tables of the low-altitude targets (G0486, G1230, G1038)
         return planner_table(meta, gid; allow_unhashed=allow_unhashed, section="ground_table_rev25")
     end
+    if !haskey(T["geometries"], gid) && file === nothing && section == "ground_table_rev25" && haskey(meta["planner"], "ground_table_rev31")      # Revision 31.3: the fine-grid geometries (G0140, G0042, G3257, G3161); the section is absent until pinned
+        return planner_table(meta, gid; allow_unhashed=allow_unhashed, section="ground_table_rev31")
+    end
     haskey(T["geometries"], gid) || error("ground table has no geometry $gid")
     g = T["geometries"][gid]; f = k -> Float64.(g[k])
     return (; n=Int(g["n"]), q_req=Float64(g["q_req"]), W=Float64(g["W"]), path=f("path"), slow=f("slow"), d_slow=f("d_slow"), fast=f("fast"), w=f("w"), H=f("H"), a=f("a"), e=f("e"), t=f("t"))
@@ -230,12 +236,13 @@ end
 w_max_periods, w_rp_m, t_offset_d (Dict gid => days)). The actuator (tube), the infeasible mode (pin), the kappa statistic (median) and the edge margin (0) are fixed in the code."""
 function planner_guard_constants(meta; set::AbstractString="v2", target::Union{Nothing, AbstractString}=nothing)
     g = set == "v2" ? meta["planner"]["guard"] : meta["planner"]["guard_sets"][set]; f = k -> Float64(g[k])
-    node_check = Bool(get(g, "node_check", false)); node_tol = get(g, "node_tol_deg", nothing)
-    node_check && node_tol === nothing && throw(ErrorException("guard node_check is enabled but node_tol_deg has no value: no tolerance has been given (Revision 25); set node_tol_deg explicitly"))
+    node_check = Bool(get(g, "node_check", false)); node_tol = get(g, "node_tol_deg", nothing); node_v2 = Bool(get(g, "node_check_v2", false))
+    node_check && node_v2 && throw(ErrorException("guard node_check and node_check_v2 are mutually exclusive"))
+    (node_check || node_v2) && node_tol === nothing && throw(ErrorException("guard node_check is enabled but node_tol_deg has no value: no tolerance has been given (Revision 25); set node_tol_deg explicitly"))
     w_rp = Float64(get(planner_target_table(meta, target), "guard_w_rp_m", g["w_rp_m"]))         # "v2" = [planner.guard] (the default); other sets: [planner.guard_sets.<name>] (same keys)
     return (; pen_g=f("pen_g"), rel_slack=f("rel_slack"), s_frac=f("s_frac"), aim_frac=f("aim_frac"), anchor_k=Int(g["anchor_k"]), anchor_from_pass=Int(g["anchor_from_pass"]), bias_steps=Int(g["bias_steps"]),
         k_window=Int(g["k_window"]), ema_beta=f("ema_beta"), eps_max=f("eps_max"), max_solves=Int(g["max_solves"]), dev_thr_g=f("dev_thr_g"), start_pass=Int(g["start_pass"]), w_max_periods=f("w_max_periods"),
-        w_rp_m=w_rp, node_check, node_tol_deg=node_tol === nothing ? NaN : Float64(node_tol), term_model=Bool(get(g, "term_model", false)), t_offset_d=Dict{String, Float64}(String(k) => Float64(v) for (k, v) in g["t_offset_d"]))
+        w_rp_m=w_rp, node_check, node_check_v2=node_v2, node_tol_deg=node_tol === nothing ? NaN : Float64(node_tol), term_model=Bool(get(g, "term_model", false)), pos_stage=Bool(get(g, "pos_stage", false)), pos=(Bool(get(g, "pos_stage", false)) ? (; pos_band_deg=f("pos_band_deg"), kC_deg_per_d=f("kC_deg_per_d"), M_frac=f("M_frac"), min_steps=Int(g["pos_min_steps"]), shift_scale=f("pos_shift_scale"), fd_step=f("pos_fd_step"), hw=f("pos_hw"), nit=Int(g["pos_nit"]), max_solves=Int(g["pos_max_solves"])) : nothing), t_offset_d=Dict{String, Float64}(String(k) => Float64(v) for (k, v) in g["t_offset_d"]))
 end
 
 """Kepler period (s) of the orbit with apoapsis ra and periapsis rp."""
@@ -275,6 +282,14 @@ function planner_node_aim(om_now_deg::Real, rate_deg_s::Real, t_now::Real, om_ta
     return t0 + per * round((tt - t0) / per)
 end
 
+"""Node check v2 (default off; Revision 26c): given the forecast node error (deg) and rate (deg/s) at the predicted arrival ta, the aim time tt and the half window W (s): inside the tolerance the aim is unchanged; outside, the aim moves toward the
+time at which the forecast error is zero, ta - err / rate, but is clamped to [tt - W, tt + W], so the node check only selects among passages inside the window. Returns (; aim, ok)."""
+function planner_node_v2_aim(err_deg::Real, rate_deg_s::Real, ta::Real, tt::Real, W::Real, tol_deg::Real)
+    abs(err_deg) <= tol_deg && return (; aim=Float64(tt), ok=true)
+    rate_deg_s == 0.0 && return (; aim=Float64(tt), ok=false)
+    return (; aim=clamp(ta - err_deg / rate_deg_s, tt - W, tt + W), ok=false)
+end
+
 """Closing-apoapsis time (s) predicted from the state after pass j - 1 (apoapsis ra0, periapsis rp0, periapsis time t0) for planned ln q x[m+1] and periapsis rp[m+1] of pass j + m (held at the last entry), the drop per unit q
 kappa d0(ra) exp(x) / q_req, Kepler periods. Returns (t, steps) with t = NaN after 400 steps (planner_rev20_replay.predict_arrival)."""
 function planner_ttg_predict(tab, mu::Real, ra_target::Real, kap::Real, ra0::Real, rp0::Real, t0::Real, x::AbstractVector{<:Real}, rpp::AbstractVector{<:Real}; term=nothing, ra_aim=nothing)
@@ -310,7 +325,7 @@ function planner_ttg_decide(G, tab, P, mu::Real, kap::Real, j::Integer, lvl, A_,
     W3 = G.w_max_periods * planner_kepler_period(mu, P.ra_target_m, G.w_rp_m)
     dpg(A, B) = (r = planner_dp(A, B, L_; pen=G.pen_g); r === nothing ? nothing : r.nu)
     nu0g = any(!iszero, corr) ? dpg(A2, B2) : nu0
-    nu0g === nothing && return (; nu=nu0, engaged=false, infeasible=false, ema=Float64(ema_prev), ta_raw=NaN, ta=NaN, s=NaN, steps=0, solves=0, late=false)
+    nu0g === nothing && return (; nu=nu0, engaged=false, infeasible=false, ema=Float64(ema_prev), ta_raw=NaN, ta=NaN, s=NaN, steps=0, solves=0, late=false, aim=tstar_s)
     ta0, steps0 = pred(nu0g); solves = 1
     isfinite(ta0) || (ta0 = t_now + 1.0e9)
     ta_raw = ta0
@@ -326,8 +341,21 @@ function planner_ttg_decide(G, tab, P, mu::Real, kap::Real, j::Integer, lvl, A_,
         node_ok = abs(planner_node_error_deg(node.omega_now_deg, node.rate_deg_s, t_now, ta0, node.omega_target_deg)) <= G.node_tol_deg
         node_ok || (tstar_s = planner_node_aim(node.omega_now_deg, node.rate_deg_s, t_now, node.omega_target_deg, tstar_s))
     end
+    if G.node_check_v2                                                                              # Revision 26c node check v2: forecast node error from the J2 track, aim shift clamped to the window
+        (node === nothing || !hasproperty(node, :ts)) && throw(ErrorException("guard node_check_v2 is enabled but no node forecast context was supplied"))
+        isfinite(G.node_tol_deg) || throw(ErrorException("guard node_check_v2 is enabled but node_tol_deg has no value"))
+        xv = lvl_g .+ nu0g; k0v = min(j - 1, tab.n); rp_tab_v = tab.a .* (1 .- tab.e); rppv = [rp_now + (rp_tab_v[min(j + m, tab.n)] - rp_tab_v[k0v]) - Hloc * nu0g[m + 1] for m in 0:(n - 1)]
+        tav, _, Tn_, RAn_, RPn_ = planner_ttg_predict_hist(tab, mu, P.ra_stop_m, kh, ra_now, rp_now, t_now, xv, rppv; term=term, ra_aim=P.ra_target_m)
+        if isfinite(tav)
+            jp = length(node.ts); ra_prev_v = vcat(tab.a[1] * (1 + tab.e[1]), Float64.(node.ras[1:(jp - 1)]), RAn_); K_ = jp + length(Tn_)
+            kaK = planner_ext(node.ka, K_); deK = planner_ext(node.de, K_); incK = planner_ext(node.inc, K_); rp_all_v = vcat(Float64.(node.rps), RPn_)
+            a_v = 0.5 .* (ra_prev_v .+ rp_all_v) .* kaK; e_v = (ra_prev_v .- rp_all_v) ./ (ra_prev_v .+ rp_all_v) .+ deK
+            trv = planner_j2_track(vcat(Float64.(node.ts), Tn_), a_v, e_v, incK, node.geom.om0, node.geom.Om0, node.geom.i0, mu, node.geom.J2, node.geom.R)
+            errv, ratev = planner_node_forecast(trv, tav, node.om_target_deg); nv2 = planner_node_v2_aim(errv, ratev, tav, tstar_s, W3, G.node_tol_deg); node_ok = nv2.ok; node_ok || (tstar_s = nv2.aim)
+        end
+    end
     if node_ok && tstar_s - s <= ta0 <= tstar_s + s
-        return (; nu=nu0, engaged=false, infeasible=false, ema, ta_raw, ta=ta0, s, steps=steps0, solves, late=false)
+        return (; nu=nu0, engaged=false, infeasible=false, ema, ta_raw, ta=ta0, s, steps=steps0, solves, late=false, aim=tstar_s)
     end
     late = ta0 > tstar_s + s; width = maximum(B2 .- A2)
     function solve(u)
@@ -336,11 +364,11 @@ function planner_ttg_decide(G, tab, P, mu::Real, kap::Real, j::Integer, lvl, A_,
     end
     nu_hi = solve(1.0); solves += 1
     if nu_hi === nothing
-        return (; nu=nu0, engaged=true, infeasible=true, ema, ta_raw, ta=ta0, s, steps=steps0, solves, late)
+        return (; nu=nu0, engaged=true, infeasible=true, ema, ta_raw, ta=ta0, s, steps=steps0, solves, late, aim=tstar_s)
     end
     th, _ = pred(nu_hi); th = isfinite(th) ? th - dlt : t_now + 1.0e9
     if (late && th > tstar_s + s) || (!late && th < tstar_s - s)
-        return (; nu=nu_hi, engaged=true, infeasible=true, ema, ta_raw, ta=ta0, s, steps=steps0, solves, late)
+        return (; nu=nu_hi, engaged=true, infeasible=true, ema, ta_raw, ta=ta0, s, steps=steps0, solves, late, aim=tstar_s)
     end
     lo_u = 0.0; hi_u = 1.0; best = nu_hi
     while solves < G.max_solves
@@ -351,7 +379,7 @@ function planner_ttg_decide(G, tab, P, mu::Real, kap::Real, j::Integer, lvl, A_,
         too_late = tm > tstar_s
         if (late && too_late) || (!late && !too_late); lo_u = mid; else; hi_u = mid; best = nu_m; end
     end
-    return (; nu=best, engaged=true, infeasible=false, ema, ta_raw, ta=ta0, s, steps=steps0, solves, late)
+    return (; nu=best, engaged=true, infeasible=false, ema, ta_raw, ta=ta0, s, steps=steps0, solves, late, aim=tstar_s)
 end
 
 """Guard setup of a flight: constants, kappa of the geometry (planner_fb_params), and the target time. t* = the model-world nominal arrival of the a priori plan from the first-pass level x0 (planner_ol_plan, then planner_arrival with
@@ -364,7 +392,180 @@ function planner_ttg_setup(meta, gid::AbstractString, tab, P, mu::Real, x0::Real
     return (; G, mu=Float64(mu), kappa=kap, tstar_nominal_d=days, tstar_s=(days + get(G.t_offset_d, String(gid), 0.0)) * 86400.0)
 end
 
+# ---- Revision 26 position machinery (guard v4, L1, default t*; mirror of planner_rev21_position.py / planner_rev26_position.py; default off) -----------------------------------------------------------
+
+"""Unit vector to the apoapsis (minus the perifocal P axis) in the inertial frame of the elements (planner_rev21_position.apo_hat)."""
+planner_apo_hat(om::Real, Om::Real, inc::Real) = -SVector{3, Float64}(cos(Om) * cos(om) - sin(Om) * sin(om) * cos(inc), sin(Om) * cos(om) + cos(Om) * sin(om) * cos(inc), sin(om) * sin(inc))
+"""Great-circle angle (rad) between unit vectors."""
+planner_ang(u, v) = acos(max(-1.0, min(1.0, dot(u, v))))
+"""Tangent vector at `base` pointing to `u`, length = great-circle angle."""
+function planner_logmap(base, u)
+    c = dot(u, base); th = acos(max(-1.0, min(1.0, c))); v = u - c * base; n = norm(v)
+    return n < 1e-15 ? zero(SVector{3, Float64}) : th * v / n
+end
+planner_tproj(base, v) = v - dot(v, base) * base
+"""Secular J2 change per orbit (d omega, d Omega) in rad (Kaula form; planner_rev21_position.j2_orbit)."""
+planner_j2_orbit(a::Real, e::Real, inc::Real, J2::Real, R::Real) = (p = a * (1 - e * e); k = 3 * pi * J2 * (R / p)^2; (k * (2 - 2.5 * sin(inc)^2), -k * cos(inc)))
+
+"""Piecewise J2 secular propagation from (omega0, Omega0, i0) along a pass history (planner_rev21_position.J2Track): orbit k carries the per-orbit increment of its own (a_k, e_k, i_k) spread over [lo_k, hi_k]
+(lo_1 = 0, hi_k = (t_k + t_(k+1)) / 2, hi_last = t_last + T_last / 2); beyond the last orbit the last rate continues."""
+struct PlannerJ2Track
+    lo::Vector{Float64}; hi::Vector{Float64}; T::Vector{Float64}; dom::Vector{Float64}; dOm::Vector{Float64}; om0::Float64; Om0::Float64; i0::Float64; n::Int
+end
+function planner_j2_track(t::AbstractVector{<:Real}, a::AbstractVector{<:Real}, e::AbstractVector{<:Real}, inc::AbstractVector{<:Real}, om0::Real, Om0::Real, i0::Real, mu::Real, J2::Real, R::Real)
+    n = length(t); T = [2π * sqrt(Float64(x)^3 / mu) for x in a]; hi = Vector{Float64}(undef, n)
+    for k in 1:(n - 1); hi[k] = 0.5 * (Float64(t[k]) + Float64(t[k + 1])); end; hi[n] = Float64(t[n]) + 0.5 * T[n]
+    lo = vcat(0.0, hi[1:(n - 1)]); d = [planner_j2_orbit(a[k], e[k], inc[k], J2, R) for k in 1:n]
+    return PlannerJ2Track(lo, hi, T, [x[1] for x in d], [x[2] for x in d], Float64(om0), Float64(Om0), Float64(i0), n)
+end
+function planner_j2_at(tr::PlannerJ2Track, t::Real)
+    so = 0.0; sO = 0.0
+    for k in 1:tr.n; f = clamp((t - tr.lo[k]) / (tr.hi[k] - tr.lo[k]), 0.0, 1.0); so += f * tr.dom[k]; sO += f * tr.dOm[k]; end
+    extra = max(0.0, t - tr.hi[end]) / tr.T[end]
+    return tr.om0 + so + extra * tr.dom[end], tr.Om0 + sO + extra * tr.dOm[end]
+end
+planner_j2_apo(tr::PlannerJ2Track, t::Real) = (o = planner_j2_at(tr, t); planner_apo_hat(o[1], o[2], tr.i0))
+"""d(apoapsis direction)/dt (rad/s) at t from the local orbit's rates (central difference in the elements, step 1e-6 rad)."""
+function planner_j2_rate_vec(tr::PlannerJ2Track, t::Real)
+    k = clamp(searchsortedfirst(tr.hi, t) - 1, 0, tr.n - 1) + 1; om, Om = planner_j2_at(tr, t); r_om = tr.dom[k] / tr.T[k]; r_Om = tr.dOm[k] / tr.T[k]; h = 1e-6
+    d_om = (planner_apo_hat(om + h, Om, tr.i0) - planner_apo_hat(om - h, Om, tr.i0)) / (2h); d_Om = (planner_apo_hat(om, Om + h, tr.i0) - planner_apo_hat(om, Om - h, tr.i0)) / (2h)
+    return d_om * r_om + d_Om * r_Om
+end
+
+"""Node error (deg) and node rate (deg/s) at the predicted arrival ta from a J2 track (flown history plus predicted passes, as the position stage builds it): wrap(Omega_track(ta) - Omega_target), and dOmega/dt of the orbit
+the arrival falls in (the forecast replaces the linear extrapolation of the current rate that made rev26val late)."""
+function planner_node_forecast(tr::PlannerJ2Track, ta::Real, om_target_deg::Real)
+    Om = rad2deg(planner_j2_at(tr, ta)[2]); k = clamp(searchsortedfirst(tr.hi, ta) - 1, 0, tr.n - 1) + 1
+    return (planner_wrap_deg(Om - om_target_deg), rad2deg(tr.dOm[k] / tr.T[k]))
+end
+"""planner_arrival that also returns the pass history (planner_rev21_position.arrival_history): t_k (periapsis time, s), a_k, e_k of orbit k before the drop, the arrival day, the pass count."""
+function planner_arrival_history(tab, mu::Real, ra_target::Real, x::AbstractVector{<:Real}, q_first_ln::Real, kappa::Real)
+    n = tab.n; ra_tab = tab.a .* (1 .+ tab.e); rp_tab = tab.a .* (1 .- tab.e); ra = ra_tab[1]; t = tab.t[1]
+    d0 = vcat(ra_tab[1:(end - 1)] .- ra_tab[2:end], ra_tab[end - 1] - ra_tab[end]); ra_r = reverse(ra_tab); d0_r = reverse(d0); kmax = 3 * n; T_ = Float64[]; A_ = Float64[]; E_ = Float64[]
+    for k in 1:kmax
+        kk = min(k, n); xk = Float64(x[min(k, length(x))]); nu = xk - (q_first_ln + (tab.path[kk] - tab.path[1])); rp = rp_tab[kk] - tab.H[kk] * nu; a = 0.5 * (ra + rp)
+        drop = kappa * planner_interp1(ra, ra_r, d0_r) * exp(xk) / tab.q_req; ra_next = ra - drop; amid = 0.5 * (a + 0.5 * (ra_next + rp)); Tk = 2π * sqrt(amid^3 / mu)
+        push!(T_, t); push!(A_, a); push!(E_, (ra - rp) / (ra + rp))
+        ra_next <= ra_target && return (; t=T_, a=A_, e=E_, days=(t + 0.5 * Tk) / 86400.0, N=k)
+        ra = ra_next; t += Tk
+    end
+    return (; t=T_, a=A_, e=E_, days=NaN, N=kmax)
+end
+
+"""Nominal J2 track of a geometry (planner_rev21_position.nominal): the open-loop plan from the first-pass level x0 on the ground table, its pass history with kappa, J2-propagated from (omega0, Omega0, i0) (rad) at i = i0 throughout.
+Returns (; track, days, N, hist)."""
+function planner_nominal_track(tab, P, mu::Real, kappa::Real, x0::Real, i0::Real, om0::Real, Om0::Real, J2::Real, R::Real)
+    op = planner_ol_plan(tab, P, x0); h = planner_arrival_history(tab, mu, P.ra_stop_m, vcat(x0, op.level .+ op.nu), x0, kappa)
+    return (; track=planner_j2_track(h.t, h.a, h.e, fill(Float64(i0), length(h.t)), om0, Om0, i0, mu, J2, R), days=h.days, N=h.N, hist=h)
+end
+
+"""Closed-loop feasible arrival range (days) of the model (Revision 21b design note): the fast end = every level on the shrunk upper tube edge, the slow end = on the shrunk lower edge (planner_rev18_offline plan_for_price pinned hi / lo),
+both from the first-pass level x0 with kappa. Returns (; fast_d, slow_d)."""
+function planner_arrival_range(tab, P, mu::Real, kappa::Real, x0::Real)
+    hi0 = log(P.q_cap_mean_w_cm2); lo0 = hi0 - tab.W; res = P.fast_reserve_ln; N = tab.n + Int(P.tail_passes); np = N - 1
+    xf = vcat(x0, fill(hi0 - res / 2, np)); xs = vcat(x0, fill(lo0 + res / 2, np))
+    return (; fast_d=planner_arrival(tab, mu, P.ra_stop_m, xf, x0, kappa).days, slow_d=planner_arrival(tab, mu, P.ra_stop_m, xs, x0, kappa).days)
+end
+"""Default t* (days) when none is given (Revision 21b design note, user-approved, default off): the fast end of the feasible range plus `margin_d` (ASSUMED), clipped to the range. Returns (; fast_d, slow_d, tstar_d)."""
+function planner_default_tstar(tab, P, mu::Real, kappa::Real, x0::Real, margin_d::Real)
+    r = planner_arrival_range(tab, P, mu, kappa, x0); ts = isfinite(r.slow_d) ? clamp(r.fast_d + margin_d, r.fast_d, r.slow_d) : r.fast_d + margin_d
+    return (; r..., tstar_d=ts)
+end
+
+"""L1 (Revision 26, mission level): from the flown apoapsis error vector E (tangent at the target, rad), the along-track unit s_hat and rate_dd (deg/day) of the target apse, dt = t_arr - t* and W (days):
+tau* = clip(al / rate_dd, max(-W, dt - W), min(W, dt + W)), al = E . s_hat in deg; the reported error |E - rate_dd tau* s_hat|. Returns (; err_deg, tau_d, along_deg)."""
+function planner_l1(E::AbstractVector{<:Real}, s_hat::AbstractVector{<:Real}, rate_dd::Real, dt_d::Real, W_d::Real)
+    al = rad2deg(dot(E, s_hat)); cr = rad2deg(norm(E - dot(E, s_hat) * s_hat)); lo = max(-W_d, dt_d - W_d); hi = min(W_d, dt_d + W_d)
+    lo > hi && return (; err_deg=rad2deg(norm(E)), tau_d=0.0, along_deg=al)
+    tau = rate_dd > 0 ? clamp(al / rate_dd, lo, hi) : 0.0
+    return (; err_deg=hypot(al - rate_dd * tau, cr), tau_d=tau, along_deg=al)
+end
+
+"""planner_ttg_predict that also returns the per-pass history of the predicted passes (periapsis time, apoapsis radius before the pass, periapsis radius): (t, steps, T, RA, RP)."""
+function planner_ttg_predict_hist(tab, mu::Real, ra_target::Real, kap::Real, ra0::Real, rp0::Real, t0::Real, x::AbstractVector{<:Real}, rpp::AbstractVector{<:Real}; term=nothing, ra_aim=nothing)
+    ra_tab = tab.a .* (1 .+ tab.e); d0 = vcat(ra_tab[1:(end - 1)] .- ra_tab[2:end], ra_tab[end - 1] - ra_tab[end]); ra_r = reverse(ra_tab); d0_r = reverse(d0)
+    ra = Float64(ra0); rp_prev = Float64(rp0); t = Float64(t0); nx = length(x); T_ = Float64[]; RA_ = Float64[]; RP_ = Float64[]
+    for m in 0:399
+        xm = x[min(m + 1, nx)]; rpm = rpp[min(m + 1, nx)]
+        t += 0.5 * planner_kepler_period(mu, ra, rp_prev) + 0.5 * planner_kepler_period(mu, ra, rpm); push!(T_, t); push!(RA_, ra); push!(RP_, rpm)
+        dr = kap * planner_interp1(ra, ra_r, d0_r) * exp(xm) / tab.q_req
+        if term !== nothing
+            Reff = ra - (ra_aim === nothing ? ra_target : ra_aim) + term.below
+            (0 < Reff <= term.steps * term.step) && (dr = Reff / max(1, ceil(Int, Reff / term.step)))
+        end
+        ra -= dr
+        ra <= ra_target && return (t + 0.5 * planner_kepler_period(mu, ra, rpm), m + 1, T_, RA_, RP_)
+        rp_prev = rpm
+    end
+    return (NaN, 400, T_, RA_, RP_)
+end
+
+"""Position stage of guard v4 (planner_rev26_position.make_pos_fn.stage with POS_V4; results_rev26_position.md section 8): after v3 has produced (nu_t, eng_t), a two-parameter Newton iteration on a two-segment
+level shift makes the predicted arrival time AND the along-track history term meet their aims. Inputs mirror the Python context: guard constants G (G.pos holds the position constants), plan inputs lvl / A_ / B_ / L_, the
+drift slope `bias`, the anchored forecast lvl_alt, kappa_hat, the state after pass j - 1 (ra_now, rp_now, per-pass periapsis times ts, apoapsis radii ras, periapsis radii rps, and the per-pass osculating anchors ka, de, inc),
+the nominal (track, t* in s without the aim offset) and the aim time tt_s = tstar_s (with offset). Returns (; nu, engaged, solves, N0, cal_t, resid_t, resid_best) (nu = nu_t, engaged = eng_t when the stage does not act)."""
+function planner_pos_stage(G, P, tab, mu::Real, kap::Real, j::Integer, lvl, A_, B_, L_, bias::Real, lvl_alt, kap_meas, ra_now::Real, rp_now::Real, Hloc::Real, ras, rps, ts, ka, de, inc,
+        tstar_pos_s::Real, tt_s::Real, nom, geom, nu_t, eng_t::Bool)
+    PP = G.pos; n = length(lvl); cap = Int(P.update_cap_passes); gain = Float64(P.update_gain); K2 = max(G.bias_steps, cap)
+    nothing_out = (; nu=nu_t, engaged=eng_t, solves=0, N0=0, cal_t=NaN, resid_t=NaN, resid_best=NaN)
+    corr = [gain * bias * (min(m, K2) - min(m, cap)) for m in 0:(n - 1)]; lvl0 = lvl_alt === nothing ? lvl : lvl_alt; lvl_g = lvl0 .+ corr
+    A2 = A_ .+ lvl .- lvl_g; B2 = B_ .+ lvl .- lvl_g; kh = kap_meas === nothing ? kap : kap_meas
+    term = G.term_model ? (; below=P.term_aim_below_m, steps=P.term_activate_steps, step=P.term_step_m) : nothing
+    nt = nom.track; u_tgt = planner_j2_apo(nt, tstar_pos_s); s_hat = planner_tproj(u_tgt, planner_j2_rate_vec(nt, tstar_pos_s)); s_hat = s_hat / norm(s_hat); rate_dd = rad2deg(norm(planner_j2_rate_vec(nt, tstar_pos_s))) * 86400.0
+    exv(v, k) = k > 0 ? (length(v) >= k ? Float64.(v[1:k]) : vcat(Float64.(v), fill(Float64(v[end]), k - length(v)))) : Float64[]
+    jp = length(ts); ra_prev_past = jp > 0 ? vcat(tab.a[1] * (1 + tab.e[1]), Float64.(ras[1:(jp - 1)])) : Float64[]; rp_tab = tab.a .* (1 .- tab.e); calls = Ref(0)
+    nu_t === nothing && return nothing_out
+    function evaluate(nu)
+        local x, k0, rp, ta, N, Tn, RAn, RPn, t_all, ra_prev, rp_all, K, kaK, deK, incK, a, ecc, tr, u_fp, E, Cv
+        x = lvl_g .+ nu; k0 = min(j - 1, tab.n); rp = [rp_now + (rp_tab[min(j + m, tab.n)] - rp_tab[k0]) - Hloc * nu[m + 1] for m in 0:(n - 1)]
+        ta, N, Tn, RAn, RPn = planner_ttg_predict_hist(tab, mu, P.ra_stop_m, kh, ra_now, rp_now, ts[end], x, rp; term=term, ra_aim=P.ra_target_m); isfinite(ta) || return nothing
+        t_all = vcat(Float64.(ts), Tn); ra_prev = vcat(ra_prev_past, RAn); rp_all = vcat(Float64.(rps), RPn); K = length(t_all); kaK = exv(ka, K); deK = exv(de, K); incK = exv(inc, K)
+        a = 0.5 .* (ra_prev .+ rp_all) .* kaK; ecc = (ra_prev .- rp_all) ./ (ra_prev .+ rp_all) .+ deK
+        tr = planner_j2_track(t_all, a, ecc, incK, geom.om0, geom.Om0, geom.i0, mu, geom.J2, geom.R); u_fp = planner_j2_apo(tr, ta); E = planner_logmap(u_tgt, u_fp); Cv = planner_tproj(u_tgt, planner_logmap(planner_j2_apo(nt, ta), u_fp))
+        return (ta, N, rad2deg(dot(E, s_hat)), rad2deg(norm(E - dot(E, s_hat) * s_hat)), rad2deg(dot(Cv, s_hat)))
+    end
+    ev_t = evaluate(nu_t); (ev_t === nothing || ev_t[2] < PP.min_steps) && return nothing_out
+    ta_t, N0, al_t, cr_t, Cal_t = ev_t
+    tau_d = max((ta_t - ts[end]) / 86400.0, 0.0); band_c = PP.pos_band_deg + PP.kC_deg_per_d * tau_d
+    abs(Cal_t) <= band_c && return (; nothing_out..., N0, cal_t=Cal_t)
+    M = max(1, floor(Int, PP.M_frac * N0)); seg = [m >= M ? 1 : 0 for m in 0:(n - 1)]; x_ref = lvl_g .+ nu_t; width = maximum(B2 .- A2)
+    function plan(e)
+        local cen, A_t, B_t, dpr
+        cen = (x_ref .- lvl_g) .+ [seg[m] == 0 ? e[1] : e[2] for m in 1:n] .* sh
+        A_t = clamp.(cen .- hwid, A2, B2); B_t = clamp.(cen .+ hwid, A2, B2); B_t = max.(B_t, A_t); calls[] += 1
+        dpr = planner_dp(A_t, B_t, L_; pen=G.pen_g); return dpr === nothing ? nothing : dpr.nu
+    end
+    function resid(e)
+        local nu, ev
+        nu = plan(e); nu === nothing && return (nothing, nothing); ev = evaluate(nu); ev === nothing && return (nothing, nothing)
+        return ([(ev[1] - tt_s) / 86400.0 * rate_dd, ev[5]], nu)
+    end
+    fdst = PP.fd_step; hwid = PP.hw; sh = PP.shift_scale
+    e = [0.0, 0.0]; r, nu = resid(e); r === nothing && return (; nothing_out..., N0, cal_t=Cal_t)
+    best = (hypot(r[1], r[2]), nu, copy(e)); r_t = [(ta_t - tt_s) / 86400.0 * rate_dd, Cal_t]
+    for it in 1:PP.nit
+        calls[] + 2 > PP.max_solves && break
+        J = zeros(2, 2); ok = true
+        for kx in 1:2
+            e2 = copy(e); e2[kx] += fdst; r2, _ = resid(e2); r2 === nothing && (ok = false; break); J[:, kx] = (r2 .- r) ./ fdst
+        end
+        (!ok || abs(J[1, 1] * J[2, 2] - J[1, 2] * J[2, 1]) < 1e-9) && break
+        d = J \ (-r); e = clamp.(e .+ d, -1.0, 1.0); calls[] >= PP.max_solves && break
+        r, nu = resid(e); r === nothing && break
+        hypot(r[1], r[2]) < best[1] && (best = (hypot(r[1], r[2]), nu, copy(e)))
+        hypot(r[1], r[2]) < 0.15 && break
+    end
+    use = best[1] < hypot(r_t[1], r_t[2]) - 1e-9
+    return (; nu=use ? best[2] : nu_t, engaged=use ? true : eng_t, solves=calls[], N0, cal_t=Cal_t, resid_t=hypot(r_t[1], r_t[2]), resid_best=best[1])
+end
+
 # ---- the policy ---------------------------------------------------------------------------------------------------------------------------------------
+
+"""Position-machinery state of a flight (Revision 26; nothing when every Revision 26 switch is off): the nominal J2 track, the geometry elements, t* (s, without the aim offset), the per-pass osculating anchors recorded at the decisions
+(ka, de, inc, rp_hist; indices = pass), the current inclination, the default-t* record and the L1 switch."""
+mutable struct PlannerPosCtx
+    nom::Any; geom::NamedTuple; tstar_pos_s::Float64; ka::Vector{Float64}; de::Vector{Float64}; inc::Vector{Float64}; rp_hist::Vector{Float64}; inc_now::Float64; tinfo::NamedTuple; l1::Bool; stage_log::Vector{NamedTuple}
+end
 
 mutable struct PlannerPolicy <: SimulationModel.AbstractGuidanceModel
     f::StageFPolicy               # carries the inner CorridorGuidancePolicy, make_predictor, fit, measurements and the edge log (decisions.csv)
@@ -400,6 +601,7 @@ mutable struct PlannerPolicy <: SimulationModel.AbstractGuidanceModel
     ttg_N::Int                    # guard: absolute arrival pass of its last prediction (0 = none); prices the FB term when both switches are on
     node_ctx::Any                 # guard node check (default off): (; rot, omega_target_deg, J2, Re) or nothing
     node_now::Any                 # guard node check: (; omega_now_deg, rate_deg_s, omega_target_deg) of the current decision or nothing
+    pos::Any                      # PlannerPosCtx or nothing (position stage / L1 / default t* off)
 end
 
 """OL-R drift update: slope (ln q per pass) of the residual r_i = realized ln q_i - (ln q_1 + path_i - path_1 + executed offset_i) over the last `update_window` flown passes (least squares); 0 until there are window + 1."""
@@ -442,6 +644,12 @@ function planner_decide(w::PlannerPolicy, j::Int, t::Float64, predictor, vrel_no
     if w.sw.ttg_guard                                                  # guard bookkeeping: the apoapsis radius after pass j - 1 (index j - 1)
         while length(w.ra_hist) < j - 2; push!(w.ra_hist, NaN); end
         length(w.ra_hist) == j - 2 ? push!(w.ra_hist, a_now * (1 + e_now)) : (w.ra_hist[j - 1] = a_now * (1 + e_now))
+        if w.pos !== nothing                                                                       # Revision 26: osculating anchors of pass j - 1 (a, e, i after the pass) against the (ra, rp) formula
+            ps = w.pos; ra_prev = j - 1 == 1 ? w.tab.a[1] * (1 + w.tab.e[1]) : w.ra_hist[j - 2]; rp = a_now * (1 - e_now)
+            while length(ps.ka) < j - 2; push!(ps.ka, 1.0); push!(ps.de, 0.0); push!(ps.inc, ps.inc_now); push!(ps.rp_hist, rp); end
+            vals = (a_now / (0.5 * (ra_prev + rp)), e_now - (ra_prev - rp) / (ra_prev + rp), ps.inc_now, rp)
+            if length(ps.ka) == j - 2; push!(ps.ka, vals[1]); push!(ps.de, vals[2]); push!(ps.inc, vals[3]); push!(ps.rp_hist, vals[4]); else; ps.ka[j - 1] = vals[1]; ps.de[j - 1] = vals[2]; ps.inc[j - 1] = vals[3]; ps.rp_hist[j - 1] = vals[4]; end
+        end
     end
     if w.mode === :ol
         if w.sw.terminal
@@ -490,9 +698,15 @@ function planner_decide(w::PlannerPolicy, j::Int, t::Float64, predictor, vrel_no
     if w.sw.ttg_guard && w.ttg !== nothing && j >= w.ttg.G.start_pass                                                           # Revision 20 guard v2 (default off)
         g = planner_ttg_policy_step!(w, j, inp, pl, w0, bias, dv, a_now, e_now)
         return (; dv=g.dv, z0, w0, yhat, bias, nu0=pl.nu[1], n_plan=length(inp.level), reason=g.dv == 0.0 ? "plan_hold" : (g.engaged ? "guard_burn" : "plan_burn"), dp_s,
-            ttg_engaged=g.engaged, ttg_infeasible=g.infeasible, ttg_ta_s=g.ta, ttg_s_s=g.s, ttg_tt_s=w.ttg.tstar_s, ttg_solves=g.solves, ttg_dv_ref=dv)
+            ttg_engaged=g.engaged, ttg_infeasible=g.infeasible, ttg_ta_s=g.ta, ttg_s_s=g.s, ttg_tt_s=g.aim, ttg_solves=g.solves, ttg_dv_ref=dv)
     end
     return (; dv, z0, w0, yhat, bias, nu0=pl.nu[1], n_plan=length(inp.level), reason=dv == 0.0 ? "plan_hold" : "plan_burn", dp_s)
+end
+
+"""Node-check v2 context of a decision (flown pass history, osculating anchors, geometry, target node = the nominal's Omega at t*), or nothing when the position context or history is missing."""
+function planner_node_v2_ctx(w::PlannerPolicy, nf::Int, ras, meas)
+    ps = w.pos; (ps === nothing || nf < 1 || length(ras) != nf || length(ps.ka) < nf || length(ps.rp_hist) < nf) && return nothing
+    return (; geom=ps.geom, ts=Float64[meas[i].t_s for i in 1:nf], ras=Float64.(ras), rps=ps.rp_hist[1:nf], ka=ps.ka[1:nf], de=ps.de[1:nf], inc=ps.inc[1:nf], om_target_deg=mod(rad2deg(planner_j2_at(ps.nom.track, ps.tstar_pos_s)[2]), 360.0))
 end
 
 """Guard step of one planner decision (after the planner's own burn dv_ref is known): gathers the flown history (realized ln q, apoapsis radii, executed offsets), runs planner_ttg_decide, applies the guard's burn when the
@@ -505,15 +719,22 @@ function planner_ttg_policy_step!(w::PlannerPolicy, j::Int, inp, pl, w0::Float64
     ra_now = a_now * (1 + e_now); rp_now = a_now * (1 - e_now)
     t_now = nf >= 1 ? Float64(meas[nf].t_s) : 0.0
     kap_meas = length(ras) == nf ? planner_ttg_kappa_hat(xs, ras, tab, G.k_window) : nothing
-    r = planner_ttg_decide(G, tab, P, T.mu, T.kappa, j, lvl, A_, B_, L_, pl.nu, ra_now, rp_now, t_now, T.tstar_s, kap_meas, bias, w.h_local_m,
-        length(ras) == nf ? planner_ttg_lvl_alt(G, tab, j, lvl, xs, nuh, u0, u) : nothing, w.ta_ema; node=G.node_check ? w.node_now : nothing)
+    lvl_alt = length(ras) == nf ? planner_ttg_lvl_alt(G, tab, j, lvl, xs, nuh, u0, u) : nothing
+    r = planner_ttg_decide(G, tab, P, T.mu, T.kappa, j, lvl, A_, B_, L_, pl.nu, ra_now, rp_now, t_now, T.tstar_s, kap_meas, bias, w.h_local_m, lvl_alt, w.ta_ema; node=G.node_check ? w.node_now : (G.node_check_v2 ? planner_node_v2_ctx(w, nf, ras, meas) : nothing))
     w.ta_ema = r.ema; r.steps > 0 && isfinite(r.ta_raw) && (w.ttg_N = j + r.steps - 1)
+    nu_use = r.nu; eng_use = r.engaged
+    if G.pos_stage && w.pos !== nothing && nf >= 1 && length(ras) == nf && length(w.pos.ka) >= nf && length(w.pos.rp_hist) >= nf                       # Revision 26 position stage (guard v4)
+        ts = Float64[meas[i].t_s for i in 1:nf]; ps = w.pos
+        sg = planner_pos_stage(G, P, tab, T.mu, T.kappa, j, lvl, A_, B_, L_, bias, lvl_alt, kap_meas, ra_now, rp_now, w.h_local_m, ras, ps.rp_hist[1:nf], ts, ps.ka[1:nf], ps.de[1:nf], ps.inc[1:nf],
+            ps.tstar_pos_s, T.tstar_s, ps.nom, ps.geom, r.nu, r.engaged)
+        nu_use = sg.nu; eng_use = sg.engaged; push!(ps.stage_log, (; j, N0=sg.N0, cal_t=sg.cal_t, solves=sg.solves, resid_t=sg.resid_t, resid_best=sg.resid_best, acted=!(sg.nu === r.nu)))
+    end
     dv = dv_ref
-    if r.engaged
-        dg = -r.nu[1] * w0; abs(dg) < max(P.dp_min_burn_mps, w.sw.min_burn_arm) && (dg = 0.0)
+    if eng_use
+        dg = -nu_use[1] * w0; abs(dg) < max(P.dp_min_burn_mps, w.sw.min_burn_arm) && (dg = 0.0)
         dv = abs(dg - dv_ref) <= G.dev_thr_g ? dv_ref : dg
     end
-    return (; dv, engaged=r.engaged, infeasible=r.infeasible, ta=r.ta, s=r.s, solves=r.solves)
+    return (; dv, engaged=eng_use, infeasible=r.infeasible, ta=r.ta, s=r.s, solves=r.solves, aim=r.aim)
 end
 
 function SimulationModel.GuidanceHooks.calcGuidanceEffect!(w::PlannerPolicy, u, p, t::Float64, sat_idx::Int64)
@@ -542,6 +763,9 @@ function SimulationModel.GuidanceHooks.calcGuidanceEffect!(w::PlannerPolicy, u, 
         nc = w.node_ctx; nc === nothing && error("guard node_check is on but the target node is not set ([planner.targets.*] node_deg)")
         hb = cross(transpose(nc.rot) * r, transpose(nc.rot) * v); inc_rad = acos(clamp(hb[3] / norm(hb), -1.0, 1.0))
         w.node_now = (; omega_now_deg=rad2deg(atan(hb[1], -hb[2])), rate_deg_s=rad2deg(planner_j2_node_rate(w.mu, nc.J2, nc.Re, a_now, pv.e, inc_rad)), omega_target_deg=nc.omega_target_deg)
+    end
+    if w.pos !== nothing && w.pos.geom.rot !== nothing                                         # Revision 26: inclination of the orbit in the body-equator inertial frame (the frame of the geometry elements)
+        hb = cross(transpose(w.pos.geom.rot) * r, transpose(w.pos.geom.rot) * v); w.pos.inc_now = acos(clamp(hb[3] / norm(hb), -1.0, 1.0))
     end
     d = planner_decide(w, j, Float64(t), predictor, vrel_now, a_now, pv.e)
     dv = clamp(d.dv, -max_allowed_dv, max_allowed_dv)
@@ -661,6 +885,13 @@ function planner_geometry_target(meta, gid::AbstractString)
     for (_, o) in get(meta["planner"], "geometry", Dict{String, Any}()); String(o["id"]) == String(gid) && return haskey(o, "target") ? String(o["target"]) : nothing; end
     return nothing
 end
+"""Entry interface override (km) of a flight (Revision 27): the arm's `ei_km`, else the geometry target's `ei_km`, else [planner] ei_km_new_default for an arm with ei_default = "new" (Revision 26 or later), else nothing = the unchanged flight (the config's entry_interface_km, 2000). The value flows through `sc["atmosphere_gram"]["entry_interface_km"]`
+into gram_args (EnvironmentModel.EI: density ceiling, atmosphere events, burn gate) and gram_pargs (GRAM sampling), exactly as the config value does."""
+function planner_ei_km(meta, A, target::Union{Nothing, AbstractString})
+    v = haskey(A, "ei_km") ? A["ei_km"] : get(planner_target_table(meta, target), "ei_km", nothing)
+    v === nothing && String(get(A, "ei_default", "")) == "new" && (v = meta["planner"]["ei_km_new_default"])      # Revision 26+ arms (ei_default = "new"): the study default for new Mars flights
+    return v === nothing ? nothing : Float64(v)
+end
 """Horizon (days) of a geometry: its target's `horizon_days` when set, else [planner] horizon_days."""
 planner_horizon_days(meta, gid::AbstractString) = Float64(get(planner_target_table(meta, planner_geometry_target(meta, gid)), "horizon_days", meta["planner"]["horizon_days"]))
 
@@ -676,7 +907,7 @@ function planner_constants(meta, w2m::Real, h_local_m::Real, arm::AbstractString
     one_sided = Bool(get(T, "apo_one_sided", false)); tol = Float64(get(T, "apo_tol_m", 25000.0)); frac = Float64(get(T, "apo_aim_above_frac", 0.5))
     P = merge(P, (; ra_target_m=Float64(get(T, "ra_target_m", P.ra_target_m)), tail_passes=Int(get(T, "tail_passes", P.tail_passes)), term_step_m=Float64(get(T, "term_step_m", P.term_step_m)),
         term_activate_steps=Int(get(T, "term_activate_steps", P.term_activate_steps)), term_min_q_factor=Float64(get(T, "term_min_q_factor", P.term_min_q_factor)), term_c_window=Int(get(T, "term_c_window", P.term_c_window)),
-        term_aim_below_m=one_sided ? -tol * frac : Float64(get(T, "term_aim_below_m", P.term_aim_below_m)),                     # one-sided tolerance (Revision 22 item 3): the aim sits apo_aim_above_frac of the band ABOVE the target (a negative "below")
+        term_aim_below_m=one_sided ? -tol * frac : Float64(get(get(PL["arms"], arm, Dict{String, Any}()), "term_aim_below_m", get(T, "term_aim_below_m", (String(get(get(PL["arms"], arm, Dict{String, Any}()), "aim_default", "")) == "new" ? PL["terminal"]["term_aim_below_m_new"] : P.term_aim_below_m)))),      # precedence: one-sided switch, the arm's own term_aim_below_m (Revision 31), the target's, aim_default = "new", the default                     # one-sided tolerance (Revision 22 item 3): the aim sits apo_aim_above_frac of the band ABOVE the target (a negative "below")
         ra_stop_m=Float64(get(T, "ra_target_m", P.ra_target_m)) + (one_sided ? tol : 0.0),                                          # closing pass = first apoapsis at or below target + tol (default: the target itself)
         apo_one_sided=one_sided, apo_tol_m=tol, apo_aim_above_frac=frac, apo_shortfall_slope_mps_per_km=Float64(get(T, "apo_shortfall_slope_mps_per_km", 0.056))))
     b = PL["body"]
@@ -688,7 +919,7 @@ planner_switches(meta, key::AbstractString) = (a = meta["planner"]["arms"][key];
     update=Bool(get(a, "update", false)), horizon=Int(get(a, "horizon", 0)), terminal=Bool(get(a, "terminal", false)),
     rev_window=Int(get(a, "rev_window_orbits", 0)), rev_deadband=Float64(get(a, "rev_deadband_ln", 0.0)), min_burn_arm=Float64(get(a, "min_burn_arm_mps", 0.0)), dev_thr=Float64(get(a, "dev_thr_mps", 0.0)),
     smooth_beta=Float64(get(a, "smooth_beta", 0.0)), lower_margin=Float64(get(a, "lower_margin_ln", 0.0)),
-    fb_term=Bool(get(a, "fb_term", false)), ic_scenario=String(get(a, "ic_scenario", "ref")), ttg_guard=Bool(get(a, "ttg_guard", false))))                                  # Revision 19 A5 / Revision 20 switches, default off / "ref"
+    fb_term=Bool(get(a, "fb_term", false)), ic_scenario=String(get(a, "ic_scenario", "ref")), ttg_guard=Bool(get(a, "ttg_guard", false)), l1=Bool(get(a, "l1", false)), default_tstar=Bool(get(a, "default_tstar", false))))                                  # Revision 19 A5 / Revision 20 switches, default off / "ref"
 planner_arm_code(key::AbstractString) = "PL_" * key
 
 """Stage O N2 keeper (kept unchanged: Kalman constants, edge multiplier, aim, band cap from the arm's config fields, SOURCED stagen_flight kalman_params.csv, stageo_data calibrated_arms.csv and stageo_config [stageo.n2]) inside the
@@ -704,8 +935,9 @@ end
 function planner_kappa_file(t, gid::AbstractString, default::Real)
     haskey(t, "kappa_file") || return Float64(default)
     fp = joinpath(stageg3_task_dir(), String(t["kappa_file"])); isfile(fp) || return Float64(default)
-    J = JSON.parsefile(fp); (haskey(J, gid) && Bool(get(J[gid], "accepted", false))) || return Float64(default)
-    return Float64(J[gid]["kappa_med"])
+    J = JSON.parsefile(fp); g2 = haskey(J, gid) ? gid : String(get(get(t, "kappa_alias", Dict{String, Any}()), gid, gid))      # kappa_alias: a mean-field token of the SAME orbit uses the measured kappa of its flown twin (G0975M -> G0975)
+    (haskey(J, g2) && Bool(get(J[g2], "accepted", false))) || return Float64(default)
+    return Float64(J[g2]["kappa_med"])
 end
 
 """Terminal-periapsis parameters of geometry id `gid` ([planner.terminal_periapsis]): (; mu, kappa, weight). kappa is MEASURED per geometry (Revision 19 B), kappa_default ASSUMED for the others."""
@@ -756,10 +988,42 @@ planner_anchor_ln(q_first::Real, ic) = ic === nothing ? log(q_first) : ic.scenar
 planner_ic_u0(ic) = (ic !== nothing && ic.scenario == "S-fixed") ? ic.nu_pre : 0.0
 
 """Node-check context of a flight: nothing unless the arm's guard set has node_check; then (; rot, omega_target_deg, J2, Re) with the target's node_deg ([planner.target(s)] node_deg, no default) and the Kaula Mars J2 / R of [planner.node_check]."""
-function planner_node_ctx(meta, target, rot, sw, A)
+function planner_node_ctx(meta, target, rot, sw, A; pos=nothing)
     sw.ttg_guard || return nothing; G = planner_guard_constants(meta; set=String(get(A, "guard_set", "v2")), target=target); G.node_check || return nothing
-    nd = get(planner_target_table(meta, target), "node_deg", nothing); nd === nothing && error("guard node_check is on but the target has no node_deg")
+    nd = get(planner_target_table(meta, target), "node_deg", nothing)
+    nd === nothing && pos !== nothing && (nd = mod(rad2deg(planner_j2_at(pos.nom.track, pos.tstar_pos_s)[2]), 360.0))                      # Revision 26: the target node is the nominal's Omega at t*
+    nd === nothing && error("guard node_check is on but the target has no node_deg and no nominal is available")
     nc = meta["planner"]["node_check"]; return (; rot, omega_target_deg=Float64(nd), J2=Float64(nc["J2"]), Re=Float64(nc["R_m"]))
+end
+
+"""Position-machinery setup of a flight (Revision 26), or (nothing, nothing) when no Revision 26 switch needs it (arm l1 / default_tstar, guard set pos_stage or node_check). t*: the arm's explicit `tstar_d`, else with default_tstar the
+fast end of the model's closed-loop feasible arrival range plus [planner] tstar_margin_d (ASSUMED), else the model-world nominal arrival. Returns (ctx::PlannerPosCtx, tstar_override_d or nothing)."""
+function planner_pos_setup(meta, gid::AbstractString, A, sw, tab, P, mu::Real, x0::Real, geom, rot, target)
+    G = sw.ttg_guard ? planner_guard_constants(meta; set=String(get(A, "guard_set", "v2")), target=target) : nothing
+    need = sw.l1 || sw.default_tstar || (G !== nothing && (G.pos_stage || G.node_check || G.node_check_v2)); need || return (nothing, nothing)
+    kappa = planner_fb_params(meta, gid, mu).kappa; nc = meta["planner"]["node_check"]
+    gc = (; om0=deg2rad(Float64(geom["omega_deg"])), Om0=deg2rad(Float64(geom["raan_deg"])), i0=deg2rad(Float64(geom["inc_deg"])), J2=Float64(nc["J2"]), R=Float64(nc["R_m"]), rot)
+    nom = planner_nominal_track(tab, P, mu, kappa, x0, gc.i0, gc.om0, gc.Om0, gc.J2, gc.R); tinfo = (; fast_d=NaN, slow_d=NaN, tstar_d=nom.days, source="nominal"); ov = nothing
+    if haskey(A, "tstar_d")
+        ov = Float64(A["tstar_d"]); tinfo = (; fast_d=NaN, slow_d=NaN, tstar_d=ov, source="explicit")
+    elseif sw.default_tstar
+        dd = planner_default_tstar(tab, P, mu, kappa, x0, Float64(meta["planner"]["tstar_margin_d"])); ov = dd.tstar_d; tinfo = (; fast_d=dd.fast_d, slow_d=dd.slow_d, tstar_d=dd.tstar_d, source="default_range")
+    end
+    ts_d = ov === nothing ? nom.days : ov
+    return (PlannerPosCtx(nom, gc, ts_d * 86400.0, Float64[], Float64[], Float64[], Float64[], pi / 2, tinfo, sw.l1, NamedTuple[]), ov)
+end
+const PLANNER_POS_NAN = (; pos_err_deg=NaN, pos_along_deg=NaN, pos_cross_deg=NaN, l1_err_deg=NaN, l1_tau_d=NaN, pos_t_arr_d=NaN, pos_tstar_d=NaN, tstar_fast_d=NaN, tstar_slow_d=NaN, tstar_source="", pos_stage_acted=0, pos_stage_solves=0)
+"""Result columns of the position machinery for a finished flight (Revision 26): the great-circle error between the flown apoapsis direction at arrival (last periapsis elements advanced half an orbit by the J2 rates) and the nominal apoapsis direction at t*,
+its along / cross components, the L1 rendezvous-time choice and error (planner_l1; W = 3 final orbits), and the t* record (range, source). `last` = the last passes row (a_m, e, i_rad, raan_rad, omega_rad, time_s, ra_m, rp_m) of a flight that reached the target."""
+function planner_pos_final(ps::PlannerPosCtx, mu::Real, last)
+    tstar_s = ps.tstar_pos_s; ti = ps.tinfo; base = (; PLANNER_POS_NAN..., pos_tstar_d=tstar_s / 86400.0, tstar_fast_d=ti.fast_d, tstar_slow_d=ti.slow_d, tstar_source=ti.source, pos_stage_acted=count(x -> x.acted, ps.stage_log), pos_stage_solves=sum((x.solves for x in ps.stage_log); init=0))
+    last === nothing && return base
+    a = Float64(last.a_m); e = Float64(last.e); inc = Float64(last.i_rad); dom, dOm = planner_j2_orbit(a, e, inc, ps.geom.J2, ps.geom.R)
+    u_fl = planner_apo_hat(Float64(last.omega_rad) + 0.5 * dom, Float64(last.raan_rad) + 0.5 * dOm, inc); nt = ps.nom.track; u_tgt = planner_j2_apo(nt, tstar_s); E = planner_logmap(u_tgt, u_fl)
+    s_hat = planner_tproj(u_tgt, planner_j2_rate_vec(nt, tstar_s)); s_hat = s_hat / norm(s_hat); rate_dd = rad2deg(norm(planner_j2_rate_vec(nt, tstar_s))) * 86400.0
+    t_arr = Float64(last.time_s) + 0.5 * 2π * sqrt(a^3 / mu); dt = t_arr / 86400.0 - tstar_s / 86400.0; Wd = 3.0 * planner_kepler_period(mu, isfinite(last.ra_m) ? Float64(last.ra_m) : a * (1 + e), isfinite(last.rp_m) ? Float64(last.rp_m) : a * (1 - e)) / 86400.0
+    l1 = planner_l1(E, s_hat, rate_dd, dt, Wd); al = rad2deg(dot(E, s_hat))
+    return (; base..., pos_err_deg=rad2deg(planner_ang(u_fl, u_tgt)), pos_along_deg=al, pos_cross_deg=rad2deg(norm(E - dot(E, s_hat) * s_hat)), l1_err_deg=l1.err_deg, l1_tau_d=l1.tau_d, pos_t_arr_d=t_arr / 86400.0)
 end
 
 # ---- phase cal --------------------------------------------------------------------------------------------------------------------------------------
@@ -808,11 +1072,15 @@ function planner_disp_kwargs(meta, name::AbstractString; gid::AbstractString="")
     (isempty(name) || name == "L0") && return (;)
     d = meta["planner"]["dispersion"][name]; kw = Pair{Symbol, Any}[]
     if !isempty(gid) && haskey(d, gid); d = d[gid]; end                                            # Revision 21: levels of the generic geometries are sub-tables [planner.dispersion.<level>.<gid>]
-    (haskey(d, "gram_perturbation_scales") || haskey(d, "mars_mgcm_dust_levels")) || error("dispersion level $name has no entry for geometry $gid")
+    (haskey(d, "gram_perturbation_scales") || haskey(d, "mars_mgcm_dust_levels") || haskey(d, "perturbed")) || error("dispersion level $name has no entry for geometry $gid")
     haskey(d, "gram_perturbation_scales") && push!(kw, :gram_perturbation_scales => Tuple(Float64.(d["gram_perturbation_scales"])))
     haskey(d, "mars_mgcm_dust_levels") && push!(kw, :mars_mgcm_dust_levels => Tuple(Float64.(d["mars_mgcm_dust_levels"])))
     return (; kw...)
 end
+
+"""Whether the GRAM density perturbation is on for a dispersion level (Revision 27b): true unless [planner.dispersion.<name>] has perturbed = false (mean density only, via stagef_env!(false, ...) = SPACEAGORA_GRAM_DENSITY_PERTURBATION=off).
+Every existing level and the empty level are perturbed (the unchanged flights)."""
+planner_disp_perturbed(meta, name::AbstractString) = (isempty(name) || name == "L0") ? true : Bool(get(meta["planner"]["dispersion"][name], "perturbed", true))
 
 """One planner flight. seed fields: config_path, gid, arm (B-ODY key BODY, L0..L3, OL, OLR), tag (GRAM seed string), run_id, out, cal_root, horizon_days, dt_atm_s (NaN = config), smoke_force, decision_speed ("relative"),
 grole (role token of the cell). Plain-data row (stageg3 columns plus mode and switches); never throws."""
@@ -822,13 +1090,14 @@ function planner_run_task(seed)
         meta = planner_meta(seed.config_path); PL = meta["planner"]; A = PL["arms"][seed.arm]; mode = Symbol(String(A["mode"]))
         mode in (:body, :online, :ol, :olr, :n2it) || error("arm $(seed.arm) is not a planner arm (mode $mode)")
         meta, sc, geom, ep = stageg3_load(seed.config_path, seed.gid; dt_atm_s=seed.dt_atm_s); G3 = meta["stageg3"]; SO = meta["stageo"]; ms0 = stagef_setup(sc); sw0 = planner_switches(meta, seed.arm)
+        ei_ov = planner_ei_km(meta, A, planner_geometry_target(meta, seed.gid)); ei_ov === nothing || (sc = deepcopy(sc); sc["atmosphere_gram"]["entry_interface_km"] = ei_ov)      # Revision 27: per-arm / per-target entry interface (default: untouched)
         inc, raan, omega = Float64(geom["inc_deg"]), Float64(geom["raan_deg"]), Float64(geom["omega_deg"])
         epoch = parse_epoch(ep); rot = mars_rot(ms0.planet, epoch)
         ic_name = String(sw0.ic_scenario); ic = planner_ic_plan(meta, planner_ic_token(seed.gid, seed.grole), ic_name)      # Revision 20: nothing for "ref" (the unchanged flight)
         (ic !== nothing && ic.insertion_node_deg !== nothing && Bool(get(PL["ic"], "use_insertion_node", false))) && (raan = ic.insertion_node_deg)      # Revision 25 (default off): the plan's insertion node replaces the geometry's Omega0 (the first-pass calibration must have been made at it)
         cdir = joinpath(seed.cal_root, ic_name == "S-free" ? planner_ic_cal_name(seed.gid, ic.x0) : seed.gid); G = CSV.read(joinpath(cdir, "guess.csv"), DataFrame)[1, :]; N = CSV.read(joinpath(cdir, "nodes.csv"), DataFrame)
         pwf = pw_fit(N.h_m, N.rho_kg_m3, Float64(sc["atmosphere"]["temperature_k"]), "piecewise"); ms = with_fit(ms0, pwf)
-        stagef_env!(true, meta)
+        stagef_env!(planner_disp_perturbed(meta, hasproperty(seed, :disp) ? String(seed.disp) : ""), meta)      # Revision 27b: a level with perturbed = false flies the mean density
         disp = hasproperty(seed, :disp) ? String(seed.disp) : ""; model = stagef_gram_model(sc, epoch, stagef_seed("mars" * seed.tag); planner_disp_kwargs(meta, disp; gid=seed.gid)...); core_t = model.core.initial_time; stageg3_gram_guard(core_t, ep)
         pargs = gram_pargs(ms.planet, Float64(sc["atmosphere_gram"]["entry_interface_km"]))
         dir = joinpath(seed.out, seed.run_id); mkpath(dir); horizon = Float64(seed.horizon_days) * SECONDS_PER_DAY
@@ -852,10 +1121,11 @@ function planner_run_task(seed)
         omega_fn = t -> (SimulationModel.planet_frame_lpi(planet, et0p + t, SpiceEphemeridesModel()))' * SVector{3, Float64}(planet.ω)
         gtarget = planner_geometry_target(meta, seed.gid); P, B = planner_constants(meta, w2m, Float64(G.hloc_at_hg_m), seed.arm; target=gtarget); sw = planner_switches(meta, seed.arm)
         tab = (mode === :body || mode === :n2it) ? nothing : planner_table(meta, seed.gid)
+        posctx, tstar_ov = planner_pos_setup(meta, seed.gid, A, sw, tab, P, ms.harm.gm_m3s2, planner_anchor_ln(Float64(G.q_first_w_cm2), ic), geom, rot, gtarget)                    # Revision 26 (nothing unless a Revision 26 switch is on)
         wrap = mode === :n2it ? planner_n2it_policy(meta, A, fpol, ms, omega_fn, G, P, vlog, sw) : PlannerPolicy(fpol, Float64(ms.harm.gm_m3s2), omega_fn, Float64(G.vrel_first_mps), NaN, mode, sw, P, B, tab, vlog, Float64(G.hloc_at_hg_m), Float64(G.q_first_w_cm2),
             0.0, [0.0], nothing, -Inf, NaN, Float64[], 0.0, NamedTuple[], NaN, 0.0, 0, (sw.fb_term || P.apo_one_sided) ? (fbp = planner_fb_params(meta, seed.gid, ms.harm.gm_m3s2); sw.fb_term ? fbp : (; fbp..., weight=0.0)) : nothing, 0, ic,
-            sw.ttg_guard ? planner_ttg_setup(meta, seed.gid, tab, P, ms.harm.gm_m3s2, planner_anchor_ln(Float64(G.q_first_w_cm2), ic); set=String(get(A, "guard_set", "v2")), tstar_d=(ic !== nothing && Bool(get(PL["ic"], "use_plan_t_star", false))) ? ic.t_star_d : nothing) : nothing, Float64[], NaN, 0,
-            planner_node_ctx(meta, gtarget, rot, sw, A), nothing)
+            sw.ttg_guard ? planner_ttg_setup(meta, seed.gid, tab, P, ms.harm.gm_m3s2, planner_anchor_ln(Float64(G.q_first_w_cm2), ic); set=String(get(A, "guard_set", "v2")), tstar_d=tstar_ov !== nothing ? tstar_ov : ((ic !== nothing && Bool(get(PL["ic"], "use_plan_t_star", false))) ? ic.t_star_d : nothing)) : nothing, Float64[], NaN, 0,
+            planner_node_ctx(meta, gtarget, rot, sw, A; pos=posctx), nothing, posctx)
         v = cfg.values["vehicle"]; thruster = BaseThrusterModel([Float64(v["thrust_n"])], [0.0], [0.0], [-1.0], [-1.0], [Float64(v["specific_impulse_s"])])
         args = SimulationConfiguration(file_paths=base.file_paths, simulation_settings=base.simulation_settings, mission_configuration=base.mission_configuration,
             environment_model=base.environment_model, dynamics_model=base.dynamics_model, guidance_model=GuidanceModel((wrap,), [1.0e12]), navigation_model=base.navigation_model,
@@ -886,13 +1156,14 @@ function planner_run_task(seed)
             safety_q_w_cm2=qstop, safety_alt0_m=ss.alt0_m, safety_h_local_m=ss.h_local_m, safety_reason=ss.reason,
             planner_dp_total_s=sum((r.dp_solve_s for r in wrap.rlog); init=0.0) + wrap.apriori_build_s, planner_dp_fraction=(sum((r.dp_solve_s for r in wrap.rlog); init=0.0) + wrap.apriori_build_s) / max(run_wall, 1.0e-9), n_replan_rows=length(wrap.rlog),
             mode=String(mode), slack=sw.slack, ff=sw.ff, early=sw.early, update=sw.update, horizon_passes=sw.horizon, terminal=sw.terminal, nu_cum=wrap.nu_cum, n_decisions=length(fpol.edge_log), disp,
-            fb_term=sw.fb_term, ttg_guard=sw.ttg_guard, ic_scenario=ic_name, ic_x0=ic === nothing ? NaN : ic.x0, ic_dv_pre_mps=ic === nothing ? 0.0 : ic.dv_pre_charged)
+            fb_term=sw.fb_term, ttg_guard=sw.ttg_guard, ei_km=Float64(sc["atmosphere_gram"]["entry_interface_km"]), ic_scenario=ic_name, term_aim_below_m=P.term_aim_below_m, ic_x0=ic === nothing ? NaN : ic.x0, ic_dv_pre_mps=ic === nothing ? 0.0 : ic.dv_pre_charged,
+            (wrap isa PlannerPolicy && wrap.pos !== nothing ? planner_pos_final(wrap.pos, Float64(ms.harm.gm_m3s2), pk.stopped ? rows[end] : nothing) : PLANNER_POS_NAN)...)
     catch err
         return (; planet="mars", tag=seed.tag, run_id=seed.run_id, arm=seed.arm, ctrl="", code=planner_arm_code(seed.arm), status="run_error", retcode="", passes=0, t_end_days=NaN, horizon_days=seed.horizon_days,
             completed=false, controller_stopped=false, controller_failures="", total_dv_mps=NaN, burns=0, collapsed_decisions=0, gram_core_epoch="", run_wall_s=NaN, wall_s=time() - t0,
             error=replace(first(sprint(showerror, err), 500), "\n" => " "), stop_reason="error",
             geometry=seed.gid, role=seed.grole, keeper=seed.arm, epoch_utc="", inc_deg=NaN, omega_deg=NaN, raan_deg=NaN, epoch_off_d=NaN, decision_speed=seed.decision_speed,
             safety_q_w_cm2=NaN, safety_alt0_m=NaN, safety_h_local_m=NaN, safety_reason="", planner_dp_total_s=NaN, planner_dp_fraction=NaN, n_replan_rows=0, mode="", slack=false, ff=false, early=false, update=false, horizon_passes=0, terminal=false, nu_cum=NaN, n_decisions=0, disp=hasproperty(seed, :disp) ? String(seed.disp) : "",
-            fb_term=false, ttg_guard=false, ic_scenario="", ic_x0=NaN, ic_dv_pre_mps=NaN)
+            fb_term=false, ttg_guard=false, ei_km=NaN, ic_scenario="", term_aim_below_m=NaN, ic_x0=NaN, ic_dv_pre_mps=NaN, PLANNER_POS_NAN...)
     end
 end

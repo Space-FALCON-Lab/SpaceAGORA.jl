@@ -226,6 +226,42 @@ function ppc_mode_specs()::Dict{String, PPCModeSpec}
             persistent=true,
             allow_inner_with_outer=true
         ),
+        # `predictive` with mixed plans explicitly allowed (the adaptive-policy default is off).
+        "predictive_mixed" => PPCModeSpec(
+            name="predictive_mixed",
+            profile="R7",
+            backend="auto",
+            outer_active=true,
+            policy_adaptive=true,
+            rhs_batch="auto",
+            density="auto",
+            control="auto",
+            thermal="auto",
+            multibody="auto",
+            effector="auto",
+            scheduler="static",
+            persistent=true,
+            allow_inner_with_outer=true,
+            extra_env=["SPACEAGORA_PLANNER_ALLOW_MIXED" => "1"]
+        ),
+        # Alias for explicit ALLOW_MIXED=0 (same plan space as `predictive` under the adaptive policy).
+        "predictive_nomixed" => PPCModeSpec(
+            name="predictive_nomixed",
+            profile="R7",
+            backend="auto",
+            outer_active=true,
+            policy_adaptive=true,
+            rhs_batch="auto",
+            density="auto",
+            control="auto",
+            thermal="auto",
+            multibody="auto",
+            effector="auto",
+            scheduler="static",
+            persistent=true,
+            allow_inner_with_outer=true,
+            extra_env=["SPACEAGORA_PLANNER_ALLOW_MIXED" => "0"]
+        ),
         # `predictive` with only the pre-solve plan sweep turned off.
         "predictive_nocalib" => PPCModeSpec(
             name="predictive_nocalib",
@@ -625,7 +661,7 @@ function ppc_mode_env_pairs(
     # off, sweep_ns floor on, plan confirmation on (what `predictive` measures).
     # Every other adaptive mode keeps its earlier meaning by pinning the former
     # defaults here; its own extra_env below still wins.
-    if mode.policy_adaptive && mode.name != "predictive"
+    if mode.policy_adaptive && !(mode.name in ("predictive", "predictive_nomixed", "predictive_mixed"))
         put!("SPACEAGORA_RHS_REGION_WIDTH", "auto")
         put!("SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR", "0")
         put!("SPACEAGORA_RHS_CALIBRATE_CONFIRM", "0")

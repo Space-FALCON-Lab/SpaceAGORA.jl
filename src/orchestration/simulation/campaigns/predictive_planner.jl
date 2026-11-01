@@ -178,6 +178,7 @@ struct PredictivePlannerConfig
     route_switch::Bool
     heap_model::Symbol
     local_thrash::Float64
+    allow_mixed::Bool
 end
 
 function PredictivePlannerConfig(;
@@ -193,6 +194,9 @@ function PredictivePlannerConfig(;
         "SPACEAGORA_PREDICTIVE_HEAP_MODEL", :locals),
     local_thrash::Real = _predictive_env_float(
         "SPACEAGORA_PREDICTIVE_LOCAL_THRASH", 3.0),
+    # Unset = mixed plans allowed unless the adaptive policy is on; an explicit value wins.
+    allow_mixed::Bool = _predictive_env_bool("SPACEAGORA_PLANNER_ALLOW_MIXED",
+        !ParallelPolicy.adaptive_policy_enabled()),
 )
     margin >= 0.0 || throw(ArgumentError("PredictivePlannerConfig margin must be >= 0; got $(margin)."))
     guard_factor >= 1.0 ||
@@ -207,7 +211,7 @@ function PredictivePlannerConfig(;
         "PredictivePlannerConfig local_thrash must be >= 1; got $(local_thrash)."))
     return PredictivePlannerConfig(Float64(margin), Float64(guard_factor), Int(local_slots_max),
                                    Float64(remote_overhead), route_switch, heap_model,
-                                   Float64(local_thrash))
+                                   Float64(local_thrash), allow_mixed)
 end
 
 """
@@ -689,6 +693,11 @@ function predictive_plan_candidates(;
         _predictive_inner_candidates!(plans, n, T, pool, threads_candidate, local_slots_cap,
                                       contention_process, contention_threads, config, terms,
                                       inner_curve, inner_curve_unsplit)
+    # allow_mixed off (SPACEAGORA_PLANNER_ALLOW_MIXED=0, or unset under the adaptive policy): static plans only. A plan is kept if it
+    # is static-equivalent, or the sample count is <= 1 (the whole-pool plan on a single
+    # sample is not a mixed plan), or every sample runs concurrently (threads, W = min(n, T)).
+    config.allow_mixed || filter!(p -> p.static_equivalent || n <= 1 ||
+                                       (p.route === :threads && p.workers >= min(n, T)), plans)
     return plans
 end
 

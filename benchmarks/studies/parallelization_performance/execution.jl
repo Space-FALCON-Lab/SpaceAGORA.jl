@@ -56,7 +56,7 @@ function ppc_solve_once(args, cfg::PPCConfig)
     # multiple threads.
     result = SimulationEngine.run_simulation(
         args;
-        isolate_state=false,
+        isolate_state=lowercase(get(ENV, "SPACEAGORA_PPB_ISOLATE_STATE", "0")) in ("1", "true"),
         return_solution=true,
         return_solver_metadata=true
     )

@@ -21,12 +21,16 @@ module InterLinkModels
 	export vertex, InterLinkKey, InterLinkHistory
 	export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!
 	export GroundStation, add_ground_station!, station_pairs
+	export OpticalTerminal, MinimumForceRange, power_limited_range_m, DutyCycleLimit, EdgeFeasibilityModel
+	export FeasibleEdgeGraph, feasible_edge_graph, feasible_edge_graphs, feasible_pairs, terminal_assignment
+	export admissible_edge_set
 
 	include(joinpath(@__DIR__, "links.jl"))
 	include(joinpath(@__DIR__, "power_links.jl"))
 	include(joinpath(@__DIR__, "data_links.jl"))
 	include(joinpath(@__DIR__, "ground_stations.jl"))
 	include(joinpath(@__DIR__, "laser_beam_links.jl"))
+	include(joinpath(@__DIR__, "feasible_edges.jl"))
 
 	const vertex = Tuple{Int, Int} # (node, terminal number): a spacecraft vector index, or minus a ground station's number
 	const InterLinkKey = Tuple{vertex, vertex} # Canonically ordered pair of terminal endpoints

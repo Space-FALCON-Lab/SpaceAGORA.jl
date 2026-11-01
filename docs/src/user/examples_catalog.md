@@ -425,6 +425,12 @@ examples use their prepared projects.
   ten targets. Its optional GIF shows the connection graph, not orbital
   geometry. The default run spans twenty target orbits; the CI smoke route
   uses the standard shortened mission duration and turns the animation off.
+- `constellation_edge_scheduling.jl` propagates four spacecraft, builds the
+  feasible-edge graph of their laser links at each step and a Cartesian linear
+  model of the window, and compares a constant link set with the greedy
+  schedules by their Gramians and the least energy of one reconfiguration. It
+  needs no external data.
 
 See [Interlinks](interlinks.md#Setting-up-interlinks) for interpretation,
-optional cyclic matching and the model's physical limits.
+optional cyclic matching and the model's physical limits, and
+[Edge Scheduling](edge_scheduling.md) for planning over a horizon.

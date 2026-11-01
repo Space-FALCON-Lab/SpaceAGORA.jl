@@ -6,7 +6,10 @@ using Printf
 # the formation, build the feasible-edge graph of its laser links at each step,
 # linearize the Cartesian two-body motion along the propagated states, and
 # compare a constant link set with greedy schedules by their Gramians on the
-# relative positions and the least input energy of one reconfiguration.
+# formation's ranges and range rates, and by the least input energy of one
+# reconfiguration. The model is linearized about zero link force, so its inputs
+# are the link forces themselves: the energies are those of a two-way actuator,
+# and the sign check says whether a laser that only pushes could follow them.
 
 const SMOKE = get(ENV, "SPACEAGORA_EXAMPLE_SMOKE", "0") == "1"
 
@@ -79,17 +82,21 @@ function run_constellation_edge_scheduling(; steps::Int=SMOKE ? 8 : 24, dt::Floa
     graphs = feasible_edge_graphs(feasibility, solution, midpoints; planet=planet)
     println("Feasible links per step: ", join([count(graph.feasible) for graph in graphs], " "))
 
-    # Step 3: The linear model of the window, projected on the positions of
-    # spacecraft 2 to 4 relative to spacecraft 1 at its end. Internal forces
-    # leave the barycentre alone; in orbit, unequal gravity couples it to the
-    # shape over a step, so the barycentre rows of B are small, not zero.
+    # Step 3: The linear model of the window, projected on the ranges and range
+    # rates of every pair at its end, the rates in metres through the mean
+    # motion: outputs that ignore the formation's rigid motion, which the links
+    # cannot drive. Internal forces leave the barycenter alone; in orbit,
+    # unequal gravity couples it to the shape over a step, so the barycenter
+    # rows of B are small, not zero.
     model_steps = [cartesian_step(solution(t), graph, masses, planet.μ, dt) for (t, graph) in zip(midpoints, graphs)]
+    final = solution(steps * dt)
+    mean_motion = sqrt(planet.μ / norm(final.sc[1].pos)^3)
+    pairs = feasibility.pairs
+    model = EdgeLinearModel(model_steps, range_output_matrix(final, pairs; rate_scale=1 / mean_motion))
     transform = barycentric_transform(masses)
-    positions = [row for row in transform.relative_rows if mod1(row, 6) <= 3]
-    model = EdgeLinearModel(model_steps, transform.T[positions, :])
     barycenter_share = maximum(norm(transform.T[transform.barycenter_rows, :] * step.B) / norm(step.B)
         for step in model_steps)
-    @printf("Largest share of B in the barycentre rows: %.1e\n", barycenter_share)
+    @printf("Largest share of B in the barycenter rows: %.1e\n", barycenter_share)
 
     # Step 4: The baselines: a constant set, greedy λ₁, greedy log det and greedy λ_min.
     epsilon = 1e-6 * tr(controllability_gramian(model)) / size(model.projection, 1)
@@ -101,16 +108,13 @@ function run_constellation_edge_scheduling(; steps::Int=SMOKE ? 8 : 24, dt::Floa
         "greedy λ_min" => GreedyEdgeSchedule(SmallestEigenvalueMetric(); tie_break=volume),
     ]
 
-    # Step 5: One reconfiguration: open spacecraft 2's along-track separation
-    # from spacecraft 1 by 10 m at the window's end, with the other relative
-    # positions unchanged.
-    final = solution(steps * dt)
-    along = normalize(cross(cross(final.sc[1].pos, final.sc[1].vel), final.sc[1].pos))
+    # Step 5: One reconfiguration: open the range between spacecraft 1 and 2 by
+    # 10 m at the window's end, with every other range and range rate unchanged.
     target = zeros(size(model.projection, 1))
-    target[1:3] .= 10.0 .* along
+    target[findfirst(==((1, 2)), pairs)] = 10.0
 
-    println(rpad("strategy", 16), rpad("link-steps", 12), rpad("λ₁", 12), rpad("λ_min", 12), rpad("log det", 12),
-        "least energy (N²)")
+    println(rpad("strategy", 16), rpad("link-steps", 12), rpad("tied", 6), rpad("λ₁", 12), rpad("λ_min", 12),
+        rpad("log det", 10), rpad("two-way energy (N²)", 24), "push-only")
     rows = map(strategies) do (name, strategy)
         schedule = schedule_edges(model, strategy; max_active, graphs)
         for (k, active) in enumerate(schedule.active)
@@ -119,8 +123,10 @@ function run_constellation_edge_scheduling(; steps::Int=SMOKE ? 8 : 24, dt::Floa
         end
         metrics = gramian_metrics(schedule.gramian; epsilon)
         energy = minimum_input_energy(model, schedule, target)
-        @printf("%-16s%-12d%-12.3e%-12.3e%-12.2f%.3e%s\n", name, sum(length, schedule.active), metrics.largest_eigenvalue,
-            metrics.smallest_eigenvalue, metrics.log_det, energy.energy, energy.reachable ? "" : " (not reachable)")
+        reach = energy.reachable ? @sprintf("%.3e", energy.energy) : @sprintf("%.3e (unreached)", energy.energy)
+        sign = energy.nonnegative ? "yes" : @sprintf("no (min %.1e N)", energy.most_negative_input)
+        @printf("%-16s%-12d%-6d%-12.3e%-12.3e%-10.2f%-24s%s\n", name, sum(length, schedule.active),
+            schedule.tied_rounds, metrics.largest_eigenvalue, metrics.smallest_eigenvalue, metrics.log_det, reach, sign)
         (; name, schedule, metrics, energy)
     end
     return (; model, graphs, rows)

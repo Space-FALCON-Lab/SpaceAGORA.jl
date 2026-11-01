@@ -84,11 +84,21 @@ MinimumForceRange(; min_force_n::Real) = MinimumForceRange(min_force_n)
 The range `ρ_max(P)` (m) up to which `link` can close while transmitting
 `power_w` watts, by the range-against-power rule `limit` of an
 `EdgeFeasibilityModel`: a `MinimumForceRange`, any function of the power in
-watts returning metres, or `nothing` for no power dependence (`Inf`). The
+watts returning metres, a positive number of metres (a cap that does not
+depend on the power), or `nothing` for no power dependence (`Inf`). The
 feasible-edge graph uses `min(link_range_m(link), ρ_max(P))`.
 """
 power_limited_range_m(::Nothing, link, power_w::Real) = Inf
+power_limited_range_m(limit::Real, link, power_w::Real) = Float64(limit)
 power_limited_range_m(limit, link, power_w::Real) = Float64(limit(Float64(power_w)))
+
+# Refuses a range-against-power rule that `power_limited_range_m` cannot evaluate.
+_check_range_rule(::Union{Nothing, MinimumForceRange}) = nothing
+_check_range_rule(limit::Real) = (isnan(limit) || limit <= 0) && throw(ArgumentError(
+    "A max_range of metres must be positive; got $(limit)."))
+_check_range_rule(limit) = applicable(limit, 1.0) || throw(ArgumentError(
+    "max_range is nothing, a MinimumForceRange, a number of metres or a function of the power in watts; " *
+    "got a $(typeof(limit))."))
 
 function power_limited_range_m(limit::MinimumForceRange, link::LaserBeamLink, power_w::Real)
     power = Float64(power_w)
@@ -139,7 +149,7 @@ DutyCycleLimit(; on_steps::Integer, window_steps::Integer, scope::Symbol=:spacec
     DutyCycleLimit(on_steps, window_steps, scope)
 
 """
-    EdgeFeasibilityModel(link, terminals; pairs=all_pairs(terminals), power_w=link.power_w,
+    EdgeFeasibilityModel(link, terminals; pairs=all_pairs(terminals), power_w=nothing,
                          max_range=nothing, duty_cycle=nothing)
 
 The rule that decides which spacecraft pairs of a constellation could carry a
@@ -167,7 +177,8 @@ feasible when
 - `terminals` holds, for each spacecraft by vector index, its `OpticalTerminal`s.
 - `pairs` lists the candidate pairs `(i, j)`; each is kept as `(min, max)`.
 - `power_w` is the transmitted power (W) of every pair, a vector with one entry
-  per pair, or a function `(i, j) -> P`.
+  per pair, or a function `(i, j) -> P`; `nothing` takes the link's `power_w`.
+- `max_range` is the range-against-power rule (`power_limited_range_m`).
 """
 struct EdgeFeasibilityModel{L <: LaserBeamLink, R}
     link::L
@@ -187,6 +198,7 @@ _feasibility_link(link) = throw(ArgumentError(
 function EdgeFeasibilityModel(link, terminals; pairs=all_pairs(terminals), power_w=nothing, max_range=nothing,
                               duty_cycle::Union{Nothing, DutyCycleLimit}=nothing)
     beam_link = _feasibility_link(link)
+    _check_range_rule(max_range)
     (beam_link.pointing === nothing && beam_link.recoil === :central) || throw(ArgumentError(
         "An EdgeFeasibilityModel takes its field of regard from its OpticalTerminals; give it a link without " *
         "terminal pointing or mounted recoil."))
@@ -414,7 +426,8 @@ function _body_sight(sample, sight)
 end
 
 # The inertial direction `sight` in the radial, along-track and cross-track
-# axes of `sample`'s own orbit.
+# axes of `sample`'s own orbit: the basis of `rtn_dcm_from_inertial` (FrameTransforms), which is
+# defined after this module loads; the tests check that the two agree.
 function _rtn_sight(sample, sight)
     r, v = sample.pos_ii, sample.vel_ii
     h = cross(r, v)

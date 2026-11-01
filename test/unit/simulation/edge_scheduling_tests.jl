@@ -2,7 +2,7 @@ module EdgeSchedulingTests
 
 # Finite-horizon controllability with link-force inputs and the edge schedules
 # that raise it, on small cases with known answers: the linear-model
-# interface, the barycentre's uncontrollability under internal forces, the
+# interface, the barycenter's uncontrollability under internal forces, the
 # double-integrator Gramian in closed form, the metrics, the greedy and
 # constant schedules, and minimum input energy.
 
@@ -63,6 +63,7 @@ toy(steps; columns=([3.0, 0.0], [0.0, 2.0], [2.5, 0.0])) =
         @test EdgeLinearModel([zeros(2, 2), zeros(2, 2)], [ones(2, 1), ones(2, 1)], [(1, 2)], [1.0 0.0]).projection == [1.0 0.0]
         @test_throws ArgumentError EdgeLinearModel(EdgeLinearStep[], zeros(1, 2))
         @test_throws ArgumentError EdgeLinearModel(EdgeLinearStep[])
+        @test_throws ArgumentError EdgeLinearModel([EdgeLinearStep(zeros(2, 2), ones(2, 1), [(1, 2)])], zeros(0, 2))
         @test_throws ArgumentError EdgeLinearModel([EdgeLinearStep(zeros(2, 2), ones(2, 1), [(1, 2)]),
             EdgeLinearStep(zeros(2, 2), ones(2, 1), [(1, 3)])])
         @test_throws DimensionMismatch EdgeLinearModel([EdgeLinearStep(zeros(2, 2), ones(2, 1), [(1, 2)]),
@@ -87,10 +88,10 @@ toy(steps; columns=([3.0, 0.0], [0.0, 2.0], [2.5, 0.0])) =
         chief = barycentric_transform(masses)
         @test chief.barycenter_rows == 1:6 && chief.relative_rows == 7:18
         @test chief.T * x ≈ vcat((2.0 * 1 + 3.0 * 2 + 5.0 * 3) / 10 .* (1:6), 1.0 .* (1:6), 2.0 .* (1:6))
-        centred = barycentric_transform(masses; relative=:barycenter)
+        centered = barycentric_transform(masses; relative=:barycenter)
         cm = (2.0 * 1 + 3.0 * 2 + 5.0 * 3) / 10
-        @test centred.T * x ≈ vcat(cm .* (1:6), (2 - cm) .* (1:6), (3 - cm) .* (1:6))
-        @test rank(chief.T) == 18 && rank(centred.T) == 18
+        @test centered.T * x ≈ vcat(cm .* (1:6), (2 - cm) .* (1:6), (3 - cm) .* (1:6))
+        @test rank(chief.T) == 18 && rank(centered.T) == 18
         @test barycentric_transform([1.0, 1.0]; block_size=1).T == [0.5 0.5; -1.0 1.0]
         @test_throws ArgumentError barycentric_transform([1.0, 0.0])
         @test_throws ArgumentError barycentric_transform(Float64[])
@@ -98,7 +99,7 @@ toy(steps; columns=([3.0, 0.0], [0.0, 2.0], [2.5, 0.0])) =
         @test_throws ArgumentError barycentric_transform([1.0]; block_size=0)
     end
 
-    @testset "Two-spacecraft chain: the barycentre is uncontrollable" begin
+    @testset "Two-spacecraft chain: the barycenter is uncontrollable" begin
         m1, m2, h, N = 3.0, 5.0, 10.0, 6
         graph = geometry([(ORIGIN, 0.0, 0.0), (ORIGIN, 1e3, 0.0)])
         @test graph.direction[1] == SVector(0.0, 1.0, 0.0)
@@ -111,6 +112,11 @@ toy(steps; columns=([3.0, 0.0], [0.0, 2.0], [2.5, 0.0])) =
         force_a, force_b = link_force(LaserMomentumLink(), a, b, LinkContext())
         @test normalize(Bc[4:6, 1]) ≈ normalize(force_a) && normalize(Bc[10:12, 1]) ≈ normalize(force_b)
         @test_throws ArgumentError edge_input_matrix(graph, [m1, m2]; edges=[(1, 3)])
+        # An edge given the other way round has the same column; explicit input maps as :cartesian.
+        @test edge_input_matrix(graph, [m1, m2]; edges=[(2, 1)]) == Bc
+        maps = [vcat(zeros(3, 3), Matrix(1.0I, 3, 3), zeros(6, 3)), vcat(zeros(9, 3), Matrix(1.0I, 3, 3))]
+        @test edge_input_matrix(graph, [m1, m2]; input_maps=maps) == Bc
+        @test_throws DimensionMismatch edge_input_matrix(graph, [m1, m2]; input_maps=[zeros(12, 3), zeros(6, 3)])
         @test_throws ArgumentError edge_input_matrix(graph, [m1])
         @test_throws ArgumentError edge_input_matrix(graph, [m1, -m2])
 
@@ -118,18 +124,18 @@ toy(steps; columns=([3.0, 0.0], [0.0, 2.0], [2.5, 0.0])) =
         transform = barycentric_transform([m1, m2])
         barycenter = transform.T[transform.barycenter_rows, :]
         relative = transform.T[transform.relative_rows, :]
-        # Proposition 1: internal forces leave the barycentre's rows of B empty.
+        # Proposition 1: internal forces leave the barycenter's rows of B empty.
         @test norm(barycenter * B) <= 1e-15 * norm(B)
 
         full = EdgeLinearModel(fill(EdgeLinearStep(A, B, [(1, 2)]), N))
         W = controllability_gramian(full)
         @test norm(barycenter * W * barycenter') <= 1e-14 * opnorm(W)
         @test abs(controllability_metric(SmallestEigenvalueMetric(), W)) <= 1e-12 * opnorm(W)
-        # A barycentre target is out of reach.
+        # A barycenter target is out of reach.
         target = barycenter' * [1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         @test !minimum_input_energy(full, nothing, target).reachable
 
-        # In relative coordinates, only motion along the line of centres responds:
+        # In relative coordinates, only motion along the line of centers responds:
         # a double integrator of gain g = 1/m1 + 1/m2, in closed form.
         model = EdgeLinearModel(fill(EdgeLinearStep(A, B, [(1, 2)]), N), relative)
         W = controllability_gramian(model)
@@ -154,7 +160,7 @@ toy(steps; columns=([3.0, 0.0], [0.0, 2.0], [2.5, 0.0])) =
         reach = reachability_matrix(along_line).matrix
         @test reach * [only(energy.inputs[k][(1, 2)]) for k in 1:N] ≈ shift
         @test energy.energy ≈ sum(only(energy.inputs[k][(1, 2)])^2 for k in 1:N)
-        # Across the line of centres is out of reach.
+        # Across the line of centers is out of reach.
         sideways = minimum_input_energy(model, nothing, [1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         @test !sideways.reachable && sideways.residual ≈ 1.0
         # From a drifting start, the inputs correct the free response; none needed to keep it.
@@ -169,15 +175,18 @@ toy(steps; columns=([3.0, 0.0], [0.0, 2.0], [2.5, 0.0])) =
         # No active link: nothing is reachable but the origin.
         silent = minimum_input_energy(along_line, [Tuple{Int, Int}[] for _ in 1:N], shift)
         @test !silent.reachable && silent.energy == 0.0
-        # No projected coordinate: nothing to reach, and zero inputs.
-        empty_output = EdgeLinearModel(fill(EdgeLinearStep(A, B, [(1, 2)]), N), zeros(0, 12))
-        nothing_to_do = minimum_input_energy(empty_output, nothing, Float64[])
-        @test nothing_to_do.reachable && nothing_to_do.energy == 0.0
-        @test all(nothing_to_do.inputs[k][(1, 2)] == [0.0] for k in 1:N)
+        # Signs: opening the separation and stopping needs a push, then a pull,
+        # which a push-only laser cannot make; a closing-rate-free push can.
+        @test energy.most_negative_input < 0 && !energy.nonnegative
+        @test only(energy.inputs[1][(1, 2)]) > 0
+        opening = EdgeLinearModel(fill(EdgeLinearStep(A, B, [(1, 2)]), N), relative[[5], :])
+        pushed = minimum_input_energy(opening, nothing, [0.01])
+        @test pushed.reachable && pushed.nonnegative && pushed.most_negative_input == 0.0
+        @test all(only(pushed.inputs[k][(1, 2)]) > 0 for k in 1:N)
     end
 
     @testset "Three spacecraft in a plane: shape, not rotation" begin
-        # Central link forces conserve the barycentre's motion and the angular
+        # Central link forces conserve the barycenter's motion and the angular
         # momentum about it. In free space, of the eight in-plane relative
         # coordinates, the six of the triangle's shape respond; the rigid
         # rotation (an angle and its rate) does not.
@@ -194,15 +203,158 @@ toy(steps; columns=([3.0, 0.0], [0.0, 2.0], [2.5, 0.0])) =
         full = controllability_gramian(EdgeLinearModel(fill(EdgeLinearStep(A, B, graph.pairs), 4)))
         barycenter = transform.T[transform.barycenter_rows, :]
         @test norm(barycenter * full * barycenter') <= 1e-14 * opnorm(full)
-        centre = sum(masses .* [collect(p) for p in positions]) / sum(masses)
+        center = sum(masses .* [collect(p) for p in positions]) / sum(masses)
         spin_rate, spin_angle = zeros(18), zeros(18)
         for (i, p) in enumerate(positions)
-            ρ = collect(p) - centre
+            ρ = collect(p) - center
             spin_rate[6 * (i - 1) .+ (4:5)] .= masses[i] .* [-ρ[2], ρ[1]]
             spin_angle[6 * (i - 1) .+ (1:2)] .= masses[i] .* [-ρ[2], ρ[1]]
         end
         @test dot(spin_rate, full, spin_rate) <= 1e-14 * opnorm(full) * dot(spin_rate, spin_rate)
         @test dot(spin_angle, full, spin_angle) <= 1e-14 * opnorm(full) * dot(spin_angle, spin_angle)
+    end
+
+
+    @testset "Orbit: angular momentum about the planet's center" begin
+        # Line-of-centers forces leave the total angular momentum about the
+        # planet's center unchanged at every instant, and the linearized motion
+        # conserves its change: every component under point-mass gravity, the
+        # polar one under J2.
+        μ, radius_e, J2 = 3.986004418e14, 6.3781363e6, 1.08262668e-3
+        center = 7.0e6 .* normalize(SVector(0.6, 0.3, 0.5))
+        along = 7546.0 .* normalize(cross(SVector(0.0, 0.0, 1.0), center) + SVector(0.0, 0.0, 0.4))
+        offsets = [SVector(0.0, 0.0, 0.0), SVector(30e3, -10e3, 5e3), SVector(-12e3, 25e3, 18e3)]
+        positions = [center + d for d in offsets]
+        velocities = [along + 1e-3 .* SVector(d[2], -d[1], d[3]) for d in offsets]
+        masses = [100.0, 150.0, 80.0]
+        link = LaserBeamLink(power_w=1.0, magnification=1.0, range_m=1e6)
+        model = EdgeFeasibilityModel(link, [[OMNI] for _ in 1:3])
+        samples = [StateSample(p, v, m) for (p, v, m) in zip(positions, velocities, masses)]
+        Bc = edge_input_matrix(feasible_edge_graph(model, samples), masses)
+        cross_matrix(x) = [0.0 -x[3] x[2]; x[3] 0.0 -x[1]; -x[2] x[1] 0.0]
+        # δL = Σ m_i (δr_i × v_i + r_i × δv_i), as rows on the stacked state, and its rate along the motion.
+        momentum, momentum_rate = zeros(3, 18), zeros(3, 18)
+        point_mass(r) = -μ * r / norm(r)^3
+        function oblate(r)
+            x, y, z = r
+            ρ = norm(r)
+            k = 1.5 * J2 * μ * radius_e^2 / ρ^5
+            return point_mass(r) + k .* SVector(x * (5z^2 / ρ^2 - 1), y * (5z^2 / ρ^2 - 1), z * (5z^2 / ρ^2 - 3))
+        end
+        # Central differences over 30 m balance truncation against rounding.
+        gradient(field, r) = reduce(hcat, [(field(r + 30.0 * h) - field(r - 30.0 * h)) / 60.0
+            for h in eachcol(Matrix(1.0I, 3, 3))])
+        dynamics(field) = begin
+            Ac, rate = zeros(18, 18), zeros(3, 18)
+            for i in 1:3
+                block = 6 * (i - 1)
+                Ac[block .+ (1:3), block .+ (4:6)] .= Matrix(1.0I, 3, 3)
+                Ac[block .+ (4:6), block .+ (1:3)] .= gradient(field, positions[i])
+                rate[:, block .+ (1:3)] .= -masses[i] .* cross_matrix(field(positions[i]))
+                rate[:, block .+ (4:6)] .= masses[i] .* cross_matrix(velocities[i])
+            end
+            Ac, rate
+        end
+        for i in 1:3
+            block = 6 * (i - 1)
+            momentum[:, block .+ (1:3)] .= -masses[i] .* cross_matrix(velocities[i])
+            momentum[:, block .+ (4:6)] .= masses[i] .* cross_matrix(positions[i])
+        end
+        @test norm(momentum * Bc) <= 1e-12 * norm(momentum) * norm(Bc)
+        # The size of the gravity terms that must cancel.
+        scale = sum(masses[i] * norm(positions[i]) * opnorm(gradient(point_mass, positions[i])) for i in 1:3)
+        Ac, momentum_rate = dynamics(point_mass)
+        @test norm(momentum_rate + momentum * Ac) <= 1e-8 * scale
+        Ac, momentum_rate = dynamics(oblate)
+        residual = momentum_rate + momentum * Ac
+        @test norm(residual[3, :]) <= 1e-8 * scale
+        @test norm(residual[1:2, :]) > 1e-5 * scale
+        # Over a held step, unequal gravity gives the barycenter rows of B_k a small, nonzero share.
+        A, B = zoh_discretize(dynamics(point_mass)[1], Bc, 60.0)
+        transform = barycentric_transform(masses)
+        share = norm(transform.T[transform.barycenter_rows, :] * B) / norm(B)
+        @test 1e-12 < share < 1e-3
+    end
+
+    @testset "Rotation-free range outputs" begin
+        positions = [SVector(ORIGIN, 0.0, 0.0), SVector(ORIGIN, 1e3, 200.0), SVector(ORIGIN + 800.0, 500.0, -300.0),
+            SVector(ORIGIN - 400.0, -700.0, 600.0)]
+        velocities = [SVector(0.0, 7.5e3, 0.0), SVector(0.3, 7.5e3, -0.1), SVector(-0.2, 7.5e3 + 0.4, 0.2),
+            SVector(0.1, 7.5e3 - 0.3, 0.3)]
+        samples = [StateSample(p, v, 100.0) for (p, v) in zip(positions, velocities)]
+        pairs = [(1, 2), (1, 3), (2, 4), (3, 4)]
+        C = range_output_matrix(samples, pairs)
+        @test size(C) == (8, 24)
+        stack(rs, vs) = reduce(vcat, [vcat(r, v) for (r, v) in zip(rs, vs)])
+        measure(x) = begin
+            r(i) = x[6 * (i - 1) .+ (1:3)]
+            v(i) = x[6 * (i - 1) .+ (4:6)]
+            ranges = [norm(r(j) - r(i)) for (i, j) in pairs]
+            rates = [dot(r(j) - r(i), v(j) - v(i)) / norm(r(j) - r(i)) for (i, j) in pairs]
+            vcat(ranges, rates)
+        end
+        x = stack(positions, velocities)
+        direction = [sin(3.0 * k) for k in 1:24]
+        step = 1e-2
+        @test C * direction ≈ (measure(x + step * direction) - measure(x - step * direction)) / (2 * step) rtol = 1e-6
+        # A translation, or a rotation of every position and velocity together, changes nothing.
+        ω = SVector(0.2, -0.5, 0.7)
+        rotation = stack([cross(ω, r) for r in positions], [cross(ω, v) for v in velocities])
+        translation = stack(fill(SVector(1.0, -2.0, 3.0), 4), fill(SVector(0.5, 0.1, -0.2), 4))
+        @test norm(C * rotation) <= 1e-10 * norm(C) * norm(rotation)
+        @test norm(C * translation) <= 1e-10 * norm(C) * norm(translation)
+        @test range_output_matrix(samples, pairs; rates=false) == C[1:4, :]
+        @test range_output_matrix(samples, pairs; rate_scale=0.5)[5:8, :] ≈ 0.5 .* C[5:8, :]
+        state = (sc=[(pos=p, vel=v) for (p, v) in zip(positions, velocities)],)
+        @test range_output_matrix(state, pairs) == C
+        @test_throws ArgumentError range_output_matrix(samples, [(1, 2), (2, 1)])
+        @test_throws ArgumentError range_output_matrix(samples, [(1, 5)])
+        @test_throws ArgumentError range_output_matrix(samples, Tuple{Int, Int}[])
+        @test_throws ArgumentError range_output_matrix(samples, pairs; rate_scale=0.0)
+        @test_throws ArgumentError range_output_matrix([samples[1], samples[1]], [(1, 2)])
+
+        # On the free-space triangle, the ranges and range rates are the shape:
+        # every one of them responds, where the relative rows left the rotation out.
+        triangle = [(ORIGIN, 0.0, 0.0), (ORIGIN, 1e3, 0.0), (ORIGIN + 800.0, 500.0, 0.0)]
+        graph = geometry(triangle)
+        A, B = zoh_discretize(free_space(3), edge_input_matrix(graph, [3.0, 4.0, 5.0]), 5.0)
+        shape = range_output_matrix([sample(p) for p in triangle], graph.pairs)
+        W = controllability_gramian(EdgeLinearModel(fill(EdgeLinearStep(A, B, graph.pairs), 4), shape))
+        @test rank(W; rtol=1e-9) == 6
+        @test controllability_metric(SmallestEigenvalueMetric(), W) > 1e-9 * controllability_metric(LargestEigenvalueMetric(), W)
+    end
+
+    @testset "Nominal link-force Jacobian" begin
+        positions = [SVector(ORIGIN, 0.0, 0.0), SVector(ORIGIN, 1e3, 0.0), SVector(ORIGIN + 800.0, 500.0, 300.0)]
+        graph = geometry(Tuple.(positions))
+        masses, forces = [3.0, 4.0, 5.0], [0.5, 1.0, 0.0]
+        J = link_force_jacobian(graph, masses, forces)
+        acceleration(rs) = begin
+            a = [zeros(3) for _ in rs]
+            for ((i, j), force) in zip(graph.pairs, forces)
+                sight = normalize(rs[j] - rs[i])
+                a[i] .-= force .* sight ./ masses[i]
+                a[j] .+= force .* sight ./ masses[j]
+            end
+            reduce(vcat, a)
+        end
+        expected = zeros(9, 9)
+        for s in 1:3, c in 1:3
+            shift = zeros(3)
+            shift[c] = 1e-3
+            plus = [i == s ? r + shift : r for (i, r) in enumerate(positions)]
+            minus = [i == s ? r - shift : r for (i, r) in enumerate(positions)]
+            expected[:, 3 * (s - 1) + c] .= (acceleration(plus) - acceleration(minus)) ./ 2e-3
+        end
+        velocity_rows = reduce(vcat, [6 * (i - 1) .+ (4:6) for i in 1:3])
+        position_columns = reduce(vcat, [6 * (i - 1) .+ (1:3) for i in 1:3])
+        @test J[velocity_rows, position_columns] ≈ expected rtol = 1e-6
+        @test iszero(J[setdiff(1:18, velocity_rows), :]) && iszero(J[:, setdiff(1:18, position_columns)])
+        @test iszero(link_force_jacobian(graph, masses, zeros(3)))
+        @test link_force_jacobian(graph, masses, [0.5]; edges=[(2, 1)]) ≈ link_force_jacobian(graph, masses, [0.5, 0.0, 0.0])
+        @test_throws ArgumentError link_force_jacobian(graph, masses, [-1.0, 0.0, 0.0])
+        @test_throws ArgumentError link_force_jacobian(graph, masses, [1.0])
+        @test_throws ArgumentError link_force_jacobian(graph, masses[1:2], forces)
     end
 
     @testset "Reachability columns are the terminal gains" begin
@@ -266,8 +418,15 @@ toy(steps; columns=([3.0, 0.0], [0.0, 2.0], [2.5, 0.0])) =
         @test volume.gramian ≈ [9.0 0.0; 0.0 4.0]
         hardest = GreedyEdgeSchedule(SmallestEigenvalueMetric(); tie_break=LogDetMetric(epsilon=epsilon))
         @test schedule_edges(model, hardest; max_active=1).active == [[(1, 2)], [(1, 3)]]
-        @test schedule_edges(model, GreedyEdgeSchedule(SmallestEigenvalueMetric()); max_active=1).active ==
-            [[(1, 2)], [(1, 3)]]
+        unbroken = schedule_edges(model, GreedyEdgeSchedule(SmallestEigenvalueMetric()); max_active=1)
+        @test unbroken.active == [[(1, 2)], [(1, 3)]]
+        @test unbroken.tied_rounds == 1                  # λ_min is zero for every first activation
+        @test volume.tied_rounds == 0 && largest.tied_rounds == 0
+        # A gain in λ_min far below the Gramian's mean eigenvalue still decides.
+        faint = toy(2; columns=([1e3, 0.0], [0.0, 1e-3], [0.0, 2e-3]))
+        resolved = schedule_edges(faint, GreedyEdgeSchedule(SmallestEigenvalueMetric()); max_active=1)
+        @test resolved.active == [[(1, 2)], [(2, 3)]]
+        @test resolved.tied_rounds == 1
         @test schedule_edges(model, GreedyEdgeSchedule(DirectionEnergyMetric([0.0, 1.0])); max_active=1).active ==
             [[(1, 3)], [(1, 3)]]
         # On this small window the greedy volume schedule is the best of all schedules.
@@ -305,6 +464,9 @@ toy(steps; columns=([3.0, 0.0], [0.0, 2.0], [2.5, 0.0])) =
         @test given.gramian ≈ [0.0 0.0; 0.0 8.0]
         @test schedule_edges(model, ConstantEdgeSet(edges=[(1, 3)]); max_active=1, feasible=[true true; false true; true true]).active ==
             [[], [(1, 3)]]
+        @test given.tied_rounds == 0
+        @test schedule_edges(toy(3), ConstantEdgeSet(edges=[(1, 2)]); max_active=1, duty_cycle=duty).active ==
+            [[(1, 2)], [], [(1, 2)]]
         chosen = schedule_edges(model, ConstantEdgeSet(metric=LogDetMetric(epsilon=epsilon)); max_active=1)
         @test chosen.active == [[(1, 2)], [(1, 2)]]
         pair = schedule_edges(model, ConstantEdgeSet(metric=LogDetMetric(epsilon=epsilon)); max_active=2)
@@ -344,6 +506,10 @@ toy(steps; columns=([3.0, 0.0], [0.0, 2.0], [2.5, 0.0])) =
         far_schedule = schedule_edges(model, GreedyEdgeSchedule(LargestEigenvalueMetric()); max_active=1, graphs=far)
         @test far_schedule.active == [[(1, 2)], [(1, 3)]]
         @test_throws ArgumentError schedule_edges(model, volume; max_active=1, graphs=single[1:1])
+        mixed = [geometry(positions; terminals=2), limited[2]]
+        @test_throws ArgumentError schedule_edges(model, volume; max_active=3, graphs=mixed)
+        @test sum(length, schedule_edges(model, volume; max_active=3, graphs=mixed,
+            duty_cycle=DutyCycleLimit(on_steps=4, window_steps=2)).active) == 6
         @test_throws ArgumentError schedule_edges(model, volume; max_active=1, graphs=single, feasible=trues(3, 2))
         two_craft = [geometry(positions[1:2]) for _ in 1:2]
         @test_throws ArgumentError schedule_edges(model, volume; max_active=1, graphs=two_craft)

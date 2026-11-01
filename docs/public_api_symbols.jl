@@ -273,6 +273,8 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :barycentric_transform, rendered = "SpaceAGORA.barycentric_transform"),
             (owner = :SpaceAGORA, symbol = :edge_input_matrix, rendered = "SpaceAGORA.edge_input_matrix"),
             (owner = :SpaceAGORA, symbol = :zoh_discretize, rendered = "SpaceAGORA.zoh_discretize"),
+            (owner = :SpaceAGORA, symbol = :link_force_jacobian, rendered = "SpaceAGORA.link_force_jacobian"),
+            (owner = :SpaceAGORA, symbol = :range_output_matrix, rendered = "SpaceAGORA.range_output_matrix"),
             (owner = :SpaceAGORA, symbol = :reachability_matrix, rendered = "SpaceAGORA.reachability_matrix"),
             (owner = :SpaceAGORA, symbol = :controllability_gramian, rendered = "SpaceAGORA.controllability_gramian"),
             (owner = :SpaceAGORA, symbol = :AbstractControllabilityMetric, rendered = "SpaceAGORA.AbstractControllabilityMetric"),

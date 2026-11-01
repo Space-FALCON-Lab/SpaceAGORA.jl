@@ -100,7 +100,7 @@ using .SimulationModel: SemimajorAxisRatePolicy, EccentricityRatePolicy, PowerDe
 using .SimulationModel: EnergyBalancingPolicy, WeightedPolicy, PolicyTerm, state_of_charge
 using .SimulationModel: DataBacklogPolicy, stored_bits, store_room_bits
 using .SimulationModel: OpticalTerminal, MinimumForceRange, power_limited_range_m, DutyCycleLimit, EdgeFeasibilityModel, FeasibleEdgeGraph, feasible_edge_graph, feasible_edge_graphs, feasible_pairs, terminal_assignment, admissible_edge_set
-using .SimulationModel: EdgeLinearStep, EdgeLinearModel, barycentric_transform, edge_input_matrix, zoh_discretize, reachability_matrix, controllability_gramian, AbstractControllabilityMetric, LargestEigenvalueMetric, SmallestEigenvalueMetric, LogDetMetric, DirectionEnergyMetric, controllability_metric, gramian_metrics, AbstractEdgeScheduleStrategy, ConstantEdgeSet, GreedyEdgeSchedule, EdgeSchedule, schedule_edges, minimum_input_energy
+using .SimulationModel: EdgeLinearStep, EdgeLinearModel, barycentric_transform, edge_input_matrix, zoh_discretize, link_force_jacobian, range_output_matrix, reachability_matrix, controllability_gramian, AbstractControllabilityMetric, LargestEigenvalueMetric, SmallestEigenvalueMetric, LogDetMetric, DirectionEnergyMetric, controllability_metric, gramian_metrics, AbstractEdgeScheduleStrategy, ConstantEdgeSet, GreedyEdgeSchedule, EdgeSchedule, schedule_edges, minimum_input_energy
 using .SimulationModel: ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!, force_on_endpoint, laser_force_on_spacecraft
 export AbstractInterlink, LinkContext, LaserMomentumLink, link_range_m, link_available, link_force
 export interlink_wrench, link_applies_torque
@@ -119,7 +119,7 @@ export SemimajorAxisRatePolicy, EccentricityRatePolicy, PowerDeliveryPolicy, Dat
 export EnergyBalancingPolicy, WeightedPolicy, PolicyTerm, state_of_charge
 export DataBacklogPolicy, stored_bits, store_room_bits
 export OpticalTerminal, MinimumForceRange, power_limited_range_m, DutyCycleLimit, EdgeFeasibilityModel, FeasibleEdgeGraph, feasible_edge_graph, feasible_edge_graphs, feasible_pairs, terminal_assignment, admissible_edge_set
-export EdgeLinearStep, EdgeLinearModel, barycentric_transform, edge_input_matrix, zoh_discretize, reachability_matrix, controllability_gramian, AbstractControllabilityMetric, LargestEigenvalueMetric, SmallestEigenvalueMetric, LogDetMetric, DirectionEnergyMetric, controllability_metric, gramian_metrics, AbstractEdgeScheduleStrategy, ConstantEdgeSet, GreedyEdgeSchedule, EdgeSchedule, schedule_edges, minimum_input_energy
+export EdgeLinearStep, EdgeLinearModel, barycentric_transform, edge_input_matrix, zoh_discretize, link_force_jacobian, range_output_matrix, reachability_matrix, controllability_gramian, AbstractControllabilityMetric, LargestEigenvalueMetric, SmallestEigenvalueMetric, LogDetMetric, DirectionEnergyMetric, controllability_metric, gramian_metrics, AbstractEdgeScheduleStrategy, ConstantEdgeSet, GreedyEdgeSchedule, EdgeSchedule, schedule_edges, minimum_input_energy
 export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!, force_on_endpoint, laser_force_on_spacecraft
 @doc (@doc SimulationModel.InterLinkModels.AbstractInterlink) AbstractInterlink
 @doc (@doc SimulationModel.InterLinkModels.LinkContext) LinkContext
@@ -206,6 +206,8 @@ export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!,
 @doc (@doc SimulationModel.ControllabilityScheduling.barycentric_transform) barycentric_transform
 @doc (@doc SimulationModel.ControllabilityScheduling.edge_input_matrix) edge_input_matrix
 @doc (@doc SimulationModel.ControllabilityScheduling.zoh_discretize) zoh_discretize
+@doc (@doc SimulationModel.ControllabilityScheduling.link_force_jacobian) link_force_jacobian
+@doc (@doc SimulationModel.ControllabilityScheduling.range_output_matrix) range_output_matrix
 @doc (@doc SimulationModel.ControllabilityScheduling.reachability_matrix) reachability_matrix
 @doc (@doc SimulationModel.ControllabilityScheduling.controllability_gramian) controllability_gramian
 @doc (@doc SimulationModel.ControllabilityScheduling.AbstractControllabilityMetric) AbstractControllabilityMetric

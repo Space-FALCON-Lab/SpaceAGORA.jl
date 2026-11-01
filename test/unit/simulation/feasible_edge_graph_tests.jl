@@ -164,6 +164,46 @@ beam_link(; range_m=1e6, occultation=false, beam=nothing, power_w=1000.0) =
         @test !body_graph(SVector(0.0, 0.0, 1.0, 0.0)).field_of_regard[1][1]
         @test_throws ArgumentError body_graph(nothing)
 
+        # Under a general attitude, a :body terminal sees what the link's own
+        # terminal pointing sees for mounted hardware with that boresight. A half
+        # turn cannot tell a rotation from its transpose; this attitude can.
+        attitude = normalize(SVector(0.3, -0.5, 0.2, 0.78))
+        cone_half_angle = 0.6
+        pointed = LaserBeamLink(power_w=1.0, magnification=1.0, range_m=1e6,
+            pointing=TerminalPointing(field_of_regard_rad=cone_half_angle))
+        function mounted(boresight, index)
+            bus = Link(root=true, m=100.0)
+            craft = SpacecraftModel(root=bus, links=[bus], inertia_tensor=bus.inertia,
+                initial_condition=CartesianInitialCondition(SVector(RADIUS, 0.0, 0.0), SVector(0.0, SPEED, 0.0)),
+                id=index, n_terminal=0)
+            add_actuator!(craft, bus, LaserTerminal(boresight=boresight, max_power_w=1.0))
+            return craft, only(mounted_link_terminals(craft)).terminal
+        end
+        own, own_terminal = mounted([0.2, 0.9, -0.3], 1)
+        mine = OpticalTerminal(boresight=first(terminal_pose(own, own_terminal)), field_of_regard_rad=cone_half_angle,
+            frame=:body)
+        agreed = Bool[]
+        for azimuth in range(0.0, 2π; length=9)[1:end-1], polar in range(0.1, π - 0.1; length=9)
+            d = SVector(sin(polar) * cos(azimuth), sin(polar) * sin(azimuth), cos(polar))
+            partner, partner_terminal = mounted(-d, 2)       # looks straight back, at the identity attitude
+            a = StateSample(SVector(RADIUS, 0.0, 0.0), SVector(0.0, SPEED, 0.0), 100.0, attitude, SVector(0.0, 0.0, 0.0),
+                own, 1)
+            b = StateSample(SVector(RADIUS, 0.0, 0.0) + 50e3 * d, SVector(0.0, SPEED, 0.0), 100.0,
+                SVector(0.0, 0.0, 0.0, 1.0), SVector(0.0, 0.0, 0.0), partner, 2)
+            expected = link_available(pointed, own_terminal, partner_terminal, a, b, LinkContext())
+            seen_here = feasible_edge_graph(EdgeFeasibilityModel(beam_link(), [[mine], [OMNI]]), [a, b]).field_of_regard[1][1]
+            @test seen_here == expected
+            push!(agreed, expected)
+        end
+        @test any(agreed) && !all(agreed)
+
+        # The local orbital frame is the basis of the RPO frame utilities.
+        r, v = SVector(0.6, 0.8, 0.1) .* RADIUS, SVector(-4.0e3, 3.5e3, 4.5e3)
+        basis = SpaceAGORA.SimulationModel.FrameTransforms.rtn_dcm_from_inertial(r, v)
+        for sight in (SVector(1.0, 0.0, 0.0), normalize(SVector(0.3, -0.4, 0.8)))
+            @test SpaceAGORA.SimulationModel.InterLinkModels._rtn_sight(sample(r; vel=v), sight) ≈ basis' * sight
+        end
+
         @test_throws ArgumentError OpticalTerminal(boresight=[0.0, 0.0, 0.0], field_of_regard_rad=0.1)
         @test_throws ArgumentError OpticalTerminal(boresight=[1.0, 0.0, 0.0], field_of_regard_rad=0.0)
         @test_throws ArgumentError OpticalTerminal(boresight=[1.0, 0.0, 0.0], field_of_regard_rad=3.2)
@@ -256,6 +296,14 @@ beam_link(; range_m=1e6, occultation=false, beam=nothing, power_w=1000.0) =
         @test_throws ArgumentError EdgeFeasibilityModel(beam_link(), omni(2); pairs=[(1, 2), (2, 1)])
         @test_throws ArgumentError EdgeFeasibilityModel(beam_link(), omni(3); power_w=[1.0])
         @test_throws ArgumentError EdgeFeasibilityModel(beam_link(), omni(2); power_w=-1.0)
+        # A number of metres is a cap that does not depend on the power; other values are refused.
+        capped = EdgeFeasibilityModel(beam_link(range_m=1e6), omni(2); max_range=70e3)
+        @test feasible_edge_graph(capped, along_track((0.0, 60e3))).max_range_m == [70e3]
+        @test !feasible_edge_graph(capped, along_track((0.0, 80e3))).feasible[1]
+        @test power_limited_range_m(70e3, beam_link(), 1.0) == 70e3
+        @test_throws ArgumentError EdgeFeasibilityModel(beam_link(), omni(2); max_range=-1.0)
+        @test_throws ArgumentError EdgeFeasibilityModel(beam_link(), omni(2); max_range=NaN)
+        @test_throws ArgumentError EdgeFeasibilityModel(beam_link(), omni(2); max_range="far")
         @test_throws ArgumentError EdgeFeasibilityModel(LaserBeamLink(power_w=1.0, magnification=1.0, range_m=1.0,
             pointing=TerminalPointing(field_of_regard_rad=0.5)), omni(2))
         @test_throws ArgumentError EdgeFeasibilityModel(PowerBeamLink(power_w=1.0, range_m=1.0,

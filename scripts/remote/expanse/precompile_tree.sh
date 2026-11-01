@@ -5,5 +5,8 @@
 # Both lines, as the benchmark script's own prelude (. is the children's env, examples the controller's).
 set -eu
 cd "$(dirname "$0")/../../.." || exit 1
+# examples/Manifest.toml is gitignored: seed it from the root manifest and instantiate it when it is missing.
+[ -f examples/Manifest.toml ] || julia --project=. examples/setup.jl
+julia --project=examples -e 'using Pkg; Pkg.instantiate()'
 julia --project=. -e 'using SpaceAGORA'
 julia --project=examples -e 'using SpaceAGORA'

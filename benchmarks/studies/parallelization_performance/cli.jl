@@ -97,6 +97,8 @@ Base.@kwdef struct PPCConfig
     worker_mc_samples::Int = 1
     worker_outfile::String = ""
     worker_parity::Bool = false
+    # Controller only: TSV of points, one fresh child each, all in this one process (ppc_run_points).
+    points_file::String = ""
 end
 
 # Copy of `cfg` with the named fields replaced. Base.@kwdef gives a keyword
@@ -369,6 +371,7 @@ function parse_parallelization_performance_cli(args::Vector{String}=ARGS)::PPCCo
     worker_mc_samples = 1
     worker_outfile = ""
     worker_parity = false
+    points_file = ""
 
     for arg in args
         if arg in ("test", "smoke", "full")
@@ -419,6 +422,8 @@ function parse_parallelization_performance_cli(args::Vector{String}=ARGS)::PPCCo
             worker_mc_samples = parse(Int, _ppc_arg_value(arg))
         elseif startswith(arg, "--outfile=")
             worker_outfile = _ppc_arg_value(arg)
+        elseif startswith(arg, "--points-file=")
+            points_file = abspath(_ppc_arg_value(arg))
         elseif startswith(arg, "--parity=")
             worker_parity = _ppc_bool(_ppc_arg_value(arg))
         else
@@ -470,6 +475,7 @@ function parse_parallelization_performance_cli(args::Vector{String}=ARGS)::PPCCo
         worker_seed=worker_seed,
         worker_mc_samples=worker_mc_samples,
         worker_outfile=worker_outfile,
-        worker_parity=worker_parity
+        worker_parity=worker_parity,
+        points_file=points_file
     )
 end

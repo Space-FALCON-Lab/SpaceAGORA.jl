@@ -142,7 +142,12 @@ Timing benchmarks are only meaningful when the process can actually obtain the
 cores it asks for. Set `SPACEAGORA_PPC_ALLOW_BUSY=1` to proceed anyway (recorded
 in the row either way through `load_avg_1min`).
 """
-function ppc_assert_machine_quiet!(; required_headroom::Float64=0.5, wait_s::Int=600)
+function ppc_assert_machine_quiet!(; required_headroom::Float64=0.5, wait_s::Int=600, check_load::Bool=true)
+    # check_load=false (points mode, see ppc_run_points): judge the machine on the
+    # instantaneous busy reading only, polled until it settles, and skip the
+    # 1-minute load-average headroom. The previous point's own children inflate that
+    # average and it decays over minutes, which would idle the node between points
+    # although nothing is running.
     allow_busy = lowercase(strip(get(ENV, "SPACEAGORA_PPC_ALLOW_BUSY", "0"))) in ("1", "true", "yes", "on")
     # Announce before any blocking wait. This check runs ahead of the controller's
     # first println, so without this a run that is legitimately waiting for the
@@ -214,7 +219,7 @@ function ppc_assert_machine_quiet!(; required_headroom::Float64=0.5, wait_s::Int
     # Refusing to measure on a busy machine is right; refusing to wait 90 s for
     # a decaying average is not.
     deadline = time() + max(0, wait_s)
-    while ppc_load_headroom() < required_headroom && time() < deadline
+    while check_load && ppc_load_headroom() < required_headroom && time() < deadline
         sleep(15)
     end
     # Foreign-CPU check, run before any worker of this run exists: at this point
@@ -222,6 +227,10 @@ function ppc_assert_machine_quiet!(; required_headroom::Float64=0.5, wait_s::Int
     # an honest reading. Threshold at 15% of the machine, above desktop idle
     # noise and below the ~15% a single stolen core represents on 12 cores.
     busy = ppc_cpu_busy_fraction()
+    # Without the load wait, let the previous point's exiting workers finish before judging.
+    while !check_load && !isnan(busy) && busy > 0.15 && time() < deadline
+        busy = ppc_cpu_busy_fraction()
+    end
     if !isnan(busy) && busy > 0.15
         offenders = try
             readchomp(pipeline(`ps -eo pcpu,etime,comm --sort=-pcpu`, `head -4`))
@@ -236,6 +245,7 @@ function ppc_assert_machine_quiet!(; required_headroom::Float64=0.5, wait_s::Int
             error(msg)
         end
     end
+    check_load || return nothing
     headroom = ppc_load_headroom()
     headroom >= required_headroom && return nothing
     cores = _ppc_physical_core_count()

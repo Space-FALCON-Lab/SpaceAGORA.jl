@@ -1537,7 +1537,7 @@ function ppc_run_worker_points(cfg::PPCConfig, path::String)
     return nothing
 end
 
-function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Function}=nothing)
+function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Function}=nothing, check_load::Bool=true)
     stamp = Dates.format(now(UTC), dateformat"yyyymmdd_HHMMSS")
     outdir = cfg.outdir == PPC_DEFAULT_OUTDIR ? joinpath(PPC_DEFAULT_OUTDIR, stamp) : cfg.outdir
     condition = ppc_budget_condition(; cpu_pinning=cfg.cpu_pinning)
@@ -1563,7 +1563,7 @@ function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Func
     # Refuse to time anything on a machine that is already loaded. See
     # ppc_assert_machine_quiet! -- this is the check whose absence let an entire
     # 115-point run be collected against another user's 26-hour job.
-    ppc_assert_machine_quiet!()
+    ppc_assert_machine_quiet!(; check_load)
     workload_env = ppc_workload_env()
     println("[parallelization-performance] profile=$(cfg.profile) outdir=$(outdir)")
     println("[parallelization-performance] load=$(round(ppc_load_average(); digits=2)) " *
@@ -1719,6 +1719,59 @@ function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Func
     return failures
 end
 
+# Points mode (--points-file=FILE): ONE controller process runs many harness calls, so the
+# package, DataFrames/CSV and the case catalog load once instead of once per call (measured
+# 33.9 s before + 15.6 s after each call, startup_cost_options.md). Each line of FILE is
+#   tag <TAB> case <TAB> mode <TAB> outdir <TAB> store_path <TAB> snapshot_dir
+# and is exactly one former `--cases=case --modes=mode --outdir=outdir` call: same child
+# command, same env (store and snapshot env are set here before the child is built), a fresh
+# child per point. The optional shell command SPACEAGORA_PPC_POINT_PREP runs before each point
+# (it resets the policy-state dir and calibration store, as the shell loop used to). Each
+# call's output goes to <outdir>.log. A call FAILS on a failed child, an exception, or a
+# `Precompiling` line in its log (a cold cache would put compilation inside the timed child).
+function ppc_run_points(cfg::PPCConfig, path::String)
+    prep = pop!(ENV, "SPACEAGORA_PPC_POINT_PREP", "")   # not inherited by the children
+    failed = String[]
+    stamp() = Dates.format(now(), dateformat"yyyy-mm-ddTHH:MM:SS")
+    for line in eachline(path)
+        isempty(strip(line)) && continue
+        tag, case, mode, outdir, store, snap = String.(split(line, '\t'))
+        logpath = outdir * ".log"
+        println("[points $(stamp())] START $(tag) load=$(join(split(read("/proc/loadavg", String))[1:3], ' '))"); flush(stdout)
+        t0 = time()
+        ENV["SPACEAGORA_RHS_CALIBRATION_PATH"] = store
+        ENV["SPACEAGORA_PPB_SNAPSHOT_DIR"] = snap
+        mkpath(dirname(logpath))
+        ok = true
+        open(logpath, "w") do io
+            redirect_stdio(; stdout=io, stderr=io) do
+                try
+                    isempty(prep) || run(`bash -c $prep`)
+                    println("[points $(stamp())] controller start $(tag)"); flush(stdout)
+                    fails = ppc_run_controller(_ppc_with(cfg; cases=[case], modes=[mode], outdir=outdir, points_file="");
+                                               check_load=false)
+                    isempty(fails) || (ok = false)
+                catch err
+                    err isa InterruptException && rethrow()
+                    ok = false
+                    println("[points] status=error $(tag): ", first(sprint(showerror, err), 500))
+                end
+                println("[points $(stamp())] controller end $(tag)"); flush(stdout)
+            end
+        end
+        text = read(logpath, String)
+        if occursin("Precompiling", text)
+            ok = false
+            println("[points] PRECOMPILE GUARD: $(tag) log contains 'Precompiling'; run the untimed precompile first")
+        end
+        occursin(r"\[child-failed\]|status=error", text) && (ok = false)
+        println("[points $(stamp())] END $(tag) ok=$(ok) elapsed_s=$(round(time() - t0; digits=1)) load=$(join(split(read("/proc/loadavg", String))[1:3], ' '))"); flush(stdout)
+        ok || push!(failed, tag)
+    end
+    isempty(failed) || println("[points] FAILED: ", join(failed, " "))
+    return failed
+end
+
 function main_parallelization_performance()
     cfg = parse_parallelization_performance_cli()
     if cfg.worker
@@ -1733,6 +1786,8 @@ function main_parallelization_performance()
         else
             ppc_run_worker_performance(cfg)
         end
+    elseif !isempty(cfg.points_file)
+        isempty(ppc_run_points(cfg, cfg.points_file)) || exit(1)
     else
         ppc_run_controller(cfg)
     end

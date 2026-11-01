@@ -318,7 +318,8 @@ times `times` (s): `states(t)` returns the constellation's run state at time
 `t`, as the solution of `run_simulation(...; return_solution=true)` does.
 `planet` is the run's planet (for the line of sight), and `spacecraft` its
 spacecraft models when known. No activity precedes the samples, so each graph's
-duty-cycle flags are all true; the scheduler applies the limit to its schedule.
+duty-cycle flags say only whether an edge alone fits the limit; the scheduler
+applies the limit to its whole schedule.
 """
 function feasible_edge_graphs(model::EdgeFeasibilityModel, states, times; planet=nothing, spacecraft=nothing)
     return [feasible_edge_graph(model, states(t); spacecraft, context=LinkContext(time_s=t, planet=planet))

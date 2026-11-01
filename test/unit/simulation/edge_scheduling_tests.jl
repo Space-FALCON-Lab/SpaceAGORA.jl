@@ -62,6 +62,7 @@ toy(steps; columns=([3.0, 0.0], [0.0, 2.0], [2.5, 0.0])) =
         @test toy(3).edges == TOY_EDGES
         @test EdgeLinearModel([zeros(2, 2), zeros(2, 2)], [ones(2, 1), ones(2, 1)], [(1, 2)], [1.0 0.0]).projection == [1.0 0.0]
         @test_throws ArgumentError EdgeLinearModel(EdgeLinearStep[], zeros(1, 2))
+        @test_throws ArgumentError EdgeLinearModel(EdgeLinearStep[])
         @test_throws ArgumentError EdgeLinearModel([EdgeLinearStep(zeros(2, 2), ones(2, 1), [(1, 2)]),
             EdgeLinearStep(zeros(2, 2), ones(2, 1), [(1, 3)])])
         @test_throws DimensionMismatch EdgeLinearModel([EdgeLinearStep(zeros(2, 2), ones(2, 1), [(1, 2)]),
@@ -168,6 +169,11 @@ toy(steps; columns=([3.0, 0.0], [0.0, 2.0], [2.5, 0.0])) =
         # No active link: nothing is reachable but the origin.
         silent = minimum_input_energy(along_line, [Tuple{Int, Int}[] for _ in 1:N], shift)
         @test !silent.reachable && silent.energy == 0.0
+        # No projected coordinate: nothing to reach, and zero inputs.
+        empty_output = EdgeLinearModel(fill(EdgeLinearStep(A, B, [(1, 2)]), N), zeros(0, 12))
+        nothing_to_do = minimum_input_energy(empty_output, nothing, Float64[])
+        @test nothing_to_do.reachable && nothing_to_do.energy == 0.0
+        @test all(nothing_to_do.inputs[k][(1, 2)] == [0.0] for k in 1:N)
     end
 
     @testset "Three spacecraft in a plane: shape, not rotation" begin

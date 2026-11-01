@@ -92,9 +92,10 @@ end
 A window of `N` steps `k₀ … k₀+N−1` of a linear time-varying model with link
 inputs (`EdgeLinearStep`), and the map `projection` (`r × n`) from the state at
 the window's end, `δx_{k₀+N}`, to the coordinates whose controllability is
-assessed. This is the representation-agnostic interface of the scheduler: a
-sequence of `(A_k, B_k` per candidate edge`)`, with `C` and `T_rel` folded
-into `projection`.
+assessed. This is the scheduler's representation-agnostic interface: a
+sequence of state transitions `A_k` with each candidate edge's input columns
+`B_k^e`, and the output map `C` and the barycentric transformation `T_rel`
+folded into `projection`.
 
 - **The relative subspace.** Internal link forces cannot move the
   constellation's barycentre, so the useful projection drops it: for a stacked
@@ -128,8 +129,11 @@ struct EdgeLinearModel
     end
 end
 
-EdgeLinearModel(steps::AbstractVector{EdgeLinearStep}, projection::UniformScaling=I) =
-    EdgeLinearModel(steps, Matrix{Float64}(projection, size(first(steps).A, 1), size(first(steps).A, 1)))
+function EdgeLinearModel(steps::AbstractVector{EdgeLinearStep}, projection::UniformScaling=I)
+    isempty(steps) && throw(ArgumentError("An EdgeLinearModel needs at least one step."))
+    n = size(first(steps).A, 1)
+    return EdgeLinearModel(steps, Matrix{Float64}(projection, n, n))
+end
 
 function EdgeLinearModel(As::AbstractVector{<:AbstractMatrix}, Bs::AbstractVector{<:AbstractMatrix}, edges::AbstractVector,
                          projection=I)
@@ -438,8 +442,8 @@ cycle), in the set's order.
 - With `edges`, that set (at most `max_active` edges).
 - Otherwise the set is built from the candidate edges by `metric`: each round
   adds the edge whose constant use gives the largest metric, until `max_active`
-  edges; ties (within a relative `1e-10`) go to `tie_break`, a second metric,
-  and then to the earlier edge.
+  edges; ties (within the tolerance of `GreedyEdgeSchedule`) go to
+  `tie_break`, a second metric, and then to the earlier edge.
 """
 struct ConstantEdgeSet{M, T} <: AbstractEdgeScheduleStrategy
     edges::Union{Nothing, Vector{EdgePair}}
@@ -695,7 +699,7 @@ function minimum_input_energy(model::EdgeLinearModel, schedule, target::Abstract
         required .-= free * collect(Float64, initial_state)
     end
     R = reach.matrix
-    u = isempty(R) ? zeros(0) : pinv(R; rtol=Float64(rtol)) * required
+    u = isempty(R) ? zeros(size(R, 2)) : pinv(R; rtol=Float64(rtol)) * required
     scale = norm(required)
     residual = scale == 0 ? 0.0 : norm(R * u - required) / scale
     inputs = [Dict{EdgePair, Vector{Float64}}() for _ in model.steps]

@@ -552,6 +552,17 @@ function _rhs_calib_signature_terms(sig::AbstractString)::Dict{String, String}
     return terms
 end
 
+# Superlinear-speedup tolerance for `rhs_inner_speedup_curve`: a sweep whose
+# best w-thread timing beats t(1)/w by more than this factor is rejected.
+# ASSUMED, not measured: 2.0 leaves room for cache effects and is far below the
+# 17x (b = 4, per-thread) seen in the contaminated sweep. 1.0 rejects any
+# superlinear reading; keep it >= 1.
+function _rhs_inner_curve_superlinear_slack()::Float64
+    raw = strip(_engine_env_get("SPACEAGORA_INNER_CURVE_SUPERLINEAR_SLACK", "2.0"))
+    v = try parse(Float64, raw) catch; 2.0 end
+    return isfinite(v) && v > 0.0 ? v : 2.0
+end
+
 """
     rhs_inner_speedup_curve(stem; outer = nothing) -> Union{Nothing, Vector{Float64}}
 
@@ -572,6 +583,10 @@ pricing a plan must ask for the rows that match how that plan's samples run.
 timing of any plan running `w` threads: a sample on `b` threads can run any plan
 up to that width, and the calibration exists to find the fastest one. `B` is the
 widest width recorded; nothing is extrapolated past it.
+
+`curve[b]` is clamped to `b`, and `nothing` is returned when any width beats
+`t(1)/w` by more than `SPACEAGORA_INNER_CURVE_SUPERLINEAR_SLACK` (default 2.0,
+assumed): a contradictory sweep carries no usable curve.
 
 `nothing` when no row has a one-thread timing to measure against (a shape whose
 candidate ladder has no serial rung) or nothing wider than one thread: without
@@ -603,11 +618,20 @@ function rhs_inner_speedup_curve(stem::AbstractString;
     haskey(best, 1) || return nothing
     widest = maximum(keys(best))
     widest >= 2 || return nothing
+    # A w-thread RHS cannot beat t(1)/w. A reading that does by more than
+    # `slack` (a noisy or contaminated t(1), e.g. 2.98 ms against 0.08 ms in
+    # one tier-C sweep, giving 69x at b = 4) contradicts the rest of the sweep,
+    # so no curve is returned and the planner assumes no inner gain. Readings
+    # within the slack (cache effects) are clamped to b below.
+    slack = _rhs_inner_curve_superlinear_slack()
+    for (w, ns) in best
+        best[1] / ns > slack * w && return nothing
+    end
     curve = Vector{Float64}(undef, widest)
     fastest = best[1]
     for b in 1:widest
         haskey(best, b) && (fastest = min(fastest, best[b]))
-        curve[b] = best[1] / fastest
+        curve[b] = min(best[1] / fastest, Float64(b))
     end
     return curve
 end

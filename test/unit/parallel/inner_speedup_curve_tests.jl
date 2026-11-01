@@ -157,6 +157,26 @@ end
     @test_throws ArgumentError SCamp.InnerSpeedupCurve(Float64[])
 end
 
+@testset "a physically impossible curve is clamped or rejected" begin
+    _with_store(joinpath(mktempdir(), "rhs_calibration_sane.toml")) do
+        # Mild superlinear reading (cache effects): clamped to b.
+        SEng._rhs_calib_store!(_sig(budget = 8, outer = 1), _flat(4), 1.0e6;
+                               timings = [_record(_flat(1), 8.0e6), _record(_flat(2), 3.5e6),
+                                          _record(_flat(4), 1.5e6)])
+        curve = SEng.rhs_inner_speedup_curve(_stem())
+        @test all(curve[b] <= b for b in eachindex(curve))
+        @test curve[2] == 2.0 && curve[4] == 4.0
+        # Contaminated t(1) (2.98 ms vs 43 us at width 4, as in the tier-C sweep): no curve.
+        SEng._rhs_calib_store!(_sig(eff = "noisy"), _flat(4), 1.0e6;
+                               timings = [_record(_flat(1), 2.98e6, reps = 2), _record(_flat(2), 2.99e6, reps = 2),
+                                          _record(_flat(4), 4.3e4, reps = 2)])
+        @test SEng.rhs_inner_speedup_curve(_stem(eff = "noisy")) === nothing
+        withenv("SPACEAGORA_INNER_CURVE_SUPERLINEAR_SLACK" => "1.0") do
+            @test SEng.rhs_inner_speedup_curve(_stem()) === nothing
+        end
+    end
+end
+
 _cfg(; threads) = SCamp.PredictivePlannerConfig(
     margin = 0.15, guard_factor = 1.5, local_slots_max = threads - 1, remote_overhead = 0.0,
     route_switch = false, heap_model = :locals, local_thrash = 3.0)

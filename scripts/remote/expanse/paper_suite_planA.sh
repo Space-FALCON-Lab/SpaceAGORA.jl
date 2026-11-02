@@ -57,6 +57,7 @@
 #   ROWS=id,id        only these rows of the job (rerun after a failure; ids are printed by DRY=1)
 #   BUDGET=32  WARMUP=3  REP_SERIAL=5  REP_STATIC=7  REP_ADAPT=9  REP_P7=11  P7_MISSION_S=5702
 #   P5F_MODES=...     override the P5f mode list
+#   PROFILE=smoke     harness profile (default full); smoke shortens every mission, for functional smoke tests only
 #   SKIP_CALIBRATE=1  skip the per-job machine-constant calibration
 #   P7_MISSION_S is the name suffix the sf3 audit resolved ([A]: not recomputed, check on sf3 first).
 #
@@ -104,6 +105,7 @@ REP_SERIAL="${REP_SERIAL:-5}"; REP_STATIC="${REP_STATIC:-7}"; REP_ADAPT="${REP_A
 P7S="${P7_MISSION_S:-5702}"
 ROWS="${ROWS:-}"
 P5F_MODES="${P5F_MODES:-}"
+PROFILE="${PROFILE:-full}"   # harness profile; smoke shortens every mission (functional checks only)
 STORE=output/parallel_policy_state
 GRAMDIR="data/GRAMSuite.jl/GRAM Suite 2.0"
 
@@ -322,7 +324,7 @@ run_job() {
     while IFS=$'\t' read -r _ _ tag _ cs m _ _; do
       pts+="${tag}\t${cs}\t${m}\t$cdir/calls/${tag}\t$cdir/stores/${tag}.toml\t$cdir/calls/${tag}_snap\n"
     done < <(echo "$plan" | awk -F'\t' -v c="$c" '$1 == "P" && $2 == c { print }')
-    cmd=(julia --project=examples benchmarks/studies/parallelization_performance.jl full
+    cmd=(julia --project=examples benchmarks/studies/parallelization_performance.jl "$PROFILE"
          --points-file="$cdir/points.tsv" --threads=$BUDGET --process-workers=$BUDGET
          --repeats="$reps" --warmup=$WARMUP --parity-cases=none)
     case "$smp" in 1|own) ;; *) cmd+=(--mc-samples="$smp") ;; esac

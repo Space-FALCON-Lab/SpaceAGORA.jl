@@ -43,6 +43,7 @@ const API_REFERENCE_PAGES = (
     (section="Contributor conformance", title="Contributor Conformance API", file="contributor_conformance_api.md"),
     (section="Interlinks", title="Interlinks API", file="interlinks_api.md"),
     (section="Constellations", title="Constellations API", file="constellations_api.md"),
+    (section="Edge Scheduling", title="Edge Scheduling API", file="edge_scheduling_api.md"),
 )
 const BUILD_DIR = joinpath(@__DIR__, "build")
 const PUBLIC_API_REPORT = joinpath(BUILD_DIR, "undocumented_public_exports.txt")
@@ -270,6 +271,7 @@ makedocs(
             "Constellations" => "user/constellations.md",
             "Plume Interaction" => "user/plume_interaction.md",
             "Interlinks" => "user/interlinks.md",
+            "Edge Scheduling" => "user/edge_scheduling.md",
         ],
         "Atmosphere and Data" => Any[
             "Atmosphere Models" => "user/atmosphere_models.md",

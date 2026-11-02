@@ -271,8 +271,10 @@ meaningful depends on the nominal force the model is linearized about:
 
 - **About zero link force**, as in the example, the inputs are the link forces
   themselves. A push-only laser then needs `u ≥ 0`: the target is reachable
-  when `R u = y` has a nonnegative solution, and a full-rank Gramian is
-  necessary for that but not sufficient. When `nonnegative` is false, the
+  when `R u = y` has a nonnegative solution. A rank-deficient Gramian can
+  still allow particular targets; full rank is necessary to reach every
+  output target, but does not by itself guarantee push-only reachability.
+  When `nonnegative` is false, the
   energy is that of a two-way actuator, a lower bound on the push-only energy.
 - **About a positive nominal force `F*`**, signed perturbations are legitimate
   within `−F* ≤ δu ≤ F_max − F*`. The model's `A_k` must then include the

@@ -10,3 +10,5 @@ cd "$(dirname "$0")/../../.." || exit 1
 julia --project=examples -e 'using Pkg; Pkg.instantiate()'
 julia --project=. -e 'using SpaceAGORA'
 julia --project=examples -e 'using SpaceAGORA'
+# GRAM extension (SpaceAGORAGRAMSuiteExt) loads only when GRAMSuite is imported too: precompile that combination as well.
+julia --project=. -e 'using SpaceAGORA, GRAMSuite'

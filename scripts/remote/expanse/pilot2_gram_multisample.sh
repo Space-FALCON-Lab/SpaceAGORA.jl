@@ -90,7 +90,13 @@ for proj in . examples; do
   grep -q Precompiling "$pl" && say "WARNING: --project=$proj precompiled on the exclusive node; run precompile_tree.sh on the shared partition first next time"
 done
 if [[ " $STAGES " == *" gram "* ]]; then   # GRAM must load in the native-library path too (a load failure here is cheaper than one per point)
-  run julia --project=. --threads=$PRE_THREADS -e 'using SpaceAGORA, GRAMSuite; println("GRAMSuite loaded")' || { say "ERROR: GRAMSuite did not load"; exit 3; }
+  if [ "$DRY" = 1 ]; then run julia --project=. --threads=$PRE_THREADS -e 'using SpaceAGORA, GRAMSuite; println("GRAMSuite loaded")'
+  else
+    say "+ julia --project=. --threads=$PRE_THREADS -e 'using SpaceAGORA, GRAMSuite'"
+    julia --project=. --threads=$PRE_THREADS -e 'using SpaceAGORA, GRAMSuite; println("GRAMSuite loaded")' 2>&1 | tee "$OUT/prelude_gram.log"
+    [ "${PIPESTATUS[0]}" -eq 0 ] || { say "ERROR: GRAMSuite did not load"; exit 3; }
+    grep -q Precompiling "$OUT/prelude_gram.log" && say "WARNING: GRAM extension precompiled on the exclusive node; add it to precompile_tree.sh's shared-partition run"
+  fi
 fi
 
 FAILED=()

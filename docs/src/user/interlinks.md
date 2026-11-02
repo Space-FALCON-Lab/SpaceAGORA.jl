@@ -605,6 +605,10 @@ belongs to the configuration that ran, so read it from the returned run, as in
 the examples above. With the default state isolation, the configuration you
 passed in is left unchanged.
 
+The scheduler decides one step at a time. To plan the active links over a
+horizon from the controllability of the formation, see
+[Edge Scheduling](edge_scheduling.md).
+
 ### Policies
 
 A scheduling policy is a value of a policy type. Give the run one with

@@ -235,6 +235,7 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :InverseSquaredGravityModel, rendered = "SpaceAGORA.InverseSquaredGravityModel"),
             (owner = :SpaceAGORA, symbol = :InverseSquaredJ2GravityModel, rendered = "SpaceAGORA.InverseSquaredJ2GravityModel"),
             (owner = :SpaceAGORA, symbol = :NBodyGravityModel, rendered = "SpaceAGORA.NBodyGravityModel"),
+            (owner = :SpaceAGORA, symbol = :SolarRadiationPressureModel, rendered = "SpaceAGORA.SolarRadiationPressureModel"),
             (owner = :SpaceAGORA, symbol = :GravitationalHarmonicsModel, rendered = "SpaceAGORA.GravitationalHarmonicsModel"),
             (owner = :SpaceAGORA, symbol = :make_example_config, rendered = "SpaceAGORA.make_example_config"),
             (owner = :SpaceAGORA, symbol = :make_three_body_spacecraft, rendered = "SpaceAGORA.make_three_body_spacecraft")
@@ -251,6 +252,44 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :scoped, rendered = "SpaceAGORA.scoped"),
             (owner = :SpaceAGORA, symbol = :ScopedEffector, rendered = "SpaceAGORA.ScopedEffector"),
             (owner = :SpaceAGORA, symbol = :SpacecraftSelection, rendered = "SpaceAGORA.SpacecraftSelection"),
+        ]
+    ),
+    (
+        title = "Edge Scheduling",
+        items = [
+            (owner = :SpaceAGORA, symbol = :OpticalTerminal, rendered = "SpaceAGORA.OpticalTerminal"),
+            (owner = :SpaceAGORA, symbol = :MinimumForceRange, rendered = "SpaceAGORA.MinimumForceRange"),
+            (owner = :SpaceAGORA, symbol = :power_limited_range_m, rendered = "SpaceAGORA.power_limited_range_m"),
+            (owner = :SpaceAGORA, symbol = :DutyCycleLimit, rendered = "SpaceAGORA.DutyCycleLimit"),
+            (owner = :SpaceAGORA, symbol = :EdgeFeasibilityModel, rendered = "SpaceAGORA.EdgeFeasibilityModel"),
+            (owner = :SpaceAGORA, symbol = :FeasibleEdgeGraph, rendered = "SpaceAGORA.FeasibleEdgeGraph"),
+            (owner = :SpaceAGORA, symbol = :feasible_edge_graph, rendered = "SpaceAGORA.feasible_edge_graph"),
+            (owner = :SpaceAGORA, symbol = :feasible_edge_graphs, rendered = "SpaceAGORA.feasible_edge_graphs"),
+            (owner = :SpaceAGORA, symbol = :feasible_pairs, rendered = "SpaceAGORA.feasible_pairs"),
+            (owner = :SpaceAGORA, symbol = :terminal_assignment, rendered = "SpaceAGORA.terminal_assignment"),
+            (owner = :SpaceAGORA, symbol = :admissible_edge_set, rendered = "SpaceAGORA.admissible_edge_set"),
+            (owner = :SpaceAGORA, symbol = :EdgeLinearStep, rendered = "SpaceAGORA.EdgeLinearStep"),
+            (owner = :SpaceAGORA, symbol = :EdgeLinearModel, rendered = "SpaceAGORA.EdgeLinearModel"),
+            (owner = :SpaceAGORA, symbol = :barycentric_transform, rendered = "SpaceAGORA.barycentric_transform"),
+            (owner = :SpaceAGORA, symbol = :edge_input_matrix, rendered = "SpaceAGORA.edge_input_matrix"),
+            (owner = :SpaceAGORA, symbol = :zoh_discretize, rendered = "SpaceAGORA.zoh_discretize"),
+            (owner = :SpaceAGORA, symbol = :link_force_jacobian, rendered = "SpaceAGORA.link_force_jacobian"),
+            (owner = :SpaceAGORA, symbol = :range_output_matrix, rendered = "SpaceAGORA.range_output_matrix"),
+            (owner = :SpaceAGORA, symbol = :reachability_matrix, rendered = "SpaceAGORA.reachability_matrix"),
+            (owner = :SpaceAGORA, symbol = :controllability_gramian, rendered = "SpaceAGORA.controllability_gramian"),
+            (owner = :SpaceAGORA, symbol = :AbstractControllabilityMetric, rendered = "SpaceAGORA.AbstractControllabilityMetric"),
+            (owner = :SpaceAGORA, symbol = :LargestEigenvalueMetric, rendered = "SpaceAGORA.LargestEigenvalueMetric"),
+            (owner = :SpaceAGORA, symbol = :SmallestEigenvalueMetric, rendered = "SpaceAGORA.SmallestEigenvalueMetric"),
+            (owner = :SpaceAGORA, symbol = :LogDetMetric, rendered = "SpaceAGORA.LogDetMetric"),
+            (owner = :SpaceAGORA, symbol = :DirectionEnergyMetric, rendered = "SpaceAGORA.DirectionEnergyMetric"),
+            (owner = :SpaceAGORA, symbol = :controllability_metric, rendered = "SpaceAGORA.controllability_metric"),
+            (owner = :SpaceAGORA, symbol = :gramian_metrics, rendered = "SpaceAGORA.gramian_metrics"),
+            (owner = :SpaceAGORA, symbol = :AbstractEdgeScheduleStrategy, rendered = "SpaceAGORA.AbstractEdgeScheduleStrategy"),
+            (owner = :SpaceAGORA, symbol = :ConstantEdgeSet, rendered = "SpaceAGORA.ConstantEdgeSet"),
+            (owner = :SpaceAGORA, symbol = :GreedyEdgeSchedule, rendered = "SpaceAGORA.GreedyEdgeSchedule"),
+            (owner = :SpaceAGORA, symbol = :EdgeSchedule, rendered = "SpaceAGORA.EdgeSchedule"),
+            (owner = :SpaceAGORA, symbol = :schedule_edges, rendered = "SpaceAGORA.schedule_edges"),
+            (owner = :SpaceAGORA, symbol = :minimum_input_energy, rendered = "SpaceAGORA.minimum_input_energy"),
         ]
     ),
     (
@@ -280,6 +319,15 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SimulationCampaigns, symbol = :run_constellation_ensemble, rendered = "SpaceAGORA.run_constellation_ensemble"),
             (owner = :SimulationCampaigns, symbol = :ConstellationEnsembleResult, rendered = "SpaceAGORA.ConstellationEnsembleResult"),
             (owner = :SimulationCampaigns, symbol = :read_constellation_results, rendered = "SpaceAGORA.read_constellation_results")
+        ]
+    ),
+    (
+        title = "Control Forecasts",
+        items = [
+            (owner = :SpaceAGORA, symbol = :ControlForecastSnapshot, rendered = "SpaceAGORA.ControlForecastSnapshot"),
+            (owner = :SpaceAGORA, symbol = :capture_control_forecast, rendered = "SpaceAGORA.capture_control_forecast"),
+            (owner = :SpaceAGORA, symbol = :run_control_forecast, rendered = "SpaceAGORA.run_control_forecast"),
+            (owner = :SpaceAGORA, symbol = :with_control_forecast_worker, rendered = "SpaceAGORA.with_control_forecast_worker"),
         ]
     ),
     (
@@ -341,6 +389,7 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :NRLMSISE00AtmosphereModel, rendered = "SpaceAGORA.NRLMSISE00AtmosphereModel"),
             (owner = :SpaceAGORA, symbol = :init_nrlmsise_space_indices!, rendered = "SpaceAGORA.init_nrlmsise_space_indices!"),
             (owner = :SpaceAGORA, symbol = :SimpleEphemeridesModel, rendered = "SpaceAGORA.SimpleEphemeridesModel"),
+            (owner = :SpaceAGORA, symbol = :SpiceEphemeridesModel, rendered = "SpaceAGORA.SpiceEphemeridesModel"),
             (owner = :SpaceAGORA, symbol = :make_no_gram_planet, rendered = "SpaceAGORA.make_no_gram_planet"),
             (owner = :SpaceAGORA, symbol = :make_no_gram_density_model, rendered = "SpaceAGORA.make_no_gram_density_model"),
             (owner = :SpaceAGORA, symbol = :make_no_gram_environment, rendered = "SpaceAGORA.make_no_gram_environment")
@@ -413,11 +462,13 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :environment_requirements, rendered = "SpaceAGORA.environment_requirements"),
             (owner = :SpaceAGORA, symbol = :is_gravitational, rendered = "SpaceAGORA.is_gravitational"),
             (owner = :SpaceAGORA, symbol = :solver_partition, rendered = "SpaceAGORA.solver_partition"),
+            (owner = :SimulationEngine, symbol = :trial_rhs_safe, rendered = "SpaceAGORA.trial_rhs_safe"),
             (owner = :SpaceAGORA, symbol = :gravity_backbone_structure, rendered = "SpaceAGORA.gravity_backbone_structure"),
             (owner = :SpaceAGORA, symbol = :gravity_backbone_acceleration_ii, rendered = "SpaceAGORA.gravity_backbone_acceleration_ii"),
             (owner = :SpaceAGORA, symbol = :gravity_backbone_kick_structure, rendered = "SpaceAGORA.gravity_backbone_kick_structure"),
             (owner = :SpaceAGORA, symbol = :gravity_backbone_kick_acceleration_ii, rendered = "SpaceAGORA.gravity_backbone_kick_acceleration_ii"),
             (owner = :SpaceAGORA, symbol = :getDensity, rendered = "SpaceAGORA.getDensity"),
+            (owner = :SpaceAGORA, symbol = :density_altitude_derivative, rendered = "SpaceAGORA.density_altitude_derivative"),
             (owner = :SpaceAGORA, symbol = :getDensityBatch!, rendered = "SpaceAGORA.getDensityBatch!"),
             (owner = :SpaceAGORA, symbol = :with_density_model_epoch, rendered = "SpaceAGORA.with_density_model_epoch"),
             (owner = :SpaceAGORA, symbol = :ephemerides_frame_lpi, rendered = "SpaceAGORA.ephemerides_frame_lpi"),
@@ -629,6 +680,16 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :load_rpo_station_cad_pointcloud, rendered = "SpaceAGORA.load_rpo_station_cad_pointcloud"),
             (owner = :SpaceAGORA, symbol = :RPOStationGeometry, rendered = "SpaceAGORA.RPOStationGeometry"),
             (owner = :SpaceAGORA, symbol = :RPOCubeSatGeometry, rendered = "SpaceAGORA.RPOCubeSatGeometry")
+        ]
+    ),
+    (
+        title = "Atmosphere and panel control interfaces",
+        items = [
+            (owner = :SpaceAGORA, symbol = :orbital_elements_to_cartesian, rendered = "SpaceAGORA.orbital_elements_to_cartesian"),
+            (owner = :SpaceAGORA, symbol = :planet_fixed_to_geodetic, rendered = "SpaceAGORA.planet_fixed_to_geodetic"),
+            (owner = :SpaceAGORA, symbol = :PolynomialFitAtmosphereModel, rendered = "SpaceAGORA.PolynomialFitAtmosphereModel"),
+            (owner = :SpaceAGORA, symbol = :AerodynamicCommandedAreaDragModel, rendered = "SpaceAGORA.AerodynamicCommandedAreaDragModel"),
+            (owner = :SpaceAGORA, symbol = :apply_panel_angle_of_attack!, rendered = "SpaceAGORA.apply_panel_angle_of_attack!")
         ]
     ),
     (

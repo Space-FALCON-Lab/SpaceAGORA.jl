@@ -96,6 +96,8 @@ include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "interlinks", 
 @reexport using .InterLinkModels
 include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "control", "interlinks", "interlink_scheduling.jl"))
 @reexport using .SchedulingPolicies
+include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "control", "interlinks", "controllability_scheduling.jl"))
+@reexport using .ControllabilityScheduling
 
 # 4. Functions for building the model (add_...!)
 include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "spacecraft", "assembly.jl"))
@@ -143,6 +145,7 @@ export _EARTH_HIGH_PREC_BODY_FIXED_FRAME, _EARTH_FALLBACK_BODY_FIXED_FRAME
 export _spice_lock, _spice_frame_lock, r_intor_p!, r_pintor_i
 export _spice_body_fixed_frame, _body_fixed_state_xform
 export _j2000_to_body_fixed_state, _body_fixed_to_j2000_state, _planet_flattening
+export orbital_elements_to_cartesian, planet_fixed_to_geodetic
 export orbitalelemtorv, _wrap_2pi, _safe_acos, _rvtoorbitalelement_core, rvtoorbitalelement
 export rtoalfadeltar, alfadeltartor, latlongtor, latlongtoOE, rtolatlong, rtolatlongrad
 export latlongtoNED, orbital_elements_to_lvlh_quaternion, rotate_vector_by_quaternion

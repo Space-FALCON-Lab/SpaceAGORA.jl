@@ -77,6 +77,7 @@ function force_torque_instances()
     perturbations = SM.DynamicEffectors.PerturbationEffectors
     return [
         on_atmosphere(aero.AerodynamicCoefficientConstant()),
+        on_atmosphere(SpaceAGORA.AerodynamicCommandedAreaDragModel()),
         on_atmosphere(mesh_surrogate_model()),
         on_atmosphere(aero.AerodynamicCoefficientNoBallisticFlight()),
         on_atmosphere(SpaceAGORA.AerodynamicCoefficientfM()),

@@ -4,12 +4,13 @@ module EnvironmentModels
     using ..SimConfig: InitialTime
     using Reexport
 
-    export NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosphereModel, TabulatedFlightAtmosphereModel, TimeTabulatedAtmosphereModel
+    export NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosphereModel, PolynomialFitAtmosphereModel, TabulatedFlightAtmosphereModel, TimeTabulatedAtmosphereModel
     export PassKeyedExponentialAtmosphereModel, pass_exponential_density
     export NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
     export GRAMAtmosphereModel, GRAMAtmosphereModelSurrogate, GRAMGridAtmosphereModel, GRAMNearSurfaceAtmosphereModel, CombinedAtmosphereModel, ConstantDensityModel
     export with_density_model_epoch
     export getDensity, getDensityBatch!, precompute_gram_static_grids!, clear_gram_static_grid_cache!
+    export density_altitude_derivative
 
     include(joinpath(@__DIR__, "..", "environment", "atmosphere", "density_models.jl"))
     include(joinpath(@__DIR__, "atmosphere", "density_epoch.jl"))

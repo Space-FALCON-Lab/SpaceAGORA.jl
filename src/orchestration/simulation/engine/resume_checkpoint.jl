@@ -3,9 +3,10 @@
 # in the order a resumed run uses them (see "Run state: owners, resets and
 # restores" in docs/contributing/architecture.md):
 #
-# - `activity`, `interlinks`, `callbacks`, `maneuver_buffers`, `orbits` and `entries`: the
+# - `activity`, `interlinks`, `callbacks`, `link_attitudes`, `maneuver_buffers`, `orbits` and `entries`: the
 #   engine's and the callbacks' run state, restored by `_resume_engine_state!`
 #   (execution.jl) before the models start and before the callbacks initialize;
+#   `link_attitudes` is applied again after model initialization/restoration;
 # - `models`: the models' own run state, checked when the checkpoint is read and
 #   restored by `_start_run_models!` after the models' initializers;
 # - `gnc_scopes`: the spacecraft each guidance, navigation and control model acts
@@ -536,6 +537,67 @@ function _renamed_components(spacecraft, names)
 end
 _state_component_copy(value::Number) = value
 _state_component_copy(value::AbstractArray) = copy(value)
+
+# Control ticks may change non-root link attitudes without a mounted hinge.
+# These are held physical values, not part of the orbit state or a controller's
+# own snapshot. Keep their exact values; replaying a command would advance hinge
+# clocks or recompute a quaternion rather than restoring the checkpoint.
+_link_attitude_structure(sc) = [(index=i, position=Tuple(link.r), dimensions=Tuple(link.dims), reference_area=link.ref_area)
+    for (i, link) in enumerate(sc.links) if !link.root]
+
+function _link_attitude_checkpoint_state(args)
+    spacecraft = args.dynamics_model.spacecraft
+    any(sc -> any(link -> !link.root, sc.links), spacecraft) || return nothing
+    return (version=1, spacecraft=[(
+        id=sc.id, structure=_link_attitude_structure(sc),
+        roots=[link.root for link in sc.links],
+        links=[(index=i, q=Tuple(link.q), alpha_rad=link.α)
+               for (i, link) in enumerate(sc.links) if !link.root],
+    ) for sc in spacecraft])
+end
+
+function _check_link_attitude_checkpoint_state(args, checkpoint)
+    runtime = get(checkpoint, :runtime_state, nothing)
+    entry = runtime !== nothing && hasproperty(runtime, :link_attitudes) ? runtime.link_attitudes : nothing
+    if entry === nothing
+        any(sc -> any(link -> !link.root, sc.links), args.dynamics_model.spacecraft) &&
+            @warn "This checkpoint has no non-root link attitudes. Previously commanded orientations and angles may revert to configured values; geometry continuity cannot be guaranteed."
+        return nothing
+    end
+    entry isa NamedTuple && keys(entry) == (:version, :spacecraft) && entry.version === 1 ||
+        throw(ArgumentError("Link attitude checkpoint state version 1 is required to resume this run."))
+    spacecraft = args.dynamics_model.spacecraft
+    entry.spacecraft isa AbstractVector && length(entry.spacecraft) == length(spacecraft) ||
+        throw(ArgumentError("Link attitude checkpoint state must match the spacecraft count."))
+    for (sc, saved) in zip(spacecraft, entry.spacecraft)
+        saved isa NamedTuple && keys(saved) == (:id, :structure, :roots, :links) && saved.id == sc.id &&
+            isequal(saved.structure, _link_attitude_structure(sc)) &&
+            isequal(saved.roots, [link.root for link in sc.links]) && saved.links isa AbstractVector ||
+            throw(ArgumentError("Link attitude checkpoint topology differs from the configured spacecraft."))
+        indices = findall(link -> !link.root, sc.links)
+        length(saved.links) == length(indices) ||
+            throw(ArgumentError("Link attitude checkpoint must contain every non-root link."))
+        for (index, state) in zip(indices, saved.links)
+            state isa NamedTuple && keys(state) == (:index, :q, :alpha_rad) && state.index === index &&
+                state.q isa NTuple{4,Float64} && all(isfinite, state.q) && sum(abs2, state.q) > 0 &&
+                state.alpha_rad isa Float64 && isfinite(state.alpha_rad) ||
+                throw(ArgumentError("Link attitude checkpoint contains an invalid non-root link state."))
+        end
+    end
+    return entry
+end
+
+function _restore_link_attitude_checkpoint_state!(args, entry)
+    entry === nothing && return nothing
+    # The whole entry has been checked before any callback or geometry restore.
+    # Apply after hinge restoration, which may have recomputed link.q.
+    for (sc, saved) in zip(args.dynamics_model.spacecraft, entry.spacecraft), state in saved.links
+        link = sc.links[state.index]
+        link.q .= state.q
+        link.α = state.alpha_rad
+    end
+    return nothing
+end
 
 # The run state the callbacks keep on the spacecraft records: the batteries'
 # flags, the faults' activity and held levels, the sensors' streams, latest
@@ -1471,6 +1533,10 @@ end
                                      model_state=nothing, periodic_ticks=nothing, gnc_scopes=nothing,
                                      results_rows=nothing, interlink_history=nothing, maneuver_buffers=nothing, orbits=nothing, entries=nothing)
     runtime = _interlink_checkpoint_runtime_state(args, is_active)
+    link_attitudes = _link_attitude_checkpoint_state(args)
+    if link_attitudes !== nothing
+        runtime = runtime === nothing ? (link_attitudes=link_attitudes,) : merge(runtime, (link_attitudes=link_attitudes,))
+    end
     if callback_state !== nothing
         runtime = runtime === nothing ? (callbacks=callback_state,) : merge(runtime, (callbacks=callback_state,))
     end

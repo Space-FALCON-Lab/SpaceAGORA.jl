@@ -23,6 +23,7 @@ const GENERATED_SRC = joinpath(DOCS_SRC, "generated")
 const GENERATED_API_PAGE = joinpath(GENERATED_SRC, "public_api.md")
 const GENERATED_HOOK_REFERENCE_PAGE = joinpath(GENERATED_SRC, "extension_hook_reference.md")
 const API_REFERENCE_PAGES = (
+    (section="Control Forecasts", title="Control Forecast API", file="control_forecast_api.md"),
     (section="Simulation Setup", title="Simulation Setup API", file="simulation_setup_api.md"),
     (section="RPO planner pilot", title="RPO Planner API", file="rpo_planner_api.md"),
     (section="Burn-plan family", title="Burn-Plan Family API", file="burn_plan_family_api.md"),
@@ -42,6 +43,7 @@ const API_REFERENCE_PAGES = (
     (section="Contributor conformance", title="Contributor Conformance API", file="contributor_conformance_api.md"),
     (section="Interlinks", title="Interlinks API", file="interlinks_api.md"),
     (section="Constellations", title="Constellations API", file="constellations_api.md"),
+    (section="Edge Scheduling", title="Edge Scheduling API", file="edge_scheduling_api.md"),
 )
 const BUILD_DIR = joinpath(@__DIR__, "build")
 const PUBLIC_API_REPORT = joinpath(BUILD_DIR, "undocumented_public_exports.txt")
@@ -269,6 +271,7 @@ makedocs(
             "Constellations" => "user/constellations.md",
             "Plume Interaction" => "user/plume_interaction.md",
             "Interlinks" => "user/interlinks.md",
+            "Edge Scheduling" => "user/edge_scheduling.md",
         ],
         "Atmosphere and Data" => Any[
             "Atmosphere Models" => "user/atmosphere_models.md",
@@ -281,6 +284,7 @@ makedocs(
             "Writing a GNC Algorithm" => "user/gnc_algorithm.md",
             "Feedback Controllers and Estimators" => "user/gnc_feedback.md",
             "Planning Algorithms" => "user/gnc_planning.md",
+            "Candidate Control Forecasts" => "user/control_forecasts.md",
             "Your First Controller Package" => "user/feedback_package.md",
             "Energy Depletion Guidance" => "user/edg_guidance.md",
             "Motion Planning with HYPR" => "user/hypr_planning.md",
@@ -329,6 +333,7 @@ makedocs(
         "API Reference" => Any[
             "CLI" => "cli.md",
             "Public API" => "generated/public_api.md",
+            "Control Forecast API" => "generated/control_forecast_api.md",
             "Simulation Setup API" => "generated/simulation_setup_api.md",
             "RPO Planner API" => "generated/rpo_planner_api.md",
             "Burn-Plan Family API" => "generated/burn_plan_family_api.md",

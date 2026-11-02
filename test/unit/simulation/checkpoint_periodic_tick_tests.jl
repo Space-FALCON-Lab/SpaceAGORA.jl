@@ -333,6 +333,20 @@ end
         @test isequal(ramp_run(period=0.125, interval=1.0, dir=dir, resume=true, fail_after=Inf).table, whole.table)
     end
 
+    @testset "an interrupted run resumed across off-grid checkpoints keeps every output epoch" begin
+        # Checkpoints every 0.37 s against a 0.1 s output cadence: no segment boundary
+        # is an output epoch. The table of the interrupted and resumed run equals the
+        # table of the same run in one piece, and both hold every nominal epoch.
+        whole = ramp_run(period=0.1, interval=0.37, fail_after=Inf)
+        epochs = SC._segment_output_times(0.0, 0.0, 5.0, 0.1)
+        @test all(t -> t in whole.table.time, epochs)
+        dir = mktempdir()
+        @test_throws Exception ramp_run(period=0.1, interval=0.37, dir=dir, fail_after=2.3)
+        resumed = ramp_run(period=0.1, interval=0.37, dir=dir, resume=true, fail_after=Inf)
+        @test isequal(resumed.table, whole.table)
+        @test all(t -> t in resumed.table.time, epochs)
+    end
+
     @testset "decimal boundaries take the tick they round away from, once" begin
         # 3 * 0.1 is 0.30000000000000004, and a 0.3 s interval ends the first segment
         # at 0.3. The next segment started an ulp before that tick, and the solver

@@ -78,6 +78,8 @@ export SimulationSettings
 # --- Simulation setup API: `using SpaceAGORA` alone is enough to configure a run ---
 using .SimulationModel: AerodynamicCoefficientfM
 export AerodynamicCoefficientfM
+using .SimulationModel: SolarRadiationPressureModel
+export SolarRadiationPressureModel
 @doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.AerodynamicCoefficientfM) AerodynamicCoefficientfM
 using .SimulationModel: SimulationConfiguration, MissionConfiguration, MissionType, MissionTime, MissionOrbits, EnvironmentModel, DynamicsModel, GuidanceModel, NavigationModel, ControlModel, SpacecraftModel, Link, Joint, InitialCondition, CartesianInitialCondition, InitialTime, IntegrationTolerances, SaveField, default_save_fields, MaxwellianHeat, InverseSquaredGravityModel, InverseSquaredJ2GravityModel, NBodyGravityModel, GravitationalHarmonicsModel, make_example_config, make_three_body_spacecraft
 export SimulationConfiguration, MissionConfiguration, MissionType, MissionTime, MissionOrbits, EnvironmentModel, DynamicsModel, GuidanceModel, NavigationModel, ControlModel, SpacecraftModel, Link, Joint, InitialCondition, CartesianInitialCondition, InitialTime, IntegrationTolerances, SaveField, default_save_fields, MaxwellianHeat, InverseSquaredGravityModel, InverseSquaredJ2GravityModel, NBodyGravityModel, GravitationalHarmonicsModel, make_example_config, make_three_body_spacecraft
@@ -97,6 +99,8 @@ using .SimulationModel: AbstractSchedulingPolicy, LinkCandidate, SchedulingConte
 using .SimulationModel: SemimajorAxisRatePolicy, EccentricityRatePolicy, PowerDeliveryPolicy, DataThroughputPolicy
 using .SimulationModel: EnergyBalancingPolicy, WeightedPolicy, PolicyTerm, state_of_charge
 using .SimulationModel: DataBacklogPolicy, stored_bits, store_room_bits
+using .SimulationModel: OpticalTerminal, MinimumForceRange, power_limited_range_m, DutyCycleLimit, EdgeFeasibilityModel, FeasibleEdgeGraph, feasible_edge_graph, feasible_edge_graphs, feasible_pairs, terminal_assignment, admissible_edge_set
+using .SimulationModel: EdgeLinearStep, EdgeLinearModel, barycentric_transform, edge_input_matrix, zoh_discretize, link_force_jacobian, range_output_matrix, reachability_matrix, controllability_gramian, AbstractControllabilityMetric, LargestEigenvalueMetric, SmallestEigenvalueMetric, LogDetMetric, DirectionEnergyMetric, controllability_metric, gramian_metrics, AbstractEdgeScheduleStrategy, ConstantEdgeSet, GreedyEdgeSchedule, EdgeSchedule, schedule_edges, minimum_input_energy
 using .SimulationModel: ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!, force_on_endpoint, laser_force_on_spacecraft
 export AbstractInterlink, LinkContext, LaserMomentumLink, link_range_m, link_available, link_force
 export interlink_wrench, link_applies_torque
@@ -114,6 +118,8 @@ export AbstractSchedulingPolicy, LinkCandidate, SchedulingContext, candidate_sco
 export SemimajorAxisRatePolicy, EccentricityRatePolicy, PowerDeliveryPolicy, DataThroughputPolicy
 export EnergyBalancingPolicy, WeightedPolicy, PolicyTerm, state_of_charge
 export DataBacklogPolicy, stored_bits, store_room_bits
+export OpticalTerminal, MinimumForceRange, power_limited_range_m, DutyCycleLimit, EdgeFeasibilityModel, FeasibleEdgeGraph, feasible_edge_graph, feasible_edge_graphs, feasible_pairs, terminal_assignment, admissible_edge_set
+export EdgeLinearStep, EdgeLinearModel, barycentric_transform, edge_input_matrix, zoh_discretize, link_force_jacobian, range_output_matrix, reachability_matrix, controllability_gramian, AbstractControllabilityMetric, LargestEigenvalueMetric, SmallestEigenvalueMetric, LogDetMetric, DirectionEnergyMetric, controllability_metric, gramian_metrics, AbstractEdgeScheduleStrategy, ConstantEdgeSet, GreedyEdgeSchedule, EdgeSchedule, schedule_edges, minimum_input_energy
 export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!, force_on_endpoint, laser_force_on_spacecraft
 @doc (@doc SimulationModel.InterLinkModels.AbstractInterlink) AbstractInterlink
 @doc (@doc SimulationModel.InterLinkModels.LinkContext) LinkContext
@@ -184,6 +190,39 @@ export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!,
 @doc (@doc SimulationModel.SchedulingPolicies.DataBacklogPolicy) DataBacklogPolicy
 @doc (@doc SimulationModel.SchedulingPolicies.stored_bits) stored_bits
 @doc (@doc SimulationModel.SchedulingPolicies.store_room_bits) store_room_bits
+@doc (@doc SimulationModel.InterLinkModels.OpticalTerminal) OpticalTerminal
+@doc (@doc SimulationModel.InterLinkModels.MinimumForceRange) MinimumForceRange
+@doc (@doc SimulationModel.InterLinkModels.power_limited_range_m) power_limited_range_m
+@doc (@doc SimulationModel.InterLinkModels.DutyCycleLimit) DutyCycleLimit
+@doc (@doc SimulationModel.InterLinkModels.EdgeFeasibilityModel) EdgeFeasibilityModel
+@doc (@doc SimulationModel.InterLinkModels.FeasibleEdgeGraph) FeasibleEdgeGraph
+@doc (@doc SimulationModel.InterLinkModels.feasible_edge_graph) feasible_edge_graph
+@doc (@doc SimulationModel.InterLinkModels.feasible_edge_graphs) feasible_edge_graphs
+@doc (@doc SimulationModel.InterLinkModels.feasible_pairs) feasible_pairs
+@doc (@doc SimulationModel.InterLinkModels.terminal_assignment) terminal_assignment
+@doc (@doc SimulationModel.InterLinkModels.admissible_edge_set) admissible_edge_set
+@doc (@doc SimulationModel.ControllabilityScheduling.EdgeLinearStep) EdgeLinearStep
+@doc (@doc SimulationModel.ControllabilityScheduling.EdgeLinearModel) EdgeLinearModel
+@doc (@doc SimulationModel.ControllabilityScheduling.barycentric_transform) barycentric_transform
+@doc (@doc SimulationModel.ControllabilityScheduling.edge_input_matrix) edge_input_matrix
+@doc (@doc SimulationModel.ControllabilityScheduling.zoh_discretize) zoh_discretize
+@doc (@doc SimulationModel.ControllabilityScheduling.link_force_jacobian) link_force_jacobian
+@doc (@doc SimulationModel.ControllabilityScheduling.range_output_matrix) range_output_matrix
+@doc (@doc SimulationModel.ControllabilityScheduling.reachability_matrix) reachability_matrix
+@doc (@doc SimulationModel.ControllabilityScheduling.controllability_gramian) controllability_gramian
+@doc (@doc SimulationModel.ControllabilityScheduling.AbstractControllabilityMetric) AbstractControllabilityMetric
+@doc (@doc SimulationModel.ControllabilityScheduling.LargestEigenvalueMetric) LargestEigenvalueMetric
+@doc (@doc SimulationModel.ControllabilityScheduling.SmallestEigenvalueMetric) SmallestEigenvalueMetric
+@doc (@doc SimulationModel.ControllabilityScheduling.LogDetMetric) LogDetMetric
+@doc (@doc SimulationModel.ControllabilityScheduling.DirectionEnergyMetric) DirectionEnergyMetric
+@doc (@doc SimulationModel.ControllabilityScheduling.controllability_metric) controllability_metric
+@doc (@doc SimulationModel.ControllabilityScheduling.gramian_metrics) gramian_metrics
+@doc (@doc SimulationModel.ControllabilityScheduling.AbstractEdgeScheduleStrategy) AbstractEdgeScheduleStrategy
+@doc (@doc SimulationModel.ControllabilityScheduling.ConstantEdgeSet) ConstantEdgeSet
+@doc (@doc SimulationModel.ControllabilityScheduling.GreedyEdgeSchedule) GreedyEdgeSchedule
+@doc (@doc SimulationModel.ControllabilityScheduling.EdgeSchedule) EdgeSchedule
+@doc (@doc SimulationModel.ControllabilityScheduling.schedule_edges) schedule_edges
+@doc (@doc SimulationModel.ControllabilityScheduling.minimum_input_energy) minimum_input_energy
 @doc (@doc SimulationModel.SchedulingPolicies.select_interlinks!) select_interlinks!
 @doc """Refresh link availability, score candidates, and select the maximum-total-score terminal matching.""" schedule_interlinks!
 @doc """Create the accepted-step scheduler callback used automatically by `run_simulation` when interlinks are enabled.""" interlink_scheduler_callback
@@ -216,6 +255,18 @@ Return the default `SaveField`s for `config`.""" default_save_fields
 @doc """Point-mass (inverse-square) gravity effector.""" InverseSquaredGravityModel
 @doc """Point-mass gravity with the J2 oblateness term.""" InverseSquaredJ2GravityModel
 @doc """Third-body gravity effector using ephemerides for the listed bodies.""" NBodyGravityModel
+@doc """
+    SolarRadiationPressureModel(Cr, A, AU_m=149_597_870_700.0; kwargs...)
+
+Solar radiation pressure for reflectivity coefficient `Cr` and reference area
+`A` in square metres. Direct sunlight is enabled by default (`direct=true`);
+planetary albedo and infrared contributions are opt-in (`albedo=false`,
+`ir=false`). Their parameters are `planet_albedo=0.3` and
+`planet_ir_flux_w_m2=237.0`. Use this effector in `DynamicsModel` or the
+`dynamic_effectors` argument of `make_example_config`. Active direct sunlight
+or albedo requires `SpiceEphemeridesModel` and kernels for the selected planet
+and epoch; a run using `SimpleEphemeridesModel` rejects that combination.
+""" SolarRadiationPressureModel
 @doc """
     GravitationalHarmonicsModel(L, M, coefficients_file, planet; kwargs...)
 
@@ -304,6 +355,7 @@ using .ParallelProcess: ProcessPool, campaign_process_pool, ensure_process_worke
 using .SimulationEngine: ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 using .SimulationEngine: simulation_engine_config_from_env
 using .SimulationEngine: SimulationResults, link_schedule, run_table, long_table
+using .SimulationEngine: ControlForecastSnapshot, capture_control_forecast, run_control_forecast, with_control_forecast_worker
 using .SimulationEngine: prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
 run_simulation(args...; kwargs...) = SimulationEngine.run_simulation(args...; kwargs...)
 
@@ -313,6 +365,18 @@ using .SimulationCampaigns: run_constellation_ensemble, ConstellationEnsembleRes
 using .SimulationCampaigns: run_monte_carlo_visualization
 
 ## 2.5. Simulation Model
+using .SimulationModel.FrameTransforms: orbital_elements_to_cartesian, planet_fixed_to_geodetic
+using .SimulationModel: PolynomialFitAtmosphereModel, density_altitude_derivative
+using .SimulationModel: AerodynamicCommandedAreaDragModel, apply_panel_angle_of_attack!
+export orbital_elements_to_cartesian, planet_fixed_to_geodetic
+export PolynomialFitAtmosphereModel, density_altitude_derivative
+export AerodynamicCommandedAreaDragModel, apply_panel_angle_of_attack!
+@doc (@doc SimulationModel.FrameTransforms.orbital_elements_to_cartesian) orbital_elements_to_cartesian
+@doc (@doc SimulationModel.FrameTransforms.planet_fixed_to_geodetic) planet_fixed_to_geodetic
+@doc (@doc SimulationModel.EnvironmentModels.PolynomialFitAtmosphereModel) PolynomialFitAtmosphereModel
+@doc (@doc SimulationModel.EnvironmentModels.density_altitude_derivative) density_altitude_derivative
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.AerodynamicCommandedAreaDragModel) AerodynamicCommandedAreaDragModel
+@doc (@doc SimulationModel.ControlHooks.apply_panel_angle_of_attack!) apply_panel_angle_of_attack!
 using .SimulationModel: StateAnchor, get_state_anchor_callback
 using .SimulationModel.AbstractTypes: AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel
 using .SimulationModel.AbstractTypes: AbstractControlEffectorModel, AbstractEphemeridesModel
@@ -388,7 +452,7 @@ using .SimulationModel: NoAtmosphereModel, ExponentialAtmosphereModel, Piecewise
 using .SimulationModel: GRAMGridAtmosphereModel, GRAMNearSurfaceAtmosphereModel, CombinedAtmosphereModel
 using .SimulationModel.EnvironmentModels: SurrogatePresetResolution, available_surrogate_presets, resolve_surrogate_preset, surrogate_preset_model, atmosphere_provenance
 using .SimulationModel: NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
-using .SimulationModel: SimpleEphemeridesModel
+using .SimulationModel: SimpleEphemeridesModel, SpiceEphemeridesModel
 using .SimulationModel.TerrainModels: AbstractTerrainModel, NoTerrainModel, DEMGrid, DEMTerrainModel
 using .SimulationModel.TerrainModels: terrain_height, terrain_radius, load_dem_grid, load_site_terrain, dem_grid_covers
 using .SimulationModel: make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
@@ -504,6 +568,10 @@ end
 @doc (@doc SimulationEngine.SimulationEngineConfig) SimulationEngineConfig
 @doc (@doc SimulationEngine.simulation_engine_config_from_env) simulation_engine_config_from_env
 @doc (@doc SimulationEngine.SimulationResults) SimulationResults
+@doc (@doc SimulationEngine.ControlForecastSnapshot) ControlForecastSnapshot
+@doc (@doc SimulationEngine.capture_control_forecast) capture_control_forecast
+@doc (@doc SimulationEngine.run_control_forecast) run_control_forecast
+@doc (@doc SimulationEngine.with_control_forecast_worker) with_control_forecast_worker
 @doc (@doc SimulationEngine.link_schedule) link_schedule
 @doc (@doc SimulationEngine.run_table) run_table
 @doc (@doc SimulationEngine.long_table) long_table
@@ -711,6 +779,14 @@ end
 @doc (@doc SimulationModel.descent_attitude_command) descent_attitude_command
 @doc (@doc SimulationModel.init_nrlmsise_space_indices!) init_nrlmsise_space_indices!
 @doc (@doc SimulationModel.SimpleEphemeridesModel) SimpleEphemeridesModel
+@doc """
+    SpiceEphemeridesModel()
+
+Use SPICE kernels for planetary frames, the Sun direction and the simulation
+start epoch. Furnish kernels covering the chosen body and epoch before running
+(for example through a SPICE-backed planet constructor). This constructor selects
+the existing backend; it does not download or load kernels itself.
+""" SpiceEphemeridesModel
 @doc (@doc SimulationModel.make_no_gram_planet) make_no_gram_planet
 @doc (@doc SimulationModel.make_no_gram_density_model) make_no_gram_density_model
 @doc (@doc SimulationModel.make_no_gram_environment) make_no_gram_environment
@@ -870,7 +946,7 @@ export NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosp
 export GRAMGridAtmosphereModel, GRAMNearSurfaceAtmosphereModel, CombinedAtmosphereModel
 export SurrogatePresetResolution, available_surrogate_presets, resolve_surrogate_preset, surrogate_preset_model, atmosphere_provenance
 export NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
-export SimpleEphemeridesModel
+export SimpleEphemeridesModel, SpiceEphemeridesModel
 export make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
 export wrench, environment_requirements, solver_partition
 export gravity_backbone_structure, gravity_backbone_acceleration_ii
@@ -904,6 +980,7 @@ export SolarPanelAngleOfAttackControlModel
 export ApoapsisTargetPeriapsisRaiseGuidanceModel
 export VerificationRequest, VerificationResult
 export run_verification, run_verification_cli, run_study, run_simulation, SimulationResults, link_schedule, run_table, long_table
+export ControlForecastSnapshot, capture_control_forecast, run_control_forecast, with_control_forecast_worker
 export station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
 export RPOStationGeometry, RPOCubeSatGeometry
 export VisualizationScene, PlanetSpec, SpacecraftGeometry, LinkBox, AtmosphereSpec, atmosphere_spec, ArmGeometry, arm_geometry
@@ -942,4 +1019,9 @@ function __init__()
 end
 
 
+
+# Core-owned trial RHS contract for optional coordinate solvers.
+const trial_rhs_safe = SimulationEngine.trial_rhs_safe
+@doc (@doc SimulationEngine.trial_rhs_safe) trial_rhs_safe
+export trial_rhs_safe
 end # module SpaceAGORA

@@ -90,10 +90,10 @@ for proj in . examples; do
   grep -q Precompiling "$pl" && say "WARNING: --project=$proj precompiled on the exclusive node; run precompile_tree.sh on the shared partition first next time"
 done
 if [[ " $STAGES " == *" gram "* ]]; then   # GRAM must load in the native-library path too (a load failure here is cheaper than one per point)
-  if [ "$DRY" = 1 ]; then run julia --project=. --threads=$PRE_THREADS -e 'using SpaceAGORA, GRAMSuite; println("GRAMSuite loaded")'
+  if [ "$DRY" = 1 ]; then run julia --project=. --threads=$PRE_THREADS -e 'using SpaceAGORA; SpaceAGORA.RuntimeServices._prepare_gramsuite_load_path!(joinpath(pwd(), "data", "GRAMSuite.jl"); prepend=true); @eval import GRAMSuite; ext = Base.get_extension(SpaceAGORA, :SpaceAGORAGRAMSuiteExt) !== nothing; println("GRAMSuite loaded, extension attached: ", ext); ext || exit(4)'
   else
-    say "+ julia --project=. --threads=$PRE_THREADS -e 'using SpaceAGORA, GRAMSuite'"
-    julia --project=. --threads=$PRE_THREADS -e 'using SpaceAGORA, GRAMSuite; println("GRAMSuite loaded")' 2>&1 | tee "$OUT/prelude_gram.log"
+    say "+ julia --project=. --threads=$PRE_THREADS -e '<load GRAMSuite via the vendored load path>'"
+    julia --project=. --threads=$PRE_THREADS -e 'using SpaceAGORA; SpaceAGORA.RuntimeServices._prepare_gramsuite_load_path!(joinpath(pwd(), "data", "GRAMSuite.jl"); prepend=true); @eval import GRAMSuite; ext = Base.get_extension(SpaceAGORA, :SpaceAGORAGRAMSuiteExt) !== nothing; println("GRAMSuite loaded, extension attached: ", ext); ext || exit(4)' 2>&1 | tee "$OUT/prelude_gram.log"
     [ "${PIPESTATUS[0]}" -eq 0 ] || { say "ERROR: GRAMSuite did not load"; exit 3; }
     grep -q Precompiling "$OUT/prelude_gram.log" && say "WARNING: GRAM extension precompiled on the exclusive node; add it to precompile_tree.sh's shared-partition run"
   fi

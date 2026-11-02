@@ -10,5 +10,6 @@ cd "$(dirname "$0")/../../.." || exit 1
 julia --project=examples -e 'using Pkg; Pkg.instantiate()'
 julia --project=. -e 'using SpaceAGORA'
 julia --project=examples -e 'using SpaceAGORA'
-# GRAM extension (SpaceAGORAGRAMSuiteExt) loads only when GRAMSuite is imported too: precompile that combination as well.
-julia --project=. -e 'using SpaceAGORA, GRAMSuite'
+# GRAM extension (SpaceAGORAGRAMSuiteExt): GRAMSuite is a weak dependency, so it cannot be imported from the root project
+# directly; load it the way the harness does (cases.jl ppc_ensure_gramsuite_loaded!: vendored environment first on LOAD_PATH).
+julia --project=. -e 'using SpaceAGORA; SpaceAGORA.RuntimeServices._prepare_gramsuite_load_path!(joinpath(pwd(), "data", "GRAMSuite.jl"); prepend=true); @eval import GRAMSuite; ext = Base.get_extension(SpaceAGORA, :SpaceAGORAGRAMSuiteExt) !== nothing; println("GRAMSuite loaded, extension attached: ", ext); ext || exit(4)'

@@ -58,6 +58,7 @@
 #   BUDGET=32  WARMUP=3  REP_SERIAL=5  REP_STATIC=7  REP_ADAPT=9  REP_P7=11  P7_MISSION_S=5702
 #   P5F_MODES=...     override the P5f mode list
 #   MODES=a,b         only these modes in every non-P5f row (P5F_MODES wins for P5f rows); smoke tests
+#   MC_SAMPLES=n      replace the sample count of the numeric-sample rows (P3, P4, P4g, P6p, P4gs); smoke tests
 #   PROFILE=smoke     harness profile (default full); smoke shortens every mission, for functional smoke tests only
 #   SKIP_CALIBRATE=1  skip the per-job machine-constant calibration
 #   P7_MISSION_S is the name suffix the sf3 audit resolved ([A]: not recomputed, check on sf3 first).
@@ -330,7 +331,7 @@ run_job() {
     cmd=(julia --project=examples benchmarks/studies/parallelization_performance.jl "$PROFILE"
          --points-file="$cdir/points.tsv" --threads=$BUDGET --process-workers=$BUDGET
          --repeats="$reps" --warmup=$WARMUP --parity-cases=none)
-    case "$smp" in 1|own) ;; *) cmd+=(--mc-samples="$smp") ;; esac
+    case "$smp" in 1|own) ;; *) cmd+=(--mc-samples="${MC_SAMPLES:-$smp}") ;; esac
     say "=== call $c/$ncalls: samples=$smp repeats=$reps"
     if [ "$DRY" = 1 ]; then
       say "points file $cdir/points.tsv:"; printf "$pts" | sed 's/^/  /'; echo "  ${cmd[*]}"; continue

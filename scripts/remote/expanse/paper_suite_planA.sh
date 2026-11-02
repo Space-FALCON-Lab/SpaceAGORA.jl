@@ -59,6 +59,7 @@
 #   P5F_MODES=...     override the P5f mode list
 #   MODES=a,b         only these modes in every non-P5f row (P5F_MODES wins for P5f rows); smoke tests
 #   MC_SAMPLES=n      replace the sample count of the numeric-sample rows (P3, P4, P4g, P6p, P4gs); smoke tests
+#   PROCESS_WORKERS=n pool size handed to the harness (default BUDGET); a smoke run on a small-memory host needs fewer
 #   PROFILE=smoke     harness profile (default full); smoke shortens every mission, for functional smoke tests only
 #   SKIP_CALIBRATE=1  skip the per-job machine-constant calibration
 #   P7_MISSION_S is the name suffix the sf3 audit resolved ([A]: not recomputed, check on sf3 first).
@@ -329,7 +330,7 @@ run_job() {
       pts+="${tag}\t${cs}\t${m}\t$cdir/calls/${tag}\t$cdir/stores/${tag}.toml\t$cdir/calls/${tag}_snap\n"
     done < <(echo "$plan" | awk -F'\t' -v c="$c" '$1 == "P" && $2 == c { print }')
     cmd=(julia --project=examples benchmarks/studies/parallelization_performance.jl "$PROFILE"
-         --points-file="$cdir/points.tsv" --threads=$BUDGET --process-workers=$BUDGET
+         --points-file="$cdir/points.tsv" --threads=$BUDGET --process-workers=${PROCESS_WORKERS:-$BUDGET}
          --repeats="$reps" --warmup=$WARMUP --parity-cases=none)
     case "$smp" in 1|own) ;; *) cmd+=(--mc-samples="${MC_SAMPLES:-$smp}") ;; esac
     say "=== call $c/$ncalls: samples=$smp repeats=$reps"

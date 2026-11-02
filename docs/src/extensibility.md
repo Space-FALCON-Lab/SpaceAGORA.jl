@@ -372,6 +372,9 @@ wheels detumble it while its torque rods unload them.
 
 ## Add a sensor
 
+To mount and read an existing sensor, start with [Using Sensors](user/sensors.md).
+This section describes implementing a new sensor kind.
+
 Shape: hardware (H), plus declarations (D). Rows:
 [Sensors](generated/extension_hook_reference.md#Sensors).
 

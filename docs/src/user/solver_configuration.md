@@ -17,6 +17,10 @@ What to read next:
 - [Configuring a Simulation](simulation_configuration.md)
 - [Parallel Execution](parallel_execution.md)
 
+For a complete exercise with commands, a fixed mounted-actuator case, a refined
+DP8 reference and error tables, follow [Compare Solvers](../tutorials/solver_comparison.md).
+Use this page as the settings reference while you work through it.
+
 ## IntegrationTolerances
 
 `IntegrationTolerances` is the `integration_tolerances` field of

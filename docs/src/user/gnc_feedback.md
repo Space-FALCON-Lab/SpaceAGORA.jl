@@ -29,6 +29,56 @@ using Test
 The estimator blocks also need `test_navigation_model` from
 `SpaceAGORA.Conformance`.
 
+## Follow this path first
+
+Work through the steps below in order. The later sections explain the hooks in
+detail; you do not need to read every linked reference before running the first
+example. All commands start at the SpaceAGORA repository root and work in a
+terminal on Windows, Linux or macOS.
+
+1. **Run the rate damper.** Use the setup and `feedback_controller.jl` commands
+   above. The script prints the final body rate beside a hand calculation and
+   runs its conformance checks. Read [Worked example A](#Worked-example-A:-a-rate-damper)
+   alongside that script. The tick computes a torque; the output hook applies
+   the held torque between ticks. A passing interface check is not a general
+   scientific validation of your control law.
+2. **Choose which spacecraft receives the command.** The example's
+   `spacecraft_index=1` and `BoundSpacecraft((1,))` refer to the first spacecraft
+   in the run, not a spacecraft ID. In a multi-spacecraft configuration, keep
+   the controller's index and its declared scope consistent. First compare one
+   enabled controller against the same run with it disabled. Inspect its ticks
+   and commands for the chosen spacecraft, then verify that it contributes no
+   torque to the others. The others still propagate under their own dynamics.
+   [Constellations](constellations.md) explains how to assemble the spacecraft;
+   [Declarations](#Declarations) explains the supported scopes. Keep this first
+   check monolithic; independent ensemble binding is a later check.
+3. **Read a sensor instead of the true rate.** Run the estimator script:
+
+   ```text
+   julia --startup-file=no --project=examples/gnc_algorithm_env examples/gnc_algorithm_env/estimator.jl
+   ```
+
+   Read [Worked example B](#Worked-example-B:-an-estimator-and-a-link) in the same
+   page. The gyro samples, the estimator holds a measurement, and the controller
+   reads that estimate. [Using sensors](sensors.md) explains mounting, sampling
+   periods, frames and output columns.
+4. **Check state between runs and across a restart.** Both scripts run
+   conformance checks; the estimator script also performs an interrupted versus
+   uninterrupted checkpoint comparison. See [Test your algorithm](#Test-your-algorithm)
+   for the calls. When adapting the example, include every stateful part of your
+   algorithm in its checkpoint methods, including optimizer warm starts if it
+   has them. The example's held torque and gyro estimate do not test those
+   additional states.
+5. **Package the working controller.** Once you can explain its commands and
+   reproduce its checks, follow [Your First Controller Package](feedback_package.md).
+   Keep the package's usage instructions and supported SpaceAGORA revision with
+   it. Planner interfaces belong to the separate [planning guide](gnc_planning.md).
+
+For a review, keep the exact revision, commands, configuration, selected
+spacecraft, observed outputs and failed checks together. Record the first
+instruction that needed a guess; that is useful feedback even if the run later
+succeeds.
+
 ## The feedback profile
 
 A feedback controller has two parts. The tick,

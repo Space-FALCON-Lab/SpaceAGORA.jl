@@ -109,9 +109,18 @@ stage() {
   P=${#PAIRS[@]}
   if [ $((P % 3)) -eq 0 ]; then SHIFT=$((P / 3)); else SHIFT=1; fi
   SHIFT="${SHIFT_OVERRIDE:-$SHIFT}"
+  # ROUNDS=5 with P=3: rounds 4 and 5 add one forward and one reversed order, which makes the mean position exactly (P+1)/2
+  # for every pair (the 3-round cyclic block is exact, forward+reverse sums to P+1). Round order below has no same pair
+  # ending one round and starting the next. Any other ROUNDS/P keeps the cyclic rotation.
+  local ORDER5=(c0 f c2 c1 r) rk
   for ((r = 0; r < ROUNDS; r++)); do
+    rk=cyc; if [ "$ROUNDS" -eq 5 ] && [ "$P" -eq 3 ] && [ -z "${SHIFT_OVERRIDE:-}" ]; then rk=${ORDER5[r]}; fi
     for ((pos = 0; pos < P; pos++)); do
-      i=$(( ((pos - SHIFT * r) % P + P) % P ))
+      case $rk in
+        cyc) i=$(( ((pos - SHIFT * r) % P + P) % P )) ;;
+        c0) i=$pos ;; c1) i=$(( ((pos - 1) % P + P) % P )) ;; c2) i=$(( ((pos - 2) % P + P) % P )) ;;
+        f) i=$pos ;; r) i=$((P - 1 - pos)) ;;
+      esac
       SEQ+=("${PAIRS[i]}:_r$((r + 1))")
     done
   done
@@ -137,7 +146,7 @@ stage() {
   # dir and snapshot dir, cost constants put back, no store), then runs the same harness call as a single call would
   # (--cases=<case> --modes=<mode> --outdir=<outdir>) with a fresh child, logging to <outdir>.log. A call fails on a failed
   # child or a `Precompiling` line in its log.
-  export SPACEAGORA_PPC_POINT_PREP="rm -rf '$STORE' \"\$SPACEAGORA_PPB_SNAPSHOT_DIR\"; mkdir -p '$STORE' \"\$SPACEAGORA_PPB_SNAPSHOT_DIR\"; cp -p '$constants'/cost_constants_*.toml '$STORE'/ 2>/dev/null; rm -f \"\$SPACEAGORA_RHS_CALIBRATION_PATH\""
+  export SPACEAGORA_PPC_POINT_PREP="rm -rf '$STORE' \"\$SPACEAGORA_PPB_SNAPSHOT_DIR\"; mkdir -p '$STORE' \"\$SPACEAGORA_PPB_SNAPSHOT_DIR\"; cp -p '$constants'/cost_constants_*.toml '$STORE'/ 2>/dev/null; rm -f \"\$SPACEAGORA_RHS_CALIBRATION_PATH\"; bash '$PWD/scripts/remote/expanse/node_snapshot.sh' \"\${SPACEAGORA_PPB_SNAPSHOT_DIR%_snap}_node_before.txt\""
   for item in "${SEQ[@]}"; do
     cs=${item%%:*}; rest=${item#*:}; m=${rest%%:*}; tag="${cs}__${m}${rest#*:}"
     pts+="$tag\t$cs\t$m\t$sdir/calls/$tag\t$sdir/stores/$tag.toml\t$sdir/calls/${tag}_snap\n"

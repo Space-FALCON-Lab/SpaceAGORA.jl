@@ -57,6 +57,7 @@
 #   ROWS=id,id        only these rows of the job (rerun after a failure; ids are printed by DRY=1)
 #   BUDGET=32  WARMUP=3  REP_SERIAL=5  REP_STATIC=7  REP_ADAPT=9  REP_P7=11  P7_MISSION_S=5702
 #   P5F_MODES=...     override the P5f mode list
+#   MODES=a,b         only these modes in every non-P5f row (P5F_MODES wins for P5f rows); smoke tests
 #   PROFILE=smoke     harness profile (default full); smoke shortens every mission, for functional smoke tests only
 #   SKIP_CALIBRATE=1  skip the per-job machine-constant calibration
 #   P7_MISSION_S is the name suffix the sf3 audit resolved ([A]: not recomputed, check on sf3 first).
@@ -105,6 +106,7 @@ REP_SERIAL="${REP_SERIAL:-5}"; REP_STATIC="${REP_STATIC:-7}"; REP_ADAPT="${REP_A
 P7S="${P7_MISSION_S:-5702}"
 ROWS="${ROWS:-}"
 P5F_MODES="${P5F_MODES:-}"
+MODES="${MODES:-}"
 PROFILE="${PROFILE:-full}"   # harness profile; smoke shortens every mission (functional checks only)
 STORE=output/parallel_policy_state
 GRAMDIR="data/GRAMSuite.jl/GRAM Suite 2.0"
@@ -174,7 +176,7 @@ EOF
 #   P <call> <tag> <row> <case> <mode> <timed_s> <ukind>
 build_plan() {   # $1 = job; reads the table on stdin
   awk -F'|' -v job="$1" -v SER="$REP_SERIAL" -v STAT="$REP_STATIC" -v ADAPT="$REP_ADAPT" -v P7="$REP_P7" -v p7s="$P7S" \
-      -v rows="$ROWS" -v p5f="$P5F_MODES" '
+      -v rows="$ROWS" -v p5f="$P5F_MODES" -v modes="$MODES" '
   function cls(m, ov,   m0) { if (ov != "-") return 4; m0 = m; sub(/@.*/, "", m0)
     if (m0 == "serial") return 1; if (m0 == "predictive" || m0 == "outer_process") return 3; return 2 }
   function rep(c) { return c == 1 ? SER : c == 2 ? STAT : c == 3 ? ADAPT : P7 }
@@ -193,7 +195,8 @@ build_plan() {   # $1 = job; reads the table on stdin
   { if (nsel > 0 && rows != "") { ok = 0; for (i = 1; i <= nsel; i++) if (sel[i] == $1) ok = 1; if (!ok) next }
     n++; id[n] = $1; cs[n] = $3; gsub(/@P7S@/, p7s, cs[n]); smp[n] = $4; ov[n] = $5
     ml = $6
-    if (p5f != "" && $1 ~ /^p5f_/) { split(p5f, want, ","); ml2 = ""; for (w in want) { for (z = 1; z <= split(ml, e, " "); z++) { split(e[z], a, "="); if (a[1] == want[w]) ml2 = ml2 " " e[z] } } ml = ml2 }
+    flt = ($1 ~ /^p5f_/ && p5f != "") ? p5f : modes
+    if (flt != "") { split(flt, want, ","); ml2 = ""; for (w in want) { for (z = 1; z <= split(ml, e, " "); z++) { split(e[z], a, "="); if (a[1] == want[w]) ml2 = ml2 " " e[z] } } ml = ml2 }
     nmod[n] = split(ml, me, " ")
     for (j = 1; j <= nmod[n]; j++) { split(me[j], a, "="); split(a[2], b, "/"); mode[n, j] = a[1]; tm[n, j] = b[1]; uk[n, j] = b[2] } }
   END {

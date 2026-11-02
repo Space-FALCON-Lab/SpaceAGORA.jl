@@ -1350,9 +1350,9 @@ weakdeps = ["SparseArrays"]
 
 [[deps.OrdinaryDiffEqHighOrderRK]]
 deps = ["DiffEqBase", "FastBroadcast", "MuladdMacro", "OrdinaryDiffEqCore", "RecursiveArrayTools", "Reexport", "SciMLBase"]
-git-tree-sha1 = "ad41cf15bd74d8962fecbc81d34e5c1dfe0fc2a8"
+git-tree-sha1 = "485615bd03ff239b25e93199e235100d46475017"
 uuid = "d28bc4f8-55e1-4f49-af69-84c1a99f0f58"
-version = "2.2.1"
+version = "2.2.2"
 
 [[deps.OrdinaryDiffEqMultirate]]
 deps = ["DiffEqBase", "FastBroadcast", "LinearAlgebra", "MuladdMacro", "OrdinaryDiffEqCore", "RecursiveArrayTools", "Reexport", "SciMLBase"]

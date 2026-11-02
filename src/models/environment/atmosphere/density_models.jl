@@ -667,7 +667,8 @@ end
     end
     bounded_exponent = clamp(exponent,
         _POLYFIT_LOG_DENSITY_MIN, _POLYFIT_LOG_DENSITY_MAX)
-    derivative_active = model.valid_min_altitude_m <= h_m <=
+    derivative_active = model.valid_min_altitude_m < model.valid_max_altitude_m &&
+        model.valid_min_altitude_m <= h_m <=
         model.valid_max_altitude_m && exponent == bounded_exponent
     return bounded_exponent, derivative_active ? slope_per_km : 0.0
 end
@@ -687,7 +688,14 @@ end
 Derivative of the model's density with respect to altitude (kg/m⁴), for the
 altitude-only models (no atmosphere, constant, exponential, piecewise
 exponential and polynomial fit). The aerobraking MPC uses it for the analytic
-density gradient of its drag linearisation.
+density gradient of its drag linearisation. Custom altitude-only models may
+implement this optional query; use `applicable` to check support (there is no
+generic fallback). Polynomial fits return zero outside altitude/exponent clamps
+and for a zero-width altitude domain. At nondegenerate clamp endpoints they
+return the interior derivative. Piecewise exponentials select the right-hand
+layer at a breakpoint; a discontinuous join has no two-sided derivative.
+Exponential validity bounds are advisory: their derivatives extrapolate with
+the density model.
 """
 function density_altitude_derivative end
 density_altitude_derivative(::NoAtmosphereModel, ::Real) = 0.0

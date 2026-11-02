@@ -55,7 +55,8 @@ SpaceAGORA.link_range_m(link::LaserMomentumLink) = link.range_m
 end
 
 function checkpoint_fixture(directory)
-    spacecraft = [(n_terminal=2,) for _ in 1:3]
+    # This identity-only fixture has terminals but no physical link geometry.
+    spacecraft = [(n_terminal=2, links=()) for _ in 1:3]
     model = InterlinkModel(forbidden_pairs=[(3, 2)])
     register_link!(model, spacecraft, (1, 1), (2, 1),
         LaserMomentumLink(power_w=12.0, magnification=3.0, range_m=100.0))
@@ -140,7 +141,7 @@ end
             "policy" => a -> merge(a, (scheduling_policy_model=SchedulingPolicyModel(SemimajorAxisRatePolicy(targets=:lower_index)),)),
             "targets" => a -> merge(a, (scheduling_policy_model=SchedulingPolicyModel(SemimajorAxisRatePolicy(targets=[1, 3])),)),
             "terminal counts" => a -> begin
-                a.dynamics_model.spacecraft[3] = (n_terminal=3,)
+                a.dynamics_model.spacecraft[3] = (n_terminal=3, links=())
                 a
             end,
         )

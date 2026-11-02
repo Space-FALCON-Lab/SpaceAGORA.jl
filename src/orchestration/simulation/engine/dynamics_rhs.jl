@@ -4340,3 +4340,26 @@ function spacecraft_dynamics_mri_fast!(du::ComponentVector, u::ComponentVector, 
     _apply_data_rhs!(du, u, p, t)
     return nothing
 end
+
+"""
+    _trial_cartesian_rhs!(du, u, p, t)
+
+Core-owned stage evaluation for coordinate-changing optional solvers. Unlike an
+accepted-step atmosphere sample, a nonlinear/finite-difference trial can revisit
+one physical time with a different state. Invalidate state-dependent atmosphere
+sample stamps before calling the configured full RHS. Time-only planet frames
+remain reusable. The optional solver must preflight deterministic model support,
+keep discrete controls fixed during a trial, and refresh the RHS at its accepted
+state before normal callbacks/output. This service does not authorize stochastic
+or history-mutating models and does not override frozen-atmosphere semantics.
+"""
+function _trial_cartesian_rhs!(du::ComponentVector, u::ComponentVector, p, t::Float64)
+    cb_env = SimulationModel.SimulationCallbacks._callback_env_config(p)
+    if cb_env.density_freeze_per_step &&
+            !(p.args.environment_model.density_model isa SimulationModel.NoAtmosphereModel)
+        throw(ArgumentError("KS trial evaluation requires density_freeze_per_step=false for a state-dependent atmosphere; frozen samples have different semantics."))
+    end
+    fill!(p.shared_buffers.density_sample_t, NaN)
+    fill!(p.shared_buffers.in_atmosphere_sample_t, NaN)
+    return spacecraft_dynamics!(du, u, p, t)
+end

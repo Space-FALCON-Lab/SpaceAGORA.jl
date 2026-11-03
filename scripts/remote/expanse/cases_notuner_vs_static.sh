@@ -5,7 +5,7 @@
 # tuner off, SWEEP_NS_FLOOR=1, A/B CONFIRM=1 with K=2 solves per arm; set by modes.jl extra_env).
 # Runs INSIDE a Slurm job (julia_job.slurm does the quiet-node gate):
 #
-#   EXPANSE_ACCOUNT=mia402 ./expanse.sh run --bench --time 01:15:00 -- bash scripts/remote/expanse/cases_notuner_vs_static.sh
+#   EXPANSE_ACCOUNT=<account> ./expanse.sh run --bench --time 01:15:00 -- bash scripts/remote/expanse/cases_notuner_vs_static.sh
 #   DRY=1 bash scripts/remote/expanse/cases_notuner_vs_static.sh    # prints the commands, runs no Julia
 #   CASES=a,b MODES=m1,m2 REPEATS=6 to narrow (comma lists; spaces would not survive expanse.sh).
 #

@@ -8,7 +8,7 @@
 #               min(samples, budget) workers (8 and 16), each with --threads=1.
 # 3 fresh processes per (case, mode). Runs INSIDE a Slurm job (julia_job.slurm does the quiet-node gate):
 #
-#   EXPANSE_ACCOUNT=mia402 ./expanse.sh run --bench --time 01:30:00 -- bash scripts/remote/expanse/pilot2_gram_multisample.sh
+#   EXPANSE_ACCOUNT=<account> ./expanse.sh run --bench --time 01:30:00 -- bash scripts/remote/expanse/pilot2_gram_multisample.sh
 #   DRY=1 bash scripts/remote/expanse/pilot2_gram_multisample.sh      # prints the points and commands, runs no Julia
 #   STAGES=gram|mc|gram,mc  GRAM_BUDGETS=16|32|"16,32"  MC_BUDGET=32  ROUNDS=3  GRAM_REPEATS=6  MC_REPEATS=8
 #   GRAM_CASES= GRAM_MODES= MC_CASES= MC_MODES=   (comma lists; spaces would not survive expanse.sh)

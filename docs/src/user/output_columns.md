@@ -414,6 +414,9 @@ The `actuator_level` columns show the levels as the faults leave them.
 
 ### Sensors
 
+[Using Sensors](sensors.md) walks through the gyro example, sampling periods
+and reading these columns.
+
 Written with the default save-field list when a spacecraft carries sensors
 (`add_sensor!`, see [Extensibility](../extensibility.md#Add-a-sensor)):
 

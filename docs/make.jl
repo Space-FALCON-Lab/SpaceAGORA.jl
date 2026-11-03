@@ -260,6 +260,7 @@ makedocs(
             "Adding a Force or Torque" => "user/custom_effector.md",
             "Adding an Actuator" => "user/custom_actuator.md",
             "Powering a Spacecraft" => "user/power_budget.md",
+            "Using Sensors" => "user/sensors.md",
             "Stopping on a Condition" => "user/stop_conditions.md",
             "Mission Workflows" => "user/mission_workflows.md",
             "Solver Configuration" => "user/solver_configuration.md",
@@ -291,6 +292,7 @@ makedocs(
             "RPO with Interchangeable Planners" => "user/rpo_planner_pilot.md",
         ],
         "Tutorials" => Any[
+            "Compare Solvers" => "tutorials/solver_comparison.md",
             "Odyssey Guidance with a Frozen Atmosphere" => "tutorials/odyssey_surrogate.md",
             "HyPR Paper Reconstruction" => "user/hypr_paper.md",
             "Lunar Landing" => "user/lunar_landing.md",

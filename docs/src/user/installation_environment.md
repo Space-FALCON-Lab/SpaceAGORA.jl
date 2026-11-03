@@ -4,6 +4,10 @@ This page explains how to set up a machine for SpaceAGORA: the Julia version
 it needs, the Julia environments in the repository and what each is for, the
 optional companion packages, and a project of your own outside the checkout.
 
+For a fresh clone, follow the complete shell-specific commands in
+[Quickstart](quickstart.md), including choosing a writable working folder on
+Windows. This page starts after you have entered the checkout.
+
 The first command installs SpaceAGORA and the package versions its committed
 manifest records. Terminal, from the repository root (the directory that
 contains `Project.toml`):

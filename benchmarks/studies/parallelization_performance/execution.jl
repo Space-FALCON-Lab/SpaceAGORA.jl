@@ -1,14 +1,85 @@
+# SPACEAGORA_PPB_SNAPSHOT_DIR=<dir>: after EVERY solve in this process (warm-ups
+# and timed repeats alike) write one TOML file with the solve's wall time, a copy
+# of the RHS calibration store before and after the solve, and the solve's own
+# policy telemetry snapshot. Diagnostic only; unset (default) changes nothing.
+# Read-only on the store: copies it under its lock, never loads or saves it.
+const _PPC_SNAPSHOT_SEQ = Threads.Atomic{Int}(0)
+
+# TOML-safe copy: Symbols and anything exotic become strings, nothing is dropped.
+ppc_toml_safe(x::AbstractDict) = Dict{String, Any}(string(k) => ppc_toml_safe(v) for (k, v) in x)
+ppc_toml_safe(x::NamedTuple) = Dict{String, Any}(string(k) => ppc_toml_safe(v) for (k, v) in pairs(x))
+ppc_toml_safe(x::AbstractVector) = Any[ppc_toml_safe(v) for v in x]
+ppc_toml_safe(x::AbstractString) = String(x)
+ppc_toml_safe(x::Union{Bool, Integer, AbstractFloat}) = x
+ppc_toml_safe(x) = string(x)
+
+# Store entries without the per-arm timing lists (only their count is kept).
+function ppc_store_copy(cache::AbstractDict)
+    out = Dict{String, Any}()
+    for (sig, e) in cache
+        c = Dict{String, Any}(string(k) => v for (k, v) in e if string(k) != "timings")
+        t = get(e, "timings", nothing)
+        c["n_timings"] = t isa AbstractVector ? length(t) : 0
+        out[string(sig)] = c
+    end
+    return out
+end
+
+function ppc_solve_record(seq::Int, is_warmup::Bool, wall_s::Real, store_before, store_after, policy)
+    return Dict{String, Any}(
+        "seq" => seq,
+        "is_warmup" => is_warmup,
+        "wall_time_s" => Float64(wall_s),
+        "store_before" => ppc_toml_safe(store_before),
+        "store_after" => ppc_toml_safe(store_after),
+        "policy" => policy === nothing ? Dict{String, Any}() : ppc_toml_safe(policy),
+    )
+end
+
+function _ppc_store_now()
+    try
+        lock(SimulationEngine._rhs_calib_lock) do
+            return ppc_store_copy(SimulationEngine._rhs_calib_cache)
+        end
+    catch
+        return Dict{String, Any}()
+    end
+end
+
 function ppc_solve_once(args, cfg::PPCConfig)
+    snapdir = get(ENV, "SPACEAGORA_PPB_SNAPSHOT_DIR", "")
+    store_before = isempty(snapdir) ? nothing : _ppc_store_now()
+    t0 = time_ns()
     # The worker applies one mode environment around the whole sample batch.
     # Calling the config-taking API here would reapply those values by mutating
     # process-global ENV for every solve, which is unsafe when samples run on
     # multiple threads.
     result = SimulationEngine.run_simulation(
         args;
-        isolate_state=false,
+        isolate_state=lowercase(get(ENV, "SPACEAGORA_PPB_ISOLATE_STATE", "0")) in ("1", "true"),
         return_solution=true,
         return_solver_metadata=true
     )
+    wall_s = (time_ns() - t0) / 1.0e9
+    if !isempty(snapdir)
+        try
+            seq = Threads.atomic_add!(_PPC_SNAPSHOT_SEQ, 1) + 1
+            rec = ppc_solve_record(seq, seq <= cfg.warmup, wall_s, store_before, _ppc_store_now(),
+                                   get(result, :parallel_policy, nothing))
+            rec["pid"] = getpid()
+            rec["threads"] = Threads.nthreads()
+            rec["reverify_share"] = try Float64(SimulationEngine._rhs_calibrate_reverify_share()) catch; -1.0 end
+            if seq == 1
+                rec["env"] = Dict{String, Any}(k => v for (k, v) in ENV if startswith(k, "SPACEAGORA_"))
+            end
+            mkpath(snapdir)
+            open(joinpath(snapdir, "solve_p$(getpid())_$(lpad(seq, 3, '0')).toml"), "w") do io
+                TOML.print(io, rec)
+            end
+        catch err
+            @warn "ppb snapshot failed" exception=err
+        end
+    end
     ppc_startup_trace("first_solve")
     return result
 end
@@ -361,6 +432,8 @@ function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSp
     else
         1
     end
+    warmup_wall = 0.0
+    warmup_snaps = Any[]
     withenv(ppc_mode_env_pairs(mode, cfg; outer_tasks=outer_tasks)...) do
         for warmup_idx in 1:cfg.warmup
             # Short warm-ups (SPACEAGORA_PPB_WARMUP_SPAN): see _ppc_warmup_span.
@@ -376,10 +449,13 @@ function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSp
             finally
                 _PPC_MISSION_SCALE[] = 1.0
             end
+            t0 = time()
             try
-                ppc_solve_once(warmup_args, cfg)
+                wres = ppc_solve_once(warmup_args, cfg)
+                push!(warmup_snaps, get(wres, :parallel_policy, nothing))
             catch
             end
+            warmup_wall += time() - t0
         end
     end
     # Provision and warm the Distributed pool *before* the clock starts. Both
@@ -473,6 +549,7 @@ function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSp
         mode=mode,
         env_extra=Pair{String, String}[],
         adaptive_allocation="",
+        warmup=ppc_warmup_columns(warmup_wall, warmup_snaps),
         policy=ppc_policy_columns(
             isempty(results) ? nothing :
                 (results[end] isa NamedTuple && haskey(results[end], :policy) ? results[end].policy : nothing)
@@ -735,6 +812,21 @@ end
 # rather than missing -- the controller process genuinely made no routing
 # decision -- but it means the selected-route columns are only meaningful for the
 # in-process (serial/threads) routes.
+# Warm-up solves are untimed, but the calibration sweep happens in them, so the
+# row records their wall time and policy telemetry (appended tail columns). Pure.
+# Only the in-process warm-up solves are covered; process-pool warm-ups are not.
+function ppc_warmup_columns(wall_s::Real, snaps)
+    g(sn, k, d) = (sn !== nothing && hasproperty(sn, k)) ? getproperty(sn, k) : d
+    srcs = unique(string(g(sn, :rhs_plan_source, "none")) for sn in snaps)
+    return (
+        warmup_wall_time_s=Float64(wall_s),
+        warmup_rhs_plan_sweeps=sum(Int(g(sn, :rhs_plan_sweeps_total, 0)) for sn in snaps; init=0),
+        warmup_rhs_plan_sweep_s=sum(Float64(g(sn, :rhs_plan_sweep_ns, 0.0)) for sn in snaps; init=0.0) / 1.0e9,
+        warmup_rhs_plan_source=isempty(srcs) ? "none" : join(srcs, "|"),
+    )
+end
+const PPC_NO_WARMUP = ppc_warmup_columns(0.0, ())
+
 function ppc_policy_columns(snap)
     empty = (
         rhs_plan_source="none", rhs_plan_mode="none", rhs_plan_allotment=0,
@@ -742,6 +834,9 @@ function ppc_policy_columns(snap)
         policy_last_mode="none", policy_last_allotment=0, policy_last_outer_active=false,
         policy_decisions_total=0, policy_adaptive_decisions_total=0,
         policy_threads_enabled_total=0, policy_discarded_by_route_total=0,
+        rhs_plan_sweep_s=0.0, rhs_plan_sweeps=0, policy_last_budget=0,
+        regret_guard_enabled=false, regret_guard_fired=false, regret_guard_reason="none",
+        regret_guard_margin=0.0, regret_guard_count=0, regret_guard_frozen=false,
     )
     snap === nothing && return empty
     g(k, d) = hasproperty(snap, k) ? getproperty(snap, k) : d
@@ -757,8 +852,34 @@ function ppc_policy_columns(snap)
         policy_adaptive_decisions_total=g(:adaptive_decisions_total, 0),
         policy_threads_enabled_total=g(:threads_enabled_total, 0),
         policy_discarded_by_route_total=g(:policy_discarded_by_route_total, 0),
+        # Appended last so the CSV keeps its existing column order. Sweep time is
+        # 0 when the plan came from the cache; `rhs_plan_sweeps` counts sweeps
+        # that ran in this solve; the budget is the thread count the last
+        # policy decision was made against.
+        rhs_plan_sweep_s=Float64(g(:rhs_plan_sweep_ns, 0.0)) / 1.0e9,
+        rhs_plan_sweeps=g(:rhs_plan_sweeps_total, 0),
+        policy_last_budget=g(:last_budget, 0),
+        # policy_last_budget stays 0 unless thread_policy_decision ran in the
+        # solve (it is set only by _record_policy_decision!, i.e. density/control/
+        # multibody callback routing); policy_decisions_total == 0 explains a 0.
+        # Regret guard: `fired` is per solve (telemetry resets each solve);
+        # `frozen` is process-lifetime and stays true for later solves.
+        regret_guard_enabled=g(:regret_guard_enabled, false),
+        regret_guard_fired=g(:regret_guard_fired, false),
+        regret_guard_reason=string(g(:regret_guard_reason, "none")),
+        regret_guard_margin=g(:regret_guard_margin, 0.0),
+        regret_guard_count=g(:regret_guard_count, 0),
+        regret_guard_frozen=g(:regret_guard_frozen, false),
     )
 end
+
+# Column groups of ppc_policy_columns: the original block stays where it was in
+# the row, the telemetry added later is splatted after the last existing column.
+const PPC_POLICY_TAIL_KEYS = (:rhs_plan_sweep_s, :rhs_plan_sweeps, :policy_last_budget,
+    :regret_guard_enabled, :regret_guard_fired, :regret_guard_reason,
+    :regret_guard_margin, :regret_guard_count, :regret_guard_frozen)
+ppc_policy_head(p) = p[Tuple(k for k in keys(p) if !(k in PPC_POLICY_TAIL_KEYS))]
+ppc_policy_tail(p) = p[PPC_POLICY_TAIL_KEYS]
 
 function ppc_run_worker_performance(cfg::PPCConfig)
     catalog = ppc_case_catalog()
@@ -865,7 +986,7 @@ function ppc_run_worker_performance(cfg::PPCConfig)
         # What the router actually selected during the timed batch, as opposed to
         # the mode requested above. See ppc_policy_snapshot for the mechanism and
         # its process-route caveat.
-        batch.policy...,
+        ppc_policy_head(batch.policy)...,
         rhs_batch_parallel=mode.rhs_batch,
         density_callback_parallel=mode.density,
         control_callback_parallel=mode.control,
@@ -876,7 +997,9 @@ function ppc_run_worker_performance(cfg::PPCConfig)
         final_primary_pos_norm_m=final_terminal.pos_norm_m,
         final_primary_vel_norm_mps=final_terminal.vel_norm_mps,
         final_primary_mass_kg=final_terminal.mass_kg,
-        effective_env=env_string
+        effective_env=env_string,
+        ppc_policy_tail(batch.policy)...,
+        get(batch, :warmup, PPC_NO_WARMUP)...
     ))
     end
     ppc_write_rows(cfg.worker_outfile, rows)
@@ -1414,7 +1537,7 @@ function ppc_run_worker_points(cfg::PPCConfig, path::String)
     return nothing
 end
 
-function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Function}=nothing)
+function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Function}=nothing, check_load::Bool=true)
     stamp = Dates.format(now(UTC), dateformat"yyyymmdd_HHMMSS")
     outdir = cfg.outdir == PPC_DEFAULT_OUTDIR ? joinpath(PPC_DEFAULT_OUTDIR, stamp) : cfg.outdir
     condition = ppc_budget_condition(; cpu_pinning=cfg.cpu_pinning)
@@ -1440,7 +1563,7 @@ function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Func
     # Refuse to time anything on a machine that is already loaded. See
     # ppc_assert_machine_quiet! -- this is the check whose absence let an entire
     # 115-point run be collected against another user's 26-hour job.
-    ppc_assert_machine_quiet!()
+    ppc_assert_machine_quiet!(; check_load)
     workload_env = ppc_workload_env()
     println("[parallelization-performance] profile=$(cfg.profile) outdir=$(outdir)")
     println("[parallelization-performance] load=$(round(ppc_load_average(); digits=2)) " *
@@ -1596,6 +1719,59 @@ function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Func
     return failures
 end
 
+# Points mode (--points-file=FILE): ONE controller process runs many harness calls, so the
+# package, DataFrames/CSV and the case catalog load once instead of once per call (measured
+# 33.9 s before + 15.6 s after each call, startup_cost_options.md). Each line of FILE is
+#   tag <TAB> case <TAB> mode <TAB> outdir <TAB> store_path <TAB> snapshot_dir
+# and is exactly one former `--cases=case --modes=mode --outdir=outdir` call: same child
+# command, same env (store and snapshot env are set here before the child is built), a fresh
+# child per point. The optional shell command SPACEAGORA_PPC_POINT_PREP runs before each point
+# (it resets the policy-state dir and calibration store, as the shell loop used to). Each
+# call's output goes to <outdir>.log. A call FAILS on a failed child, an exception, or a
+# `Precompiling` line in its log (a cold cache would put compilation inside the timed child).
+function ppc_run_points(cfg::PPCConfig, path::String)
+    prep = pop!(ENV, "SPACEAGORA_PPC_POINT_PREP", "")   # not inherited by the children
+    failed = String[]
+    stamp() = Dates.format(now(), dateformat"yyyy-mm-ddTHH:MM:SS")
+    for line in eachline(path)
+        isempty(strip(line)) && continue
+        tag, case, mode, outdir, store, snap = String.(split(line, '\t'))
+        logpath = outdir * ".log"
+        println("[points $(stamp())] START $(tag) load=$(join(split(read("/proc/loadavg", String))[1:3], ' '))"); flush(stdout)
+        t0 = time()
+        ENV["SPACEAGORA_RHS_CALIBRATION_PATH"] = store
+        ENV["SPACEAGORA_PPB_SNAPSHOT_DIR"] = snap
+        mkpath(dirname(logpath))
+        ok = true
+        open(logpath, "w") do io
+            redirect_stdio(; stdout=io, stderr=io) do
+                try
+                    isempty(prep) || run(`bash -c $prep`)
+                    println("[points $(stamp())] controller start $(tag)"); flush(stdout)
+                    fails = ppc_run_controller(_ppc_with(cfg; cases=[case], modes=[mode], outdir=outdir, points_file="");
+                                               check_load=false)
+                    isempty(fails) || (ok = false)
+                catch err
+                    err isa InterruptException && rethrow()
+                    ok = false
+                    println("[points] status=error $(tag): ", first(sprint(showerror, err), 500))
+                end
+                println("[points $(stamp())] controller end $(tag)"); flush(stdout)
+            end
+        end
+        text = read(logpath, String)
+        if occursin("Precompiling", text)
+            ok = false
+            println("[points] PRECOMPILE GUARD: $(tag) log contains 'Precompiling'; run the untimed precompile first")
+        end
+        occursin(r"\[child-failed\]|status=error", text) && (ok = false)
+        println("[points $(stamp())] END $(tag) ok=$(ok) elapsed_s=$(round(time() - t0; digits=1)) load=$(join(split(read("/proc/loadavg", String))[1:3], ' '))"); flush(stdout)
+        ok || push!(failed, tag)
+    end
+    isempty(failed) || println("[points] FAILED: ", join(failed, " "))
+    return failed
+end
+
 function main_parallelization_performance()
     cfg = parse_parallelization_performance_cli()
     if cfg.worker
@@ -1610,6 +1786,8 @@ function main_parallelization_performance()
         else
             ppc_run_worker_performance(cfg)
         end
+    elseif !isempty(cfg.points_file)
+        isempty(ppc_run_points(cfg, cfg.points_file)) || exit(1)
     else
         ppc_run_controller(cfg)
     end

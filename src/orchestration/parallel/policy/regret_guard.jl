@@ -72,7 +72,7 @@ end
     regret_guard_observe!(signature, chosen_ns, baseline_ns) -> Bool
 
 Record one solve of the policy-chosen plan for `signature` and return true once
-the guard has frozen the process to the baseline plan. No-op (false) when the
+the guard has frozen the process to the baseline plan. Returns false, with no effect, when the
 guard is off. Fires at most once; the firing is mirrored into the policy
 telemetry (`regret_guard_*` fields).
 """

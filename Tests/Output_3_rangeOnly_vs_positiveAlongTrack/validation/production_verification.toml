@@ -1,0 +1,14 @@
+finished_utc = "2026-11-04T20:29:02.560"
+passed = true
+policies = ["naive_next_entering", "positive_along_track"]
+scope_note = "Empirical step-refinement comparison, not a rigorous absolute error bound"
+step_refinement = "Full 80 orbits; 1 s versus 0.5 s maximum accepted step"
+verification_source_sha256 = "b85c8eb6b2b6590cc56faa7b04904a7a052dccc9f63c8906e430286c16370c3b"
+verified_rows_per_policy = 16001
+verified_spacecraft_per_policy = 201
+
+[comparison_thresholds]
+a_m = 10.0
+eccentricity = 2.0e-6
+inclination_deg = 0.0001
+raan_deg = 0.01

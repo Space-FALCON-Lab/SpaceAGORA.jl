@@ -1,0 +1,14 @@
+RTN_tolerance_mps = 1.0e-8
+independent_RTN_mps = [0.0, 0.0, 0.0]
+independent_T_negative_mps = 0.0
+independent_T_positive_mps = 0.0
+independent_work_J = [0.0, 0.0]
+max_RTN_error_mps = 0.0
+max_local_RTN_quadrature_difference_mps = 0.0
+max_signed_T_error_mps = 0.0
+max_work_error_J = 0.0
+output_directory = "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Tests/results/production_pipeline/final_zero/paper_plot_mode/h1000km_t1050km/ih0.0deg_it1.0deg/N1/T127s/gve_sma_e0.0000_nu1.0000"
+passed = true
+signed_T_tolerance_mps = 1.0e-8
+steps = 33
+work_tolerance_J = 0.1

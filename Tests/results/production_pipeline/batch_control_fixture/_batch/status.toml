@@ -1,0 +1,15 @@
+available_disk_bytes = 0
+campaign = "main"
+finished_utc = "2026-10-21T22:11:10.570"
+helper_altitudes_km = [1000]
+helper_counts = [1, 50, 100, 150, 200, 250, 300]
+next_case = "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Tests/results/production_pipeline/batch_control_fixture/paper_plot_mode/h1000km_t850km/ih0.0deg_it0.0deg/N1/T611576s/gve_sma_e0.0000_nu1.0000"
+pid = 3515500
+required_free_bytes = 5442386728
+reused_cases = 0
+source_signature = "da7c07760b841561aff913de6df3aa0fcacf5387fb193bb86c31bedb405b7708"
+started_utc = "2026-10-21T22:11:10.517"
+status = "paused_low_disk"
+target_altitudes_km = [850, 950, 1000, 1050, 1150]
+total_cases = 210
+verified_cases = 0

@@ -1,0 +1,14 @@
+RTN_tolerance_mps = 1.0e-8
+independent_RTN_mps = [-0.013846932245691832, 0.005227579299658397, -0.004062927943011815]
+independent_T_negative_mps = 0.0
+independent_T_positive_mps = 0.005227579299658397
+independent_work_J = [-354.5046469506033, -2554.2329949189384, -179.26965578352713, -5454.569055994302, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 8808.588567451707]
+max_RTN_error_mps = 2.0725772509132417e-14
+max_local_RTN_quadrature_difference_mps = 6.907325844104658e-15
+max_signed_T_error_mps = 2.054779957294528e-14
+max_work_error_J = 3.440982254687697e-8
+output_directory = "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Tests/results/production_pipeline/final_sma_control/paper_plot_mode/h1000km_t850km/ih0.0deg_it1.0deg/N50/T12232s/gve_sma_e0.0000_nu1.0000"
+passed = true
+signed_T_tolerance_mps = 1.0e-8
+steps = 1597
+work_tolerance_J = 0.10008808588567453

@@ -1,0 +1,25 @@
+all_new_paths_unused = true
+estimated_new_persistent_output_bytes = 3019041715
+free_disk_bytes = 55801794560
+largest_case_free_space_requirement_bytes = 7999880848
+new_cases = 84
+output_estimate_method = "Scale each matching verified N500 case by spacecraft count; estimate, not a bound"
+preserved_file_count = 871
+
+[pilots.pilot600]
+helpers = 600
+orbits = 2.0
+output_bytes = 20457724
+peak_rss_bytes = 2177953792
+status = "verified"
+target_altitude_km = 1000.0
+wall_elapsed_s = 212.66255903244019
+
+[pilots.pilot800]
+helpers = 800
+orbits = 2.0
+output_bytes = 27336684
+peak_rss_bytes = 2461974528
+status = "verified"
+target_altitude_km = 1100.0
+wall_elapsed_s = 377.6758258342743

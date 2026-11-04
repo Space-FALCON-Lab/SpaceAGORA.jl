@@ -1,0 +1,10 @@
+inc1050_event_recorder_invariance = true
+inc1050_independent_geometry_max_boundary_difference_s = 1.9837170839309692e-7
+"inc1050_save1.0_schedule_and_common_states_identical" = true
+"inc1050_save5.0_schedule_and_common_states_identical" = true
+noJ2_full_vector_relative_momentum_error = 8.445712603376513e-12
+noJ2_max_energy_work_error_J = 2.1743756847463374
+sma850_event_recorder_invariance = true
+sma850_independent_geometry_max_boundary_difference_s = 1.189258910017088e-6
+"sma850_save1.0_schedule_and_common_states_identical" = true
+"sma850_save5.0_schedule_and_common_states_identical" = true

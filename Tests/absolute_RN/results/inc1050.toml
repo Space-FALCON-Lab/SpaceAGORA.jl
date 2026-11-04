@@ -1,0 +1,109 @@
+absolute_error_mps = [6.418476861114186e-17, 3.677613769070831e-16, 2.3592239273284576e-16]
+branch_error_mps = [6.418476861114186e-17, 4.40619762898109e-16, 1.97758476261356e-16]
+branch_tolerances_mps = [1.0e-8, 1.0e-7, 1.0e-8]
+component_order = ["R", "T", "N"]
+final_independent_absolute_mps = [0.02657404788452223, 0.045770704530036024, 0.03598447467303065]
+final_independent_negative_mps = [0.0, -0.020674833556490073, -0.0067413107218724615]
+final_independent_net_mps = [0.02657404788452223, 0.004421037417055894, 0.0225018532292857]
+final_independent_positive_mps = [0.02657404788452223, 0.025095870973545962, 0.029243163951158176]
+fresh_file_verified = true
+fresh_reference_verified = true
+kind = "new"
+label = "inc1050"
+method = "Held links and dense Cartesian states only; zero-crossing-split composite Simpson 16 versus 8 subintervals; abs(acceleration) integrated directly"
+mode = "diagnostic"
+net_error_mps = [6.418476861114186e-17, 6.201636426617085e-16, 1.700029006457271e-16]
+net_tolerance_mps = 1.0e-8
+output_bytes = 3536124
+output_directory = "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Tests/absolute_RN/PilotOutput/inc1050/paper_plot_mode/h1000km_t1050km/ih0.0deg_it1.0deg/N100/T12743s/gve_inc_e0.0000_nu1.0000"
+passed = true
+peak_rss_bytes = 1819377664
+pilot_wall_s = 30.184444904327393
+quadrature_tolerance_mps = 1.0e-9
+reference_file = "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Tests/absolute_RN/PilotOutput/inc1050/independent_reference.feather"
+reference_rows = 1001
+schedule_sha256 = "9c549d3bf654cd965bfb0a9afb1a343c99faf5fb860cdf0b7c9a5c804b7cf090"
+solver_accepted_steps = 1609
+solver_rejected_steps = 6
+source_signature = "0834b044dd9183906c2e8058796f5cc70df5bff329000102ca8c8c53b1c7de48"
+steps = 1609
+summed_quadrature_difference_mps = [9.308747978918442e-16, 2.2262951459320715e-15, 2.4608173297224307e-15, 9.308747978918442e-16, 1.6856645088857527e-15, 1.7939741777935705e-15, 0.0, 5.406306370463188e-16, 6.668431519288602e-16, 9.308747978918442e-16, 2.2262951459320715e-15, 2.4608173297224307e-15]
+temporary_dense_state_bytes = 6196256
+wall_elapsed_s = 29.25605797767639
+work_error_J = 9.367795428261161e-11
+work_tolerance_J = 0.10007264340937103
+
+[fresh_reference_errors.N]
+absolute_mps = 9.419548474554063e-16
+negative_mps = 8.433508950325859e-16
+net_mps = 9.26342336171615e-16
+positive_mps = 8.916478666520788e-16
+
+[fresh_reference_errors.R]
+absolute_mps = 4.926614671774132e-16
+negative_mps = 0.0
+net_mps = 4.926614671774132e-16
+positive_mps = 4.926614671774132e-16
+
+[fresh_reference_errors.T]
+absolute_mps = 7.840950111415168e-16
+negative_mps = 4.996003610813204e-16
+net_mps = 9.558326352632207e-16
+positive_mps = 8.743006318923108e-16
+
+[settings]
+J2 = 0.00108263
+RAAN_deg = 0.0
+RTN_branch_definition = "laser-only instantaneous RTN; positive=integral(max(a,0)); negative=integral(min(a,0)); net=positive+negative; absolute=positive-negative"
+abstol = 1.0e-12
+argument_of_periapsis_deg = 0.0
+compression = "Arrow IPC file / Feather V2, zstd, chunked Float64"
+diagnostic_initial_values = 0.0
+diagnostics = "solver-integrated laser-only RTN, positive/negative R/T/N parts, optical work"
+drag = false
+dt_max_s = 10.0
+duration_s = 12742.68072099747
+earth_equatorial_radius_m = 6.3781366e6
+eccentricity = 0.0
+encounter_extrema = "10 s samples plus exact boundary states; sampled estimates"
+encounter_sample_interval_s = 10.0
+encounter_scope = "all spacecraft pairs"
+epoch = "2026-01-01T00:00:00"
+force_N = 0.0033356409519815205
+frame = "J2000 ECI"
+helper_altitude_km = 1000.0
+helper_count = 100
+helper_inclination_deg = 0.0
+helper_phase_rule = "360*(k-1)/N degrees"
+initial_target_periods = 2.0
+laser_power_W = 10000.0
+link_scope = "target-helper"
+longest_tracks = "longest all-pair encounter and longest target-helper encounter, deduplicated"
+magnification_B = 100.0
+mass_kg = 227.0
+mu_m3_s2 = 3.98600436233e14
+pointing_acquisition_losses = false
+range_m = 200000.0
+range_rule = "hold selected links between accepted steps, including outside-range firing"
+reltol = 1.0e-12
+save_interval_s = 12.74268072099747
+scheduler = "gve_inc"
+scheduler_updates = "initialization and accepted steps"
+schema_version = 3
+solver = "Tsit5"
+speed_of_light_mps = 2.99792458e8
+target_altitude_km = 1050.0
+target_diagnostic_columns = ["target_dv_R_mps", "target_dv_T_mps", "target_dv_N_mps", "target_dv_T_positive_mps", "target_dv_T_negative_mps", "target_dv_R_positive_mps", "target_dv_R_negative_mps", "target_dv_N_positive_mps", "target_dv_N_negative_mps"]
+target_id = 101
+target_inclination_deg = 1.0
+target_index = 101
+target_true_anomaly_deg = 1.0
+terminals_per_spacecraft = 1
+trajectory_rows = 1001
+units = "SI: m, s, kg, m/s, J; orbital setup angles in degrees"
+
+[timing]
+steady_simulated_s = 6371.252362613694
+steady_wall_s = 4.6871020793914795
+steady_wall_s_per_simulated_s = 0.0007356641697157133
+warmup_simulated_s = 6371.428358383777

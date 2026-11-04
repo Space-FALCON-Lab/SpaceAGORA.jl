@@ -1,0 +1,15 @@
+steps = 637136
+orientation_sim = false
+created_utc = "2026-10-18T18:55:11.197"
+mission_time_s = 637134.0360498736
+schema_version = "1"
+spacecraft_count = 21
+
+[atmosphere]
+backend = "configured_density_model"
+model_type = "NoAtmosphereModel"
+
+[files.feather]
+size_bytes = 1075518874
+sha256 = "21de7e1e06cdb41112fda02be40d7029cf3ed46a8298c2c2da1e7827fe6c5a2f"
+path = "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Tests/results/study_preflight/inc1050_dt10.0_save1.0/simulation_results.feather"

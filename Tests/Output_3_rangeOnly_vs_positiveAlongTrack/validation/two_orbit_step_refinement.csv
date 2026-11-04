@@ -1,0 +1,3 @@
+policy,orbits,coarse_max_step_s,fine_max_step_s,max_a_difference_m,max_e_difference,max_i_difference_deg,max_raan_difference_deg
+naive_next_entering,2.0,10.0,5.0,0.16848231280164327,2.0851838153227494e-8,8.228292469603105e-8,2.1653356476747376e-5
+positive_along_track,2.0,10.0,5.0,0.0007489170457120053,6.054819491271846e-9,1.2870351501215183e-7,6.799353115716222e-5

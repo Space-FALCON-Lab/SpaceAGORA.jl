@@ -1,0 +1,109 @@
+absolute_error_mps = [0.0, 0.0, 0.0]
+branch_error_mps = [0.0, 0.0, 0.0]
+branch_tolerances_mps = [1.0e-8, 1.0e-7, 1.0e-8]
+component_order = ["R", "T", "N"]
+final_independent_absolute_mps = [0.0, 0.0, 0.0]
+final_independent_negative_mps = [0.0, 0.0, 0.0]
+final_independent_net_mps = [0.0, 0.0, 0.0]
+final_independent_positive_mps = [0.0, 0.0, 0.0]
+fresh_file_verified = true
+fresh_reference_verified = true
+kind = "new"
+label = "zero_sma"
+method = "Held links and dense Cartesian states only; zero-crossing-split composite Simpson 16 versus 8 subintervals; abs(acceleration) integrated directly"
+mode = "diagnostic"
+net_error_mps = [0.0, 0.0, 0.0]
+net_tolerance_mps = 1.0e-8
+output_bytes = 3323700
+output_directory = "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Tests/absolute_RN/PilotOutput/zero_sma/paper_plot_mode/h1000km_t1000km/ih0.0deg_it1.0deg/N100/T631s/gve_sma_e0.0000_nu1.0000"
+passed = true
+peak_rss_bytes = 1804300288
+pilot_wall_s = 30.260935068130493
+quadrature_tolerance_mps = 1.0e-9
+reference_file = "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Tests/absolute_RN/PilotOutput/zero_sma/independent_reference.feather"
+reference_rows = 1001
+schedule_sha256 = "0722252b6c1d714bcb74276bc61eb4a99398d8005a005857b1f806614d7c5ab2"
+solver_accepted_steps = 92
+solver_rejected_steps = 0
+source_signature = "0834b044dd9183906c2e8058796f5cc70df5bff329000102ca8c8c53b1c7de48"
+steps = 92
+summed_quadrature_difference_mps = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+temporary_dense_state_bytes = 315640
+wall_elapsed_s = 29.309766054153442
+work_error_J = 0.0
+work_tolerance_J = 0.1
+
+[fresh_reference_errors.N]
+absolute_mps = 0.0
+negative_mps = 0.0
+net_mps = 0.0
+positive_mps = 0.0
+
+[fresh_reference_errors.R]
+absolute_mps = 0.0
+negative_mps = 0.0
+net_mps = 0.0
+positive_mps = 0.0
+
+[fresh_reference_errors.T]
+absolute_mps = 0.0
+negative_mps = 0.0
+net_mps = 0.0
+positive_mps = 0.0
+
+[settings]
+J2 = 0.00108263
+RAAN_deg = 0.0
+RTN_branch_definition = "laser-only instantaneous RTN; positive=integral(max(a,0)); negative=integral(min(a,0)); net=positive+negative; absolute=positive-negative"
+abstol = 1.0e-12
+argument_of_periapsis_deg = 0.0
+compression = "Arrow IPC file / Feather V2, zstd, chunked Float64"
+diagnostic_initial_values = 0.0
+diagnostics = "solver-integrated laser-only RTN, positive/negative R/T/N parts, optical work"
+drag = false
+dt_max_s = 10.0
+duration_s = 630.711893783881
+earth_equatorial_radius_m = 6.3781366e6
+eccentricity = 0.0
+encounter_extrema = "10 s samples plus exact boundary states; sampled estimates"
+encounter_sample_interval_s = 10.0
+encounter_scope = "all spacecraft pairs"
+epoch = "2026-01-01T00:00:00"
+force_N = 0.0
+frame = "J2000 ECI"
+helper_altitude_km = 1000.0
+helper_count = 100
+helper_inclination_deg = 0.0
+helper_phase_rule = "360*(k-1)/N degrees"
+initial_target_periods = 0.1
+laser_power_W = 0.0
+link_scope = "target-helper"
+longest_tracks = "longest all-pair encounter and longest target-helper encounter, deduplicated"
+magnification_B = 100.0
+mass_kg = 227.0
+mu_m3_s2 = 3.98600436233e14
+pointing_acquisition_losses = false
+range_m = 200000.0
+range_rule = "hold selected links between accepted steps, including outside-range firing"
+reltol = 1.0e-12
+save_interval_s = 0.630711893783881
+scheduler = "gve_sma"
+scheduler_updates = "initialization and accepted steps"
+schema_version = 3
+solver = "Tsit5"
+speed_of_light_mps = 2.99792458e8
+target_altitude_km = 1000.0
+target_diagnostic_columns = ["target_dv_R_mps", "target_dv_T_mps", "target_dv_N_mps", "target_dv_T_positive_mps", "target_dv_T_negative_mps", "target_dv_R_positive_mps", "target_dv_R_negative_mps", "target_dv_N_positive_mps", "target_dv_N_negative_mps"]
+target_id = 101
+target_inclination_deg = 1.0
+target_index = 101
+target_true_anomaly_deg = 1.0
+terminals_per_spacecraft = 1
+trajectory_rows = 1001
+units = "SI: m, s, kg, m/s, J; orbital setup angles in degrees"
+
+[timing]
+steady_simulated_s = 310.59936785580186
+steady_wall_s = 4.6519269943237305
+steady_wall_s_per_simulated_s = 0.014977258409886472
+warmup_simulated_s = 320.11252592807915

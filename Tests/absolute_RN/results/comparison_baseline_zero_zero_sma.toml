@@ -1,0 +1,11 @@
+left = "baseline_zero"
+maximum_position_difference_m = 5.374304222409989e-8
+maximum_velocity_difference_mps = 8.127137990237354e-11
+mode = "adaptive"
+passed = true
+position_tolerance_m = 0.02
+right = "zero_sma"
+schedule_disagreement_fraction = 0.0
+schedule_disagreement_fraction_limit = 0.02
+schedule_disagreement_s = 0.0
+velocity_tolerance_mps = 5.0e-5

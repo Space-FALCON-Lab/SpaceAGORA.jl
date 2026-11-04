@@ -17,6 +17,10 @@ output/*
 GRAMpy/*
 *.pdf
 *.csv
+# ORACLE workspace CSV inputs and benchmark tables.
+!data/Topography_harmonics_data/*.csv
+!benchmarks/studies/gram_multisat_harness/*.csv
+!benchmarks/studies/telemetry_validation/manifests/vex_final/*.csv
 # ...but gravity-coefficient assets are versioned (see test/gmat_scenario_matrix.jl)
 !data/Gravity_harmonics_data/*.csv
 # Viewer surface textures: public-domain NASA/USGS mosaics registered in data/textures/manifest.toml

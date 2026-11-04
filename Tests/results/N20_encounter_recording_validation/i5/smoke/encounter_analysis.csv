@@ -1,0 +1,2 @@
+encounter_id,sc_a,sc_b,start_time_s,end_time_s,duration_s,start_clipped,end_clipped,laser_on_s
+1,1,21,0.0,305.07084151232095,305.07084151232095,true,false,0.0

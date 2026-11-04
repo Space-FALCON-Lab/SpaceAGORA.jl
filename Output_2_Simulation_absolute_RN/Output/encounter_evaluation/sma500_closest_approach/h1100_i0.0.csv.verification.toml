@@ -1,0 +1,12 @@
+boundary_checks = 2204
+events = 1102
+max_boundary_position_error_m = 0.0
+max_boundary_velocity_error_mps = 0.0
+passed = true
+replay_directory = "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Simulation_absolute_RN/Output/encounter_evaluation/sma500_closest_approach/replay/paper_plot_mode/h1000km_t1100km/ih0.0deg_it0.0deg/N500/T643578s/gve_sma_e0.0000_nu1.0000"
+result_sha256 = "182d7465d12963b58c13f2c3f2e0130d40a7757a7c1814f984bd7f1fb0309b91"
+run_id = "77271e8a6ac8c1b87dd9efc3bdd0a49bd11dd95dee2dbfc84bfe86a693bd1000"
+schedule_sha256 = "8e32f486a86aa20c72f712294ebbc3a16a69b3bd144398a650509ad2803fd6d7"
+source_directory = "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Simulation_absolute_RN/Output/paper_plot_mode/h1000km_t1100km/ih0.0deg_it0.0deg/N500/T643578s/gve_sma_e0.0000_nu1.0000"
+source_encounters_sha256 = "3587fd7f4b55fe34deb187d5f2c9c761af4a019a3ef37312c9a936e62ecfdfdc"
+trajectory_sha256 = "60af9db664f9775f7cf426b3bc5c8f7f481b4b5d5bd26f66e68f11e3e0e0d592"

@@ -1,14 +1,11 @@
-# Generated experiment results remain local.
-/Output_3_rangeOnly_vs_positiveAlongTrack/results/
-/Output_3_rangeOnly_vs_positiveAlongTrack/plots/
-/Output_3_rangeOnly_vs_positiveAlongTrack/validation/
-/Output_3_rangeOnly_vs_positiveAlongTrack/comparison_summary.csv
-/Simulation/Output/
-/Simulation_absolute_RN/Output/
-/Tests/results/
-/Tests/runs/
-/Tests/absolute_RN/results/
-/Tests/absolute_RN/PilotOutput/
+# Small result CSVs, plots, and run metadata are included with the source.
+# Bulk binary simulation data and generated source backups remain local.
+*.feather
+*.arrow
+*.hdf5
+*.h5
+*.jld2
+/Tests/absolute_RN/results/source_snapshot_pre_absolute_RN/
 /9_SpaceAGORA.jl-main_full integration/output/
 /9_SpaceAGORA.jl-main_full integration/benchmarks/studies/gram_multisat_harness/*.mem
 /9_SpaceAGORA.jl-main_full integration/benchmarks/studies/gram_multisat_harness/*.out
@@ -46,7 +43,31 @@ secrets.toml
 *.p12
 *.pfx
 
-# Upload limit: 10 MiB per file. Git has no size-based ignore syntax;
-# oversized files need explicit rules in the nearest applicable .gitignore.
-# These LFS pointers reference pretrained models larger than that limit.
+# Upload limits: 50 MiB per CSV; 10 MiB for other files.
+# Git has no size-based ignore syntax; new oversized files need explicit rules
+# in the nearest applicable .gitignore and a size check before uploading.
+# These LFS pointers reference pretrained models larger than the limit.
 /9_SpaceAGORA.jl-main_full integration/data/GRAM_surrogate/*.jls
+
+# CSV dumps above 50 MiB remain local; smaller result tables are included.
+/Tests/results/N20_encounter_recording_validation/i0/baseline/simulation_results.csv
+/Tests/results/N20_encounter_recording_validation/i0/recorded/simulation_results.csv
+/Tests/results/N20_encounter_recording_validation/i5/baseline/simulation_results.csv
+/Tests/results/N20_encounter_recording_validation/i5/recorded/simulation_results.csv
+/Tests/results/saved_paper_h1000_t1050_i1_N50_80orbits/dt10.0s/simulation_results.csv
+/Tests/results/saved_paper_h1000_t1050_i1_N50_80orbits/dt2.5s/simulation_results.csv
+/Tests/results/saved_paper_h1000_t1050_i1_N50_80orbits/dt5.0s/simulation_results.csv
+/Tests/results/saved_paper_h1000_t1050_i1_N50_80orbits/legacy_mean_radius_dt5.0s/simulation_results.csv
+/Tests/results/study_preflight/inc1050_dt10.0_save1.0/simulation_results.csv
+/Tests/results/study_preflight/inc1050_dt10.0_save10.0/simulation_results.csv
+/Tests/results/study_preflight/inc1050_dt10.0_save10.0_control/simulation_results.csv
+/Tests/results/study_preflight/inc1050_dt10.0_save10.0_noJ2/simulation_results.csv
+/Tests/results/study_preflight/inc1050_dt10.0_save5.0/simulation_results.csv
+/Tests/results/study_preflight/inc1050_dt2.5_save10.0/simulation_results.csv
+/Tests/results/study_preflight/inc1050_dt5.0_save10.0/simulation_results.csv
+/Tests/results/study_preflight/sma850_dt10.0_save1.0/simulation_results.csv
+/Tests/results/study_preflight/sma850_dt10.0_save10.0/simulation_results.csv
+/Tests/results/study_preflight/sma850_dt10.0_save10.0_control/simulation_results.csv
+/Tests/results/study_preflight/sma850_dt10.0_save5.0/simulation_results.csv
+/Tests/results/study_preflight/sma850_dt2.5_save10.0/simulation_results.csv
+/Tests/results/study_preflight/sma850_dt5.0_save10.0/simulation_results.csv

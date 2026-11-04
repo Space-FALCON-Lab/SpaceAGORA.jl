@@ -1,0 +1,16 @@
+RTN_tolerance_mps = 1.0e-8
+fresh_file_reference_passed = true
+independent_RTN_mps = [0.0007106630941742626, 0.0017271917545110104, 0.00011469423829406254]
+independent_T_negative_mps = 0.0
+independent_T_positive_mps = 0.0017271917545110104
+independent_work_J = [-2897.452266564686, 2871.9920387625652]
+max_RTN_error_mps = 6.570440160497709e-17
+max_local_RTN_quadrature_difference_mps = 1.2207041981630018e-16
+max_signed_T_error_mps = 3.5778671692021646e-17
+max_work_error_J = 6.912159733474255e-11
+output_directory = "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Tests/results/production_pipeline_compact/final_on/paper_plot_mode/h1000km_t1050km/ih0.0deg_it1.0deg/N1/T127s/gve_sma_e0.0000_nu1.0000"
+passed = true
+reference_file = "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Tests/results/production_pipeline_compact/diagnostics/d6b87ea0650501f80362249ee515fbb7caa15531b4b0fbc0e60104e946fc7ab4_recorded_final_on.feather"
+signed_T_tolerance_mps = 1.0e-7
+steps = 36
+work_tolerance_J = 0.10002897452266565

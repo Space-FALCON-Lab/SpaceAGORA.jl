@@ -1,0 +1,6 @@
+metric,label,unit,scheduler,cases,events,clipped_events,full_run_events,min,average,max
+entry_speed,Encounter speed at entry,m/s,pooled,162,74130,938,81,3.6652605947767847,181.8704668636592,245.52440607433067
+entry_range_rate,Signed range rate at entry,m/s,pooled,162,74130,938,81,-174.08798961327517,-105.00506369295432,128.32054709527063
+encounter_duration,Encounter duration,s,pooled,162,74130,938,81,4.433393856626935,4261.160985276496,630711.893783881
+laser_sma,Laser-on duration (gve_sma),s,gve_sma,81,39328,144,0,0.37340983064862476,1035.793961057239,61346.08065121457
+laser_inc,Laser-on duration (gve_inc),s,gve_inc,81,32677,46,0,1.9362670129630715,481.41640923495714,1598.3992165351083

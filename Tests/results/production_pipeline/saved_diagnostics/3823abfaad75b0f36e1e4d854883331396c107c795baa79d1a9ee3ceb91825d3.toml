@@ -1,0 +1,10 @@
+RTN_tolerance_mps = 1.0e-8
+max_RTN_error_mps = 4.1423939171144157e-11
+max_signed_T_error_mps = 3.511062940386722e-9
+max_work_error_J = 2.417102223262191e-6
+method = "saved 10 s Cartesian Hermite interpolation, actual firing boundaries, 32-subinterval Simpson quadrature"
+output_directory = "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Simulation/Output/paper_plot_mode/h1000km_t1050km/ih0.0deg_it1.0deg/N50/T637134s/gve_inc_e0.0000_nu1.0000"
+passed = true
+rows = 63715
+signed_T_tolerance_mps = 1.0e-8
+work_tolerance_J = 0.10027690356315642

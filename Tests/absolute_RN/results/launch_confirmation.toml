@@ -1,0 +1,16 @@
+active_case = "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Simulation_absolute_RN/Output/paper_plot_mode/h1000km_t900km/ih0.0deg_it0.0deg/N100/T617933s/gve_inc_e0.0000_nu1.0000"
+active_child_pid = 3627248
+campaign = "absolute_rn"
+checked_utc = "2026-10-22T00:50:47.469"
+first_case = "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Simulation_absolute_RN/Output/paper_plot_mode/h1000km_t900km/ih0.0deg_it0.0deg/N1/T617933s/gve_sma_e0.0000_nu1.0000"
+first_case_rows = 1001
+first_case_simulation_wall_s = 19.866379022598267
+output_root = "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Simulation_absolute_RN/Output"
+parent_pid = 3625170
+passed = true
+progress_log = "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Simulation_absolute_RN/Output/simulation_progress_absolute_RN.log"
+schema_version = 3
+source_signature = "0834b044dd9183906c2e8058796f5cc70df5bff329000102ca8c8c53b1c7de48"
+tmux_session = "oracle-study-absolute-rn"
+total_cases = 270
+verified_cases_at_check = 3

@@ -1,0 +1,21 @@
+sma_change_definition = "a(t) - a(0) in km, using each policy's first saved SMA"
+rows_per_policy = 16001
+elements = "osculating, not orbit-averaged"
+raan = "unwrapped across every saved sample"
+plot_source_sha256 = "f250fd3458b356763cf818bf7cf73ed53718e003c12d78800936735b33daeace"
+figure_groups = ["four_panel", "sma_only", "sma_change"]
+input_status = "verified"
+
+[files_sha256]
+"sma_vs_time.pdf" = "4ba9b0b4eca1ced6acca55f65ac6de5b6c5d81a54d8f6e9e2f8aaafc42a90e12"
+"orbital_elements_vs_orbits.pdf" = "598543c154e2c8e34218801d908349fd8b9fbb8089647f07e0bfbb10a3d568e6"
+"delta_sma_vs_orbits.png" = "4063384abcc56ffb14b767427e85e85e4a494bb3e0f5eca3335d45e5b12ee563"
+"orbital_elements_vs_time.pdf" = "f08c735117af77f4bf355012912d9dbb7a32271535c2d3e12f31069bf65681f2"
+"sma_vs_time.png" = "b2cdeea7702ff61eeaf874e32a024d04ce44f5d07a0f9ab9a2b9fa655d89b13e"
+"delta_sma_vs_time.pdf" = "73f9c5c9bd94cca0095cef403c9058c2d468d3640bd2bee6ccae6bcf2dd01a2c"
+"sma_vs_orbits.png" = "dc5af66160f7fd28ada99ed83223f74124e52ba0509b62489a2ed39c00ef2f44"
+"delta_sma_vs_time.png" = "818c6d86993bb0beef53752f049a4355af8b92c77b9299dc4ec05b731ee2c781"
+"orbital_elements_vs_orbits.png" = "3f2fd910337ae4d1f12f782de6c29610fb0324ebea4290f16bb63e5769b77c75"
+"sma_vs_orbits.pdf" = "c05b64c9455df0b6b7f54141e4687637eb04ce350ffb518e546d59db97f4034a"
+"delta_sma_vs_orbits.pdf" = "5db3bda6738b089cb7a184086bbf55d15dfa9fc412a4b6039db968c400648e16"
+"orbital_elements_vs_time.png" = "8c3a9211a84b6e80473b4a9ac142751a8debec81e1d8aeab70e655d67aa36bfd"

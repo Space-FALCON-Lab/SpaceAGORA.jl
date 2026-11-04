@@ -1,0 +1,841 @@
+quantity,target_altitude_km,metric,scheduler,label,n,zero_events,clipped_events,bin_index,lower,upper,count,probability
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,1,-4.8063206841357005,1.5746586253938344,98,0.022420498741706704
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,2,1.5746586253938344,7.955637934923369,671,0.15351178220086936
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,3,7.955637934923369,14.336617244452905,505,0.11553420269961108
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,4,14.336617244452905,20.71759655398244,282,0.06451612903225806
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,5,20.71759655398244,27.098575863511975,155,0.03546099290780142
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,6,27.098575863511975,33.47955517304151,91,0.02081903454587051
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,7,33.47955517304151,39.86053448257104,41,0.009380004575611988
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,8,39.86053448257104,46.24151379210058,16,0.0036604895904827272
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,9,46.24151379210058,52.62249310163011,8,0.0018302447952413636
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,10,52.62249310163011,59.00347241115965,7,0.001601464195836193
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,11,59.00347241115965,65.38445172068919,5,0.0011439029970258523
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,12,65.38445172068919,71.76543103021872,8,0.0018302447952413636
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,13,71.76543103021872,78.14641033974826,1,0.00022878059940517045
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,14,78.14641033974826,84.5273896492778,2,0.0004575611988103409
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,15,84.5273896492778,90.90836895880732,3,0.0006863417982155113
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,16,90.90836895880732,97.28934826833685,6,0.0013726835964310226
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,17,97.28934826833685,103.67032757786639,19,0.004346831388698238
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,18,103.67032757786639,110.05130688739592,4,0.0009151223976206818
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,19,110.05130688739592,116.43228619692546,5,0.0011439029970258523
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,20,116.43228619692546,122.813265506455,3,0.0006863417982155113
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,21,122.813265506455,129.19424481598452,20,0.004575611988103409
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,22,129.19424481598452,135.57522412551407,3,0.0006863417982155113
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,23,135.57522412551407,141.9562034350436,7,0.001601464195836193
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,24,141.9562034350436,148.33718274457314,1,0.00022878059940517045
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,25,148.33718274457314,154.71816205410266,63,0.014413177762525738
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,26,154.71816205410266,161.0991413636322,165,0.03774879890185312
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,27,161.0991413636322,167.48012067316174,139,0.03180050331731869
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,28,167.48012067316174,173.8610999826913,135,0.03088538091969801
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,29,173.8610999826913,180.2420792922208,150,0.03431708991077557
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,30,180.2420792922208,186.62305860175033,147,0.033630748112560054
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,31,186.62305860175033,193.00403791127988,189,0.043239533287577216
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,32,193.00403791127988,199.3850172208094,207,0.04735758407687028
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,33,199.3850172208094,205.76599653033895,305,0.06977808281857699
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,34,205.76599653033895,212.14697583986847,228,0.05216197666437886
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,35,212.14697583986847,218.52795514939803,193,0.04415465568519789
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,36,218.52795514939803,224.90893445892755,128,0.029283916723861818
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,37,224.90893445892755,231.2899137684571,152,0.034774651109585906
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,38,231.2899137684571,237.67089307798662,196,0.04484099748341341
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,39,237.67089307798662,244.05187238751617,13,0.0029741477922672157
+encounter_speed,1000,min_relative_speed_mps,pooled,Per-encounter minimum,4371,0,287,40,244.05187238751617,250.4328516970457,0,0.0
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,1,-4.8063206841357005,1.5746586253938344,0,0.0
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,2,1.5746586253938344,7.955637934923369,1,0.00022878059940517045
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,3,7.955637934923369,14.336617244452905,2,0.0004575611988103409
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,4,14.336617244452905,20.71759655398244,0,0.0
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,5,20.71759655398244,27.098575863511975,2,0.0004575611988103409
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,6,27.098575863511975,33.47955517304151,0,0.0
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,7,33.47955517304151,39.86053448257104,1,0.00022878059940517045
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,8,39.86053448257104,46.24151379210058,1,0.00022878059940517045
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,9,46.24151379210058,52.62249310163011,1,0.00022878059940517045
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,10,52.62249310163011,59.00347241115965,1,0.00022878059940517045
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,11,59.00347241115965,65.38445172068919,1,0.00022878059940517045
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,12,65.38445172068919,71.76543103021872,4,0.0009151223976206818
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,13,71.76543103021872,78.14641033974826,2,0.0004575611988103409
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,14,78.14641033974826,84.5273896492778,0,0.0
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,15,84.5273896492778,90.90836895880732,1,0.00022878059940517045
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,16,90.90836895880732,97.28934826833685,2,0.0004575611988103409
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,17,97.28934826833685,103.67032757786639,4,0.0009151223976206818
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,18,103.67032757786639,110.05130688739592,0,0.0
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,19,110.05130688739592,116.43228619692546,1,0.00022878059940517045
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,20,116.43228619692546,122.813265506455,1,0.00022878059940517045
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,21,122.813265506455,129.19424481598452,12,0.002745367192862045
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,22,129.19424481598452,135.57522412551407,5,0.0011439029970258523
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,23,135.57522412551407,141.9562034350436,4,0.0009151223976206818
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,24,141.9562034350436,148.33718274457314,3,0.0006863417982155113
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,25,148.33718274457314,154.71816205410266,4,0.0009151223976206818
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,26,154.71816205410266,161.0991413636322,3,0.0006863417982155113
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,27,161.0991413636322,167.48012067316174,4,0.0009151223976206818
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,28,167.48012067316174,173.8610999826913,6,0.0013726835964310226
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,29,173.8610999826913,180.2420792922208,8,0.0018302447952413636
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,30,180.2420792922208,186.62305860175033,39,0.008922443376801648
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,31,186.62305860175033,193.00403791127988,115,0.0263097689315946
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,32,193.00403791127988,199.3850172208094,386,0.08830931137039578
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,33,199.3850172208094,205.76599653033895,1198,0.2740791580873942
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,34,205.76599653033895,212.14697583986847,802,0.1834820407229467
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,35,212.14697583986847,218.52795514939803,415,0.09494394875314573
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,36,218.52795514939803,224.90893445892755,401,0.09174102036147334
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,37,224.90893445892755,231.2899137684571,396,0.09059711736444749
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,38,231.2899137684571,237.67089307798662,478,0.10935712651567148
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,39,237.67089307798662,244.05187238751617,67,0.01532830016014642
+encounter_speed,1000,max_relative_speed_mps,pooled,Per-encounter maximum,4371,0,287,40,244.05187238751617,250.4328516970457,0,0.0
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,1,-4.8063206841357005,1.5746586253938344,0,0.0
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,2,1.5746586253938344,7.955637934923369,39,0.0016266266266266266
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,3,7.955637934923369,14.336617244452905,701,0.02923757090423757
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,4,14.336617244452905,20.71759655398244,1536,0.06406406406406406
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,5,20.71759655398244,27.098575863511975,2926,0.1220387053720387
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,6,27.098575863511975,33.47955517304151,3302,0.13772105438772106
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,7,33.47955517304151,39.86053448257104,3322,0.13855522188855524
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,8,39.86053448257104,46.24151379210058,2535,0.10573073073073073
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,9,46.24151379210058,52.62249310163011,1539,0.06418918918918919
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,10,52.62249310163011,59.00347241115965,1459,0.06085251918585252
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,11,59.00347241115965,65.38445172068919,1568,0.06539873206539873
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,12,65.38445172068919,71.76543103021872,1527,0.06368868868868868
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,13,71.76543103021872,78.14641033974826,944,0.03937270603937271
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,14,78.14641033974826,84.5273896492778,552,0.023023023023023025
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,15,84.5273896492778,90.90836895880732,499,0.02081247914581248
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,16,90.90836895880732,97.28934826833685,478,0.019936603269936605
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,17,97.28934826833685,103.67032757786639,402,0.016766766766766767
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,18,103.67032757786639,110.05130688739592,292,0.012178845512178845
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,19,110.05130688739592,116.43228619692546,160,0.00667334000667334
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,20,116.43228619692546,122.813265506455,89,0.0037120453787120454
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,21,122.813265506455,129.19424481598452,29,0.001209542876209543
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,22,129.19424481598452,135.57522412551407,6,0.00025025025025025025
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,23,135.57522412551407,141.9562034350436,7,0.0002919586252919586
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,24,141.9562034350436,148.33718274457314,11,0.00045879212545879214
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,25,148.33718274457314,154.71816205410266,7,0.0002919586252919586
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,26,154.71816205410266,161.0991413636322,1,4.170837504170838e-5
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,27,161.0991413636322,167.48012067316174,13,0.0005422088755422089
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,28,167.48012067316174,173.8610999826913,0,0.0
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,29,173.8610999826913,180.2420792922208,8,0.000333667000333667
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,30,180.2420792922208,186.62305860175033,5,0.00020854187520854186
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,31,186.62305860175033,193.00403791127988,9,0.00037537537537537537
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,32,193.00403791127988,199.3850172208094,3,0.00012512512512512512
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,33,199.3850172208094,205.76599653033895,0,0.0
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,34,205.76599653033895,212.14697583986847,3,0.00012512512512512512
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,35,212.14697583986847,218.52795514939803,0,0.0
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,36,218.52795514939803,224.90893445892755,4,0.0001668335001668335
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,37,224.90893445892755,231.2899137684571,0,0.0
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,38,231.2899137684571,237.67089307798662,0,0.0
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,39,237.67089307798662,244.05187238751617,0,0.0
+encounter_speed,1050,min_relative_speed_mps,pooled,Per-encounter minimum,23976,0,348,40,244.05187238751617,250.4328516970457,0,0.0
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,1,-4.8063206841357005,1.5746586253938344,0,0.0
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,2,1.5746586253938344,7.955637934923369,0,0.0
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,3,7.955637934923369,14.336617244452905,0,0.0
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,4,14.336617244452905,20.71759655398244,0,0.0
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,5,20.71759655398244,27.098575863511975,0,0.0
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,6,27.098575863511975,33.47955517304151,0,0.0
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,7,33.47955517304151,39.86053448257104,0,0.0
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,8,39.86053448257104,46.24151379210058,0,0.0
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,9,46.24151379210058,52.62249310163011,0,0.0
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,10,52.62249310163011,59.00347241115965,0,0.0
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,11,59.00347241115965,65.38445172068919,0,0.0
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,12,65.38445172068919,71.76543103021872,0,0.0
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,13,71.76543103021872,78.14641033974826,0,0.0
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,14,78.14641033974826,84.5273896492778,0,0.0
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,15,84.5273896492778,90.90836895880732,0,0.0
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,16,90.90836895880732,97.28934826833685,0,0.0
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,17,97.28934826833685,103.67032757786639,0,0.0
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,18,103.67032757786639,110.05130688739592,0,0.0
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,19,110.05130688739592,116.43228619692546,0,0.0
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,20,116.43228619692546,122.813265506455,0,0.0
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,21,122.813265506455,129.19424481598452,0,0.0
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,22,129.19424481598452,135.57522412551407,17,0.0007090423757090423
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,23,135.57522412551407,141.9562034350436,183,0.007632632632632632
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,24,141.9562034350436,148.33718274457314,221,0.009217550884217551
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,25,148.33718274457314,154.71816205410266,187,0.007799466132799466
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,26,154.71816205410266,161.0991413636322,137,0.005714047380714047
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,27,161.0991413636322,167.48012067316174,117,0.00487987987987988
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,28,167.48012067316174,173.8610999826913,234,0.00975975975975976
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,29,173.8610999826913,180.2420792922208,422,0.017600934267600933
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,30,180.2420792922208,186.62305860175033,890,0.03712045378712046
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,31,186.62305860175033,193.00403791127988,2213,0.09230063396730064
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,32,193.00403791127988,199.3850172208094,4934,0.20578912245578912
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,33,199.3850172208094,205.76599653033895,5067,0.21133633633633633
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,34,205.76599653033895,212.14697583986847,3319,0.1384300967634301
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,35,212.14697583986847,218.52795514939803,1764,0.07357357357357357
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,36,218.52795514939803,224.90893445892755,1440,0.06006006006006006
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,37,224.90893445892755,231.2899137684571,1389,0.05793293293293293
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,38,231.2899137684571,237.67089307798662,870,0.03628628628628629
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,39,237.67089307798662,244.05187238751617,544,0.022689356022689355
+encounter_speed,1050,max_relative_speed_mps,pooled,Per-encounter maximum,23976,0,348,40,244.05187238751617,250.4328516970457,28,0.0011678345011678344
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,1,-4.8063206841357005,1.5746586253938344,0,0.0
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,2,1.5746586253938344,7.955637934923369,0,0.0
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,3,7.955637934923369,14.336617244452905,0,0.0
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,4,14.336617244452905,20.71759655398244,0,0.0
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,5,20.71759655398244,27.098575863511975,0,0.0
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,6,27.098575863511975,33.47955517304151,212,0.0046305397199834
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,7,33.47955517304151,39.86053448257104,1888,0.04123801411004085
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,8,39.86053448257104,46.24151379210058,3459,0.07555206080859708
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,9,46.24151379210058,52.62249310163011,6346,0.13861040124063517
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,10,52.62249310163011,59.00347241115965,6708,0.14651726623419173
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,11,59.00347241115965,65.38445172068919,5824,0.12720878928860058
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,12,65.38445172068919,71.76543103021872,4590,0.10025555337133871
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,13,71.76543103021872,78.14641033974826,3630,0.07928707162047048
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,14,78.14641033974826,84.5273896492778,3172,0.06928335845182709
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,15,84.5273896492778,90.90836895880732,1977,0.043181967105694254
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,16,90.90836895880732,97.28934826833685,1069,0.02334927811633139
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,17,97.28934826833685,103.67032757786639,817,0.01784505165672848
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,18,103.67032757786639,110.05130688739592,851,0.01858768538540506
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,19,110.05130688739592,116.43228619692546,868,0.018959002249743354
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,20,116.43228619692546,122.813265506455,893,0.019505056462005548
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,21,122.813265506455,129.19424481598452,997,0.021776641985016273
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,22,129.19424481598452,135.57522412551407,1251,0.027324552781600158
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,23,135.57522412551407,141.9562034350436,1003,0.0219076949959592
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,24,141.9562034350436,148.33718274457314,196,0.004281065024135596
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,25,148.33718274457314,154.71816205410266,4,8.736867396195094e-5
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,26,154.71816205410266,161.0991413636322,5,0.00010921084245243868
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,27,161.0991413636322,167.48012067316174,3,6.552650547146321e-5
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,28,167.48012067316174,173.8610999826913,12,0.00026210602188585284
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,29,173.8610999826913,180.2420792922208,2,4.368433698097547e-5
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,30,180.2420792922208,186.62305860175033,0,0.0
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,31,186.62305860175033,193.00403791127988,2,4.368433698097547e-5
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,32,193.00403791127988,199.3850172208094,0,0.0
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,33,199.3850172208094,205.76599653033895,2,4.368433698097547e-5
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,34,205.76599653033895,212.14697583986847,2,4.368433698097547e-5
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,35,212.14697583986847,218.52795514939803,0,0.0
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,36,218.52795514939803,224.90893445892755,0,0.0
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,37,224.90893445892755,231.2899137684571,0,0.0
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,38,231.2899137684571,237.67089307798662,0,0.0
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,39,237.67089307798662,244.05187238751617,0,0.0
+encounter_speed,1100,min_relative_speed_mps,pooled,Per-encounter minimum,45783,0,303,40,244.05187238751617,250.4328516970457,0,0.0
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,1,-4.8063206841357005,1.5746586253938344,0,0.0
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,2,1.5746586253938344,7.955637934923369,0,0.0
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,3,7.955637934923369,14.336617244452905,0,0.0
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,4,14.336617244452905,20.71759655398244,0,0.0
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,5,20.71759655398244,27.098575863511975,0,0.0
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,6,27.098575863511975,33.47955517304151,0,0.0
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,7,33.47955517304151,39.86053448257104,0,0.0
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,8,39.86053448257104,46.24151379210058,0,0.0
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,9,46.24151379210058,52.62249310163011,0,0.0
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,10,52.62249310163011,59.00347241115965,0,0.0
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,11,59.00347241115965,65.38445172068919,0,0.0
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,12,65.38445172068919,71.76543103021872,0,0.0
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,13,71.76543103021872,78.14641033974826,0,0.0
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,14,78.14641033974826,84.5273896492778,0,0.0
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,15,84.5273896492778,90.90836895880732,0,0.0
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,16,90.90836895880732,97.28934826833685,0,0.0
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,17,97.28934826833685,103.67032757786639,0,0.0
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,18,103.67032757786639,110.05130688739592,0,0.0
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,19,110.05130688739592,116.43228619692546,4,8.736867396195094e-5
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,20,116.43228619692546,122.813265506455,3,6.552650547146321e-5
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,21,122.813265506455,129.19424481598452,3,6.552650547146321e-5
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,22,129.19424481598452,135.57522412551407,1,2.1842168490487735e-5
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,23,135.57522412551407,141.9562034350436,4,8.736867396195094e-5
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,24,141.9562034350436,148.33718274457314,8,0.00017473734792390188
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,25,148.33718274457314,154.71816205410266,14,0.0003057903588668283
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,26,154.71816205410266,161.0991413636322,157,0.0034292204530065743
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,27,161.0991413636322,167.48012067316174,2369,0.05174409715396545
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,28,167.48012067316174,173.8610999826913,6112,0.13349933381386103
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,29,173.8610999826913,180.2420792922208,9447,0.20634296572963765
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,30,180.2420792922208,186.62305860175033,8259,0.1803944695629382
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,31,186.62305860175033,193.00403791127988,6073,0.132647489242732
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,32,193.00403791127988,199.3850172208094,3546,0.07745232946726952
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,33,199.3850172208094,205.76599653033895,2459,0.05370989231810934
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,34,205.76599653033895,212.14697583986847,2480,0.054168577856409585
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,35,212.14697583986847,218.52795514939803,2463,0.05379726099207129
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,36,218.52795514939803,224.90893445892755,1576,0.034423257541008674
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,37,224.90893445892755,231.2899137684571,716,0.01563899263918922
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,38,231.2899137684571,237.67089307798662,89,0.0019439529956534086
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,39,237.67089307798662,244.05187238751617,0,0.0
+encounter_speed,1100,max_relative_speed_mps,pooled,Per-encounter maximum,45783,0,303,40,244.05187238751617,250.4328516970457,0,0.0
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,1,-181.14091073265655,-171.97211327746075,0,0.0
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,2,-171.97211327746075,-162.80331582226498,0,0.0
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,3,-162.80331582226498,-153.63451836706918,0,0.0
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,4,-153.63451836706918,-144.4657209118734,0,0.0
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,5,-144.4657209118734,-135.2969234566776,0,0.0
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,6,-135.2969234566776,-126.12812600148182,16,0.0036604895904827272
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,7,-126.12812600148182,-116.95932854628603,212,0.048501487073896135
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,8,-116.95932854628603,-107.79053109109024,220,0.050331731869137496
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,9,-107.79053109109024,-98.62173363589446,66,0.015099519560741249
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,10,-98.62173363589446,-89.45293618069867,30,0.0068634179821551134
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,11,-89.45293618069867,-80.28413872550288,9,0.002059025394646534
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,12,-80.28413872550288,-71.1153412703071,1,0.00022878059940517045
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,13,-71.1153412703071,-61.946543815111305,26,0.005948295584534431
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,14,-61.946543815111305,-52.77774635991552,451,0.10318005033173187
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,15,-52.77774635991552,-43.60894890471973,886,0.202699611072981
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,16,-43.60894890471973,-34.440151449523945,980,0.22420498741706704
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,17,-34.440151449523945,-25.271353994328155,469,0.10729810112102493
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,18,-25.271353994328155,-16.10255653913237,350,0.08007320979180965
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,19,-16.10255653913237,-6.933759083936581,492,0.11256005490734386
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,20,-6.933759083936581,2.2350383712592077,157,0.03591855410661176
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,21,2.2350383712592077,11.403835826454996,6,0.0013726835964310226
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,22,11.403835826454996,20.572633281650784,0,0.0
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,23,20.572633281650784,29.74143073684657,0,0.0
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,24,29.74143073684657,38.91022819204236,0,0.0
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,25,38.91022819204236,48.07902564723815,0,0.0
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,26,48.07902564723815,57.247823102433934,0,0.0
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,27,57.247823102433934,66.41662055762973,0,0.0
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,28,66.41662055762973,75.58541801282551,0,0.0
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,29,75.58541801282551,84.7542154680213,0,0.0
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,30,84.7542154680213,93.92301292321709,0,0.0
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,31,93.92301292321709,103.09181037841287,0,0.0
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,32,103.09181037841287,112.26060783360866,0,0.0
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,33,112.26060783360866,121.42940528880445,0,0.0
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,34,121.42940528880445,130.59820274400025,0,0.0
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,35,130.59820274400025,139.76700019919602,0,0.0
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,36,139.76700019919602,148.93579765439182,0,0.0
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,37,148.93579765439182,158.1045951095876,0,0.0
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,38,158.1045951095876,167.2733925647834,0,0.0
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,39,167.2733925647834,176.44219001997917,0,0.0
+range_rate,1000,min_range_rate_mps,pooled,Per-encounter minimum,4371,0,287,40,176.44219001997917,185.61098747517497,0,0.0
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,1,-181.14091073265655,-171.97211327746075,0,0.0
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,2,-171.97211327746075,-162.80331582226498,0,0.0
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,3,-162.80331582226498,-153.63451836706918,0,0.0
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,4,-153.63451836706918,-144.4657209118734,0,0.0
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,5,-144.4657209118734,-135.2969234566776,0,0.0
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,6,-135.2969234566776,-126.12812600148182,0,0.0
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,7,-126.12812600148182,-116.95932854628603,0,0.0
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,8,-116.95932854628603,-107.79053109109024,0,0.0
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,9,-107.79053109109024,-98.62173363589446,0,0.0
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,10,-98.62173363589446,-89.45293618069867,0,0.0
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,11,-89.45293618069867,-80.28413872550288,0,0.0
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,12,-80.28413872550288,-71.1153412703071,0,0.0
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,13,-71.1153412703071,-61.946543815111305,0,0.0
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,14,-61.946543815111305,-52.77774635991552,0,0.0
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,15,-52.77774635991552,-43.60894890471973,0,0.0
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,16,-43.60894890471973,-34.440151449523945,2,0.0004575611988103409
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,17,-34.440151449523945,-25.271353994328155,0,0.0
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,18,-25.271353994328155,-16.10255653913237,0,0.0
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,19,-16.10255653913237,-6.933759083936581,17,0.0038892701898878973
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,20,-6.933759083936581,2.2350383712592077,48,0.01098146877144818
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,21,2.2350383712592077,11.403835826454996,428,0.09791809654541295
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,22,11.403835826454996,20.572633281650784,322,0.07366735300846489
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,23,20.572633281650784,29.74143073684657,444,0.10157858613589568
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,24,29.74143073684657,38.91022819204236,619,0.1416151910318005
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,25,38.91022819204236,48.07902564723815,1259,0.2880347746511096
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,26,48.07902564723815,57.247823102433934,538,0.1230839624799817
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,27,57.247823102433934,66.41662055762973,132,0.030199039121482498
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,28,66.41662055762973,75.58541801282551,11,0.0025165865934568747
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,29,75.58541801282551,84.7542154680213,6,0.0013726835964310226
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,30,84.7542154680213,93.92301292321709,6,0.0013726835964310226
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,31,93.92301292321709,103.09181037841287,39,0.008922443376801648
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,32,103.09181037841287,112.26060783360866,138,0.031571722717913524
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,33,112.26060783360866,121.42940528880445,266,0.060855639441775335
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,34,121.42940528880445,130.59820274400025,89,0.02036147334706017
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,35,130.59820274400025,139.76700019919602,7,0.001601464195836193
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,36,139.76700019919602,148.93579765439182,0,0.0
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,37,148.93579765439182,158.1045951095876,0,0.0
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,38,158.1045951095876,167.2733925647834,0,0.0
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,39,167.2733925647834,176.44219001997917,0,0.0
+range_rate,1000,max_range_rate_mps,pooled,Per-encounter maximum,4371,0,287,40,176.44219001997917,185.61098747517497,0,0.0
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,1,-181.14091073265655,-171.97211327746075,0,0.0
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,2,-171.97211327746075,-162.80331582226498,0,0.0
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,3,-162.80331582226498,-153.63451836706918,0,0.0
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,4,-153.63451836706918,-144.4657209118734,0,0.0
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,5,-144.4657209118734,-135.2969234566776,1,4.170837504170838e-5
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,6,-135.2969234566776,-126.12812600148182,165,0.006881881881881882
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,7,-126.12812600148182,-116.95932854628603,1604,0.06690023356690024
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,8,-116.95932854628603,-107.79053109109024,3160,0.13179846513179846
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,9,-107.79053109109024,-98.62173363589446,3567,0.14877377377377377
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,10,-98.62173363589446,-89.45293618069867,4463,0.1861444778111445
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,11,-89.45293618069867,-80.28413872550288,4402,0.18360026693360026
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,12,-80.28413872550288,-71.1153412703071,4165,0.1737153820487154
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,13,-71.1153412703071,-61.946543815111305,1892,0.07891224557891224
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,14,-61.946543815111305,-52.77774635991552,432,0.018018018018018018
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,15,-52.77774635991552,-43.60894890471973,5,0.00020854187520854186
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,16,-43.60894890471973,-34.440151449523945,10,0.00041708375041708373
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,17,-34.440151449523945,-25.271353994328155,0,0.0
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,18,-25.271353994328155,-16.10255653913237,11,0.00045879212545879214
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,19,-16.10255653913237,-6.933759083936581,7,0.0002919586252919586
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,20,-6.933759083936581,2.2350383712592077,2,8.341675008341675e-5
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,21,2.2350383712592077,11.403835826454996,6,0.00025025025025025025
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,22,11.403835826454996,20.572633281650784,0,0.0
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,23,20.572633281650784,29.74143073684657,0,0.0
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,24,29.74143073684657,38.91022819204236,8,0.000333667000333667
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,25,38.91022819204236,48.07902564723815,4,0.0001668335001668335
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,26,48.07902564723815,57.247823102433934,10,0.00041708375041708373
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,27,57.247823102433934,66.41662055762973,8,0.000333667000333667
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,28,66.41662055762973,75.58541801282551,54,0.0022522522522522522
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,29,75.58541801282551,84.7542154680213,0,0.0
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,30,84.7542154680213,93.92301292321709,0,0.0
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,31,93.92301292321709,103.09181037841287,0,0.0
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,32,103.09181037841287,112.26060783360866,0,0.0
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,33,112.26060783360866,121.42940528880445,0,0.0
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,34,121.42940528880445,130.59820274400025,0,0.0
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,35,130.59820274400025,139.76700019919602,0,0.0
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,36,139.76700019919602,148.93579765439182,0,0.0
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,37,148.93579765439182,158.1045951095876,0,0.0
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,38,158.1045951095876,167.2733925647834,0,0.0
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,39,167.2733925647834,176.44219001997917,0,0.0
+range_rate,1050,min_range_rate_mps,pooled,Per-encounter minimum,23976,0,348,40,176.44219001997917,185.61098747517497,0,0.0
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,1,-181.14091073265655,-171.97211327746075,0,0.0
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,2,-171.97211327746075,-162.80331582226498,0,0.0
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,3,-162.80331582226498,-153.63451836706918,0,0.0
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,4,-153.63451836706918,-144.4657209118734,0,0.0
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,5,-144.4657209118734,-135.2969234566776,0,0.0
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,6,-135.2969234566776,-126.12812600148182,0,0.0
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,7,-126.12812600148182,-116.95932854628603,0,0.0
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,8,-116.95932854628603,-107.79053109109024,0,0.0
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,9,-107.79053109109024,-98.62173363589446,0,0.0
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,10,-98.62173363589446,-89.45293618069867,2,8.341675008341675e-5
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,11,-89.45293618069867,-80.28413872550288,7,0.0002919586252919586
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,12,-80.28413872550288,-71.1153412703071,13,0.0005422088755422089
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,13,-71.1153412703071,-61.946543815111305,16,0.000667334000667334
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,14,-61.946543815111305,-52.77774635991552,7,0.0002919586252919586
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,15,-52.77774635991552,-43.60894890471973,6,0.00025025025025025025
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,16,-43.60894890471973,-34.440151449523945,4,0.0001668335001668335
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,17,-34.440151449523945,-25.271353994328155,7,0.0002919586252919586
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,18,-25.271353994328155,-16.10255653913237,4,0.0001668335001668335
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,19,-16.10255653913237,-6.933759083936581,8,0.000333667000333667
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,20,-6.933759083936581,2.2350383712592077,5,0.00020854187520854186
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,21,2.2350383712592077,11.403835826454996,12,0.0005005005005005005
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,22,11.403835826454996,20.572633281650784,4,0.0001668335001668335
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,23,20.572633281650784,29.74143073684657,4,0.0001668335001668335
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,24,29.74143073684657,38.91022819204236,3,0.00012512512512512512
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,25,38.91022819204236,48.07902564723815,18,0.0007507507507507507
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,26,48.07902564723815,57.247823102433934,488,0.020353687020353686
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,27,57.247823102433934,66.41662055762973,1693,0.07061227894561228
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,28,66.41662055762973,75.58541801282551,3371,0.14059893226559894
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,29,75.58541801282551,84.7542154680213,3566,0.14873206539873207
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,30,84.7542154680213,93.92301292321709,3866,0.16124457791124458
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,31,93.92301292321709,103.09181037841287,3975,0.1657907907907908
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,32,103.09181037841287,112.26060783360866,3250,0.13555221888555222
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,33,112.26060783360866,121.42940528880445,1756,0.07323990657323991
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,34,121.42940528880445,130.59820274400025,1139,0.04750583917250584
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,35,130.59820274400025,139.76700019919602,673,0.028069736403069735
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,36,139.76700019919602,148.93579765439182,79,0.0032949616282949615
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,37,148.93579765439182,158.1045951095876,0,0.0
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,38,158.1045951095876,167.2733925647834,0,0.0
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,39,167.2733925647834,176.44219001997917,0,0.0
+range_rate,1050,max_range_rate_mps,pooled,Per-encounter maximum,23976,0,348,40,176.44219001997917,185.61098747517497,0,0.0
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,1,-181.14091073265655,-171.97211327746075,36,0.0007863180656575585
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,2,-171.97211327746075,-162.80331582226498,575,0.012559246882030448
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,3,-162.80331582226498,-153.63451836706918,1991,0.04348775746456108
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,4,-153.63451836706918,-144.4657209118734,5612,0.12257824956861717
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,5,-144.4657209118734,-135.2969234566776,8653,0.18900028394819038
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,6,-135.2969234566776,-126.12812600148182,10174,0.2222222222222222
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,7,-126.12812600148182,-116.95932854628603,6832,0.1492256951270122
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,8,-116.95932854628603,-107.79053109109024,4199,0.091715265491558
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,9,-107.79053109109024,-98.62173363589446,2314,0.05054277788698862
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,10,-98.62173363589446,-89.45293618069867,1473,0.032173514186488436
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,11,-89.45293618069867,-80.28413872550288,967,0.021121376930301642
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,12,-80.28413872550288,-71.1153412703071,1237,0.02701876242273333
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,13,-71.1153412703071,-61.946543815111305,1054,0.023021645588974075
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,14,-61.946543815111305,-52.77774635991552,428,0.00934844811392875
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,15,-52.77774635991552,-43.60894890471973,148,0.003232640936592185
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,16,-43.60894890471973,-34.440151449523945,0,0.0
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,17,-34.440151449523945,-25.271353994328155,0,0.0
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,18,-25.271353994328155,-16.10255653913237,12,0.00026210602188585284
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,19,-16.10255653913237,-6.933759083936581,0,0.0
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,20,-6.933759083936581,2.2350383712592077,0,0.0
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,21,2.2350383712592077,11.403835826454996,6,0.00013105301094292642
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,22,11.403835826454996,20.572633281650784,0,0.0
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,23,20.572633281650784,29.74143073684657,0,0.0
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,24,29.74143073684657,38.91022819204236,8,0.00017473734792390188
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,25,38.91022819204236,48.07902564723815,4,8.736867396195094e-5
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,26,48.07902564723815,57.247823102433934,0,0.0
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,27,57.247823102433934,66.41662055762973,6,0.00013105301094292642
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,28,66.41662055762973,75.58541801282551,4,8.736867396195094e-5
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,29,75.58541801282551,84.7542154680213,2,4.368433698097547e-5
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,30,84.7542154680213,93.92301292321709,6,0.00013105301094292642
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,31,93.92301292321709,103.09181037841287,0,0.0
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,32,103.09181037841287,112.26060783360866,24,0.0005242120437717057
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,33,112.26060783360866,121.42940528880445,4,8.736867396195094e-5
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,34,121.42940528880445,130.59820274400025,14,0.0003057903588668283
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,35,130.59820274400025,139.76700019919602,0,0.0
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,36,139.76700019919602,148.93579765439182,0,0.0
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,37,148.93579765439182,158.1045951095876,0,0.0
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,38,158.1045951095876,167.2733925647834,0,0.0
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,39,167.2733925647834,176.44219001997917,0,0.0
+range_rate,1100,min_range_rate_mps,pooled,Per-encounter minimum,45783,0,303,40,176.44219001997917,185.61098747517497,0,0.0
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,1,-181.14091073265655,-171.97211327746075,0,0.0
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,2,-171.97211327746075,-162.80331582226498,0,0.0
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,3,-162.80331582226498,-153.63451836706918,0,0.0
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,4,-153.63451836706918,-144.4657209118734,0,0.0
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,5,-144.4657209118734,-135.2969234566776,3,6.552650547146321e-5
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,6,-135.2969234566776,-126.12812600148182,4,8.736867396195094e-5
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,7,-126.12812600148182,-116.95932854628603,10,0.00021842168490487736
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,8,-116.95932854628603,-107.79053109109024,4,8.736867396195094e-5
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,9,-107.79053109109024,-98.62173363589446,6,0.00013105301094292642
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,10,-98.62173363589446,-89.45293618069867,2,4.368433698097547e-5
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,11,-89.45293618069867,-80.28413872550288,12,0.00026210602188585284
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,12,-80.28413872550288,-71.1153412703071,3,6.552650547146321e-5
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,13,-71.1153412703071,-61.946543815111305,4,8.736867396195094e-5
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,14,-61.946543815111305,-52.77774635991552,2,4.368433698097547e-5
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,15,-52.77774635991552,-43.60894890471973,3,6.552650547146321e-5
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,16,-43.60894890471973,-34.440151449523945,1,2.1842168490487735e-5
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,17,-34.440151449523945,-25.271353994328155,6,0.00013105301094292642
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,18,-25.271353994328155,-16.10255653913237,3,6.552650547146321e-5
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,19,-16.10255653913237,-6.933759083936581,5,0.00010921084245243868
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,20,-6.933759083936581,2.2350383712592077,6,0.00013105301094292642
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,21,2.2350383712592077,11.403835826454996,1,2.1842168490487735e-5
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,22,11.403835826454996,20.572633281650784,1,2.1842168490487735e-5
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,23,20.572633281650784,29.74143073684657,6,0.00013105301094292642
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,24,29.74143073684657,38.91022819204236,3,6.552650547146321e-5
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,25,38.91022819204236,48.07902564723815,4,8.736867396195094e-5
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,26,48.07902564723815,57.247823102433934,212,0.0046305397199834
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,27,57.247823102433934,66.41662055762973,975,0.02129611427822554
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,28,66.41662055762973,75.58541801282551,1176,0.025686390144813578
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,29,75.58541801282551,84.7542154680213,1034,0.02258480221916432
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,30,84.7542154680213,93.92301292321709,937,0.020466111875587008
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,31,93.92301292321709,103.09181037841287,1447,0.03160561780573575
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,32,103.09181037841287,112.26060783360866,3751,0.0819299740078195
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,33,112.26060783360866,121.42940528880445,6440,0.140663565078741
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,34,121.42940528880445,130.59820274400025,8459,0.18476290326103575
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,35,130.59820274400025,139.76700019919602,8908,0.19457003691326474
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,36,139.76700019919602,148.93579765439182,6573,0.1435685734879759
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,37,148.93579765439182,158.1045951095876,3873,0.084594718563659
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,38,158.1045951095876,167.2733925647834,1237,0.02701876242273333
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,39,167.2733925647834,176.44219001997917,634,0.013847934822969225
+range_rate,1100,max_range_rate_mps,pooled,Per-encounter maximum,45783,0,303,40,176.44219001997917,185.61098747517497,38,0.000830002402638534
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,1,1.0,1.4125375446227544,0,0.0
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,2,1.4125375446227544,1.9952623149688795,0,0.0
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,3,1.9952623149688795,2.8183829312644537,0,0.0
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,4,2.8183829312644537,3.9810717055349722,0,0.0
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,5,3.9810717055349722,5.623413251903491,1,0.00022878059940517045
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,6,5.623413251903491,7.943282347242816,0,0.0
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,7,7.943282347242816,11.220184543019636,1,0.00022878059940517045
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,8,11.220184543019636,15.848931924611133,0,0.0
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,9,15.848931924611133,22.3872113856834,1,0.00022878059940517045
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,10,22.3872113856834,31.622776601683793,0,0.0
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,11,31.622776601683793,44.6683592150963,1,0.00022878059940517045
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,12,44.6683592150963,63.09573444801933,1,0.00022878059940517045
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,13,63.09573444801933,89.12509381337455,0,0.0
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,14,89.12509381337455,125.89254117941675,7,0.001601464195836193
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,15,125.89254117941675,177.82794100389228,16,0.0036604895904827272
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,16,177.82794100389228,251.18864315095797,23,0.00526195378631892
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,17,251.18864315095797,354.8133892335753,47,0.010752688172043012
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,18,354.8133892335753,501.18723362727246,113,0.02585220773278426
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,19,501.18723362727246,707.945784384138,182,0.04163806909174102
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,20,707.945784384138,1000.0,305,0.06977808281857699
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,21,1000.0,1412.537544622754,470,0.10752688172043011
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,22,1412.537544622754,1995.2623149688789,674,0.1541981239990849
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,23,1995.2623149688789,2818.382931264455,493,0.11278883550674902
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,24,2818.382931264455,3981.0717055349733,49,0.011210249370853352
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,25,3981.0717055349733,5623.413251903491,18,0.004118050789293068
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,26,5623.413251903491,7943.282347242814,10,0.0022878059940517046
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,27,7943.282347242814,11220.18454301963,21,0.004804392587508579
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,28,11220.18454301963,15848.93192461114,245,0.05605124685426676
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,29,15848.93192461114,22387.21138568338,739,0.16906886296042095
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,30,22387.21138568338,31622.776601683792,405,0.09265614275909403
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,31,31622.776601683792,44668.359215096345,205,0.046900022878059944
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,32,44668.359215096345,63095.7344480193,117,0.026767330130404943
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,33,63095.7344480193,89125.0938133746,69,0.015785861358956762
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,34,89125.0938133746,125892.54117941661,62,0.014184397163120567
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,35,125892.54117941661,177827.94100389228,5,0.0011439029970258523
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,36,177827.94100389228,251188.6431509582,2,0.0004575611988103409
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,37,251188.6431509582,354813.3892335753,4,0.0009151223976206818
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,38,354813.3892335753,501187.2336272725,3,0.0006863417982155113
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,39,501187.2336272725,707945.7843841374,82,0.018760009151223975
+encounter_duration,1000,duration_s,pooled,All observed encounters,4371,0,287,40,707945.7843841374,1.0e6,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,1,1.0,1.4125375446227544,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,2,1.4125375446227544,1.9952623149688795,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,3,1.9952623149688795,2.8183829312644537,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,4,2.8183829312644537,3.9810717055349722,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,5,3.9810717055349722,5.623413251903491,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,6,5.623413251903491,7.943282347242816,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,7,7.943282347242816,11.220184543019636,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,8,11.220184543019636,15.848931924611133,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,9,15.848931924611133,22.3872113856834,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,10,22.3872113856834,31.622776601683793,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,11,31.622776601683793,44.6683592150963,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,12,44.6683592150963,63.09573444801933,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,13,63.09573444801933,89.12509381337455,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,14,89.12509381337455,125.89254117941675,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,15,125.89254117941675,177.82794100389228,12,0.0005005005005005005
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,16,177.82794100389228,251.18864315095797,8,0.000333667000333667
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,17,251.18864315095797,354.8133892335753,8,0.000333667000333667
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,18,354.8133892335753,501.18723362727246,15,0.0006256256256256256
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,19,501.18723362727246,707.945784384138,21,0.0008758758758758759
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,20,707.945784384138,1000.0,19,0.0007924591257924592
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,21,1000.0,1412.537544622754,32,0.001334668001334668
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,22,1412.537544622754,1995.2623149688789,38,0.0015849182515849183
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,23,1995.2623149688789,2818.382931264455,267,0.011136136136136137
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,24,2818.382931264455,3981.0717055349733,4741,0.1977394060727394
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,25,3981.0717055349733,5623.413251903491,18815,0.7847430764097431
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,26,5623.413251903491,7943.282347242814,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,27,7943.282347242814,11220.18454301963,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,28,11220.18454301963,15848.93192461114,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,29,15848.93192461114,22387.21138568338,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,30,22387.21138568338,31622.776601683792,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,31,31622.776601683792,44668.359215096345,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,32,44668.359215096345,63095.7344480193,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,33,63095.7344480193,89125.0938133746,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,34,89125.0938133746,125892.54117941661,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,35,125892.54117941661,177827.94100389228,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,36,177827.94100389228,251188.6431509582,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,37,251188.6431509582,354813.3892335753,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,38,354813.3892335753,501187.2336272725,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,39,501187.2336272725,707945.7843841374,0,0.0
+encounter_duration,1050,duration_s,pooled,All observed encounters,23976,0,348,40,707945.7843841374,1.0e6,0,0.0
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,1,1.0,1.4125375446227544,0,0.0
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,2,1.4125375446227544,1.9952623149688795,0,0.0
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,3,1.9952623149688795,2.8183829312644537,0,0.0
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,4,2.8183829312644537,3.9810717055349722,0,0.0
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,5,3.9810717055349722,5.623413251903491,0,0.0
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,6,5.623413251903491,7.943282347242816,0,0.0
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,7,7.943282347242816,11.220184543019636,0,0.0
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,8,11.220184543019636,15.848931924611133,1,2.1842168490487735e-5
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,9,15.848931924611133,22.3872113856834,0,0.0
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,10,22.3872113856834,31.622776601683793,0,0.0
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,11,31.622776601683793,44.6683592150963,2,4.368433698097547e-5
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,12,44.6683592150963,63.09573444801933,2,4.368433698097547e-5
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,13,63.09573444801933,89.12509381337455,7,0.00015289517943341415
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,14,89.12509381337455,125.89254117941675,2,4.368433698097547e-5
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,15,125.89254117941675,177.82794100389228,11,0.0002402638533953651
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,16,177.82794100389228,251.18864315095797,11,0.0002402638533953651
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,17,251.18864315095797,354.8133892335753,8,0.00017473734792390188
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,18,354.8133892335753,501.18723362727246,33,0.0007207915601860952
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,19,501.18723362727246,707.945784384138,23,0.000502369875281218
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,20,707.945784384138,1000.0,44,0.0009610554135814604
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,21,1000.0,1412.537544622754,354,0.0077321276456326585
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,22,1412.537544622754,1995.2623149688789,18474,0.4035122206932704
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,23,1995.2623149688789,2818.382931264455,26771,0.5847366926588472
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,24,2818.382931264455,3981.0717055349733,40,0.0008736867396195094
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,25,3981.0717055349733,5623.413251903491,0,0.0
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,26,5623.413251903491,7943.282347242814,0,0.0
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,27,7943.282347242814,11220.18454301963,0,0.0
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,28,11220.18454301963,15848.93192461114,0,0.0
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,29,15848.93192461114,22387.21138568338,0,0.0
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,30,22387.21138568338,31622.776601683792,0,0.0
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,31,31622.776601683792,44668.359215096345,0,0.0
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,32,44668.359215096345,63095.7344480193,0,0.0
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,33,63095.7344480193,89125.0938133746,0,0.0
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,34,89125.0938133746,125892.54117941661,0,0.0
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,35,125892.54117941661,177827.94100389228,0,0.0
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,36,177827.94100389228,251188.6431509582,0,0.0
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,37,251188.6431509582,354813.3892335753,0,0.0
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,38,354813.3892335753,501187.2336272725,0,0.0
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,39,501187.2336272725,707945.7843841374,0,0.0
+encounter_duration,1100,duration_s,pooled,All observed encounters,45783,0,303,40,707945.7843841374,1.0e6,0,0.0
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,1,0.1,0.14125375446227545,0,0.0
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,2,0.14125375446227545,0.19952623149688797,0,0.0
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,3,0.19952623149688797,0.28183829312644537,0,0.0
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,4,0.28183829312644537,0.39810717055349726,0,0.0
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,5,0.39810717055349726,0.5623413251903491,0,0.0
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,6,0.5623413251903491,0.7943282347242815,0,0.0
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,7,0.7943282347242815,1.1220184543019633,0,0.0
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,8,1.1220184543019633,1.5848931924611136,0,0.0
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,9,1.5848931924611136,2.2387211385683394,2,0.00026961445133459155
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,10,2.2387211385683394,3.1622776601683795,24,0.0032353734160150984
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,11,3.1622776601683795,4.466835921509632,53,0.007144782960366676
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,12,4.466835921509632,6.309573444801933,113,0.015233216500404422
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,13,6.309573444801933,8.912509381337454,107,0.014424373146400648
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,14,8.912509381337454,12.589254117941675,233,0.03141008358047991
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,15,12.589254117941675,17.78279410038923,556,0.07495281747101645
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,16,17.78279410038923,25.118864315095795,1285,0.17322728498247505
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,17,25.118864315095795,35.48133892335755,907,0.12227015368023726
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,18,35.48133892335755,50.11872336272722,339,0.04569964950121327
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,19,50.11872336272722,70.79457843841381,116,0.01563763817740631
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,20,70.79457843841381,100.0,43,0.005796710703693718
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,21,100.0,141.2537544622754,10,0.0013480722566729577
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,22,141.2537544622754,199.52623149688787,3,0.0004044216770018873
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,23,199.52623149688787,281.8382931264455,3,0.0004044216770018873
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,24,281.8382931264455,398.1071705534973,2,0.00026961445133459155
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,25,398.1071705534973,562.341325190349,2,0.00026961445133459155
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,26,562.341325190349,794.3282347242813,2,0.00026961445133459155
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,27,794.3282347242813,1122.018454301963,5,0.0006740361283364788
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,28,1122.018454301963,1584.893192461114,3588,0.48368832569425724
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,29,1584.893192461114,2238.72113856834,25,0.0033701806416823942
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,30,2238.72113856834,3162.2776601683795,0,0.0
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,31,3162.2776601683795,4466.835921509631,0,0.0
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,32,4466.835921509631,6309.57344480193,0,0.0
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,33,6309.57344480193,8912.509381337459,0,0.0
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,34,8912.509381337459,12589.254117941662,0,0.0
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,35,12589.254117941662,17782.794100389227,0,0.0
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,36,17782.794100389227,25118.864315095823,0,0.0
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,37,25118.864315095823,35481.33892335753,0,0.0
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,38,35481.33892335753,50118.72336272725,0,0.0
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,39,50118.72336272725,70794.57843841374,0,0.0
+laser_on_duration,1000,duration_s,gve_inc,gve_inc,7418,0,14,40,70794.57843841374,100000.0,0,0.0
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,1,0.1,0.14125375446227545,0,0.0
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,2,0.14125375446227545,0.19952623149688797,0,0.0
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,3,0.19952623149688797,0.28183829312644537,0,0.0
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,4,0.28183829312644537,0.39810717055349726,1,0.00033046926635822867
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,5,0.39810717055349726,0.5623413251903491,0,0.0
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,6,0.5623413251903491,0.7943282347242815,0,0.0
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,7,0.7943282347242815,1.1220184543019633,0,0.0
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,8,1.1220184543019633,1.5848931924611136,0,0.0
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,9,1.5848931924611136,2.2387211385683394,0,0.0
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,10,2.2387211385683394,3.1622776601683795,6,0.0019828155981493722
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,11,3.1622776601683795,4.466835921509632,4,0.0013218770654329147
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,12,4.466835921509632,6.309573444801933,3,0.0009914077990746861
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,13,6.309573444801933,8.912509381337454,20,0.006609385327164574
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,14,8.912509381337454,12.589254117941675,27,0.008922670191672175
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,15,12.589254117941675,17.78279410038923,36,0.011896893588896233
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,16,17.78279410038923,25.118864315095795,21,0.006939854593522803
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,17,25.118864315095795,35.48133892335755,8,0.0026437541308658294
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,18,35.48133892335755,50.11872336272722,2,0.0006609385327164573
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,19,50.11872336272722,70.79457843841381,9,0.002974223397224058
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,20,70.79457843841381,100.0,10,0.003304692663582287
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,21,100.0,141.2537544622754,6,0.0019828155981493722
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,22,141.2537544622754,199.52623149688787,6,0.0019828155981493722
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,23,199.52623149688787,281.8382931264455,14,0.004626569729015202
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,24,281.8382931264455,398.1071705534973,36,0.011896893588896233
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,25,398.1071705534973,562.341325190349,61,0.02015862524785195
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,26,562.341325190349,794.3282347242813,125,0.04130865829477859
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,27,794.3282347242813,1122.018454301963,243,0.08030403172504957
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,28,1122.018454301963,1584.893192461114,352,0.1163251817580965
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,29,1584.893192461114,2238.72113856834,338,0.1116986120290813
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,30,2238.72113856834,3162.2776601683795,279,0.0922009253139458
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,31,3162.2776601683795,4466.835921509631,525,0.17349636483807007
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,32,4466.835921509631,6309.57344480193,333,0.11004626569729015
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,33,6309.57344480193,8912.509381337459,238,0.07865168539325842
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,34,8912.509381337459,12589.254117941662,135,0.04461335095836087
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,35,12589.254117941662,17782.794100389227,85,0.028089887640449437
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,36,17782.794100389227,25118.864315095823,52,0.017184401850627893
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,37,25118.864315095823,35481.33892335753,20,0.006609385327164574
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,38,35481.33892335753,50118.72336272725,19,0.006278916060806345
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,39,50118.72336272725,70794.57843841374,12,0.0039656311962987445
+laser_on_duration,1000,duration_s,gve_sma,gve_sma,3026,0,48,40,70794.57843841374,100000.0,0,0.0
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,1,0.1,0.14125375446227545,0,0.0
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,2,0.14125375446227545,0.19952623149688797,0,0.0
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,3,0.19952623149688797,0.28183829312644537,0,0.0
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,4,0.28183829312644537,0.39810717055349726,0,0.0
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,5,0.39810717055349726,0.5623413251903491,0,0.0
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,6,0.5623413251903491,0.7943282347242815,0,0.0
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,7,0.7943282347242815,1.1220184543019633,0,0.0
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,8,1.1220184543019633,1.5848931924611136,0,0.0
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,9,1.5848931924611136,2.2387211385683394,2,0.00018258170531312764
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,10,2.2387211385683394,3.1622776601683795,52,0.004747124338141318
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,11,3.1622776601683795,4.466835921509632,126,0.01150264743472704
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,12,4.466835921509632,6.309573444801933,294,0.02683951068102976
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,13,6.309573444801933,8.912509381337454,251,0.022914004016797516
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,14,8.912509381337454,12.589254117941675,231,0.021088186963666242
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,15,12.589254117941675,17.78279410038923,329,0.030034690524009495
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,16,17.78279410038923,25.118864315095795,1365,0.1246120138762096
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,17,25.118864315095795,35.48133892335755,987,0.09010407157202849
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,18,35.48133892335755,50.11872336272722,267,0.024374657659302537
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,19,50.11872336272722,70.79457843841381,243,0.022183677195545006
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,20,70.79457843841381,100.0,225,0.020540441847726857
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,21,100.0,141.2537544622754,242,0.022092386342888442
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,22,141.2537544622754,199.52623149688787,343,0.03131276246120139
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,23,199.52623149688787,281.8382931264455,411,0.03752054044184773
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,24,281.8382931264455,398.1071705534973,572,0.0522183677195545
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,25,398.1071705534973,562.341325190349,941,0.08590469234982655
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,26,562.341325190349,794.3282347242813,1461,0.13337593573123974
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,27,794.3282347242813,1122.018454301963,1266,0.11557421946320978
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,28,1122.018454301963,1584.893192461114,1276,0.11648712798977542
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,29,1584.893192461114,2238.72113856834,70,0.006390359685959467
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,30,2238.72113856834,3162.2776601683795,0,0.0
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,31,3162.2776601683795,4466.835921509631,0,0.0
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,32,4466.835921509631,6309.57344480193,0,0.0
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,33,6309.57344480193,8912.509381337459,0,0.0
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,34,8912.509381337459,12589.254117941662,0,0.0
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,35,12589.254117941662,17782.794100389227,0,0.0
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,36,17782.794100389227,25118.864315095823,0,0.0
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,37,25118.864315095823,35481.33892335753,0,0.0
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,38,35481.33892335753,50118.72336272725,0,0.0
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,39,50118.72336272725,70794.57843841374,0,0.0
+laser_on_duration,1050,duration_s,gve_inc,gve_inc,10954,0,14,40,70794.57843841374,100000.0,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,1,0.1,0.14125375446227545,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,2,0.14125375446227545,0.19952623149688797,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,3,0.19952623149688797,0.28183829312644537,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,4,0.28183829312644537,0.39810717055349726,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,5,0.39810717055349726,0.5623413251903491,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,6,0.5623413251903491,0.7943282347242815,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,7,0.7943282347242815,1.1220184543019633,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,8,1.1220184543019633,1.5848931924611136,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,9,1.5848931924611136,2.2387211385683394,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,10,2.2387211385683394,3.1622776601683795,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,11,3.1622776601683795,4.466835921509632,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,12,4.466835921509632,6.309573444801933,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,13,6.309573444801933,8.912509381337454,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,14,8.912509381337454,12.589254117941675,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,15,12.589254117941675,17.78279410038923,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,16,17.78279410038923,25.118864315095795,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,17,25.118864315095795,35.48133892335755,3,0.00023479690068091102
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,18,35.48133892335755,50.11872336272722,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,19,50.11872336272722,70.79457843841381,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,20,70.79457843841381,100.0,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,21,100.0,141.2537544622754,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,22,141.2537544622754,199.52623149688787,2,0.00015653126712060735
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,23,199.52623149688787,281.8382931264455,5,0.00039132816780151837
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,24,281.8382931264455,398.1071705534973,55,0.004304609845816702
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,25,398.1071705534973,562.341325190349,1457,0.11403302809736245
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,26,562.341325190349,794.3282347242813,3768,0.2949049072552242
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,27,794.3282347242813,1122.018454301963,3147,0.24630194881427564
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,28,1122.018454301963,1584.893192461114,2027,0.15864443922673555
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,29,1584.893192461114,2238.72113856834,1640,0.12835563903889802
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,30,2238.72113856834,3162.2776601683795,649,0.05079439618063708
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,31,3162.2776601683795,4466.835921509631,24,0.0018783752054472881
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,32,4466.835921509631,6309.57344480193,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,33,6309.57344480193,8912.509381337459,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,34,8912.509381337459,12589.254117941662,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,35,12589.254117941662,17782.794100389227,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,36,17782.794100389227,25118.864315095823,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,37,25118.864315095823,35481.33892335753,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,38,35481.33892335753,50118.72336272725,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,39,50118.72336272725,70794.57843841374,0,0.0
+laser_on_duration,1050,duration_s,gve_sma,gve_sma,12777,0,49,40,70794.57843841374,100000.0,0,0.0
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,1,0.1,0.14125375446227545,0,0.0
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,2,0.14125375446227545,0.19952623149688797,0,0.0
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,3,0.19952623149688797,0.28183829312644537,0,0.0
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,4,0.28183829312644537,0.39810717055349726,0,0.0
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,5,0.39810717055349726,0.5623413251903491,0,0.0
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,6,0.5623413251903491,0.7943282347242815,0,0.0
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,7,0.7943282347242815,1.1220184543019633,0,0.0
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,8,1.1220184543019633,1.5848931924611136,0,0.0
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,9,1.5848931924611136,2.2387211385683394,0,0.0
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,10,2.2387211385683394,3.1622776601683795,2,0.0001398112548060119
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,11,3.1622776601683795,4.466835921509632,1,6.990562740300595e-5
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,12,4.466835921509632,6.309573444801933,72,0.005033205173016428
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,13,6.309573444801933,8.912509381337454,184,0.012862635442153093
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,14,8.912509381337454,12.589254117941675,90,0.006291506466270535
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,15,12.589254117941675,17.78279410038923,268,0.01873470814400559
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,16,17.78279410038923,25.118864315095795,344,0.024047535826634044
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,17,25.118864315095795,35.48133892335755,1339,0.09360363509262495
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,18,35.48133892335755,50.11872336272722,1047,0.07319119189094722
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,19,50.11872336272722,70.79457843841381,511,0.03572177560293604
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,20,70.79457843841381,100.0,472,0.0329954561342188
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,21,100.0,141.2537544622754,560,0.03914715134568333
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,22,141.2537544622754,199.52623149688787,660,0.046137714085983925
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,23,199.52623149688787,281.8382931264455,906,0.06333449842712338
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,24,281.8382931264455,398.1071705534973,2347,0.16406850751485494
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,25,398.1071705534973,562.341325190349,2776,0.19405802167074448
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,26,562.341325190349,794.3282347242813,1522,0.10639636490737504
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,27,794.3282347242813,1122.018454301963,743,0.05193988116043342
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,28,1122.018454301963,1584.893192461114,423,0.029570080391471514
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,29,1584.893192461114,2238.72113856834,38,0.0026564138413142256
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,30,2238.72113856834,3162.2776601683795,0,0.0
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,31,3162.2776601683795,4466.835921509631,0,0.0
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,32,4466.835921509631,6309.57344480193,0,0.0
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,33,6309.57344480193,8912.509381337459,0,0.0
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,34,8912.509381337459,12589.254117941662,0,0.0
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,35,12589.254117941662,17782.794100389227,0,0.0
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,36,17782.794100389227,25118.864315095823,0,0.0
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,37,25118.864315095823,35481.33892335753,0,0.0
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,38,35481.33892335753,50118.72336272725,0,0.0
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,39,50118.72336272725,70794.57843841374,0,0.0
+laser_on_duration,1100,duration_s,gve_inc,gve_inc,14305,0,18,40,70794.57843841374,100000.0,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,1,0.1,0.14125375446227545,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,2,0.14125375446227545,0.19952623149688797,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,3,0.19952623149688797,0.28183829312644537,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,4,0.28183829312644537,0.39810717055349726,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,5,0.39810717055349726,0.5623413251903491,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,6,0.5623413251903491,0.7943282347242815,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,7,0.7943282347242815,1.1220184543019633,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,8,1.1220184543019633,1.5848931924611136,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,9,1.5848931924611136,2.2387211385683394,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,10,2.2387211385683394,3.1622776601683795,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,11,3.1622776601683795,4.466835921509632,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,12,4.466835921509632,6.309573444801933,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,13,6.309573444801933,8.912509381337454,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,14,8.912509381337454,12.589254117941675,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,15,12.589254117941675,17.78279410038923,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,16,17.78279410038923,25.118864315095795,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,17,25.118864315095795,35.48133892335755,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,18,35.48133892335755,50.11872336272722,1,4.250797024442083e-5
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,19,50.11872336272722,70.79457843841381,1,4.250797024442083e-5
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,20,70.79457843841381,100.0,1,4.250797024442083e-5
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,21,100.0,141.2537544622754,4,0.0001700318809776833
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,22,141.2537544622754,199.52623149688787,5,0.00021253985122210415
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,23,199.52623149688787,281.8382931264455,447,0.01900106269925611
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,24,281.8382931264455,398.1071705534973,6234,0.26499468650371943
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,25,398.1071705534973,562.341325190349,7759,0.3298193411264612
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,26,562.341325190349,794.3282347242813,4680,0.1989373007438895
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,27,794.3282347242813,1122.018454301963,3448,0.14656748140276302
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,28,1122.018454301963,1584.893192461114,945,0.04017003188097768
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,29,1584.893192461114,2238.72113856834,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,30,2238.72113856834,3162.2776601683795,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,31,3162.2776601683795,4466.835921509631,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,32,4466.835921509631,6309.57344480193,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,33,6309.57344480193,8912.509381337459,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,34,8912.509381337459,12589.254117941662,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,35,12589.254117941662,17782.794100389227,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,36,17782.794100389227,25118.864315095823,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,37,25118.864315095823,35481.33892335753,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,38,35481.33892335753,50118.72336272725,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,39,50118.72336272725,70794.57843841374,0,0.0
+laser_on_duration,1100,duration_s,gve_sma,gve_sma,23525,0,47,40,70794.57843841374,100000.0,0,0.0

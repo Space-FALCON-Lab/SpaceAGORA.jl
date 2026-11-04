@@ -1,0 +1,5 @@
+checksummed_bytes = 132305016
+directories = ["/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Simulation/Output/paper_plot_mode/h1000km_t850km/ih0.0deg_it0.0deg/N700/T611576s/gve_inc_e0.0000_nu1.0000", "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Simulation/Output/paper_plot_mode/h1000km_t850km/ih0.0deg_it0.0deg/N700/T611576s/gve_sma_e0.0000_nu1.0000", "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Simulation/Output/paper_plot_mode/h1000km_t850km/ih0.0deg_it0.5deg/N700/T611576s/gve_inc_e0.0000_nu1.0000", "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Simulation/Output/paper_plot_mode/h1000km_t850km/ih0.0deg_it0.5deg/N700/T611576s/gve_sma_e0.0000_nu1.0000"]
+discarded_case_still_absent = true
+passed = true
+verified_cases = 4

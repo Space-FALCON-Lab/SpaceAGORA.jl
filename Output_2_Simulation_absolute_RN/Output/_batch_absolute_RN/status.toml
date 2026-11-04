@@ -1,0 +1,16 @@
+active_case = "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Simulation_absolute_RN/Output/paper_plot_mode/h1000km_t1100km/ih0.0deg_it1.0deg/N800/T643578s/gve_inc_e0.0000_nu1.0000"
+campaign = "absolute_rn"
+case_index = 270
+child_pid = 1184157
+finished_utc = "2026-10-23T18:18:11.344"
+helper_altitudes_km = [1000]
+helper_counts = [1, 100, 200, 300, 400, 500, 600, 700, 800]
+pid = 3625170
+reused_cases = 0
+source_signature = "0834b044dd9183906c2e8058796f5cc70df5bff329000102ca8c8c53b1c7de48"
+started_utc = "2026-10-22T00:48:04.211"
+status = "complete"
+target_altitudes_km = [900, 950, 1000, 1050, 1100]
+total_cases = 270
+updated_utc = "2026-10-23T17:53:19.056"
+verified_cases = 270

@@ -1,0 +1,11 @@
+left = "baseline_sma800"
+maximum_position_difference_m = 96.59486722590776
+maximum_velocity_difference_mps = 0.09655174537468525
+mode = "adaptive"
+passed = true
+position_tolerance_m = 1823.5134771250293
+right = "new_sma800"
+schedule_disagreement_fraction = 0.0031195268824346077
+schedule_disagreement_fraction_limit = 0.02
+schedule_disagreement_s = 196.75227077300576
+velocity_tolerance_mps = 1.8752659426205622

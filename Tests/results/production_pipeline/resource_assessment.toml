@@ -1,0 +1,13 @@
+already_saved_full_pilot_bytes = 1059414822
+available_disk_bytes = 62351048704
+benchmark_orbits = 100
+benchmark_output_bytes = 784397498
+benchmark_peak_rss_bytes = 2086502400
+benchmark_simulation_recording_writing_s = 275.72636318206787
+benchmark_spacecraft = 301
+disk_reserve_bytes = 5368709120
+estimate_method = "range of observed compressed bytes per spacecraft-second across three full-duration pilots; not a guaranteed bound"
+estimated_additional_free_space_needed_bytes = 3.3196729192653656e10
+estimated_grid_bytes_high = 9.123848359865366e10
+estimated_grid_bytes_low = 8.186573419357814e10
+estimated_grid_fits_current_disk = false

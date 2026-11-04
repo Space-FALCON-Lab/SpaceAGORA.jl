@@ -1,0 +1,16 @@
+active_updates = 261
+runtime_s = 2.134583365
+final_sma_m = 7.428196262450021e6
+initial_sma_m = 7.4281366e6
+physical_link_activations = 1
+startup_link_activations = 1
+code = "4_SpaceAGORA.jl-main_v1"
+requested_target_orbits = 5.0
+final_eccentricity = 7.784749761291999e-6
+scheduler_updates = 3196
+target_period_s = 6371.340360498735
+delta_sma_m = 59.66245002113283
+duration_s = 31856.701802493677
+final_helper = 0
+retcode = "Success"
+link_activations = 2

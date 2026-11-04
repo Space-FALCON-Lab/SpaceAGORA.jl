@@ -1,0 +1,16 @@
+active_case = "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Simulation/Output/paper_plot_mode/h1000km_t1150km/ih0.0deg_it1.0deg/N800/T650043s/gve_inc_e0.0000_nu1.0000"
+campaign = "helpers600800"
+case_index = 84
+child_pid = 3307850
+finished_utc = "2026-10-21T16:59:38.071"
+helper_altitudes_km = [1000]
+helper_counts = [600, 800]
+pid = 2431358
+reused_cases = 0
+source_signature = "26034d83447e9f47610a97dd67c64b948a8c6716fa3a192a62bd333728f8e592"
+started_utc = "2026-10-20T14:32:36.018"
+status = "complete"
+target_altitudes_km = [850, 900, 950, 1000, 1050, 1100, 1150]
+total_cases = 84
+updated_utc = "2026-10-21T16:33:34.889"
+verified_cases = 84

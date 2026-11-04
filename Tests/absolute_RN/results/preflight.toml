@@ -1,0 +1,102 @@
+available_disk_bytes = 52182278144
+available_memory_bytes = 21623529472
+campaign = "absolute_rn"
+checked_utc = "2026-10-22T00:47:02.133"
+conservative_persistent_bytes = 11246439308
+estimated_campaign_hours = 40.624880305937964
+expected_persistent_bytes = 5315999114
+fixture_assertions = 9085
+historical_baseline_hours = 41.0
+historical_interpolated_cases = 30
+historical_simulation_hours = 39.50237772401836
+maximum_independent_absolute_error_mps = 8.018375317886406e-9
+maximum_independent_net_error_mps = 7.699049731080265e-14
+maximum_summed_quadrature_difference_mps = 5.259723615392667e-13
+maximum_temporary_spool_bytes = 2474989704
+passed = true
+peak_pilot_rss_bytes = 2370592768
+pilot_count = 13
+pilot_labels = ["sma950", "sma1050", "inc950", "inc1050", "zero_sma", "coplanar_inc", "large800", "inc1050_control", "baseline_sma800", "new_sma800", "baseline_inc800", "new_inc800", "baseline_zero"]
+planning_allowance_hours = [46, 50]
+production_cases = 270
+required_disk_bytes = 19090138132
+required_memory_bytes = 6442450944
+source_signature = "0834b044dd9183906c2e8058796f5cc70df5bff329000102ca8c8c53b1c7de48"
+
+[benchmark_projections.gve_inc]
+method = "10-orbit wall time plus 90 orbits at measured post-warmup propagation rate; startup counted once"
+new_projected_100_orbit_s = 1149.1567026835478
+old_projected_100_orbit_s = 1173.2840216653058
+runtime_ratio = 0.979436079809974
+
+[benchmark_projections.gve_sma]
+method = "10-orbit wall time plus 90 orbits at measured post-warmup propagation rate; startup counted once"
+new_projected_100_orbit_s = 1144.2800415262916
+old_projected_100_orbit_s = 1142.4294249673612
+runtime_ratio = 1.0016198957401532
+
+[comparisons.baseline_inc800_new_inc800]
+left = "baseline_inc800"
+maximum_position_difference_m = 71.15004382535264
+maximum_velocity_difference_mps = 0.07089124390887304
+mode = "adaptive"
+passed = true
+position_tolerance_m = 1698.5544256475166
+right = "new_inc800"
+schedule_disagreement_fraction = 0.0029057541844909767
+schedule_disagreement_fraction_limit = 0.02
+schedule_disagreement_s = 183.26937245707404
+velocity_tolerance_mps = 1.7467624911715234
+
+[comparisons.baseline_sma800_new_sma800]
+left = "baseline_sma800"
+maximum_position_difference_m = 96.59486722590776
+maximum_velocity_difference_mps = 0.09655174537468525
+mode = "adaptive"
+passed = true
+position_tolerance_m = 1823.5134771250293
+right = "new_sma800"
+schedule_disagreement_fraction = 0.0031195268824346077
+schedule_disagreement_fraction_limit = 0.02
+schedule_disagreement_s = 196.75227077300576
+velocity_tolerance_mps = 1.8752659426205622
+
+[comparisons.baseline_zero_zero_sma]
+left = "baseline_zero"
+maximum_position_difference_m = 5.374304222409989e-8
+maximum_velocity_difference_mps = 8.127137990237354e-11
+mode = "adaptive"
+passed = true
+position_tolerance_m = 0.02
+right = "zero_sma"
+schedule_disagreement_fraction = 0.0
+schedule_disagreement_fraction_limit = 0.02
+schedule_disagreement_s = 0.0
+velocity_tolerance_mps = 5.0e-5
+
+[comparisons.inc1050_inc1050_control]
+left = "inc1050"
+maximum_position_difference_m = 0.0
+maximum_velocity_difference_mps = 0.0
+mode = "exact"
+passed = true
+position_tolerance_m = 0.0
+right = "inc1050_control"
+schedule_disagreement_fraction = 0.0
+schedule_disagreement_fraction_limit = 0.02
+schedule_disagreement_s = 0.0
+velocity_tolerance_mps = 0.0
+
+[old_helpers700_preservation]
+checksummed_bytes = 132305016
+directories = ["/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Simulation/Output/paper_plot_mode/h1000km_t850km/ih0.0deg_it0.0deg/N700/T611576s/gve_inc_e0.0000_nu1.0000", "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Simulation/Output/paper_plot_mode/h1000km_t850km/ih0.0deg_it0.0deg/N700/T611576s/gve_sma_e0.0000_nu1.0000", "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Simulation/Output/paper_plot_mode/h1000km_t850km/ih0.0deg_it0.5deg/N700/T611576s/gve_inc_e0.0000_nu1.0000", "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Simulation/Output/paper_plot_mode/h1000km_t850km/ih0.0deg_it0.5deg/N700/T611576s/gve_sma_e0.0000_nu1.0000"]
+discarded_case_still_absent = true
+passed = true
+verified_cases = 4
+
+[source_snapshot]
+archive_sha256 = "bcebb39026f30a770d22cfa8d31d1b67ec92a4660ad99f1efb56b6674f045ab8"
+changed_library_files = ["9_SpaceAGORA.jl-main_full integration/src/orchestration/simulation/callbacks/save_fields.jl", "9_SpaceAGORA.jl-main_full integration/src/orchestration/simulation/engine/dynamics_rhs.jl", "9_SpaceAGORA.jl-main_full integration/src/orchestration/simulation/engine/execution.jl"]
+directory = "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Tests/absolute_RN/results/source_snapshot_pre_absolute_RN"
+file_count = 866
+original_runner_unchanged = true

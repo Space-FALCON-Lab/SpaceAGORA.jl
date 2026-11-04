@@ -1,0 +1,11 @@
+left = "baseline_inc800"
+maximum_position_difference_m = 71.15004382535264
+maximum_velocity_difference_mps = 0.07089124390887304
+mode = "adaptive"
+passed = true
+position_tolerance_m = 1698.5544256475166
+right = "new_inc800"
+schedule_disagreement_fraction = 0.0029057541844909767
+schedule_disagreement_fraction_limit = 0.02
+schedule_disagreement_s = 183.26937245707404
+velocity_tolerance_mps = 1.7467624911715234

@@ -1,0 +1,96 @@
+accepted_steps = 505162
+data_schema = "comparison_cartesian_v1"
+finished_utc = "2026-11-04T20:27:21.303"
+gravity_source = "gravity_kernel.jl"
+gravity_source_sha256 = "a3c07e118da4b841d4f35d97ee15971da1cd06de7715dd174d966b34de149471"
+julia_threads = 1
+julia_version = "1.12.1"
+link_activations = 82
+manifest_sha256 = "fdb465191a773cb2649283cae42a66d74a0a66276e2573c92cf155cb12452e9c"
+output_layout = "paper_plot_mode"
+policy = "naive_next_entering"
+project_sha256 = "1385c808130c813db39d717c7995ef29ad34aef3c94621a345ead5a751850bf6"
+rejected_steps = 1985
+scheduler_updates = 505163
+selected_link_duty_fraction = 0.7919106878773184
+selected_link_time_note = "Selection duration; RHS range gating can shorten actual firing"
+selected_link_time_s = 399573.9917270395
+solver_retcode = "Success"
+started_utc = "2026-11-04T20:27:02.233"
+status = "verified"
+trajectory_columns = 1208
+trajectory_rows = 16001
+wall_propagation_s = 10.869525909423828
+
+[checksums]
+"schedule.csv" = "c8c16944db3484f85237a0fe38e4ad3f23e4e55482cb7ea61abb95b0900bd375"
+"target_orbital_elements.csv" = "aab7ccc08db215939d3d6dfc6905b2c04ca3fa11831330b6d7bb199b53796c7f"
+"trajectory.feather" = "45bd9a395a2ae8a187360b27044fc90b221071562439a9ce25b6ffaf0aa41881"
+
+[element_changes]
+delta_a_km = 0.06648258000495844
+delta_eccentricity = 0.0003660765666696262
+delta_inclination_deg = -0.0003131722427351935
+delta_raan_deg = -33.617077084804976
+
+[final_elements]
+a_km = 7378.203082580007
+eccentricity = 0.00036607656666984837
+inclination_deg = 0.4996868277572648
+raan_deg = -33.617077084804976
+
+[initial_elements]
+a_km = 7378.136600000002
+eccentricity = 2.221530003389711e-16
+inclination_deg = 0.5
+raan_deg = 2.255114865822519e-16
+
+[settings]
+abstol = 1.0e-12
+beta = 1.0
+drag = false
+duration_days = 5.839924942443342
+duration_s = 504569.51502710476
+earth_equatorial_radius_m = 6.3781366e6
+epoch_label = "2026-01-01T00:00:00 (no epoch-dependent forces)"
+eta = 1.0
+force_N = 0.0033356409519815205
+force_application = "continuous equal/opposite accelerations in RHS"
+force_range_gate = "0 < separation <= range_m at every RHS evaluation"
+frame = "fixed Earth-equatorial inertial; J2 symmetry axis is +z"
+helper_altitude_km = 1050.0
+helper_inclination_deg = 0.0
+helper_indices = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201]
+helper_phase_rule_deg = "360*(helper_index-2)/helpers"
+helpers = 200
+initial_RAAN_deg = 0.0
+initial_argument_of_periapsis_deg = 0.0
+initial_eccentricity = 0.0
+initial_target_period_s = 6307.11893783881
+j2 = 0.00108263
+line_of_sight_occultation_gate = false
+magnification = 100.0
+mass_kg = 227.0
+max_step_s = 1.0
+mu_m3_s2 = 3.98600436233e14
+orbit_axis = "elapsed time / initial Keplerian target period"
+orbits = 80.0
+power_W = 10000.0
+range_m = 200000.0
+reltol = 1.0e-12
+samples_per_orbit = 200
+scheduler_updates = "initialization and every accepted solver step"
+solar_radiation_pressure = false
+solver = "Tsit5"
+speed_of_light_mps = 2.99792458e8
+target_altitude_km = 1000.0
+target_anomaly_deg = 1.0
+target_inclination_deg = 0.5
+target_index = 1
+third_body_gravity = false
+
+[source_sha256]
+"gravity_kernel.jl" = "a3c07e118da4b841d4f35d97ee15971da1cd06de7715dd174d966b34de149471"
+"layout.jl" = "26ca75d124ab94c69d75ab309b380106be7bb842708fd456d1d64eb328f9ddd9"
+"scheduling_policies.jl" = "7a1bc8eb6e5ac51f420893530a299d1ff16bbad16369ba9a6409382bea2ba423"
+"simulation.jl" = "b26a9b528703bc2b5b8229673e09eaf318ec0daf3f108d23f11ce8c65677988d"

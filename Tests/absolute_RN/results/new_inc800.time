@@ -1,0 +1,23 @@
+	Command being timed: "/home/space-falcon-3/.juliaup/bin/julia --startup-file=no --threads=1 --gcthreads=1 /home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Tests/absolute_RN/pilot.jl new new_inc800 1000 1 800 gve_inc 10 10000 benchmark"
+	User time (seconds): 425.79
+	System time (seconds): 7.37
+	Percent of CPU this job got: 99%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 7:13.48
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 2312360
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 11546357
+	Voluntary context switches: 432
+	Involuntary context switches: 5445
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 529232
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

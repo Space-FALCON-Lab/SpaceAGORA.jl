@@ -1,0 +1,10 @@
+RTN_tolerance_mps = 1.0e-8
+max_RTN_error_mps = 2.4994718695855387e-10
+max_signed_T_error_mps = 3.566284156875099e-8
+max_work_error_J = 0.00025650300085544586
+method = "saved 10 s Cartesian Hermite interpolation, actual firing and T-zero boundaries, 32-subinterval Simpson quadrature on each smooth segment"
+output_directory = "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Tests/results/production_pipeline/dense_v1/h1000km_t1050km/ih0.0deg_it1.0deg/N300/T637134s/gve_sma_e0.0000_nu1.0000"
+passed = true
+rows = 63715
+signed_T_tolerance_mps = 1.0e-7
+work_tolerance_J = 0.19355456658986514

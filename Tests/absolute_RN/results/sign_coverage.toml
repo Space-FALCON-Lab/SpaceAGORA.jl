@@ -1,0 +1,18 @@
+passed = true
+pilots = ["sma950", "sma1050", "inc950", "inc1050"]
+
+[coverage.gve_inc_N]
+negative_mps = -0.03194492289938806
+positive_mps = 0.029243163951158176
+
+[coverage.gve_inc_R]
+negative_mps = -0.02570631035502432
+positive_mps = 0.02657404788452223
+
+[coverage.gve_sma_N]
+negative_mps = -0.03601848013091984
+positive_mps = 0.03167679822234622
+
+[coverage.gve_sma_R]
+negative_mps = -0.02525427481245741
+positive_mps = 0.027110821789943524

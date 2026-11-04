@@ -1,0 +1,17 @@
+encounters = 1
+energy_work_absolute_tolerance_J = 20.0
+energy_work_relative_tolerance = 0.0001
+final_target_RTN_mps = [0.000710663094174252, 0.0017271917545109746, 0.00011469423829411661]
+final_total_optical_work_J = -25.46022780211797
+firing_intervals = 1
+max_J2_energy_work_residual_J = 1.1929182164749363e-5
+max_boundary_residual_m = 0.0
+max_pair_impulse_residual_kg_mps = 0.0
+max_relative_axial_angular_momentum_drift = 4.751883954462136e-16
+max_saved_state_boundary_residual_m = 0.0
+passed = true
+range_segments = 1
+rows = 14
+total_delta_inclination_deg = -2.3095134501271986e-5
+total_delta_sma_m = 3.561991225928068
+verified_utc = "2026-10-18T21:11:38.350"

@@ -1,0 +1,52 @@
+encounters = 2519
+energy_work_absolute_tolerance_J = 601.0
+energy_work_relative_tolerance = 0.0001
+final_target_RTN_mps = [6.06271489035251, 6.712033959467748, -0.002813433465985087]
+final_total_optical_work_J = -241979.20110895485
+firing_intervals = 1316
+longest_encounter_track_rows = 64624
+max_J2_energy_work_residual_J = 34.16888239234686
+max_boundary_residual_m = 7.03730620443821e-8
+max_pair_impulse_residual_kg_mps = 5.45003959555115e-13
+max_relative_axial_angular_momentum_drift = 4.639143725720037e-12
+max_signed_T_monotonicity_residual_mps = 0.0
+passed = true
+range_segments = 1316
+rows = 1001
+signed_T_monotonicity_warning = false
+signed_T_sum_tolerance_mps = 1.0e-8
+signed_T_tolerance_mps = 1.0e-7
+total_delta_inclination_deg = -0.000774601572329503
+total_delta_sma_m = 13751.431680900976
+verification_source_signature = "0834b044dd9183906c2e8058796f5cc70df5bff329000102ca8c8c53b1c7de48"
+verified_utc = "2026-10-23T13:36:19.112"
+
+[RTN_branches.N]
+branch_tolerance_mps = 1.0e-8
+final_absolute_mps = 2.2829604710056906
+final_negative_mps = -1.1428869522358442
+final_positive_mps = 1.140073518769846
+max_monotonicity_residual_mps = 1.7078092273692391e-9
+max_sign_residual_mps = 0.0
+max_sum_to_net_residual_mps = 1.3988810110276972e-14
+sum_tolerance_mps = 1.0e-8
+
+[RTN_branches.R]
+branch_tolerance_mps = 1.0e-8
+final_absolute_mps = 6.06271489035251
+final_negative_mps = 0.0
+final_positive_mps = 6.06271489035251
+max_monotonicity_residual_mps = 0.0
+max_sign_residual_mps = 0.0
+max_sum_to_net_residual_mps = 0.0
+sum_tolerance_mps = 1.0e-8
+
+[RTN_branches.T]
+branch_tolerance_mps = 1.0e-7
+final_absolute_mps = 6.712033959467748
+final_negative_mps = 0.0
+final_positive_mps = 6.712033959467748
+max_monotonicity_residual_mps = 0.0
+max_sign_residual_mps = 0.0
+max_sum_to_net_residual_mps = 0.0
+sum_tolerance_mps = 1.0e-8

@@ -1,0 +1,6 @@
+force_N = 0.003335640951981521
+gve_inc_on_off_position_difference_m = 0.10567277609373464
+gve_sma_on_off_position_difference_m = 0.10567342237165327
+initial_domain_LOS_clearance_lower_bound_m = 650000.0
+minimum_initial_pair_separation_m = 25754.54219090501
+pair_torque_residual_Nm = 0.0

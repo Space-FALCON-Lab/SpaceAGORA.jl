@@ -1,0 +1,11 @@
+left = "inc1050"
+maximum_position_difference_m = 0.0
+maximum_velocity_difference_mps = 0.0
+mode = "exact"
+passed = true
+position_tolerance_m = 0.0
+right = "inc1050_control"
+schedule_disagreement_fraction = 0.0
+schedule_disagreement_fraction_limit = 0.02
+schedule_disagreement_s = 0.0
+velocity_tolerance_mps = 0.0

@@ -1,0 +1,150 @@
+# Density-uncertainty envelope, minus one standard deviation: the Tolson
+# benchmark-of-record configuration flown at tabulated_flight_sigma = -1
+# (docs/spaceagora_aerobraking_reconstruction_record.md, §6). Recorded result:
+# apoapsis MAE 75.93 km, nMAE 0.00312. Informational run — enforce off by
+# default in run_validation.jl; gate limits are inherited from the record
+# scenario.
+version = 1
+
+[[scenarios]]
+name = "odyssey_tolson_sigma_minus"
+kind = "orbit_events"
+planet = "mars"
+events = ["peri", "apo"]
+# Truth source: per-passage apsis series extracted from the reconstructed NAV
+# trajectory (m01_ab_v2.bsp — verified against JPL Horizons, the PDS
+# accelerometer archive time tags, and the NAIF archive copy).
+telemetry_peri = "data/telemetry/Odyssey/True_Odyssey_periapsis_alts_kernel.feather"
+telemetry_apo = "data/telemetry/Odyssey/True_Odyssey_apoapsis_alts_kernel.feather"
+target_orbits_quick = 8
+target_orbits_full = 340
+compare_points_quick = 8
+compare_points_full = 273
+min_eval_points = 6
+# Exact NAV-solution Cartesian state at the scenario epoch (2001-11-06T19:00:32
+# UTC): Odyssey (-53) relative to MARS in J2000 axes, m and m/s, read from the
+# mission kernel m01_ab_v2.bsp (spkezr, no aberration correction). This
+# overrides the element-based initial condition; the osculating elements below
+# are retained for reference only.
+initial_state_j2000_m = [-1055155.262605, -4333732.239384, -728177.837002, -2371.221148294, -764.635541703, -3175.141365850]
+ra_m = 2.8559615e7
+rp_altitude_m = 91000.0
+i_deg = 93.522
+aop_deg = 109.7454
+raan_deg = 28.1517
+ta_deg = 175.0
+element_frame = "body_equator_inertial"
+# The truth product numbers orbits in mission P-numbering (from the MOI
+# periapsis); the scenario epoch sits 16 min after periapsis P19. Fixed
+# registration choice, not a fitted parameter.
+epoch_orbit_offset = 19.0
+gravity_model = "inverse_squared"
+gravity_harmonics_degree = 20
+gravity_harmonics_order = 20
+gravity_harmonics_file = "data/Gravity_harmonics_data/Mars50c.csv"
+nbody_bodies = ["sun", "earth", "moon", "jupiter"]
+srp_enabled = true
+srp_cr = 1.3
+srp_area_m2 = 3.74
+include_wind = true
+orbit_altitude_mode = "true"
+EI_km = 250.0
+
+[scenarios.maneuvers]
+# Mission P-numbering; burn B fires at the apoapsis AFTER periapsis P(B).
+# offset 18 maps a burn numbered by periapsis P to the apoapsis following that
+# periapsis. Walk-in burns (7-16) are already in the initial condition and are
+# dropped by the offset filter; 26 burns are replayed (~34 m/s summed
+# magnitude). The final entry is the kernel-measured 19.82 m/s terminal
+# walk-out raise (periapsis 115.0 -> 198.2 km by vis-viva).
+orbit_numbers = [7, 10, 12, 14, 16, 25, 32, 45, 49, 53, 66, 74, 88, 91, 99, 105, 129, 146, 179, 197, 213, 229, 241, 257, 270, 282, 295, 306, 318, 330, 336]
+delta_v_mps = [-0.549, -0.549, -0.301, -0.151, -0.303, 0.145, -0.151, -0.099, -0.099, -0.2, -0.2, 0.297, -0.149, -0.149, -0.147, 0.144, 0.144, 1.0, 0.844, 0.6, 0.844, 0.6, 0.6, 1.2, 1.0, 1.2, 1.2, 1.0, 1.0, 1.2, 19.82]
+orbit_number_offset = 18
+thrust_n = 4.0
+isp_s = 220.0
+guidance_rate_s = 30.0
+control_rate_s = 10.0
+
+[scenarios.atmosphere_truth]
+assumption_id = "odyssey_tabulated_flight_sigma_minus_v1"
+atmosphere_model = "tabulated_flight"
+atmosphere_dataset = "Odyssey accelerometer per-pass density profiles (PDS odya_0001, Tolson)"
+space_weather_model = "measured (flight)"
+solar_flux_model = "measured (flight)"
+# The Tolson product is accelerometer-DERIVED density (a flight-side
+# aerodynamic model is embedded in it), not a direct density measurement.
+# 18,203 rows / 317 passes, 1-km bins between 97.5 and 207.5 km, altitudes
+# converted to the sim spheroid convention. Nearest pass in elapsed time,
+# in/out legs split around periapsis, log-linear altitude interpolation,
+# exponential tails outside the sampled range; winds zero in this mode.
+tabulated_flight_file = "data/telemetry/Odyssey/odyssey_accelerometer_density.feather"
+tabulated_flight_sigma = -1.0
+
+[scenarios.calibration]
+# Benchmark of record: Cr pinned at 1.3 and Cd scale pinned at 1.0 (an earlier
+# Cr search selected 1.45 and absorbed part of the atmospheric over-drag; the
+# record deliberately reverts that). Only the constant event-altitude
+# alignments are estimated: b = -median(e_1..e_10) per event type, with the
+# +-500 km model-mismatch cap. The same event series determines the constants
+# and the reported statistics (no holdout) — this is why the record classifies
+# the result as a calibrated mission reconstruction.
+enabled = true
+profiles = ["full"]
+search_on_quick_subset = false
+fit_cd_scale = false
+cd_scale_min = 1.0
+cd_scale_max = 1.0
+cd_scale_steps = 3
+fit_cr = false
+cr_min = 1.15
+cr_max = 1.45
+cr_steps = 3
+fit_bias = true
+bias_abs_max_km = 500.0
+objective = "mean_nmae"
+
+[scenarios.initial_time]
+year = 2001
+month = 11
+day = 6
+hour = 19
+minute = 0
+second = 32.0
+
+[scenarios.spacecraft]
+# 391 kg bus, two 10 kg panels, 50 kg propellant; 411 kg dry mass.
+bus_dims_m = [2.2, 2.6, 1.7]
+panel_dims_m = [0.01, 1.945, 1.7]
+bus_mass_kg = 391.0
+panel_mass_each_kg = 10.0
+panel_offset_y_m = 2.2725
+prop_mass_kg = 50.0
+id = 1001
+
+[scenarios.units]
+x = "orbit_index"
+peri = "km"
+apo = "km"
+
+[scenarios.tolerances_quick.peri]
+max_abs_km = 35.0
+max_nmae = 9.00
+
+[scenarios.tolerances_quick.apo]
+max_abs_km = 15000.0
+max_nmae = 3.50
+
+# Same gate limits as the nightly digital-twin sentinel (~2x the recorded
+# run). The apo worst-point metric is platform-sensitive (record §6, platform
+# sensitivity: max_abs 320.95 km on arm64 vs 938.57 km on x86_64), so max_abs
+# is a coarse cross-platform envelope while mae/nmae/rmse are the regression
+# signals.
+[scenarios.tolerances_full.peri]
+max_abs_km = 27.0
+max_nmae = 0.27
+max_rmse_km = 12.0
+
+[scenarios.tolerances_full.apo]
+max_abs_km = 1400.0
+max_nmae = 0.015
+max_rmse_km = 400.0

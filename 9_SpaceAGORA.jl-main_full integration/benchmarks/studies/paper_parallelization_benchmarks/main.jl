@@ -1,0 +1,607 @@
+# These experiments preserve the published 32-thread plan identities. They are
+# selected explicitly, so portable default and preview runs keep their own grids.
+const PPB_EXPLORATION_PHASES = Set(["X1", "X3", "X4", "X5a", "X5b"])
+
+function _ppb_validate_exploration(phase::PPBPhase, ppb::PPBConfig)
+    phase.id in PPB_EXPLORATION_PHASES || return nothing
+    fail(reason) = throw(ArgumentError("Phase $(phase.id) is an explicit 32-thread route experiment: $(reason)."))
+    ppb.preview && fail("--preview changes its declared workload; omit --preview")
+    PPB_PAPER_BUDGET == 32 || fail("SPACEAGORA_PPB_PAPER_BUDGET must be 32, got $(PPB_PAPER_BUDGET)")
+    if phase.id == "X1"
+        _ppb_thread_ladder(phase, ppb) == [32] || fail("select --threads=32")
+    else
+        ppb.process_workers >= 32 || fail("--process-workers must allow all 32 workers")
+    end
+    return nothing
+end
+
+# Phase execution order follows --phases when it is given, and the catalog order
+# only when it is not. These runs are long enough (the expanded B9-B14 set is
+# ~20 h on a 12-core box) that they are routinely stopped part-way and picked up
+# with --resume, which makes the order a scheduling decision rather than a
+# cosmetic one: whichever phases run first are the ones that exist if the run is
+# cut short. Catalog order is by phase number, which has nothing to do with which
+# axis a given paper deadline needs first.
+function _ppb_active_phases(ppb::PPBConfig)::Vector{PPBPhase}
+    # --quick swaps the catalog for the machine-sized Q1-Q3 set; --phases then
+    # selects among those (e.g. --quick --phases=Q3).
+    catalog = ppb.quick ? ppb_quick_phases(ppb) : PAPER_BENCHMARK_PHASES
+    by_id = Dict(p.id => p for p in catalog)
+    requested = isempty(ppb.phases) ?
+        [p.id for p in catalog if !(p.id in PPB_EXPLORATION_PHASES)] : ppb.phases
+    skip = ppb.preview ? PPB_PREVIEW_SKIP_PHASES : Set{String}()
+    seen = Set{String}()
+    phases = PPBPhase[]
+    for id in requested
+        (id in skip || id in seen || !haskey(by_id, id)) && continue
+        _ppb_validate_exploration(by_id[id], ppb)
+        push!(seen, id)
+        push!(phases, by_id[id])
+    end
+    ppb.preview && (phases = _ppb_preview_phase.(phases))
+    ppb.lean_modes && (phases = _ppb_lean_phase.(phases))
+    phases = _ppb_cap_worker_counts.(phases, ppb.process_workers)
+    phases = _ppb_apply_repeats_floor.(phases, _ppb_min_repeats())
+    phases = _ppb_apply_warmup_floor.(phases, _ppb_min_warmup())
+    return phases
+end
+
+# Raise every phase to at least this many repeats (SPACEAGORA_PPB_MIN_REPEATS).
+#
+# The per-phase repeat counts are chosen for cost, and at three or five they are
+# enough to separate the pinned routes, whose per-point spread is 1.7-2.9%. They
+# are not enough for the adaptive route: bootstrapping the repeats we have puts
+# the 90% interval of a five-repeat policy_v2 median at ~7%, which is the same
+# size as the band used to decide whether two runs differ at all, so an adaptive
+# point cannot be compared against anything. Eleven repeats takes that interval
+# to ~2.2% and it plateaus there.
+#
+# A floor rather than a multiplier, because what matters is the absolute number
+# of samples behind a median, not a ratio to whatever the phase happened to
+# declare. Phases already above the floor keep their own count.
+function _ppb_min_repeats()::Int
+    raw = strip(get(ENV, "SPACEAGORA_PPB_MIN_REPEATS", ""))
+    isempty(raw) && return 0
+    n = tryparse(Int, raw)
+    (n === nothing || n < 1) && return 0
+    return n
+end
+
+function _ppb_apply_repeats_floor(phase::PPBPhase, floor_repeats::Int)::PPBPhase
+    (floor_repeats <= phase.repeats) && return phase
+    println("[paper-benchmarks] phase $(phase.id): repeats $(phase.repeats) -> $(floor_repeats)")
+    return _ppb_phase_with(phase; repeats = floor_repeats)
+end
+
+# Raise every phase to at least this many warm-up campaigns (SPACEAGORA_PPB_MIN_WARMUP).
+#
+# Warm-up campaigns run before the clock starts and are excluded from every
+# timed row, so the floor changes what steady state a repeat measures, not what
+# is compared. It exists because one warm-up is not enough for the workers'
+# heaps to reach steady state on allocation-heavy samples: at P4's top budget
+# (32 x 364 MB samples), measured on TRX50 over 33 back-to-back repeats, the
+# first 14 repeats carried a mid-campaign worker collection 9 times for the
+# adaptive route and 5 times for the pinned pool, and the remaining 19 repeats
+# once and once. An 11-repeat median taken inside that burn-in window read
+# 1.33 s against 1.03 s; over 33 repeats the same pair read 1.04 s against
+# 1.01 s.
+function _ppb_min_warmup()::Int
+    raw = strip(get(ENV, "SPACEAGORA_PPB_MIN_WARMUP", ""))
+    isempty(raw) && return 0
+    n = tryparse(Int, raw)
+    (n === nothing || n < 1) && return 0
+    return n
+end
+
+function _ppb_apply_warmup_floor(phase::PPBPhase, floor_warmup::Int)::PPBPhase
+    (floor_warmup <= phase.warmup) && return phase
+    println("[paper-benchmarks] phase $(phase.id): warmup $(phase.warmup) -> $(floor_warmup)")
+    return _ppb_phase_with(phase; warmup = floor_warmup)
+end
+
+# No phase may request more concurrent worker PROCESSES than the run was given.
+#
+# `--process-workers` capped the knob the phases without their own ladder read,
+# and nothing else. `worker_ladder` and `budget_grid` are hardcoded per phase --
+# B8 carries [1,2,4,8,16,32,64] and B13 a six-way split -- and both were honoured
+# verbatim regardless of the cap or of the machine.
+#
+# That is not merely a bad measurement point. Each worker is a separate Julia
+# process with SpaceAGORA, SPICE kernels and its own workspaces resident, so the
+# wide rungs are priced in gigabytes: B8's 32-worker rung drove the machine to
+# load 101 on twelve cores and 53.5 G in one cgroup scope, and systemd-oomd
+# killed the run mid-phase. Twice -- once at the hardcoded 32 before the cap
+# existed, and once after, because the cap did not reach the ladder.
+#
+# Rungs above the cap are dropped rather than clamped: clamping would run the
+# same width several times under different labels and report them as distinct
+# points on a scaling curve.
+function _ppb_cap_worker_counts(phase::PPBPhase, max_workers::Int)::PPBPhase
+    max_workers >= 1 || return phase
+    ladder = filter(w -> w <= max_workers, phase.worker_ladder)
+    isempty(ladder) && !isempty(phase.worker_ladder) && (ladder = [max_workers])
+    grid = phase.budget_grid_fixed ?
+        filter(p -> p[1] <= max_workers, phase.budget_grid) :
+        filter(p -> p[1] <= max_workers && p[1] * p[2] <= max_workers, phase.budget_grid)
+    isempty(grid) && !isempty(phase.budget_grid) && (grid = [(1, max_workers)])
+    (ladder == phase.worker_ladder && grid == phase.budget_grid) && return phase
+    if ladder != phase.worker_ladder
+        println("[paper-benchmarks] phase $(phase.id): worker ladder capped at $(max_workers) -> $(ladder)")
+    end
+    if grid != phase.budget_grid
+        println("[paper-benchmarks] phase $(phase.id): budget grid capped at $(max_workers) -> $(grid)")
+    end
+    return _ppb_phase_with(phase; worker_ladder = ladder, budget_grid = grid)
+end
+
+# Rescales a phase's fixed-budget split grid to the machine actually running it.
+#
+# B13's grid is declared against a 32-core budget; on a smaller box every entry
+# would oversubscribe, and the phase's whole premise -- hold the total core count
+# fixed, vary only how it is split -- would be measuring contention instead. The
+# rescaled grid is every (workers, threads) pair whose product is the available
+# budget, which for 12 cores gives (1,12) (2,6) (3,4) (4,3) (6,2) (12,1): the same
+# shape of sweep at the size the machine can actually deliver.
+function _ppb_budget_grid(phase::PPBPhase, ppb::PPBConfig)::Vector{Tuple{Int, Int}}
+    isempty(phase.budget_grid) && return phase.budget_grid
+    phase.budget_grid_fixed && return phase.budget_grid
+    declared = maximum(w * t for (w, t) in phase.budget_grid)
+    available = min(declared, _ppc_physical_core_count())
+    available >= declared && return phase.budget_grid
+    grid = [(w, available ÷ w) for w in 1:available if available % w == 0]
+    @info "Rescaled $(phase.id) budget grid to this machine" declared available splits=length(grid)
+    return grid
+end
+
+function _ppb_thread_ladder(phase::PPBPhase, ppb::PPBConfig)::Vector{Int}
+    base = isempty(ppb.threads) ? _ppc_full_thread_ladder() : ppb.threads
+    phase.thread_mode == :max_only && return [maximum(base)]
+    phase.thread_mode == :single   && return [1]
+    # Two points (1 and the machine max) rather than the full ladder: B6
+    # covers many workload axes at once (case count x mode count already
+    # multiplies out large), so it takes a coarse cut of the thread-budget
+    # axis specifically to keep total cost bounded -- the *full* ladder is
+    # already covered in depth by B1/B2's dedicated thread-scaling phases.
+    phase.thread_mode == :low_high && return sort(unique([1, maximum(base)]))
+    # The expanded router-evaluation phases (B9-B14) each sweep a workload axis
+    # *and* the thread budget, because "the best static route" is itself
+    # budget-dependent -- regret at one thread count says nothing about regret at
+    # another. The full ladder on top of those workload axes multiplies out past
+    # any usable wall-clock budget, and B6's :low_high (two points) is too coarse
+    # to see a turnover. This is the compromise: a geometric ladder spanning 1 to
+    # the machine maximum, clipped to physical cores and to
+    # PPB_ROUTER_LADDER_MAX_THREADS, so a 64-core box gets [1, 8, 32] and a
+    # 12-core box gets [1, 8, 12].
+    #
+    # Three rungs, not more, because the per-point cost here is dominated by
+    # worker startup rather than by the simulation: at ~80 s of Julia boot and JIT
+    # against workloads whose serial baselines are 0.5-50 s, the point count *is*
+    # the wall clock, and calibration put four rungs at ~17.6 h against an
+    # overnight budget. Three points spanning 1 to the machine maximum still show
+    # whether regret depends on budget, which is what these phases need it for;
+    # B13 is the phase that resolves the budget axis properly, with seven splits
+    # of a fixed total. The *full* ladder stays where the shape of the curve is
+    # itself the result (B1/B2/B7).
+    if phase.thread_mode == :router_ladder
+        top = min(maximum(base), PPB_ROUTER_LADDER_MAX_THREADS)
+        return sort(unique(Int[c for c in (1, 8, 32) if c <= top] ∪ [top]))
+    end
+    return base
+end
+
+# Caps a phase's MC sample ladder at ppb.mc_samples_max (e.g. B4's default
+# [1, 4, 16, 64, 256, 1024]), keeping at least the smallest value if the cap
+# would otherwise remove everything. No-op when mc_samples_max is unset.
+function _ppb_capped_mc_samples(phase::PPBPhase, ppb::PPBConfig)::Vector{Int}
+    ppb.mc_samples_max === nothing && return phase.mc_samples
+    samples = filter(s -> s <= ppb.mc_samples_max, phase.mc_samples)
+    isempty(samples) && (samples = [minimum(phase.mc_samples)])
+    return samples
+end
+
+function _ppb_build_ppc_config(
+    phase::PPBPhase,
+    ppb::PPBConfig,
+    outdir::String;
+    process_workers::Int = ppb.process_workers,
+    threads::Union{Nothing, Vector{Int}} = nothing,
+    preview_worker_cap::Bool = true,
+)::PPCConfig
+    effective_workers = (ppb.preview && preview_worker_cap) ?
+        min(process_workers, PPB_PREVIEW_MAX_WORKERS) : process_workers
+    return PPCConfig(
+        profile         = "full",
+        outdir          = outdir,
+        modes           = phase.modes,
+        cases           = phase.cases,
+        parity_cases    = phase.parity_cases,
+        threads         = threads === nothing ? _ppb_thread_ladder(phase, ppb) : threads,
+        repeats         = phase.repeats,
+        warmup          = phase.warmup,
+        seed            = ppb.seed,
+        solver_mode     = ppb.solver_mode,
+        process_workers = effective_workers,
+        mc_samples      = _ppb_capped_mc_samples(phase, ppb),
+        # mc_samples_explicit deliberately left at its default of false. A phase
+        # declares one sample ladder for all of its cases, which is exactly what a
+        # joint_routing grid cannot use -- each of its rungs is a different
+        # (spacecraft, samples) pair at one fixed total. Leaving this false lets
+        # those rungs supply their own count while every other family keeps taking
+        # the ladder above, so a joint-routing phase is expressible at all.
+
+        parity_samples  = 512,
+        cpu_pinning     = ppb.cpu_pinning,
+    )
+end
+
+function _ppb_fmt_elapsed(s::Float64)::String
+    s < 60.0  && return "$(round(Int, s))s"
+    m  = div(round(Int, s), 60)
+    rs = round(Int, s) - 60 * m
+    m < 60    && return "$(m)m$(rs)s"
+    h  = div(m, 60)
+    rm = m - 60 * h
+    return "$(h)h$(rm)m$(rs)s"
+end
+
+function _ppb_dry_print(
+    phase::PPBPhase, ppb::PPBConfig, outdir::String;
+    process_workers::Int=ppb.process_workers,
+    threads::Union{Nothing, Vector{Int}}=nothing,
+)
+    println("[dry-run]   outdir          = $(outdir)")
+    println("[dry-run]   cases           = $(join(phase.cases, ", "))")
+    println("[dry-run]   parity_cases    = $(join(phase.parity_cases, ", "))")
+    println("[dry-run]   modes           = $(join(phase.modes, ", "))")
+    println("[dry-run]   threads         = $(threads === nothing ? _ppb_thread_ladder(phase, ppb) : threads)")
+    println("[dry-run]   mc_samples      = $(_ppb_capped_mc_samples(phase, ppb))")
+    println("[dry-run]   process_workers = $(process_workers)")
+    println("[dry-run]   repeats         = $(phase.repeats), warmup = $(phase.warmup)")
+end
+
+# The budget a phase's full-budget modes are handed: the largest total any
+# split of its grid spends, which for a split grid is the one budget every
+# split divides. `nothing` for a phase with no grid.
+function _ppb_full_budget(grid::Vector{Tuple{Int, Int}})::Union{Nothing, Int}
+    isempty(grid) && return nothing
+    return maximum(w * t for (w, t) in grid)
+end
+
+# One controller run of the full-budget modes: --threads and --process-workers
+# both set to the budget, which is how a user hands a campaign the whole
+# machine -- a Julia process with every core as threads, and a pool cap
+# (SPACEAGORA_PERF_PROCS, from --process-workers) equal to the same core count,
+# which on a V2 profile is also the default cap when it is unset
+# (usable_core_budget, memory permitting). No split is imposed: the campaign
+# runner and its planner choose threads, pool workers, local slots and each
+# sample's inner budget themselves. The pool is still capped by
+# --process-workers, the run's memory limit, exactly as the splits are.
+#
+# The row's `adaptive_allocation` column records what the campaign ran. The
+# dispatch trace (SPACEAGORA_CAMPAIGN_DISPATCH_TRACE) is switched on for this
+# run unless the launcher set it, so the job log also carries the planner's
+# candidates, its inner-speedup curve and the reason for its choice; it prints
+# a few lines per campaign, before the dispatch.
+function _ppb_run_full_budget!(
+    errors::Vector{String}, phase::PPBPhase, ppb::PPBConfig, phase_dir::String,
+    grid::Vector{Tuple{Int, Int}}; on_run_complete=nothing,
+)
+    budget = _ppb_full_budget(grid)
+    budget === nothing && return nothing
+    workers = min(budget, ppb.process_workers)
+    sub_dir = joinpath(phase_dir, "full_w$(lpad(workers, 2, '0'))_t$(lpad(budget, 2, '0'))")
+    if ppb.dry_run
+        println("[dry-run] phase=$(phase.id) — full budget, no split: workers=$(workers), threads=$(budget)")
+        _ppb_dry_print(phase, ppb, sub_dir; process_workers=workers, threads=[budget])
+        return nothing
+    end
+    trace = strip(get(ENV, "SPACEAGORA_CAMPAIGN_DISPATCH_TRACE", ""))
+    try
+        mkpath(sub_dir)
+        cfg = _ppb_build_ppc_config(phase, ppb, sub_dir; process_workers=workers,
+                                    threads=[budget], preview_worker_cap=false)
+        withenv("SPACEAGORA_CAMPAIGN_DISPATCH_TRACE" => (isempty(trace) ? "1" : trace)) do
+            _ppb_run_controller!(errors, "full budget workers=$(workers) threads=$(budget): ", cfg, on_run_complete)
+        end
+    catch err
+        push!(errors, "full budget workers=$(workers) threads=$(budget): $(_ppb_err_text(err))")
+    end
+    return nothing
+end
+
+# SPACEAGORA_PPB_SKIP_MODES=policy_v2,... drops those modes from every phase, so
+# a rerun can leave out an arm the paper does not report without editing the
+# catalog.
+function _ppb_skip_modes(phase::PPBPhase)::PPBPhase
+    raw = strip(get(ENV, "SPACEAGORA_PPB_SKIP_MODES", ""))
+    isempty(raw) && return phase
+    skip = Set(strip.(split(raw, ",")))
+    modes = [m for m in phase.modes if !(m in skip)]
+    modes == phase.modes && return phase
+    println("[paper-benchmarks] phase $(phase.id): skipping modes $(join(sort!(collect(skip ∩ Set(phase.modes))), ", "))")
+    return _ppb_phase_with(phase; modes = modes)
+end
+
+# SPACEAGORA_PPB_SERIAL_RUNGS=ends times serial only at the first and last rung
+# of a budget grid. Serial does not depend on the rung, and the paper's analysis
+# pools every serial repeat of a (phase, case) into one baseline, so the middle
+# rungs only repeat it; the two ends still bracket the phase for drift.
+_ppb_serial_at_ends_only()::Bool = lowercase(strip(get(ENV, "SPACEAGORA_PPB_SERIAL_RUNGS", "all"))) == "ends"
+
+# SPACEAGORA_PPB_SERIAL_FIRST_RUNG_PHASES=P6ps,... times serial only at the first
+# rung of the listed phases. For a grid whose rungs differ only in the parallel
+# routes' split (P6ps: (32, 32) and (32, 1)), every later serial point repeats the
+# same single-threaded run.
+_ppb_serial_first_rung_only(phase::PPBPhase)::Bool =
+    phase.id in strip.(split(get(ENV, "SPACEAGORA_PPB_SERIAL_FIRST_RUNG_PHASES", ""), ","))
+
+function _ppb_run_phase(
+    phase::PPBPhase, ppb::PPBConfig, phase_dir::String;
+    on_run_complete::Union{Nothing, Function}=nothing,
+)::NamedTuple
+    started  = time()
+    errors   = String[]
+    phase = _ppb_skip_modes(phase)
+
+    if !isempty(phase.budget_grid)
+        # Paired (process_workers, threads) sweep at a fixed total budget.
+        #
+        # Distinct from worker_ladder below, which varies workers while the thread
+        # ladder runs its own full range -- that cross product would be ~7x the
+        # points and most of them spend a different total number of cores, which
+        # is exactly what this phase must hold constant. Here each entry is one
+        # controller run pinned to one split of the same budget, so the only thing
+        # varying across the sweep is *where* the parallelism is spent (across
+        # processes vs. across threads within a process), not how much of it there
+        # is. Nothing else in the harness tests hybrid splits: B4 and B8 both pin
+        # thread_mode=:single and vary workers alone.
+        grid = _ppb_budget_grid(phase, ppb)
+        # SPACEAGORA_PPB_BUDGET_WORKERS=2,4,8 keeps only the rungs with those
+        # worker counts (a partial rerun of a fixed grid).
+        only = strip(get(ENV, "SPACEAGORA_PPB_BUDGET_WORKERS", ""))
+        isempty(only) || (grid = filter(p -> p[1] in parse.(Int, split(only, ",")), grid))
+        # Under --preview a host-sized split grid is kept whole, and so are its
+        # worker counts; see _ppb_preview_budget_grid.
+        worker_cap = !_ppb_preview_keeps_grid(phase)
+        # Modes the phase hands the whole budget run once, after the splits;
+        # the splits run everything else. See PPBPhase.full_budget_modes.
+        split_phase = _ppb_phase_with(phase; modes = _ppb_split_modes(phase))
+        full_modes = _ppb_full_budget_modes(phase)
+        runs = (isempty(split_phase.modes) ? 0 : length(grid)) + (isempty(full_modes) ? 0 : 1)
+        serial_ends = _ppb_serial_at_ends_only()
+        serial_first = _ppb_serial_first_rung_only(phase)
+        for (i, (w, t)) in enumerate(grid)
+            isempty(split_phase.modes) && break
+            rung_phase = split_phase
+            if (serial_ends && 1 < i < length(grid)) || (serial_first && i > 1)
+                rung_phase = _ppb_phase_with(split_phase; modes = filter(!=("serial"), split_phase.modes))
+                isempty(rung_phase.modes) && continue
+            end
+            sub_dir = joinpath(phase_dir, "split_w$(lpad(w, 2, '0'))_t$(lpad(t, 2, '0'))")
+            if ppb.dry_run
+                budget_note = phase.budget_grid_fixed ? "per-route budget $(w)" : "budget $(w * t)"
+                println("[dry-run] phase=$(phase.id) — workers=$(w) x threads=$(t) ($(budget_note))")
+                _ppb_dry_print(rung_phase, ppb, sub_dir; process_workers=w, threads=[t])
+            else
+                try
+                    mkpath(sub_dir)
+                    cfg = _ppb_build_ppc_config(
+                        rung_phase, ppb, sub_dir; process_workers=w, threads=[t],
+                        preview_worker_cap=worker_cap,
+                    )
+                    _ppb_run_controller!(errors, "workers=$(w) threads=$(t): ", cfg, on_run_complete)
+                catch err
+                    push!(errors, "workers=$(w) threads=$(t): $(_ppb_err_text(err))")
+                end
+            end
+        end
+        if !isempty(full_modes)
+            _ppb_run_full_budget!(errors, _ppb_phase_with(phase; modes = full_modes), ppb,
+                                  phase_dir, grid; on_run_complete)
+        end
+    elseif isempty(phase.worker_ladder)
+        # Single run — no process-worker sweep.
+        if ppb.dry_run
+            println("[dry-run] phase=$(phase.id) — single run")
+            _ppb_dry_print(phase, ppb, phase_dir)
+        else
+            try
+                mkpath(phase_dir)
+                _ppb_run_controller!(errors, "", _ppb_build_ppc_config(phase, ppb, phase_dir), on_run_complete)
+            catch err
+                push!(errors, _ppb_err_text(err))
+            end
+        end
+        runs = 1
+    else
+        # Process-worker sweep — one controller call per worker count.
+        runs = length(phase.worker_ladder)
+        for w in phase.worker_ladder
+            sub_dir = joinpath(phase_dir, "workers_$(lpad(w, 2, '0'))")
+            if ppb.dry_run
+                println("[dry-run] phase=$(phase.id) — workers=$(w)")
+                _ppb_dry_print(phase, ppb, sub_dir; process_workers=w)
+            else
+                try
+                    mkpath(sub_dir)
+                    cfg = _ppb_build_ppc_config(phase, ppb, sub_dir; process_workers=w)
+                    _ppb_run_controller!(errors, "workers=$(w): ", cfg, on_run_complete)
+                catch err
+                    push!(errors, "workers=$(w): $(_ppb_err_text(err))")
+                end
+            end
+        end
+    end
+
+    elapsed = time() - started
+    status  = isempty(errors) ? "ok" : "error"
+    return (; id=phase.id, label=phase.label, status, runs, elapsed, errors)
+end
+
+# Rebuilds the combined raw/aggregated CSVs from whatever is on disk right
+# now (finished per-phase CSVs plus in-progress worker_rows for anything
+# still running) and overwrites the canonical CSV files with that snapshot.
+# Called after every individual worker run completes, so a hang or crash
+# partway through a multi-hour/multi-day phase still leaves up-to-date CSVs
+# for everything that finished so far — not just whatever was captured the
+# last time the whole suite completed. Deliberately CSV-only: plots/report
+# regeneration is comparatively expensive (Plots.jl rendering) and only
+# happens once, at the end of the full run (see main_paper_benchmarks).
+#
+# Wrapped in a top-level try/catch because this runs unattended, potentially
+# thousands of times over a multi-day run; a transient hiccup here (e.g.
+# reading a file mid-write) must never take down the benchmark run itself.
+function _ppb_snapshot_csvs!(root::String, stamp::String)
+    try
+        collected = _ppb_collect_partial(root)
+        nrow(collected.raw) == 0 && return nothing
+        agg = _ppb_aggregate(collected.raw)
+        nrow(agg) == 0 && return nothing
+
+        CSV.write(joinpath(root, "paper_benchmarks_raw_$(stamp).csv"), collected.raw)
+        CSV.write(joinpath(root, "paper_benchmarks_aggregated_$(stamp).csv"), agg)
+    catch err
+        @warn "Incremental CSV snapshot failed; will retry after the next run" exception=(err, catch_backtrace())
+    end
+    return nothing
+end
+
+# Status first: a ProcessFailedException's own text opens with the command line.
+_ppb_err_text(err) = err isa ProcessFailedException ? ppc_child_status(err).text : sprint(showerror, err)
+
+# ppc_run_controller no longer throws when a child dies; it returns the failed
+# points, which become phase errors here so the summary still reports them.
+function _ppb_run_controller!(errors::Vector{String}, tag::AbstractString, cfg, on_run_complete)
+    failures = ppc_run_controller(cfg; on_run_complete)
+    failures isa AbstractVector || return nothing
+    for f in failures
+        push!(errors, "$(tag)$(f.case) $(f.mode) t$(f.threads) mc$(f.mc) (attempts=$(f.attempts)): $(f.text)")
+    end
+    return nothing
+end
+
+function _ppb_print_summary(results::Vector{NamedTuple})
+    sep = "=" ^ 82
+    println()
+    println(sep)
+    println("  Paper Benchmark Run Summary")
+    println(sep)
+    println(rpad("Phase", 6), rpad("Status", 9), rpad("Runs", 6), rpad("Elapsed", 12), "Label")
+    println("-" ^ 82)
+    for r in results
+        status_str = r.status == "ok" ? "ok" : "FAILED"
+        println(
+            rpad(r.id, 6),
+            rpad(status_str, 9),
+            rpad(string(r.runs), 6),
+            rpad(_ppb_fmt_elapsed(r.elapsed), 12),
+            r.label,
+        )
+        for msg in r.errors
+            println("    Error: ", first(msg, 110))
+        end
+    end
+    println(sep)
+    n_ok = count(r -> r.status == "ok", results)
+    println("  $(n_ok)/$(length(results)) phases completed successfully.")
+    println(sep)
+end
+
+function main_paper_benchmarks()
+    ppb    = ppb_parse_cli()
+    active = _ppb_active_phases(ppb)
+
+    # --resume points at an existing run directory (e.g. one a prior invocation
+    # aborted mid-phase) rather than starting a fresh timestamped one. Reuse
+    # that directory's own stamp for the final CSV/report names when it
+    # matches the expected pattern, so a resumed run's outputs read as a
+    # continuation of the original rather than a separate run; fall back to a
+    # fresh stamp otherwise (e.g. a hand-picked directory name).
+    resuming = !isempty(ppb.resume)
+    stamp = if resuming
+        m = match(r"^\d{8}_\d{6}", basename(ppb.resume))
+        m === nothing ? Dates.format(now(UTC), dateformat"yyyymmdd_HHMMSS") : String(m.match)
+    else
+        Dates.format(now(UTC), dateformat"yyyymmdd_HHMMSS")
+    end
+    root = if resuming
+        ppb.resume
+    elseif ppb.dry_run
+        joinpath(ppb.outdir, "dry_run_$(stamp)")
+    else
+        joinpath(ppb.outdir, stamp)
+    end
+    ppb.dry_run || ppc_validate_resume_budget(root, ppc_budget_condition(; cpu_pinning=ppb.cpu_pinning))
+    ppb.dry_run || mkpath(root)
+
+    resuming && println("[paper-benchmarks] resuming        = $(root)")
+    println("[paper-benchmarks] outdir          = $(root)")
+    println("[paper-benchmarks] phases           = $(join([p.id for p in active], ", "))")
+    println("[paper-benchmarks] thread_ladder    = $(isempty(ppb.threads) ? "auto ($(Sys.CPU_THREADS) CPU threads)" : join(ppb.threads, ","))")
+    println("[paper-benchmarks] process_workers  = $(ppb.preview ? "≤$(PPB_PREVIEW_MAX_WORKERS) (preview)" : string(ppb.process_workers))")
+    println("[paper-benchmarks] mc_samples_max   = $(ppb.mc_samples_max === nothing ? "unset" : (ppb.preview ? "$(min(ppb.mc_samples_max, PPB_PREVIEW_MAX_SAMPLES)) (preview-capped)" : string(ppb.mc_samples_max)))")
+    println("[paper-benchmarks] solver_mode      = $(ppb.solver_mode)")
+    println("[paper-benchmarks] cpu_pinning      = $(isempty(ppb.cpu_pinning) ? "off" : join(ppb.cpu_pinning, ","))")
+    println("[paper-benchmarks] seed             = $(ppb.seed)")
+    println("[paper-benchmarks] preview          = $(ppb.preview)")
+    println("[paper-benchmarks] quick            = $(ppb.quick)")
+    println("[paper-benchmarks] lean_modes       = $(ppb.lean_modes)")
+    println("[paper-benchmarks] dry_run          = $(ppb.dry_run)")
+    println()
+
+    results = NamedTuple[]
+    on_run_complete = ppb.dry_run ? nothing : () -> _ppb_snapshot_csvs!(root, stamp)
+
+    for phase in active
+        phase_dir = joinpath(root, phase.id)
+        println("[phase $(phase.id)] $(phase.label)")
+        result = _ppb_run_phase(phase, ppb, phase_dir; on_run_complete)
+        push!(results, result)
+        println("[phase $(phase.id)] done — status=$(result.status)  elapsed=$(_ppb_fmt_elapsed(result.elapsed))")
+        println()
+    end
+
+    _ppb_print_summary(results)
+
+    if !ppb.dry_run
+        println("[paper-benchmarks] Collecting final results from $(root) ...")
+        collected = _ppb_collect_partial(root)
+        if nrow(collected.raw) > 0
+            agg      = _ppb_aggregate(collected.raw)
+            raw_path = joinpath(root, "paper_benchmarks_raw_$(stamp).csv")
+            agg_path = joinpath(root, "paper_benchmarks_aggregated_$(stamp).csv")
+            CSV.write(raw_path, collected.raw)
+            CSV.write(agg_path, agg)
+            println("[paper-benchmarks] raw CSV        = $(raw_path)")
+            println("[paper-benchmarks] aggregated CSV = $(agg_path)")
+            # Per-axis router-regret summary as its own file: this is the table the
+            # manuscript quotes for review point 8, and pulling it out of the
+            # 40-column aggregate keeps it usable directly.
+            try
+                summary_df = _ppb_router_regret_summary(agg)
+                if nrow(summary_df) > 0
+                    summary_path = joinpath(root, "router_regret_by_axis_$(stamp).csv")
+                    CSV.write(summary_path, summary_df)
+                    println("[paper-benchmarks] regret summary = $(summary_path)")
+                end
+            catch err
+                @warn "Router-regret summary CSV failed; aggregate CSV still has the columns" exception=(err, catch_backtrace())
+            end
+            plot_paths = _ppb_write_plots(root, agg)
+            println("[paper-benchmarks] plots          = $(length(plot_paths))")
+            for p in plot_paths
+                println("  $(p)")
+            end
+            try
+                report_path = _ppb_write_report(root, agg, active, results, stamp)
+                println("[paper-benchmarks] report         = $(report_path)")
+            catch err
+                @warn "Report generation failed; raw/aggregated CSVs are still on disk" exception=(err, catch_backtrace())
+            end
+        else
+            println("[paper-benchmarks] No raw CSV data found; skipping aggregation and plots.")
+        end
+    end
+
+    return results
+end

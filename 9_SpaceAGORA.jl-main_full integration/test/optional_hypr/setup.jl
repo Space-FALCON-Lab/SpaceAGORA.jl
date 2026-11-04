@@ -1,0 +1,6 @@
+include(joinpath(@__DIR__, "..", "..", "scripts", "setup_hypr.jl"))
+include(joinpath(@__DIR__, "..", "..", "scripts", "optional_packages.jl"))
+length(ARGS) == 1 || error("Usage: setup.jl <scratch-directory>")
+directory = abspath(only(ARGS))
+HYPRInstallation.setup(joinpath(directory, "core"); with_hypr=false)
+OptionalPackages.setup("hypr", joinpath(directory, "hypr"))

@@ -1,0 +1,529 @@
+# Simulation Outputs
+
+Use this page when you want to understand the files written by
+`run_simulation`, the column names in the CSV, or how to load results for
+post-processing.
+
+This page is for users who have already run a simulation and now need to
+interpret the output.
+
+Shortest successful command:
+
+```text
+julia --project=. examples/AGORA_Basic_Quickstart.jl
+```
+
+What to read next:
+
+- [The Integrated State](integrated_state.md) (which columns are integrated and which are derived)
+- [Simulation Configuration](simulation_configuration.md)
+- [Verification Study](verification_study.md)
+- [Recipes](recipes.md)
+
+## Output files
+
+When `simulation_settings.results = true` (the default), `run_simulation`
+writes three files to the `results_directory`:
+
+```text
+output/
+  simulation_results.csv         ← tabular results, one row per time step
+  simulation_results.feather     ← same data in Apache Arrow / Feather format
+  simulation_results.manifest.toml ← metadata: row count, spacecraft count, file hashes
+```
+
+The Feather file is always written. The CSV is written when
+`simulation_settings.save_csv = true` (also the default). The manifest records
+`schema_version`, `created_utc`, `mission_time_s`, `steps`,
+`spacecraft_count`, and SHA-256 hashes for each data file.
+
+## Getting the results in memory
+
+Pass `return_results=true` to get a [`SimulationResults`](@ref) back instead of
+reading files. Its `table` is the same `DataFrame` the CSV would contain
+(same columns and values), and it is built even when
+`simulation_settings.results = false`, in which case result files are not written.
+Explicitly enabled checkpoints can still be written; they are listed in `files`
+only when this call writes them. Resuming an already completed checkpoint does
+not report the old checkpoint files as new output.
+`configuration` is the configuration that actually ran: under the default
+`isolate_state=true` that is the deep copy, so controller state and logs, such
+as the RPO command log, are reachable there and not on the object you passed
+in. `files` lists the output files the run wrote, and `solution` holds the ODE
+solution when `return_solution=true` is passed as well (otherwise `nothing`).
+`return_results=true` cannot be combined with `return_solver_metadata=true`.
+
+```julia
+res = run_simulation(args; return_results=true)
+res.table                      # DataFrame, one row per saved step
+res.files                      # e.g. ["output/simulation_results.csv", ...]
+res.configuration              # the (isolated) configuration that ran
+
+res = run_simulation(args; return_results=true, return_solution=true)
+res.solution.t
+```
+
+## Where the examples write, and how to keep runs apart
+
+Most repository examples build their configuration with `make_example_config`,
+whose `results_directory` is `<repository root>/output` unless
+`SPACEAGORA_CLI_OUTPUT_DIR` is set; the CLI's `--output-dir` sets exactly that
+variable. With the default result settings, the three file names do not
+change, so:
+
+- two runs using the same results directory overwrite those files;
+- `julia --project=. src/interfaces/cli/main.jl run --example=<script> --output-dir=output/<name>`
+  gives each run its own directory, for the scripts that take their directory
+  from `make_example_config`: the first-run scripts (`AGORA_Basic_Quickstart.jl`,
+  `AGORA_Earth_NoGRAM.jl`), the controls and torque
+  tests, and the mission scripts `AGORA_Basic_GRAMEarth.jl`, `AGORA_Odyssey.jl`,
+  `AGORA_Vex.jl`, `AGORA_Titan.jl`, `AGORA_Magellan.jl`, `AGORA_LOFTID.jl`,
+  `AGORA_Mars_NoGRAM.jl` and `Earth_Thruster_Test.jl`;
+- `--output-dir` has no effect on the scripts that choose their own directory:
+  `AGORA_Earth.jl`, `AGORA_Keplerian.jl` and `Earth_Navigation.jl` write to
+  `output/` directly, `AGORA_Earth_Aerobraking.jl` to `output/earth_aerobraking/`,
+  `AGORA_Mars_RAAN_Scenario.jl` to `output/mars_raan_scenario/`, and the RPO,
+  robot-arm and compliant multibody demos to their own `output/<demo>/` directories; running
+  one of them twice overwrites its previous results;
+- `odyssey_surrogate.jl` runs in its own environment and writes its own files:
+  the comparison writes to `odyssey_surrogate_results/` in the current
+  directory unless you pass `--output=DIR`, refuses an existing directory, and
+  prints the absolute path when it finishes (see the
+  [Odyssey walkthrough](../tutorials/odyssey_surrogate.md));
+- for your own scripts, pass `results_directory=` to `make_example_config` or
+  set it on `SimulationSettings`.
+
+The quickstart example additionally saves four PNG plots under
+`<results_directory>/plots/`. The RPO examples also generate HTML plots.
+`Solar_Panel_Cloth_Deployment_Demo.jl` writes four HTML files in its demo
+directory instead of the three simulation result files.
+
+`AGORA_Earth_MonteCarlo.jl` prints its successful and failed sample counts and
+elapsed time to the terminal. It disables result saving, so it writes no
+result files, including when `--output-dir` is supplied.
+
+Smoke mode (`--smoke` on the CLI, or `SPACEAGORA_EXAMPLE_SMOKE=1` for a script)
+shortens the mission to at most 120 s and one orbit. It does not honour
+`--output-dir` or `SPACEAGORA_CLI_OUTPUT_DIR`: the smoke configuration sets
+`results_directory` to `output/` under the current working directory, so a
+smoke run replaces the results of a previous full run in that `output/`
+(run from the repository root, that is the same `output/` the quickstart
+writes to). Results are kept only when `SPACEAGORA_EXAMPLE_SMOKE_RESULTS=1`,
+which the CLI sets for you.
+
+### Visualization scene sidecar (opt-in)
+
+Setting `simulation_settings.save_visualization_scene = true` adds one more
+file and one more group of columns, both consumed by the post-hoc 3D viewer
+described in `docs/architecture/interactive_visualization_plan.md`:
+
+```text
+output/
+  simulation_results_scene.json  ← planet, epoch, spacecraft geometry, frame rotation samples
+```
+
+The sidecar carries everything the viewer needs besides the trajectory rows:
+the central body's radii, spin and texture key, a table of J2000-to-body-fixed
+quaternions sampled over the mission span (so the viewer needs no SPICE
+kernels), and every spacecraft's links as boxes built from `Link.dims`, with
+thruster, facet and joint glyphs. It is written after the results bundle by
+the same run, and only when the flag is set; the default output is unchanged.
+
+With the flag on, spacecraft that have non-root links also get the
+`link_pose` save field: columns `sc{N}_link_pose_1` .. `sc{N}_link_pose_7n`
+holding `[rx, ry, rz, qx, qy, qz, qw]` per non-root link, in the link order
+recorded in the sidecar. These are the link poses relative to the root bus
+at each saved step, so articulated panels play back as they moved. Reading
+the sidecar back:
+
+```julia
+using SpaceAGORA
+scene = read_visualization_scene("output/simulation_results_scene.json")
+scene.planet.name, length(scene.spacecraft), scene.spacecraft[1].bounding_radius_m
+```
+
+The flag adds four more fields when the run can supply them, each listed in
+the [CSV column reference](#Visualization-fields) below:
+
+- `thruster_level`: `sc{N}_thruster_level_{k}`, the firing level of thruster
+  `k` from 0 to 1, for a spacecraft with thrusters whose control effector
+  reports per-thruster levels. Thrusters are numbered in the sidecar's order:
+  the spacecraft's links in order, each link's thrusters in order.
+- `sun_dir`: `sun_dir_1` .. `sun_dir_3`, the unit vector from the planet's
+  centre to the Sun in the inertial frame of the saved positions. One
+  direction per row, shared by every spacecraft, written when the run's
+  ephemerides can locate the Sun at the start epoch. The viewer's sun lighting
+  reads it.
+- `arm_pose`: `sc{N}_arm_pose_1` .. `sc{N}_arm_pose_7m` for a spacecraft with
+  a compliant robot-arm plan, `[rx, ry, rz, qx, qy, qz, qw]` per arm link: the
+  link centre of mass relative to the spacecraft position, in inertial metres,
+  and the link's inertial attitude quaternion.
+- Articulated spacecraft (any non-fixed `Joint`) add four fields to the default
+  set: `joint_q` (`sc{N}_joint_q_1` ..) and `joint_qd` (`sc{N}_joint_qd_1` ..)
+  list the non-fixed joints in `spacecraft.joints` order (a ball joint takes four
+  and three columns); `articulated_link_pose` (`sc{N}_articulated_link_pose_1` ..
+  `7n`) is `[rx, ry, rz, qx, qy, qz, qw]` per link in `spacecraft.links` order:
+  the link's COM in inertial metres and its scalar-last body-to-inertial
+  attitude, from the joint kinematics (links merged through `:fixed` joints
+  included); `system_com` (`sc{N}_system_com_1..3`) is the inertial center of
+  mass of the whole spacecraft. The `link_pose` viewer field still holds the
+  configured rigid geometry.
+- Spacecraft with compliant attachments add `attachment_pose`
+  (`sc{N}_attachment_pose_1` .. `7N`): `[rx, ry, rz, qx, qy, qz, qw]` per attachment body in
+  attachment order, the body COM in inertial metres (`pos + att_r`) and its scalar-last body-to-inertial
+  attitude. `system_com` (`sc{N}_system_com_1..3`) includes the attachment bodies (rigid
+  spacecraft get the column from the attachment fields; articulated ones from the articulated
+  fields). Spacecraft without attachments save neither.
+- `density`: `sc{N}_density`, the atmospheric density along the trajectory in
+  kg/m³, for a run with an atmosphere model.
+
+An explicit `save_fields` list receives the visualization fields it lacks,
+appended once after the fields you named. The plume columns below are not
+visualization fields: they belong to the default field list whenever the
+plume-surface effector is in the run, with or without the sidecar, and an
+explicit list that omits them does not write them.
+
+### Interactive viewer page
+
+With the sidecar present, `export_visualization` builds a self-contained
+HTML page next to the bundle, or pass `visualization=true` to `run_simulation`
+to do both in one go:
+
+```julia
+run_simulation(args; visualization=true)
+# or, from an existing flagged run
+export_visualization("output/simulation_results"; max_frames=2000, frame=:inertial)
+```
+
+Setting `SPACEAGORA_VISUALIZATION=1` in the environment does the same for a
+script you do not want to edit, for example
+`SPACEAGORA_VISUALIZATION=1 julia --project=. examples/AGORA_Earth_NoGRAM.jl`.
+
+```text
+output/
+  simulation_results_viewer.html  ← three.js viewer: textured globe, markers, trails, timeline
+```
+
+The page embeds three.js, the surface texture from `data/textures/`
+(Earth, Mars, Venus, Titan, Moon are registered in `manifest.toml`), the
+sidecar and a decimated copy of the trajectory, so it opens from disk in any
+modern browser without a server. `max_frames` and `data_budget_mb` bound the
+embedded rows; the info panel shows the effective cadence. `trail_orbits`
+sets how much history trails behind each spacecraft (default three orbits,
+selectable on the page). Zooming in on a spacecraft, or selecting it and
+pressing F, swaps its marker for the link-box assembly with thruster and
+facet glyphs; `stl=Dict(id => "model.stl")` draws a CAD mesh instead.
+The [Interactive Visualization](visualization.md) page covers the options,
+ensembles and textures; [the independent renderer guide](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl/blob/codex/extract-visualizer/viewer/README.md) documents the controls and how to
+develop the viewer itself.
+
+## Loading results in Julia
+
+```julia
+using CSV, DataFrames
+df = CSV.read("output/simulation_results.csv", DataFrame)
+```
+
+Or from the Feather file (faster for large runs):
+
+```julia
+using Arrow, DataFrames
+df = DataFrame(Arrow.Table("output/simulation_results.feather"))
+```
+
+## CSV column reference
+
+All per-spacecraft columns use the prefix `sc{N}_` where `N` is the
+one-based position in the spacecraft list passed to `DynamicsModel`.
+`SpacecraftModel.id` does not set this prefix. A single-spacecraft run
+produces `sc1_*` columns even when its spacecraft has a different `id`.
+
+### Time
+
+| Column | Unit | Description |
+|---|---|---|
+| `time` | s | Elapsed simulation time from epoch |
+
+### Position and velocity (inertial frame)
+
+| Column | Unit | Description |
+|---|---|---|
+| `sc1_pos_1` | m | Inertial position X component |
+| `sc1_pos_2` | m | Inertial position Y component |
+| `sc1_pos_3` | m | Inertial position Z component |
+| `sc1_vel_1` | m/s | Inertial velocity X component |
+| `sc1_vel_2` | m/s | Inertial velocity Y component |
+| `sc1_vel_3` | m/s | Inertial velocity Z component |
+
+### Geodetic state
+
+| Column | Unit | Description |
+|---|---|---|
+| `sc1_altitude` | m | Instantaneous geodetic altitude above the reference ellipsoid |
+| `sc1_latitude_deg` | deg | Geodetic latitude |
+| `sc1_longitude_deg` | deg | Longitude |
+
+### Osculating orbit diagnostic
+
+| Column | Unit | Description |
+|---|---|---|
+| `sc1_periapsis_altitude` | m | Osculating spherical periapsis altitude, `a * (1 - e) - planet.Rp_e` |
+
+Here `a` and `e` are the semimajor axis and eccentricity derived from the current
+inertial position and velocity. The periapsis column uses a reference sphere
+with the planet's equatorial radius, `planet.Rp_e`. It describes the
+instantaneous osculating Keplerian orbit; it is not a prediction of the minimum
+geodetic altitude reached by the propagated trajectory. The two altitude columns
+use different reference surfaces and need not agree at a periapsis event.
+
+The aerobraking examples' separate `periapsis_events.csv` tables instead contain
+geodetic estimates. Depending on the example and available solver output, these
+are evaluated at event-located radial minima or selected from sampled geodetic
+altitude minima.
+Simulation apoapsis plots may likewise use interpolated sample crossings and an
+initial sample. Those event and sampled values are distinct from
+`sc1_periapsis_altitude`.
+
+### Mass
+
+| Column | Unit | Description |
+|---|---|---|
+| `sc1_mass` | kg | Total spacecraft mass (structure + remaining propellant) |
+
+### Atmosphere and aerodynamics
+
+| Column | Unit | Description |
+|---|---|---|
+| `sc1_wind_1` | m/s | Atmospheric wind vector X |
+| `sc1_wind_2` | m/s | Atmospheric wind vector Y |
+| `sc1_wind_3` | m/s | Atmospheric wind vector Z |
+| `sc1_drag_1` | N | Aerodynamic drag force X (planet frame) |
+| `sc1_drag_2` | N | Aerodynamic drag force Y |
+| `sc1_drag_3` | N | Aerodynamic drag force Z |
+| `sc1_lift_1` | N | Aerodynamic lift force X |
+| `sc1_lift_2` | N | Aerodynamic lift force Y |
+| `sc1_lift_3` | N | Aerodynamic lift force Z |
+| `sc1_cross_1` | N | Aerodynamic cross force X |
+| `sc1_cross_2` | N | Aerodynamic cross force Y |
+| `sc1_cross_3` | N | Aerodynamic cross force Z |
+
+### Thermal
+
+| Column | Unit | Description |
+|---|---|---|
+| `sc1_heat_rate` | W/cm² | Largest of the per-link stagnation heat rates (the built-in Maxwellian model returns W/cm²) |
+| `sc1_heat_load` | J/cm² | Largest of the per-link accumulated heat loads (each link integrates its own rate, without an area-unit conversion); not the sum over links |
+
+### Attitude (orientation_sim only)
+
+These columns are present only when `mission_configuration.orientation_sim = true`:
+
+| Column | Unit | Description |
+|---|---|---|
+| `sc1_q_1` | — | Attitude quaternion component `x` (scalar-last convention `[x, y, z, w]`, inertial to body) |
+| `sc1_q_2` | — | Attitude quaternion component `y` |
+| `sc1_q_3` | — | Attitude quaternion component `z` |
+| `sc1_q_4` | — | Attitude quaternion scalar component `w`; `[0, 0, 0, 1]` is the identity attitude |
+
+#### Plot saved raw quaternion history
+
+From the repository root, load the existing example helpers and explicitly
+choose the spacecraft and destination:
+
+```julia
+include("examples/common.jl")
+include("examples/aerobraking_mission_plot_utils.jl")
+quaternion_history = _save_quaternion_history_plot(
+    "results/my_run/simulation_results.csv";
+    spacecraft_index=1,
+    output_path="results/my_run/raw_quaternion.png",
+)
+```
+
+`spacecraft_index` is the positive, one-based position in the spacecraft list,
+not `SpacecraftModel.id`. The helper requires `time` (seconds) and all four
+`scN_q_1` through `scN_q_4` columns for that spacecraft. Missing columns, empty
+tables, and missing, nonnumeric or nonfinite selected values produce an error;
+columns for other spacecraft are not inspected. Default quaternion save fields
+are available only with `orientation_sim=true`.
+
+The four traces retain the saved signs, component values and row order,
+including non-unit and zero quaternions. Time is shown in minutes (`time / 60`);
+single rows, repeated times and nonmonotone times are accepted. No normalization,
+sign adjustment, interpolation or attitude conversion is applied. The component
+labels are `q1`–`q4`, colored red, green, blue and orange. The result contains
+`time_min`, `components`, `labels`, `colors`, `spacecraft_index`, `plot` and
+`output_path`, so the prepared data can be inspected without inferring values
+from the image. For an existing `DataFrame`,
+`_quaternion_history_samples(df; spacecraft_index=1)` prepares the same data
+without plotting or writing a file.
+
+The call saves only the explicitly requested image and does not open a plot
+window. Supply a supported filename extension (for example `.png` or `.pdf`)
+and an existing destination directory; the input CSV cannot be the destination.
+This opt-in helper does not run a simulation or change any existing example plots.
+
+### Body angular-rate history (explicit save fields)
+
+Body rates are not included by `default_save_fields`, even for orientation runs.
+For an existing orientation-enabled configuration `args`, explicitly record the
+body angular velocity state in radians per second with this save-field recipe:
+
+```julia
+using SpaceAGORA
+using StaticArrays
+SC = SpaceAGORA.SimulationModel.SimulationCallbacks
+body_rate_field = SC.SaveField(
+    :body_rate_rad_s,
+    (u, t, integrator) -> [SVector{3, Float64}(sc.ω) for sc in u.sc];
+    per_satellite=true,
+    column_prefix="body_rate",
+)
+fields = [SC.default_save_fields(args)..., body_rate_field]
+# Supply fields to your already configured run:
+# run_simulation(args; save_fields=fields)
+```
+
+This records `scN_body_rate_1..3` in body-axis component order. `N` is the
+spacecraft's one-based list position, not its model ID. The CYGNSS slew demo
+already records the same schema for its single spacecraft. Existing custom
+`:omega` save fields have a different schema and are not inferred as aliases.
+
+To plot an existing CSV, use the example helpers explicitly:
+
+```julia
+include("examples/common.jl")
+include("examples/aerobraking_mission_plot_utils.jl")
+body_rate_history = _save_body_rate_history_plot(
+    "results/my_run/simulation_results.csv";
+    spacecraft_index=1,
+    output_path="results/my_run/body_rate.png",
+)
+```
+
+The helper requires `time` in seconds and all three selected body-rate columns
+in rad/s. It plots time in minutes and angular velocity in deg/min, using the
+legacy conversion `rad2deg.(rates) .* 60` and labels `ω1`, `ω2`, `ω3` in red,
+green and blue. It preserves signs and row order, including repeated or
+nonmonotone times; it neither derives rates from quaternions nor rotates frames.
+
+The returned `rates_rad_s` contains copies of the saved values; `components`
+contains the displayed deg/min values. The other fields are `time_min`,
+`labels`, `colors`, `spacecraft_index`, `plot` and `output_path`.
+`_body_rate_history_samples(df; spacecraft_index=1)` prepares the arrays without
+rendering. Empty input, missing columns, invalid selected values or nonfinite
+converted values produce an error. Other spacecraft's columns are not inspected.
+Supply a filename extension and an existing destination directory. The input
+CSV, including filesystem aliases, cannot be the destination. No plot window
+or simulation is started by the plotting helper.
+
+### Visualization fields
+
+These columns are added automatically when `simulation_settings.save_visualization_scene = true`
+and the run can supply them; see the [sidecar section](#Visualization-scene-sidecar-(opt-in))
+for the conditions:
+
+| Column | Unit | Description |
+|---|---|---|
+| `sc1_link_pose_1` .. `sc1_link_pose_7n` | m, — | `[rx, ry, rz, qx, qy, qz, qw]` per non-root link, relative to the root bus, in the sidecar's link order |
+| `sc1_thruster_level_1` .. `sc1_thruster_level_k` | — | Firing level of each thruster, 0 to 1, in the sidecar's thruster order |
+| `sc1_arm_pose_1` .. `sc1_arm_pose_7m` | m, — | `[rx, ry, rz, qx, qy, qz, qw]` per robot-arm link: centre of mass relative to the spacecraft (inertial) and inertial attitude |
+| `sc1_density` | kg/m³ | Atmospheric density at the spacecraft |
+| `sun_dir_1` .. `sun_dir_3` | — | Unit vector from the planet's centre to the Sun, inertial frame, one per row (not per spacecraft) |
+
+### Plume interaction
+
+These columns are written by the plume-surface effector
+([Plume interaction](plume_interaction.md)) for every spacecraft in the run,
+when using the default save-field list, whether or not the visualization sidecar
+is enabled. An explicit list must include them to write them:
+
+| Column | Unit | Description |
+|---|---|---|
+| `sc1_plume_height_m` | m | Slant height of the vehicle reference point above the terrain along the engine axis (radial clearance divided by the downward exhaust cosine); infinite when the exhaust does not point toward the surface |
+| `sc1_plume_pressure_pa` | Pa | Peak surface pressure under the plume |
+| `sc1_plume_shear_pa` | Pa | Peak wall shear stress under the plume |
+| `sc1_plume_erosion_kg_s` | kg/s | Regolith mass erosion rate |
+| `sc1_plume_eroded_kg` | kg | Eroded mass integrated over accepted solver steps (trapezoidal), reset at the start of a run |
+| `sc1_plume_ejecta_mps` | m/s | Bounded speed at which eroded grains leave the surface |
+| `sc1_plume_ground_effect_n` | N | Modeled thrust augmentation in ground effect |
+
+The plume quantities are diagnostics of an illustrative closure, as described on
+the plume page; they are not a calibrated flight reconstruction.
+
+## Multi-spacecraft runs
+
+When multiple spacecraft are passed to `DynamicsModel`, each spacecraft
+contributes its own column set. Spacecraft 1 produces `sc1_*` columns,
+spacecraft 2 produces `sc2_*`, and so on. The spacecraft position in the
+configuration sets the numeric suffix; `SpacecraftModel.id` does not.
+
+## Output rate
+
+The `data_rate` field in `MissionConfiguration` sets the output sample cadence
+in seconds of simulated time. The default is `10.0` seconds. Decreasing
+`data_rate` produces more rows and larger files; increasing it reduces output
+size but loses temporal resolution.
+
+The `num_steps_to_save` field controls how many time steps are buffered in
+memory before a flush. For very long runs, tuning this can reduce peak memory
+use.
+
+## Checkpointing
+
+Enable periodic checkpointing via `SimulationSettings`:
+
+```julia
+SM.SimulationSettings(
+    checkpoint_enabled      = true,
+    checkpoint_interval_s   = 300.0,         # every 300 s of simulated time
+    checkpoint_directory    = "output/checkpoints"
+)
+```
+
+A crashed or interrupted run can be resumed by setting
+`resume_from_checkpoint = true` in `SimulationSettings`. The checkpoint
+directory defaults to `results_directory/checkpoints` when left empty.
+
+## Campaign and multi-process runs
+
+`run_monte_carlo` and `run_constellation_ensemble` samples each call
+`run_simulation` independently (per-sample `results_directory` and
+`SimulationSettings` come from whatever `SimulationConfiguration` your
+per-seed closure returns), so the file layout above applies per sample
+whether the outer route is serial, threaded, or process-backed. See
+[Parallel Execution](parallel_execution.md) for how to select and configure
+outer routing.
+
+
+## In-memory constellation recorder
+
+For fixed-cadence output without retaining the solver's complete step history,
+attach the optional recorder to an existing `SimulationConfiguration` named
+`args`:
+
+```julia
+using SpaceAGORA
+using SpaceAGORA.SimulationModel: TrajectoryRecorder, get_trajectory_recorder_callback,
+    trajectory_times, trajectory_positions, trajectory_save_data
+
+recorder = TrajectoryRecorder(args)
+run_simulation(args; return_solution=false,
+    extra_callbacks=(get_trajectory_recorder_callback(recorder),))
+times = trajectory_times(recorder)
+positions = trajectory_positions(recorder)  # component x spacecraft x sample
+```
+
+The cadence defaults to `args.mission_configuration.data_rate`, in seconds.
+The recorder preallocates arrays and grows them when needed; memory still grows
+with the number of spacecraft and recorded samples. Read the returned views
+after the solve, and obtain new views after resetting or reusing the recorder.
+`trajectory_save_data(recorder)` materializes ordinary saved snapshots when
+needed; that conversion allocates dictionaries at the output boundary.
+
+This callback leaves configured file output unchanged. Use
+`SimulationSettings(results=false)` when an in-memory result is sufficient.
+Explicit `save_fields` use their supplied getters, including a custom getter
+with a built-in field name. Additional default fields without a specialized
+array filler also retain their getters. Timing improvements depend on the run
+and should be measured before adopting this recorder for a campaign.

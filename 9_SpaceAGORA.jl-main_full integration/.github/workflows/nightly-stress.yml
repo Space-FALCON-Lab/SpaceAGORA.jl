@@ -1,0 +1,176 @@
+name: Nightly Stress
+
+on:
+  schedule:
+    - cron: "0 7 * * *"
+  # On pull requests this heavy tier (the full-profile telemetry regression,
+  # one job per scenario, plus the stress and contract suites) auto-triggers
+  # only when the change can move the spacecraft or change the grading.
+  # Everything else gets the fast tier (Julia CI) and the nightly run on main
+  # stands guard. The coverage-instrumented test suites are NOT repeated here:
+  # Julia CI runs them on every PR and on every push to main.
+  pull_request:
+    paths:
+      - "src/models/dynamics/**"
+      - "src/models/environment/**"
+      - "src/orchestration/simulation/**"
+      - "src/foundation/core/**"
+      - "src/models/gnc/**"
+      - "src/models/vehicle/**"
+      - "src/orchestration/mission/**"
+      - "src/orchestration/parallel/**"
+      - "src/interfaces/analysis/verification/**"
+      - "src/interfaces/analysis/planning/**"
+      - "ext/**"
+      - "packages/gnc/SpaceAGORAEDG.jl"
+      - "packages/OptionalPackages.toml"
+      - "scripts/setup_edg.jl"
+      - "test/helpers/load_edg.jl"
+      - ".github/actions/setup/action.yml"
+      - "data/GRAMSuite.jl"
+      - "data/telemetry/**"
+      - "data/Gravity_harmonics_data/**"
+      - "test/telemetry_benchmark_manifest.toml"
+      - "test/stress/**"
+      - "benchmarks/studies/telemetry_orbit_accuracy_study.jl"
+      - "Project.toml"
+      - "Manifest.toml"
+      - ".github/workflows/nightly-stress.yml"
+  workflow_dispatch:
+
+# One live run per pull request (or per branch for schedule/push): a new
+# push cancels the stale run of the same PR instead of competing with it.
+# Setup (.github/actions/setup) restores the depot cache that Julia CI's `depot`
+# job fills and never saves one of its own.
+concurrency:
+  group: nightly-stress-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Everything the PR tier does not already run, minus the telemetry regression
+  # (which has its own matrix job below so the three scenarios run in parallel).
+  nightly-stress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      JULIA_NUM_THREADS: "4"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Setup
+        uses: ./.github/actions/setup
+        with:
+          gram: native
+          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+
+      - name: Fetch base ref (PR only)
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags --depth=1 origin ${{ github.base_ref }}
+
+      - name: Contract suite
+        run: julia --startup-file=no --project=. test/contracts/nightly_runtests.jl
+
+      - name: AI review artifact gate (PR only)
+        if: github.event_name == 'pull_request'
+        env:
+          SPACEAGORA_PR_NUMBER: ${{ github.event.pull_request.number }}
+          SPACEAGORA_BASE_REF: ${{ github.base_ref }}
+        run: julia --startup-file=no --project=. test/gates/ci_ai_review_artifact_gate.jl
+
+      - name: Threaded smoke stress
+        run: julia --startup-file=no --depwarn=error --project=. test/smoke/ci_threaded_smoke.jl
+
+      - name: Example regression stress
+        run: julia --startup-file=no --depwarn=error --project=. test/integration/examples/runtests.jl
+
+      - name: Stress suite
+        run: julia --startup-file=no --depwarn=error --heap-size-hint=10G --project=. test/stress/runtests.jl
+
+  # Full-profile telemetry regression, one runner per scenario. Each job is
+  # about a quarter of the old single step: the scenarios no longer queue
+  # behind each other, and the Odyssey scenario no longer solves twice (the
+  # runner reuses the calibration eval solve when the grid has one point).
+  telemetry-regression:
+    runs-on: ubuntu-latest
+    # The Odyssey runs that this limit cancelled in September 2026 were not
+    # slow integrations: the per-step solution storage of the replay grew
+    # without bound (every housekeeping callback saved the state twice per
+    # step on top of the solver's own save), and the garbage collector's
+    # walks over that heap took most of the wall clock before the runner
+    # starved. With the storage bounded the full Odyssey profile is a
+    # fraction of this limit on the hosted runner.
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [odyssey, vex, earth_gmat]
+        include:
+          # The Odyssey sentinel integrates with plain Tsit5. Under the default
+          # auto_stiff sequence the Rosenbrock fallback (finite-difference
+          # Jacobians) engages in the final orbits after the walk-out raise
+          # and the whole profile takes about twice as long, and the harness
+          # keeps per-step solution storage for that sequence (its switch
+          # detector reads the per-step algorithm record), so its memory grows
+          # with the campaign; the metrics agree to three significant digits
+          # (measured locally, September 2026). VEx and Earth keep the default.
+          - scenario: odyssey
+            solver_mode: tsit5
+    env:
+      JULIA_NUM_THREADS: "4"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Setup
+        uses: ./.github/actions/setup
+        with:
+          gram: native
+          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+
+      - name: Fetch base ref (PR only)
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags --depth=1 origin ${{ github.base_ref }}
+
+      # --heap-size-hint keeps Julia's GC high-water mark under the hosted
+      # runner's physical memory (public-repo ubuntu-latest: 4 vCPU/16 GB):
+      # without it this step intermittently starves the runner agent and the
+      # job dies mid-step. 10G leaves room for native GRAM and the OS.
+      # Effector-level threading off for the graded regression. Since #103 the
+      # threaded reductions give the same bits as serial, and since the engine
+      # evaluates a single satellite's effectors serially by default this pin
+      # is redundant; it stays as an explicit statement of the setting the
+      # regression is graded under (single-satellite threading measured 1.5 to
+      # 2x slower on the 4-vCPU runners).
+      - name: Telemetry full regression (${{ matrix.scenario }})
+        env:
+          SPACEAGORA_EFFECTOR_PARALLEL: "off"
+          SPACEAGORA_TELEMETRY_SOLVER_MODE: ${{ matrix.solver_mode || 'auto_stiff' }}
+        run: >-
+          julia --startup-file=no --depwarn=error --heap-size-hint=10G --project=.
+          benchmarks/studies/telemetry_orbit_accuracy_study.jl full --enforce=true
+          --scenarios=${{ matrix.scenario }}
+          --out-summary=output/telemetry_${{ matrix.scenario }}_summary.csv
+          --out-errors=output/telemetry_${{ matrix.scenario }}_errors.csv
+
+      - name: Upload telemetry nightly artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telemetry-full-${{ matrix.scenario }}-${{ github.run_id }}
+          path: |
+            output/telemetry_${{ matrix.scenario }}_summary.csv
+            output/telemetry_${{ matrix.scenario }}_errors.csv
+          if-no-files-found: warn

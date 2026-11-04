@@ -1,0 +1,704 @@
+#!/usr/bin/env bash
+# Push the full current SpaceAGORA.jl working tree to a remote box and run a job
+# there, detached, with output synced back automatically. See:
+#   docs/architecture/remote_job_push_plan.md
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+CONF_FILE="$SCRIPT_DIR/remotes.conf"
+RUNS_DIR="$REPO_ROOT/remote_runs"
+
+declare -A REMOTES
+
+DEFAULT_DATA_ALLOWLIST=(
+  "data/GRAMSuite.jl"
+  "data/GRAM_surrogate"
+  "data/Topography_harmonics_data"
+  "data/Gravity_harmonics_data"
+  "data/spice.txt"
+)
+DEFAULT_PULL_PATHS=("output" "results")
+DEFAULT_POLL_INTERVAL=30
+
+usage() {
+  cat <<'EOF'
+spaceagora-remote — sync SpaceAGORA.jl to a remote box and run a job there.
+
+Usage:
+  spaceagora-remote push [--remote NAME] [--threads N] [--ram SIZE]
+                          [--process-workers N] [--workload auto|on|off]
+                          [--attach] [--sync-data] [--poll-interval SEC]
+                          -- <command> [args...]
+
+  --threads N          Sets JULIA_NUM_THREADS/SPACEAGORA_PERF_PROCS (older
+                        paper_scenarios/ladder pipeline) *and*
+                        SPACEAGORA_PPB_THREADS/SPACEAGORA_PPC_THREADS
+                        (paper_parallelization_benchmarks, B1-B6).
+  --process-workers N  Sets SPACEAGORA_PPB_PROCESS_WORKERS/
+                        SPACEAGORA_PPC_PROCESS_WORKERS. Matters for any
+                        outer_process-mode point: a pool larger than that
+                        point's own mc_samples count is pure cold-start
+                        overhead (each repeat is a fresh subprocess, so the
+                        whole pool -- default 32 -- gets spun up from
+                        scratch every time) with no throughput benefit, and
+                        can make outer_process look far slower than serial.
+                        For B6 specifically (mc_samples=[1,8]), pass 8.
+  --workload MODE      Paper-harness precompile workload (see
+                        benchmarks/studies/paper_parallelization_benchmarks/
+                        workload/README.md). off (default) skips it; auto
+                        builds it before the job when the command runs the
+                        paper harness; on builds it for any command. The harness
+                        itself uses the image only when it is current.
+  spaceagora-remote run        [--remote NAME] [--cwd DIR] [--no-watch]
+                          [--poll-interval SEC] -- <command> [args...]
+                        Run a command detached (tmux) in an existing remote
+                        directory, no code sync. Survives a lost connection.
+  spaceagora-remote seed-data [--remote NAME]
+  spaceagora-remote list       [--remote NAME]
+  spaceagora-remote status     [--remote NAME] <job-id>
+  spaceagora-remote attach     [--remote NAME] <job-id>
+  spaceagora-remote log        [--remote NAME] [-f] <job-id>
+  spaceagora-remote pull       [--remote NAME] <job-id>
+  spaceagora-remote watch      [--remote NAME] [--poll-interval SEC] <job-id>
+  spaceagora-remote kill       [--remote NAME] <job-id>
+
+Config: scripts/remote/remotes.conf (copy remotes.conf.example, gitignored).
+EOF
+}
+
+load_config() {
+  if [[ ! -f "$CONF_FILE" ]]; then
+    echo "error: missing $CONF_FILE — copy remotes.conf.example and edit it." >&2
+    exit 1
+  fi
+  # shellcheck source=/dev/null
+  source "$CONF_FILE"
+}
+
+resolve_remote() {
+  local name="$1"
+  if [[ -z "$name" ]]; then
+    local names=() key
+    for key in "${!REMOTES[@]}"; do
+      [[ "$key" == *_host ]] && names+=("${key%_host}")
+    done
+    if [[ ${#names[@]} -eq 1 ]]; then
+      name="${names[0]}"
+    else
+      echo "error: --remote NAME required (configured: ${names[*]:-none})" >&2
+      exit 1
+    fi
+  fi
+  REMOTE_NAME="$name"
+  SSH_ALIAS="${REMOTES[${name}_host]:-}"
+  REMOTE_BASE="${REMOTES[${name}_base]:-}"
+  if [[ -z "$SSH_ALIAS" || -z "$REMOTE_BASE" ]]; then
+    echo "error: remote '$name' not found in $CONF_FILE" >&2
+    exit 1
+  fi
+  # Quoting every use of REMOTE_BASE below (needed for safety) suppresses shell
+  # tilde-expansion, so resolve a leading "~" to an absolute path once here
+  # rather than shipping a literal "~" through to remote mkdir/rsync/cd calls.
+  if [[ "$REMOTE_BASE" == "~"* ]]; then
+    local remote_home
+    remote_home="$(rsh 'printf %s "$HOME"')" || remote_home=""
+    if [[ -z "$remote_home" ]]; then
+      echo "state: unreachable ($name: ssh failed)" >&2
+      exit 255
+    fi
+    REMOTE_BASE="${remote_home}${REMOTE_BASE#\~}"
+  fi
+}
+
+data_allowlist() {
+  local override="REMOTES[${REMOTE_NAME}_data_allowlist]"
+  if [[ -n "${REMOTES[${REMOTE_NAME}_data_allowlist]+x}" ]]; then
+    # shellcheck disable=SC2086
+    echo ${REMOTES[${REMOTE_NAME}_data_allowlist]}
+  else
+    printf '%s\n' "${DEFAULT_DATA_ALLOWLIST[@]}"
+  fi
+}
+
+# Fail fast on an unreachable host and notice a dead link within about a
+# minute, instead of hanging on TCP timeouts. Exit status 255 from ssh means
+# "could not reach the host", never "the job finished"; callers rely on that.
+SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
+export RSYNC_RSH="ssh ${SSH_OPTS[*]}"
+rsh() { ssh "${SSH_OPTS[@]}" "$SSH_ALIAS" "$@"; }
+
+ensure_remote_dirs() {
+  rsh "mkdir -p '$REMOTE_BASE/canonical_code' '$REMOTE_BASE/canonical_data' '$REMOTE_BASE/releases' '$REMOTE_BASE/jobs' '$REMOTE_BASE/shared_depot'"
+}
+
+sync_code() {
+  # Full working-tree mirror (not git-ls-files-restricted) so the remote sees
+  # exactly what's on this machine -- uncommitted edits, untracked scripts,
+  # and the current Manifest.toml -- rather than only the last commit's tracked
+  # set. `--filter=':- .gitignore'` applies every nested .gitignore the same
+  # way git itself would, which is what keeps this from also dragging along
+  # tool/env scratch (.CondaPkg/, cache/, .claude/, generated *.csv/*.png,
+  # etc. -- see .gitignore). data/ stays out here regardless of ignore status
+  # (opt-in via seed-data/--sync-data, see sync_data) since it's a ~20G
+  # allowlisted blob with its own sync path; output/ and remote_runs/ are pure
+  # local scratch that never belongs on the remote.
+  rsync -az --delete \
+    --filter=':- .gitignore' \
+    --exclude='/.git/' \
+    --exclude='/output/' \
+    --exclude='/data/' \
+    --exclude='/remote_runs/' \
+    --exclude='/scripts/remote/remotes.conf' \
+    "$REPO_ROOT/" "$SSH_ALIAS:$REMOTE_BASE/canonical_code/"
+}
+
+sync_data() {
+  local path parent
+  while IFS= read -r path; do
+    [[ -z "$path" ]] && continue
+    parent="$(dirname "$path")"
+    rsh "mkdir -p '$REMOTE_BASE/canonical_data/$parent'"
+    if [[ -d "$REPO_ROOT/$path" ]]; then
+      rsync -az --exclude='.git/' "$REPO_ROOT/$path/" "$SSH_ALIAS:$REMOTE_BASE/canonical_data/$path/"
+    elif [[ -f "$REPO_ROOT/$path" ]]; then
+      rsync -az "$REPO_ROOT/$path" "$SSH_ALIAS:$REMOTE_BASE/canonical_data/$path"
+    else
+      echo "warning: data allowlist path not found locally, skipping: $path" >&2
+    fi
+  done < <(data_allowlist)
+}
+
+new_job_id() {
+  echo "$(date +%Y%m%d-%H%M%S)-$$"
+}
+
+cmd_push() {
+  local remote="" threads="" ram="" process_workers="" workload="off" attach=0 sync_data_flag=0 poll_interval="$DEFAULT_POLL_INTERVAL"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --remote) remote="$2"; shift 2 ;;
+      --threads) threads="$2"; shift 2 ;;
+      --ram) ram="$2"; shift 2 ;;
+      --process-workers) process_workers="$2"; shift 2 ;;
+      --workload) workload="$2"; shift 2 ;;
+      --attach) attach=1; shift ;;
+      --sync-data) sync_data_flag=1; shift ;;
+      --poll-interval) poll_interval="$2"; shift 2 ;;
+      --) shift; break ;;
+      *) echo "error: unexpected push argument '$1'" >&2; exit 1 ;;
+    esac
+  done
+  if [[ $# -eq 0 ]]; then
+    echo "error: no command given after --" >&2
+    exit 1
+  fi
+  resolve_remote "$remote"
+
+  local job_id session job_dir release_dir
+  job_id="$(new_job_id)"
+  session="spaceagora-$job_id"
+  job_dir="$REMOTE_BASE/jobs/$job_id"
+  release_dir="$REMOTE_BASE/releases/$job_id"
+
+  echo "==> syncing code to $REMOTE_NAME ($SSH_ALIAS)"
+  ensure_remote_dirs
+  sync_code
+  if [[ $sync_data_flag -eq 1 ]]; then
+    echo "==> syncing data allowlist (this can be slow the first time)"
+    sync_data
+  fi
+
+  echo "==> building release $job_id"
+  rsh "mkdir -p '$job_dir' '$release_dir/output' '$release_dir/results' && cp -al '$REMOTE_BASE/canonical_code/.' '$release_dir/' && (cp -al '$REMOTE_BASE/canonical_data/.' '$release_dir/' 2>/dev/null || true)"
+
+  local cmd_str
+  cmd_str="$(printf '%q ' "$@")"
+  local build_workload=0
+  case "$workload" in
+    on) build_workload=1 ;;
+    off) build_workload=0 ;;
+    auto) [[ "$cmd_str" == *paper_parallelization_benchmarks* ]] && build_workload=1 ;;
+    *) echo "error: --workload must be auto, on or off" >&2; exit 1 ;;
+  esac
+  local run_sh
+  run_sh="$(mktemp)"
+  cat > "$run_sh" <<EOF
+#!/usr/bin/env bash
+set -uo pipefail
+cd "$release_dir" || exit 1
+export JULIA_DEPOT_PATH="$REMOTE_BASE/shared_depot"
+export JULIA_NUM_THREADS="${threads:-}"
+export SPACEAGORA_PERF_PROCS="${threads:-}"
+export SPACEAGORA_REMOTE_JOB_RAM_HINT="${ram:-}"
+EOF
+  # paper_parallelization_benchmarks (B1-B6) and its lower-level
+  # parallelization_performance study read their own SPACEAGORA_PPB_*/
+  # SPACEAGORA_PPC_* env vars, not JULIA_NUM_THREADS/SPACEAGORA_PERF_PROCS
+  # above (those are the older paper_scenarios/ladder pipeline's knobs) --
+  # --threads/--process-workers were previously silently ignored by a B6
+  # push. Only emitted when the flag was actually passed: each of these vars
+  # defaults to "use the full machine-scaled ladder" / "32" when *unset*, but
+  # `parse(Int, "")` throws, so exporting them empty-but-present on every
+  # push (rather than omitting the export entirely) would break the
+  # zero-flags case instead of just leaving it as the default.
+  if [[ -n "$threads" ]]; then
+    cat >> "$run_sh" <<EOF
+export SPACEAGORA_PPB_THREADS="$threads"
+export SPACEAGORA_PPC_THREADS="$threads"
+EOF
+  fi
+  if [[ -n "$process_workers" ]]; then
+    cat >> "$run_sh" <<EOF
+export SPACEAGORA_PPB_PROCESS_WORKERS="$process_workers"
+export SPACEAGORA_PPC_PROCESS_WORKERS="$process_workers"
+EOF
+  fi
+  cat >> "$run_sh" <<EOF
+echo "PID=\$\$" >> "$job_dir/job.meta"
+echo "START=\$(date -Iseconds)" >> "$job_dir/job.meta"
+# Purge the precompile cache for the LOCAL-SOURCE packages before every job.
+#
+# Julia 1.12 writes a native pkgimage (.so) beside the .ji in the shared depot.
+# That cache was observed serving an image built from an EARLIER release while
+# Base.locate_package resolved correctly to the current one, so a job executed a
+# previous release's src/ while its CSV rows recorded the commit that had just
+# been deployed. Nothing in the output showed the divergence: harness files
+# under benchmarks/ are include()d and always reflect the release, so only
+# changes under src/ went missing, and only silently.
+#
+# Scoped to SpaceAGORA and its extensions on purpose. The ~500 cached
+# dependencies are immutable at a resolved version and rebuilding them would add
+# roughly twenty minutes to every job for no correctness gain.
+rm -rf "$REMOTE_BASE"/shared_depot/compiled/v*/SpaceAGORA*
+echo "PURGED_PKGIMAGES=\$(date -Iseconds)" >> "$job_dir/job.meta"
+# Persist the adaptive policy's learned state ACROSS releases.
+#
+# Four subsystems write into pwd()/output/parallel_policy_state/ -- the inner
+# policy's hints (policy/env_config.jl), the cost-model constants
+# (cost/machine_calibration.jl), the outer-route state
+# (campaigns/adaptive_routing.jl) and the RHS plan calibration
+# (engine/rhs_calibration.jl). Every release gets a fresh output/, so on a
+# remote host all four started empty on every job and the "learn across runs"
+# half of the policy could never accumulate anything.
+#
+# That is not merely lost speed, it is a measured regression: R5 differs from
+# R4 only by persistent=true, and on a host where the state is discarded R5
+# pays the bookkeeping and collects none of the benefit. Measured on trx50,
+# interact_256sat_1hr at 8 threads: best static 3.06 s, R4 3.23 s, R5 3.57 s --
+# the profile with the memory was the slowest of the three. On the local
+# machine, where this directory lives in the repo and had been accumulating for
+# days, R5 is the fastest.
+#
+# Symlinked at directory level rather than via the per-file env overrides
+# (SPACEAGORA_PARALLEL_POLICY_STATE_PATH, _COST_CONSTANTS_PATH,
+# _OUTER_ROUTE_STATE_PATH, _RHS_CALIBRATION_PATH) so that any future state file
+# is covered without a matching change here.
+mkdir -p "$REMOTE_BASE/policy_state"
+rm -rf "$release_dir/output/parallel_policy_state"
+ln -s "$REMOTE_BASE/policy_state" "$release_dir/output/parallel_policy_state"
+echo "POLICY_STATE=$REMOTE_BASE/policy_state" >> "$job_dir/job.meta"
+julia --project=. -e 'using Pkg; Pkg.instantiate()' > "$job_dir/instantiate.log" 2>&1
+INSTANTIATE_EXIT=\$?
+if [ \$INSTANTIATE_EXIT -ne 0 ]; then
+  { echo "Pkg.instantiate() failed (exit \$INSTANTIATE_EXIT) -- see instantiate.log"; cat "$job_dir/instantiate.log"; } > "$job_dir/job.log"
+  echo "END=\$(date -Iseconds)" >> "$job_dir/job.meta"
+  echo "EXIT_CODE=\$INSTANTIATE_EXIT" >> "$job_dir/job.meta"
+  exit \$INSTANTIATE_EXIT
+fi
+EOF
+  if [[ $build_workload -eq 1 ]]; then
+    cat >> "$run_sh" <<EOF
+# Build the paper harness's precompile workload, once, before the harness
+# starts, so no benchmark point compiles its solver specializations itself
+# (benchmarks/studies/paper_parallelization_benchmarks/workload/README.md).
+#
+# Invalidation is by construction, not by bookkeeping: the package is named
+# SpaceAGORAPaperWorkload, so the purge above removes its image along with
+# SpaceAGORA's; its environment lives under this release's own output/; and the
+# image records the build of SpaceAGORA it was compiled against, so Julia
+# refuses it against any other build. The harness probes that once per run,
+# and every worker again before loading the image, and runs without it (with a
+# warning) when it is not current -- which is also what happens if this step
+# fails, so a failure here costs time, never correctness. The build runs in a memory-capped scope
+# (SPACEAGORA_PPB_WORKLOAD_MEMORY_MAX, default 16G) when systemd provides one.
+bash benchmarks/studies/paper_parallelization_benchmarks/workload/build_workload.sh all > "$job_dir/workload_build.log" 2>&1
+echo "WORKLOAD_BUILD_EXIT=\$?" >> "$job_dir/job.meta"
+# Asked for, so used: the harness default is off. auto falls back without a current image.
+export SPACEAGORA_PPB_WORKLOAD="\${SPACEAGORA_PPB_WORKLOAD:-auto}"
+EOF
+  else
+    cat >> "$run_sh" <<EOF
+export SPACEAGORA_PPB_WORKLOAD=0
+EOF
+  fi
+  cat >> "$run_sh" <<EOF
+# Build SpaceAGORA's pkgimage and the GRAM extension's here, once, then record
+# the images. A child that finds either stale rebuilds it in place under every
+# process that has it mapped (the 2026-10-11 Part B job: 32 pool workers rebuilt
+# SpaceAGORA mid-run, see ppc_ensure_process_workers!), and nothing in the output
+# said so. The images must be byte-for-byte the same after the command.
+julia --project=. -e 'using SpaceAGORA; d = joinpath(pwd(), "data", "GRAMSuite.jl"); if isfile(joinpath(d, "Project.toml")); pushfirst!(LOAD_PATH, d); import GRAMSuite; end' > "$job_dir/warm.log" 2>&1
+pkgimage_snap() { ls -l --time-style=full-iso "$REMOTE_BASE"/shared_depot/compiled/v*/SpaceAGORA*/*.so 2>/dev/null; }
+pkgimage_snap > "$job_dir/pkgimages_before.txt"
+$cmd_str > "$job_dir/job.log" 2>&1
+EXIT_CODE=\$?
+pkgimage_snap > "$job_dir/pkgimages_after.txt"
+if cmp -s "$job_dir/pkgimages_before.txt" "$job_dir/pkgimages_after.txt"; then
+  echo "PKGIMAGES_REWRITTEN_DURING_RUN=no" >> "$job_dir/job.meta"
+else
+  echo "PKGIMAGES_REWRITTEN_DURING_RUN=YES (diff pkgimages_before.txt pkgimages_after.txt)" >> "$job_dir/job.meta"
+fi
+echo "END=\$(date -Iseconds)" >> "$job_dir/job.meta"
+echo "EXIT_CODE=\$EXIT_CODE" >> "$job_dir/job.meta"
+exit \$EXIT_CODE
+EOF
+  rsh "cat > '$job_dir/run.sh'" < "$run_sh"
+  rm -f "$run_sh"
+  rsh "chmod +x '$job_dir/run.sh'"
+
+  {
+    echo "JOB_ID=$job_id"
+    echo "REMOTE=$REMOTE_NAME"
+    echo "SESSION=$session"
+    echo "COMMAND=$cmd_str"
+    echo "THREADS=${threads:-unset}"
+    echo "RAM_HINT=${ram:-unset}"
+    echo "PROCESS_WORKERS=${process_workers:-unset}"
+    echo "WORKLOAD=$workload build=$build_workload"
+  } | rsh "cat > '$job_dir/job.meta'"
+
+  echo "==> launching (tmux session: $session)"
+  local tmux_cmd
+  tmux_cmd="$(printf 'tmux new-session -d -s %q %q' "$session" "bash '$job_dir/run.sh'")"
+  rsh "$tmux_cmd"
+
+  echo "job id: $job_id"
+  echo "log:    spaceagora-remote log --remote $REMOTE_NAME $job_id -f"
+  echo "status: spaceagora-remote status --remote $REMOTE_NAME $job_id"
+
+  if [[ $attach -eq 1 ]]; then
+    ssh -t "$SSH_ALIAS" "tmux attach -t '$session'"
+  else
+    spawn_watcher "$job_id" "$poll_interval"
+    echo "watcher: backgrounded locally, will auto-pull output/results on completion"
+  fi
+}
+
+# Run an ad-hoc command on the remote inside tmux, without syncing code or
+# building a release: for jobs that live in a directory already on the remote
+# (a hand-built env, a Basilisk install, a copied worktree). The command survives
+# a lost ssh connection exactly like a push job, and status/log/watch/kill/pull
+# work on it the same way (pull fetches job.log and job.meta only).
+cmd_run() {
+  local remote="" cwd="" watch=1 poll_interval="$DEFAULT_POLL_INTERVAL"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --remote) remote="$2"; shift 2 ;;
+      --cwd) cwd="$2"; shift 2 ;;
+      --no-watch) watch=0; shift ;;
+      --poll-interval) poll_interval="$2"; shift 2 ;;
+      --) shift; break ;;
+      *) echo "error: unexpected run argument '$1'" >&2; exit 1 ;;
+    esac
+  done
+  if [[ $# -eq 0 ]]; then
+    echo "error: no command given after --" >&2
+    exit 1
+  fi
+  resolve_remote "$remote"
+  ensure_remote_dirs || { echo "state: unreachable ($REMOTE_NAME: ssh failed)" >&2; exit 255; }
+
+  local job_id session job_dir cmd_str run_sh cwd_arg
+  job_id="$(new_job_id)"
+  session="spaceagora-$job_id"
+  job_dir="$REMOTE_BASE/jobs/$job_id"
+  cmd_str="$(printf '%q ' "$@")"
+  # Treat --cwd as a literal path, while expanding the default home remotely.
+  cwd_arg='"$HOME"'
+  [[ -z "$cwd" ]] || cwd_arg="$(printf '%q' "$cwd")"
+  run_sh="$(mktemp)"
+  cat > "$run_sh" <<EOF
+#!/usr/bin/env bash
+cd -- $cwd_arg || { echo "EXIT_CODE=cd-failed" >> "$job_dir/job.meta"; exit 1; }
+echo "PID=\$\$" >> "$job_dir/job.meta"
+echo "START=\$(date -Iseconds)" >> "$job_dir/job.meta"
+$cmd_str > "$job_dir/job.log" 2>&1
+EXIT_CODE=\$?
+echo "END=\$(date -Iseconds)" >> "$job_dir/job.meta"
+echo "EXIT_CODE=\$EXIT_CODE" >> "$job_dir/job.meta"
+EOF
+  local rc
+  rsh "mkdir -p '$job_dir' && cat > '$job_dir/run.sh' && chmod +x '$job_dir/run.sh'" < "$run_sh"
+  rc=$?
+  rm -f "$run_sh"
+  if [[ $rc -ne 0 ]]; then
+    echo "error: could not upload job script to $REMOTE_NAME (exit $rc)" >&2
+    return "$rc"
+  fi
+  printf 'JOB_ID=%s\nREMOTE=%s\nSESSION=%s\nCWD=%s\nCOMMAND=%s\n' \
+    "$job_id" "$REMOTE_NAME" "$session" "${cwd:-~}" "$cmd_str" | rsh "cat > '$job_dir/job.meta'"
+  rc=$?
+  if [[ $rc -ne 0 ]]; then
+    echo "error: could not write job metadata on $REMOTE_NAME (exit $rc)" >&2
+    return "$rc"
+  fi
+  rsh "$(printf 'tmux new-session -d -s %q %q' "$session" "bash '$job_dir/run.sh'")" || {
+    echo "error: could not start tmux session on $REMOTE_NAME" >&2; exit 1; }
+
+  echo "job id: $job_id"
+  echo "log:    spaceagora-remote log --remote $REMOTE_NAME $job_id"
+  echo "status: spaceagora-remote status --remote $REMOTE_NAME $job_id"
+  if [[ $watch -eq 1 ]]; then
+    spawn_watcher "$job_id" "$poll_interval"
+    echo "watcher: backgrounded locally, pulls job.log/job.meta on completion"
+  fi
+}
+
+cmd_seed_data() {
+  local remote=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --remote) remote="$2"; shift 2 ;;
+      *) echo "error: unexpected argument '$1'" >&2; exit 1 ;;
+    esac
+  done
+  resolve_remote "$remote"
+  ensure_remote_dirs
+  echo "==> syncing data allowlist to $REMOTE_NAME (first run can take a while, ~20G)"
+  sync_data
+  echo "done"
+}
+
+cmd_list() {
+  local remote=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --remote) remote="$2"; shift 2 ;;
+      *) echo "error: unexpected argument '$1'" >&2; exit 1 ;;
+    esac
+  done
+  resolve_remote "$remote"
+  rsh "cd '$REMOTE_BASE/jobs' 2>/dev/null && for j in \$(ls -1t 2>/dev/null | head -20); do
+    state=\$($(job_state_sh '$j') | cut -d' ' -f2)
+    cmd=\$(grep '^COMMAND=' \"\$j/job.meta\" 2>/dev/null | cut -d= -f2- | cut -c1-60)
+    printf '%-28s %-9s %s\n' \"\$j\" \"\$state\" \"\$cmd\"
+  done"
+  local rc=$?
+  [[ $rc -eq 255 ]] && { echo "state: unreachable ($REMOTE_NAME: ssh failed)"; exit 255; }
+  return 0
+}
+
+# Remote shell snippet printing one line, "state: running|finished|died ...",
+# for job $1 (a literal job id, or a remote shell variable such as \$j).
+# "died" means no EXIT_CODE was written and no tmux session is left: the job was
+# killed from outside (reboot, OOM killer, someone's kill), not by a lost ssh
+# connection, which tmux survives.
+job_state_sh() {
+  local j="$1" m="$REMOTE_BASE/jobs/$1/job.meta"
+  echo "if grep -q '^EXIT_CODE=' \"$m\" 2>/dev/null; then echo \"state: finished (\$(grep '^EXIT_CODE=' \"$m\" | tail -1))\";
+elif tmux has-session -t \"spaceagora-$j\" 2>/dev/null; then echo 'state: running';
+elif [ -f \"$m\" ]; then echo 'state: died (no EXIT_CODE and no tmux session)';
+else echo 'state: unknown job'; fi"
+}
+
+require_job_id() {
+  if [[ -z "${1:-}" ]]; then
+    echo "error: job-id required" >&2
+    exit 1
+  fi
+}
+
+cmd_status() {
+  local remote="" job_id=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --remote) remote="$2"; shift 2 ;;
+      *) job_id="$1"; shift ;;
+    esac
+  done
+  require_job_id "$job_id"
+  resolve_remote "$remote"
+  # First line is always "state: running|finished|died|unknown|unreachable".
+  # Exit status 255 means the host could not be reached; it says nothing about
+  # the job, which keeps running in its tmux session.
+  local out
+  out="$(rsh "$(job_state_sh "$job_id"); echo; cat '$REMOTE_BASE/jobs/$job_id/job.meta' 2>/dev/null")"
+  if [[ $? -eq 255 || -z "$out" ]]; then
+    echo "state: unreachable ($REMOTE_NAME: ssh failed)"
+    exit 255
+  fi
+  echo "$out"
+}
+
+cmd_attach() {
+  local remote="" job_id=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --remote) remote="$2"; shift 2 ;;
+      *) job_id="$1"; shift ;;
+    esac
+  done
+  require_job_id "$job_id"
+  resolve_remote "$remote"
+  ssh -t "$SSH_ALIAS" "tmux attach -t 'spaceagora-$job_id'"
+}
+
+cmd_log() {
+  local remote="" job_id="" follow=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --remote) remote="$2"; shift 2 ;;
+      -f) follow=1; shift ;;
+      *) job_id="$1"; shift ;;
+    esac
+  done
+  require_job_id "$job_id"
+  resolve_remote "$remote"
+  if [[ $follow -eq 1 ]]; then
+    ssh -t "$SSH_ALIAS" "tail -n 100 -f '$REMOTE_BASE/jobs/$job_id/job.log'"
+  else
+    rsh "tail -n 200 '$REMOTE_BASE/jobs/$job_id/job.log'"
+  fi
+}
+
+cmd_kill() {
+  local remote="" job_id=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --remote) remote="$2"; shift 2 ;;
+      *) job_id="$1"; shift ;;
+    esac
+  done
+  require_job_id "$job_id"
+  resolve_remote "$remote"
+  rsh "tmux kill-session -t 'spaceagora-$job_id'"
+  # tmux kill-session skips run.sh's own EXIT_CODE write, so mark it here —
+  # otherwise any watcher polling this job.meta for completion loops forever.
+  rsh "echo 'EXIT_CODE=killed' >> '$REMOTE_BASE/jobs/$job_id/job.meta'"
+  pkill -f "$job_id/\.watch\.sh" 2>/dev/null
+}
+
+do_pull() {
+  local job_id="$1"
+  local local_dir="$RUNS_DIR/$REMOTE_NAME/$job_id"
+  mkdir -p "$local_dir" || return
+  local p rc fetched
+  for p in "${DEFAULT_PULL_PATHS[@]}"; do
+    rsh "[[ -d '$REMOTE_BASE/releases/$job_id/$p' ]]"
+    rc=$?
+    case "$rc" in
+      0)
+        mkdir -p "$local_dir/$p" || return
+        rsync -az "$SSH_ALIAS:$REMOTE_BASE/releases/$job_id/$p/" "$local_dir/$p/" || return
+        ;;
+      1) ;; # Ad-hoc jobs have no release/output directories.
+      *) return "$rc" ;;
+    esac
+  done
+  for p in job.log job.meta; do
+    # A job that died before its command started may never have created a log.
+    if [[ "$p" == job.log ]]; then
+      rsh "[[ -f '$REMOTE_BASE/jobs/$job_id/$p' ]]"
+      rc=$?
+      [[ $rc -eq 1 ]] && continue
+      [[ $rc -eq 0 ]] || return "$rc"
+    fi
+    # Keep a previous successful pull intact if this transfer is interrupted.
+    fetched="$(mktemp "$local_dir/.$p.XXXXXX")" || return
+    rsh "cat '$REMOTE_BASE/jobs/$job_id/$p'" > "$fetched" 2>/dev/null
+    rc=$?
+    if [[ $rc -ne 0 ]]; then
+      rm -f "$fetched"
+      return "$rc"
+    fi
+    mv -f "$fetched" "$local_dir/$p" || return
+  done
+  echo "pulled to $local_dir"
+}
+
+cmd_pull() {
+  local remote="" job_id=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --remote) remote="$2"; shift 2 ;;
+      *) job_id="$1"; shift ;;
+    esac
+  done
+  require_job_id "$job_id"
+  resolve_remote "$remote"
+  do_pull "$job_id"
+}
+
+spawn_watcher() {
+  local job_id="$1" poll_interval="$2"
+  local local_dir="$RUNS_DIR/$REMOTE_NAME/$job_id"
+  mkdir -p "$local_dir"
+  local watch_log="$local_dir/.watch.log"
+  local watch_sh="$local_dir/.watch.sh"
+  # Written to a real file (rather than an inline `bash -c "..."` string) so the
+  # generation-time substitutions below (SSH_ALIAS, REMOTE_BASE, job_id, ...) and
+  # the runtime-only expansions (escaped $meta / $(...)) don't fight over the
+  # same quoting layer.
+  cat > "$watch_sh" <<EOF
+#!/usr/bin/env bash
+while true; do
+  # An unreachable host (status exit 255) only means "ask again later".
+  state=\$("$SCRIPT_DIR/spaceagora-remote" status --remote "$REMOTE_NAME" "$job_id" 2>/dev/null | head -1)
+  case "\$state" in
+    "state: finished"*|"state: died"*)
+      if "$SCRIPT_DIR/spaceagora-remote" pull --remote "$REMOTE_NAME" "$job_id"; then
+        echo "watch complete: \$state"
+        command -v notify-send >/dev/null 2>&1 && notify-send 'spaceagora-remote' "job $job_id: \$state"
+        break
+      fi
+      echo "pull failed; will retry: \$state" ;;
+    *) [ "\$state" != "\$last" ] && echo "\$(date -Iseconds) \$state"; last="\$state" ;;
+  esac
+  sleep "$poll_interval"
+done
+EOF
+  chmod +x "$watch_sh"
+  setsid bash "$watch_sh" < /dev/null > "$watch_log" 2>&1 &
+  disown
+}
+
+cmd_watch() {
+  local remote="" job_id="" poll_interval="$DEFAULT_POLL_INTERVAL"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --remote) remote="$2"; shift 2 ;;
+      --poll-interval) poll_interval="$2"; shift 2 ;;
+      *) job_id="$1"; shift ;;
+    esac
+  done
+  require_job_id "$job_id"
+  resolve_remote "$remote"
+  spawn_watcher "$job_id" "$poll_interval"
+  echo "watcher backgrounded for $job_id (log: $RUNS_DIR/$REMOTE_NAME/$job_id/.watch.log)"
+}
+
+main() {
+  if [[ $# -eq 0 ]]; then
+    usage
+    exit 1
+  fi
+  load_config
+  local sub="$1"; shift
+  case "$sub" in
+    push) cmd_push "$@" ;;
+    run) cmd_run "$@" ;;
+    seed-data) cmd_seed_data "$@" ;;
+    list) cmd_list "$@" ;;
+    status) cmd_status "$@" ;;
+    attach) cmd_attach "$@" ;;
+    log) cmd_log "$@" ;;
+    pull) cmd_pull "$@" ;;
+    watch) cmd_watch "$@" ;;
+    kill) cmd_kill "$@" ;;
+    -h|--help|help) usage ;;
+    *) echo "error: unknown subcommand '$sub'" >&2; usage; exit 1 ;;
+  esac
+}
+
+main "$@"

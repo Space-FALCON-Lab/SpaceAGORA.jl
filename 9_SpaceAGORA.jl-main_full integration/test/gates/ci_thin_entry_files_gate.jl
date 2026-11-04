@@ -1,0 +1,57 @@
+const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
+
+const THIN_ENTRY_PATHS = [
+    joinpath("src", "models", "dynamics", "coupled", "perturbations.jl"),
+    joinpath("src", "models", "environment", "gravity", "gravity_models.jl"),
+    joinpath("src", "interfaces", "analysis", "verification", "telemetry_verification.jl"),
+    joinpath("src", "models", "gnc", "guidance", "guidance_models.jl"),
+    joinpath("src", "orchestration", "parallel", "policy", "parallel_policy.jl"),
+    joinpath("src", "orchestration", "simulation", "callbacks", "density_callbacks.jl"),
+    joinpath("src", "orchestration", "simulation", "callbacks", "gram_track_cache.jl"),
+    joinpath("src", "models", "dynamics", "coupled", "force_torque_models.jl"),
+    joinpath("benchmarks", "studies", "performance_runtime_analysis.jl"),
+    joinpath("benchmarks", "studies", "performance_smart_parallel_ladder.jl"),
+    joinpath("benchmarks", "studies", "parallelization_performance.jl"),
+    joinpath("benchmarks", "studies", "telemetry_hybrid_tuner.jl"),
+    joinpath("benchmarks", "studies", "telemetry_odyssey_tuner.jl"),
+]
+
+function _noncomment_nonblank_lines(text::String)
+    return [line for line in split(text, '\n') if begin
+        stripped = strip(line)
+        !isempty(stripped) && !startswith(stripped, '#')
+    end]
+end
+
+for rel in THIN_ENTRY_PATHS
+    path = joinpath(REPO_ROOT, rel)
+    isfile(path) || error("Missing thin entry file: $rel")
+    src = read(path, String)
+    lines = _noncomment_nonblank_lines(src)
+    length(lines) <= 80 || error("Thin entry file grew too large: $rel ($(length(lines)) non-comment lines)")
+
+    occursin(r"^function\s"m, src) && error("Thin entry file must not own function definitions: $rel")
+    occursin(r"^(Base\.@kwdef\s+)?mutable\s+struct\s"m, src) && error("Thin entry file must not own mutable struct definitions: $rel")
+    occursin(r"^(Base\.@kwdef\s+)?struct\s"m, src) && error("Thin entry file must not own struct definitions: $rel")
+end
+
+# Benchmark launchers must stay thin forwarders to their split implementations
+# (moved here from the retired ci_benchmark_wrapper_parity_gate).
+let launcher = joinpath(REPO_ROOT, "benchmarks", "studies", "performance_runtime_analysis.jl")
+    src = read(launcher, String)
+    (
+        occursin(joinpath("performance_runtime_analysis", "main.jl"), src) ||
+        occursin("\"performance_runtime_analysis\", \"main.jl\"", src)
+    ) || error("Runtime-analysis canonical launcher does not include split main.jl")
+    count(==('\n'), src) + 1 <= 10 || error("Runtime-analysis canonical launcher is not thin (expected <=10 lines)")
+end
+let launcher = joinpath(REPO_ROOT, "benchmarks", "studies", "parallelization_performance.jl")
+    src = read(launcher, String)
+    (
+        occursin(joinpath("parallelization_performance", "execution.jl"), src) ||
+        occursin("\"parallelization_performance\", \"execution.jl\"", src)
+    ) || error("Parallelization-performance canonical launcher does not include standalone execution.jl")
+    count(==('\n'), src) + 1 <= 20 || error("Parallelization-performance canonical launcher is not thin (expected <=20 lines)")
+end
+
+println("thin_entry_files_gate_ok")

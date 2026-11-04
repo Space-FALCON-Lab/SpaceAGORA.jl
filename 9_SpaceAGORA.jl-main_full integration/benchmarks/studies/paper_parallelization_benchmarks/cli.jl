@@ -1,0 +1,1710 @@
+const PPB_STUDY_DIR    = @__DIR__
+const PPB_DEFAULT_OUTDIR = joinpath(PPC_REPO_ROOT, "output", "performance", "paper_benchmarks")
+
+# ── Phase definition ─────────────────────────────────────────────────────────
+
+# thread_mode controls how the thread ladder is applied for each phase:
+#   :full_ladder   — use the full machine-scaled ladder (B1, B2, B3, B7)
+#   :max_only      — fix at the machine maximum for a fair profile comparison (B5)
+#   :single        — force 1 thread per Julia instance; parallelism comes from
+#                    process count only (B4, B8 outer_process runs)
+#   :low_high      — 1 and the machine maximum only (B6)
+#   :router_ladder — geometric [1, 8, 32] clipped to physical cores and to
+#                    PPB_ROUTER_LADDER_MAX_THREADS, the
+#                    standard budget axis for the expanded router evaluation
+#                    (B9-B14). See _ppb_thread_ladder for why.
+#
+# worker_ladder: when non-empty, the phase is run once per entry, each time
+# varying process_workers to that value.  This is used for B4 to
+# produce throughput-vs-workers curves.  Serial and full_smart modes run
+# identically regardless of worker count, so their rows will be duplicated
+# in the output CSV; the analysis layer should filter on mode when plotting.
+#
+# budget_grid: when non-empty, the phase is run once per (process_workers,
+# threads) pair with the thread ladder pinned to that pair's thread count.  Used
+# by B13 to split one fixed total core budget between process and thread
+# parallelism without running the full cross product (which would also vary the
+# total budget, the one thing that phase has to hold constant).  Mutually
+# exclusive with worker_ladder.
+
+Base.@kwdef struct PPBPhase
+    id::String
+    label::String
+    cases::Vector{String}
+    parity_cases::Vector{String}
+    modes::Vector{String}
+    mc_samples::Vector{Int}
+    repeats::Int
+    warmup::Int
+    thread_mode::Symbol        = :full_ladder
+    worker_ladder::Vector{Int} = Int[]
+    budget_grid::Vector{Tuple{Int, Int}} = Tuple{Int, Int}[]
+    # A budget grid the phase sized against the host itself (see the P-series
+    # helpers below), rather than one declared against a 32-core reference box.
+    # `_ppb_budget_grid`'s rescale and `_ppb_cap_worker_counts`'s
+    # product filter both exist to fit a *declared* grid onto a smaller
+    # machine; applied to a grid that was already derived from this machine's
+    # core count they would replace it with divisor pairs of the worker cap and
+    # silently discard the axis the phase is sweeping. Only the per-entry
+    # worker cap still applies, because that one is a memory limit, not a
+    # portability rescale.
+    budget_grid_fixed::Bool    = false
+    # Modes run ONCE at the grid's full budget instead of once per split:
+    # `threads = process_workers = ` the budget (see `_ppb_full_budget`), so the
+    # mode is handed the whole machine and chooses its own split, the way a user
+    # would run it. Every name here must also be in `modes`, which stays the
+    # list of everything the phase runs (the precompile workload and
+    # --lean-modes read it); the per-split runs take `modes` minus these. Empty
+    # for every phase but P5f, and meaningless without a budget_grid.
+    full_budget_modes::Vector{String} = String[]
+end
+
+# A copy of `phase` with the named fields replaced. Every derived phase (lean,
+# preview, caps, floors) is built through this, so a field added to PPBPhase
+# is carried through them rather than silently reset to its default.
+_ppb_phase_with(phase::PPBPhase; kw...) =
+    PPBPhase(; (f => get(kw, f, getfield(phase, f)) for f in fieldnames(PPBPhase))...)
+
+# The per-split modes and the full-budget modes of a phase. A full-budget mode
+# that --lean-modes trimmed from `modes` is not run at all.
+_ppb_full_budget_modes(phase::PPBPhase)::Vector{String} =
+    [m for m in phase.modes if m in phase.full_budget_modes]
+_ppb_split_modes(phase::PPBPhase)::Vector{String} =
+    [m for m in phase.modes if !(m in phase.full_budget_modes)]
+
+# A grid whose entries all spend the same total: every split of one budget.
+_ppb_is_split_grid(grid::Vector{Tuple{Int, Int}})::Bool =
+    !isempty(grid) && allequal(w * t for (w, t) in grid)
+
+Base.@kwdef struct PPBConfig
+    phases::Vector{String}  = String[]
+    outdir::String          = PPB_DEFAULT_OUTDIR
+    threads::Vector{Int}    = Int[]
+    process_workers::Int    = 32
+    mc_samples_max::Union{Nothing, Int} = nothing
+    seed::Int               = 20260615
+    solver_mode::String     = "auto_stiff"
+    cpu_pinning::Vector{Int} = Int[]
+    dry_run::Bool           = false
+    preview::Bool           = false
+    quick::Bool             = false
+    lean_modes::Bool        = false
+    resume::String          = ""
+end
+
+# Which static routes have actually won a launch point in this phase, measured.
+#
+# --lean-modes trims each phase's ladder to serial + these + the adaptive arms
+# (policy_v2 and predictive), on the
+# reasoning that the shipped profiles are not what is under test any more. Both
+# laptop routing fixes (254957e7 machine-class gate, 0b333ad0 memory-aware
+# process sizing) are gated behind OuterRouteTuning fields that only R6 sets,
+# and both commit messages say the shipped rule/tuning is unchanged -- so
+# re-measuring R4 and R5 re-measures behaviour that did not change.
+#
+# The winners are per PHASE, not per case: the best static route moves with
+# thread count within a single case (B11 e4: outer_threads at t8,
+# outer_inner_static at t12; B12 interact_64: outer_threads at t8,
+# outer_process at t12). Pinning one static route per phase would score the
+# router against a baseline that is not the best one at every rung, which is
+# the error 1d41a327 already made once with inner_only. Every mode that won
+# anywhere is therefore kept.
+#
+# Derived from run 20260902_153738 + 20260905_183451 + the policy-v2 worktree
+# runs, via scripts/plot_adaptive_vs_best_static.py's best_static_mode column.
+# Re-derive it before trusting it on a new machine: a different core count
+# moves which route wins.
+const PPB_BEST_STATIC_WINNERS = Dict{String, Vector{String}}(
+    "B1"  => ["outer_threads"],
+    "B2"  => ["outer_threads"],
+    "B3"  => ["outer_threads"],
+    "B4"  => ["outer_process"],
+    "B5"  => ["inner_only", "outer_threads"],
+    "B6"  => ["outer_process", "outer_threads"],
+    "B7"  => ["outer_threads"],
+    "B8"  => ["outer_process"],
+    "B9"  => ["inner_only", "outer_inner_static", "outer_threads"],
+    "B10" => ["inner_only", "outer_inner_static", "outer_threads"],
+    "B11" => ["inner_only", "outer_inner_static", "outer_threads"],
+    "B12" => ["outer_inner_static", "outer_process", "outer_threads"],
+    "B13" => ["outer_process", "outer_threads"],
+    "B14" => ["inner_only", "outer_inner_static", "outer_threads"],
+    "B15" => ["outer_process", "outer_threads", "inner_only"],   # inner_only: control, see the phase
+    # The light set mirrors its B phase's winners (the modes it lists already
+    # are the lean set, so trimming is a no-op; the entries keep --lean-modes
+    # honest if a light phase ever grows a mode).
+    "L8"  => ["outer_process"],
+    "L9"  => ["inner_only", "outer_inner_static", "outer_threads"],
+    "L10" => ["inner_only", "outer_inner_static", "outer_threads"],
+    "L11" => ["inner_only", "outer_inner_static", "outer_threads"],
+    "L12" => ["outer_inner_static", "outer_process", "outer_threads"],
+    "L13" => ["outer_process", "outer_threads"],
+    "L14" => ["inner_only", "outer_inner_static", "outer_threads"],
+    "L15" => ["outer_process", "outer_threads"],
+)
+
+"""
+    _ppb_lean_phase(phase) -> PPBPhase
+
+Trim `phase.modes` to serial + its measured best-static winners + the adaptive
+arms (policy_v2 and predictive),
+preserving the phase's own ordering. serial is kept wherever the phase already
+had it: the harness derives speedup, thread/process efficiency and the
+below-noise-floor flag from the serial median, and a phase that drops it loses
+the floor test that decides which points are reportable at all.
+
+A phase with no recorded winners is returned unchanged rather than guessed at.
+"""
+function _ppb_lean_phase(phase::PPBPhase)::PPBPhase
+    winners = get(PPB_BEST_STATIC_WINNERS, phase.id, String[])
+    isempty(winners) && return phase
+    keep = Set{String}(winners)
+    push!(keep, "serial")
+    push!(keep, "policy_v2")
+    # R7 is the arm R6 is being compared against, so a lean ladder that kept
+    # policy_v2 and dropped predictive would drop the comparison itself.
+    push!(keep, "predictive")
+    modes = [m for m in phase.modes if m in keep]
+    isempty(modes) && return phase
+    modes == phase.modes && return phase
+    println("[paper-benchmarks] phase $(phase.id): lean modes -> $(join(modes, ", "))")
+    return _ppb_phase_with(phase; modes = modes)
+end
+
+# Preview mode: caps N_sat at 64, MC samples at 16, workers at 4, repeats at 2.
+# Ceiling on the router ladder's top rung, independent of how many physical
+# cores the machine has.
+#
+# These phases are about which route the router picks, not about how far the
+# machine scales -- that is B1/B2/B7's job, and they run the full ladder. Taking
+# the router ladder all the way to a 64-core box's top rung buys a data point
+# that is mostly a measurement of oversubscription: §9 records every workload
+# regressing past the physical-core count, the benchmark machine is shared with
+# other users' jobs, and a rung that spends every core is the one most likely to
+# be contending with something else rather than measuring routing. 32 keeps the
+# ladder spanning a 32x range while leaving headroom on a 64-core host.
+const PPB_ROUTER_LADDER_MAX_THREADS = 32
+
+const PPB_PREVIEW_MAX_N_SAT   = 64
+const PPB_PREVIEW_MAX_SAMPLES = 16
+const PPB_PREVIEW_MAX_WORKERS = 4
+const PPB_PREVIEW_REPEATS     = 2
+const PPB_PREVIEW_WARMUP      = 1
+# B7/B8 are skipped under --preview. Preview exists to smoke-test the phase
+# structure on a laptop and caps N_sat at 64, but B7's whole premise is
+# workloads large enough for scaling to be observable -- and its case filter
+# would drop every case (all are >64 satellites) and then fall back to running
+# the two largest anyway. B8's samples are seconds each by design. Run them on
+# the benchmark machine or not at all.
+# B9-B14 join B7/B8 for the same reason: their whole premise is workloads large
+# enough for routing to be observable, and preview's 64-satellite / 16-sample caps
+# would either drop every case or shrink them back under the measurability floor
+# the phases exist to stay above. Smoke-test them with an explicit
+# --phases=B10 --threads=1 run against the `test` profile instead.
+const PPB_PREVIEW_SKIP_PHASES =
+    Set{String}(["B7", "B8", "B9", "B10", "B11", "B12", "B13", "B14", "B15",
+                 "L8", "L9", "L10", "L11", "L12", "L13", "L14", "L15"])
+
+# --light: the router-evaluation axes of B8-B15 at a fraction of the points.
+# Every axis and every mechanism the B phases exercise (worker ladder, thread
+# ladder, GRAM surrogate, force-model stack, interacting vs. independent Monte
+# Carlo, the budget split, cadence, and the nested Monte Carlo grid with its
+# rounds ties) is kept; what goes is rungs, cases and repeats. Per-point cost
+# is ~80 s of Julia start-up and JIT plus the solves, so the point count is
+# the wall clock: L8-L15 is ~100 points against ~330 for the lean B8-B15, and
+# runs in about 3 h on the 12-core reference box against ~12 h. Cases are the
+# B cases themselves, so every serial baseline stays above the 3 s floor and
+# a light row is directly comparable with the same case's B row. Not in the
+# light set: atmo256_gram_live* (the GRAM lock pins every route to the same
+# 19-41 s), interact_256sat, the 4-8 sample and 64-sample mcgrid corners,
+# and B12's 256-sample campaigns (64 here).
+const PPB_LIGHT_PHASES = ["L8", "L9", "L10", "L11", "L12", "L13", "L14", "L15"]
+
+function _ppb_preview_phase(phase::PPBPhase)::PPBPhase
+    cases = filter(c -> _ppb_n_sat(c) <= PPB_PREVIEW_MAX_N_SAT, phase.cases)
+    isempty(cases) && (cases = phase.cases[1:min(2, end)])
+    parity = filter(c -> _ppb_n_sat(c) <= PPB_PREVIEW_MAX_N_SAT, phase.parity_cases)
+    isempty(parity) && (parity = phase.parity_cases[1:min(1, end)])
+    samples = filter(s -> s <= PPB_PREVIEW_MAX_SAMPLES, phase.mc_samples)
+    isempty(samples) && (samples = [1])
+    workers = filter(w -> w <= PPB_PREVIEW_MAX_WORKERS, phase.worker_ladder)
+    isempty(workers) && !isempty(phase.worker_ladder) && (workers = [1, 2])
+    return _ppb_phase_with(phase;
+        label         = phase.label * " [preview]",
+        cases         = cases,
+        parity_cases  = parity,
+        mc_samples    = samples,
+        repeats       = PPB_PREVIEW_REPEATS,
+        warmup        = PPB_PREVIEW_WARMUP,
+        worker_ladder = workers,
+        budget_grid   = _ppb_preview_budget_grid(phase),
+    )
+end
+
+# A host-sized split grid (budget_grid_fixed, every entry one split of the same
+# budget: P5, P5f) is kept whole under --preview, and its runs are not held to
+# PPB_PREVIEW_MAX_WORKERS (see `_ppb_preview_caps_workers`). The preview cap
+# exists to fit a grid declared against a 32-core box onto a laptop; this grid
+# is already the host's own budget, and filtering it to products of at most 4
+# emptied it on any host above 4 cores, so the phase ran as one unsplit run
+# that measured none of its axis. Every other grid keeps the preview filter.
+function _ppb_preview_budget_grid(phase::PPBPhase)::Vector{Tuple{Int, Int}}
+    _ppb_preview_keeps_grid(phase) && return phase.budget_grid
+    return filter(p -> p[1] * p[2] <= PPB_PREVIEW_MAX_WORKERS, phase.budget_grid)
+end
+
+_ppb_preview_keeps_grid(phase::PPBPhase)::Bool =
+    phase.budget_grid_fixed && _ppb_is_split_grid(phase.budget_grid)
+
+
+# ── Paper routing figures (P1-P5) ─────────────────────────────────────────────
+#
+# The four comparisons the paper reports, each as "R6 against serial and against
+# the best static route", with raw medians and the ratio to that point's serial
+# baseline:
+#
+#   P1  constellation size scaling at one fixed budget   (1 -> 4096 spacecraft)
+#   P2  thread scaling at one fixed spacecraft count     (4096, budget ladder)
+#   P3  Monte Carlo, one spacecraft per sample, resource ladder (cheap samples)
+#   P4  the same ladder on compute-bound aerobraking samples
+#   P5  Monte Carlo over constellations, one fixed budget, every worker/thread split
+#
+# Sized from the host rather than declared against a reference box, because the
+# same five phases run on both paper machines: every ladder and grid below is
+# derived from PPB_PAPER_BUDGET, and the phases carrying a grid set
+# budget_grid_fixed so the portability rescale leaves them alone.
+#
+# P3/P4 sweep the *budget*, not the split: an entry (b, b) gives every route b
+# units of the resource it actually uses -- b worker processes to the process
+# route, b threads to the thread route -- so at each rung the routes are
+# comparable and R6 is choosing between them at equal cost. That is the axis a
+# Monte Carlo scaling figure needs, and it is the one thing B13's fixed-total
+# split grid cannot express. P5 is the fixed-total split grid, which is the
+# right axis once the samples themselves carry constellations and both levels
+# of parallelism are live at once.
+const PPB_PAPER_BUDGET = let
+    override = tryparse(Int, strip(get(ENV, "SPACEAGORA_PPB_PAPER_BUDGET", "")))
+    cores = _ppc_physical_core_count()
+    budget = override === nothing ? min(cores, PPB_ROUTER_LADDER_MAX_THREADS) : override
+    max(1, budget)
+end
+
+# Geometric rungs from 1 to the budget, the budget itself always included.
+function _ppb_paper_budget_ladder(budget::Int=PPB_PAPER_BUDGET)::Vector{Int}
+    rungs = Int[]
+    b = 1
+    while b < budget
+        push!(rungs, b)
+        b *= 2
+    end
+    push!(rungs, budget)
+    return unique(rungs)
+end
+
+# One (workers, threads) entry per budget rung, each route getting the same
+# number of units of whichever resource it spends.
+_ppb_paper_resource_grid(budget::Int=PPB_PAPER_BUDGET) =
+    [(b, b) for b in _ppb_paper_budget_ladder(budget)]
+
+# Every split of one fixed budget, process-only through thread-only.
+_ppb_paper_split_grid(budget::Int=PPB_PAPER_BUDGET) =
+    [(w, budget ÷ w) for w in 1:budget if budget % w == 0]
+
+# The iso-work L50 ladder from the case catalog: one (spacecraft, mission
+# seconds) pair per rung, each sized so its serial baseline clears the 3 s
+# measurability floor. Generating the case names from that table keeps the phase
+# and the catalog from drifting apart when a duration is recalibrated.
+const PPB_PAPER_SIZE_CASES =
+    ["gravity_$(n)sat_l50_vacuum_$(mission_s)s" for (n, mission_s) in PPC_L50_ISO_MISSION_S]
+
+_ppb_paper_size_case(n::Int) =
+    PPB_PAPER_SIZE_CASES[something(findfirst(p -> p[1] == n, PPC_L50_ISO_MISSION_S), 1)]
+
+# ── P6/P6p: the force-model and atmosphere figure (F2) ───────────────────────
+#
+# One constellation size, six traces, thread ladder 1..32: what happens to
+# constellation thread scaling as the force model and the density path get
+# heavier. Trace 2 is P2's own rung, reused rather than duplicated, so the figure
+# and the P1/P2 tables share a serial baseline.
+#
+#   1  degree 20 harmonics, vacuum                     gravity_<N>sat_l20_vacuum_<S>s
+#   2  degree 50 harmonics, vacuum                     gravity_<N>sat_l50_vacuum_<S>s
+#   3  + solar radiation pressure + Sun/Moon third body  gravity_<N>sat_l50_srp_nbody_vacuum_<S>s
+#   4  degree 50 + analytic exponential atmosphere     aero_<N>sat_l50_expatm_<S>s
+#   5  degree 50 + native GRAM, look-ahead density cache  aero_<N>sat_l50_gram_lookahead_<S>s
+#   6  degree 50 + native GRAM on the process route    aero_<N>sat_l50_gram_process_<S>s
+#
+# WHY TWO PHASES. A phase declares one mode ladder for all of its cases, and the
+# six traces do not share one. Traces 1-5 are single simulations of N spacecraft,
+# where the thing under test is the inner (per-satellite RHS) split, and the
+# process route is a no-op on them -- the harness only spreads *samples* across
+# processes (`uses_process_pool = sample_count > 1 && mode.backend == "process"`,
+# execution.jl), so outer_process on a one-sample constellation case degenerates
+# to one in-process solve and would contribute six identical rows per case.
+# Trace 6 is the same spacecraft-missions arranged as N one-spacecraft samples,
+# which is the only arrangement the process route can spread, and running *it*
+# under inner_only would be N sequential solves with the pool idle. Splitting
+# them is what keeps every point in this figure a measurement; both phases are
+# the same figure and are archived together.
+#
+# SIZE. 4096 spacecraft, and the native-GRAM traces fit there too -- which is not
+# what the router's own memory model predicts. `native_gram_worker_extra_bytes`
+# charges 90 MB per spacecraft for a native GRAM constellation (~360 GB at 4096,
+# more than the benchmark box has), but the measured resident memory of a live
+# GRAM constellation on that box is 1.7 GB plus ~1.0 MB per spacecraft, i.e.
+# ~5.9 GB at 4096; the process trace's 32 workers at 128 samples each is the
+# binding case at ~174 GB against 250 GB installed. Both figures are fitted from
+# measurement in FIGURE_RUNS.md, which names the CSV behind each one. The
+# discrepancy with the 90 MB constant is recorded there; it is not resolved here.
+#
+# MISSION LENGTH IS PER TRACE. See the ppc_single_config branches and
+# FIGURE_RUNS.md: a shared duration puts the light traces under the 3 s
+# measurability floor and the GRAM traces into the hours, so each one is sized
+# against trace 2's measured serial baseline instead, and the duration is a
+# column of the figure's table. These are per-machine predictions -- recalibrate
+# with `bash paper_figure_runs.sh calibrate-p6` before a paper run on a host they
+# were not derived for.
+const PPB_P6_N_SAT              = 4096
+const PPB_P6_L20_MISSION_S      = 19700
+const PPB_P6_VACUUM_MISSION_S   = 5800
+const PPB_P6_AERO_MISSION_S     = 100
+
+_ppb_p6_l20_case(n::Int=PPB_P6_N_SAT)   = "gravity_$(n)sat_l20_vacuum_$(PPB_P6_L20_MISSION_S)s"
+_ppb_p6_nbody_case(n::Int=PPB_P6_N_SAT) = "gravity_$(n)sat_l50_srp_nbody_vacuum_$(PPB_P6_VACUUM_MISSION_S)s"
+_ppb_p6_aero_case(variant::String, n::Int=PPB_P6_N_SAT) =
+    "aero_$(n)sat_l50_$(variant)_$(PPB_P6_AERO_MISSION_S)s"
+
+# ── P7: one spacecraft, short missions ───────────────────────────────────────
+#
+# The only one-spacecraft, one-simulation point in P1-P6 is P1's bottom rung, a
+# 4 150 000 s pure-gravity mission sized to clear the 3 s floor, and there every
+# route resolved to serial execution. P7 is the other end: one spacecraft, about
+# one orbit, the full thread budget, so a route's fixed setup (planning, the
+# campaign machinery, calibration probes) is a large share of the wall time and
+# the table reads as "what does choosing a route cost when there is nothing to
+# parallelize". Its serial baselines are under the floor by design; the absolute
+# difference from serial in seconds is the result, not the speedup ratio.
+#
+# Three rows, one force model each, iso-mission (PPC_P7_MISSION_S, derived in
+# cases.jl from the orbit P1's spacecraft flies): P1's degree-50 vacuum physics,
+# P6 trace 3's degree 50 + SRP + third body, and P6 trace 4's degree 50 +
+# exponential-atmosphere aero on an orbit inside the atmosphere. The case
+# catalog's P7 block says why the aero row keeps this duration instead of trace
+# 4's 100 s.
+const PPB_P7_MISSION_S = PPC_P7_MISSION_S
+const PPB_P7_CASES = [
+    "gravity_1sat_l50_vacuum_$(PPB_P7_MISSION_S)s",
+    "gravity_1sat_l50_srp_nbody_vacuum_$(PPB_P7_MISSION_S)s",
+    "aero_1sat_l50_expatm_$(PPB_P7_MISSION_S)s",
+]
+
+# ── Phase catalog ─────────────────────────────────────────────────────────────
+
+const PAPER_BENCHMARK_PHASES = PPBPhase[
+
+    PPBPhase(
+        id    = "B1",
+        label = "Constellation Scaling — Gravity-Only Baseline",
+        cases = [
+            "single_inverse_square_vacuum",
+            "gravity_4sat_inverse_square_vacuum",
+            "gravity_16sat_inverse_square_vacuum",
+            "gravity_64sat_inverse_square_vacuum",
+            "gravity_256sat_inverse_square_vacuum",
+            "gravity_1024sat_inverse_square_vacuum",
+        ],
+        parity_cases = [
+            "single_inverse_square_vacuum",
+            "gravity_16sat_inverse_square_vacuum",
+        ],
+        modes      = ["serial", "outer_threads", "full_smart", "policy_v2"],
+        mc_samples = [1],
+        repeats    = 5,
+        warmup     = 2,
+        thread_mode = :full_ladder,
+    ),
+
+    PPBPhase(
+        id    = "B2",
+        label = "Constellation Scaling — L20 Harmonics",
+        cases = [
+            "single_harmonics_l20_vacuum",
+            "gravity_4sat_l20_vacuum",
+            "gravity_16sat_l20_vacuum",
+            "gravity_64sat_l20_vacuum",
+            "gravity_256sat_l20_vacuum",
+            "gravity_1024sat_l20_vacuum",
+        ],
+        parity_cases = [
+            "single_harmonics_l20_vacuum",
+            "gravity_16sat_l20_vacuum",
+        ],
+        modes      = ["serial", "outer_threads", "outer_inner_adaptive", "full_smart", "policy_v2"],
+        mc_samples = [1],
+        repeats    = 5,
+        warmup     = 2,
+        thread_mode = :full_ladder,
+    ),
+
+    PPBPhase(
+        id    = "B3",
+        label = "Constellation Scaling — Atmosphere and GRAMTrackCache Surrogate",
+        cases = [
+            "multi_16_aero_surrogate_cached",
+            "multi_64_high_fidelity",
+        ],
+        parity_cases = [
+            "multi_16_aero_surrogate_cached",
+        ],
+        modes      = ["serial", "outer_threads", "full_smart", "policy_v2"],
+        mc_samples = [1],
+        repeats    = 5,
+        warmup     = 2,
+        thread_mode = :full_ladder,
+    ),
+
+    PPBPhase(
+        id    = "B4",
+        label = "Monte Carlo Throughput Scaling",
+        cases = [
+            "montecarlo_mars_aerobraking",
+            "montecarlo_high_accuracy",
+        ],
+        parity_cases = [
+            "montecarlo_mars_aerobraking",
+            "montecarlo_high_accuracy",
+        ],
+        modes      = ["serial", "outer_process", "full_smart", "policy_v2"],
+        mc_samples = [1, 4, 16, 64, 256, 1024],
+        repeats    = 3,
+        warmup     = 1,
+        # 1 thread per process: parallelism comes from process count.
+        # 256 GB RAM allows up to 32 GRAM+SPICE processes safely.
+        thread_mode   = :single,
+        worker_ladder = [1, 2, 4, 8, 16, 32],
+    ),
+
+    PPBPhase(
+        id    = "B5",
+        label = "Routing Profile Comparison R0–R5",
+        cases = [
+            "gravity_16sat_l20_vacuum",
+            "multi_16_aero_surrogate_cached",
+            "articulated_1sat_fullstack",
+        ],
+        parity_cases = [
+            "gravity_16sat_l20_vacuum",
+            "multi_16_aero_surrogate_cached",
+            "articulated_1sat_fullstack",
+        ],
+        modes = [
+            "serial",
+            "outer_threads",
+            "inner_only",
+            "outer_inner_static",
+            "outer_inner_adaptive",
+            "full_smart", "policy_v2",
+        ],
+        mc_samples  = [1],
+        repeats     = 5,
+        warmup      = 2,
+        # Fix thread count at machine maximum so all profiles are compared at
+        # the same total thread budget.
+        thread_mode = :max_only,
+    ),
+
+    PPBPhase(
+        id    = "B6",
+        label = "Small-Workload Control — Router Evaluation Below the Measurability Floor",
+        # RETAINED AS A CONTROL, NOT AS THE ROUTER EVALUATION. This phase was
+        # point 8's first response to B5's narrowness, and its numbers turned out
+        # not to be reportable: every case it draws on resolves in 0.017-2.9 s
+        # post-warm-up, so fixed per-solve setup dominates, no route can
+        # distinguish itself, and the run of 2026-08-18 measured 1.0x speedup on 9
+        # of 11 cases with regret of 0.0-3.3% -- all of it inside the ~16%
+        # run-to-run variance §7.4 of the findings doc records for measurements
+        # this size. B9-B14 below are the actual expanded evaluation, sized so
+        # routing is observable.
+        #
+        # It is kept, rather than deleted, because "below roughly a 3 s serial
+        # baseline no routing profile is distinguishable" is a real and useful
+        # boundary on the paper's claim, and this phase is the evidence for it.
+        # Its regret rows are flagged `below_noise_floor` in reporting so they are
+        # never quoted as router performance.
+        #
+        # Original rationale, still accurate as a description of what it sweeps:
+        # it holds the mode ladder to the routes that matter most
+        # for router *regret* (serial/outer_threads/outer_process as static
+        # baselines, outer_inner_adaptive/full_smart as the routes being
+        # judged against them -- see PPB_STATIC_MODES/PPB_ADAPTIVE_MODES in
+        # reporting.jl) and instead sweeps the workload axes B5 held fixed:
+        #   - spacecraft count:      4 / 16 / 64 / 256 (many_sat_high_fidelity ladder)
+        #   - atmosphere/GRAM usage: montecarlo_mars_gram_live (native
+        #                            GRAMAtmosphereModel, not the analytic
+        #                            ExponentialAtmosphereModel every other
+        #                            atmosphere case here uses). multi_16_gram_live
+        #                            (the interacting/16-satellite counterpart) is
+        #                            defined in cases.jl but deliberately NOT run
+        #                            here: it triggers an unbounded per-call memory
+        #                            leak in the vendored GRAMSuite.jl native
+        #                            binding (reproduced with solver_mode=tsit5 too,
+        #                            so it isn't the auto_stiff/Rodas5P path) --
+        #                            pre-existing, out of scope for this phase,
+        #                            being investigated separately. Do not add it
+        #                            back to this case list until that's resolved.
+        #   - force/actuator count:  articulated_1sat_fullstack (harmonics+aero+
+        #                            thermal+attitude) and multi_8sat_magnetorquer_attitude
+        #                            (the only case in this whole catalog with a
+        #                            real control_effector -- every other case has
+        #                            control_effectors=())
+        #   - interacting vs.
+        #     independent:          constellation cases vs. montecarlo_mars_gram_live/
+        #                           montecarlo_multi_sat
+        #   - thread/process budget: thread_mode=:low_high (1 and machine-max,
+        #                            rather than B5's single fixed max) plus
+        #                           outer_process in the mode ladder
+        #   - duration:             gravity_16sat_l20_vacuum_longmission (~4x
+        #                            mission time) vs. the unmodified
+        #                            gravity_16sat_l20_vacuum baseline. The
+        #                            cadence half of this axis used to be
+        #                            _sparse_output; it measured nothing at all
+        #                            (num_steps_to_save never reaches the solver;
+        #                            §10 of the findings doc) and is removed. B14
+        #                            carries the real cadence ladder, through
+        #                            simulation_settings.results / data_rate.
+        cases = [
+            "gravity_16sat_l20_vacuum",
+            "multi_4_aero_surrogate_cached",
+            "multi_16_aero_surrogate_cached",
+            "multi_64_high_fidelity",
+            "multi_256_high_fidelity",
+            "montecarlo_mars_gram_live",
+            "montecarlo_multi_sat",
+            "articulated_1sat_fullstack",
+            "multi_8sat_magnetorquer_attitude",
+            "gravity_16sat_l20_vacuum_longmission",
+        ],
+        parity_cases = [
+            "multi_4_aero_surrogate_cached",
+            "multi_256_high_fidelity",
+            "montecarlo_mars_gram_live",
+            "multi_8sat_magnetorquer_attitude",
+            "gravity_16sat_l20_vacuum_longmission",
+        ],
+        modes = [
+            "serial",
+            "outer_threads",
+            "outer_process",
+            "outer_inner_adaptive",
+            "full_smart", "policy_v2",
+        ],
+        mc_samples  = [1, 8],
+        repeats     = 3,
+        warmup      = 1,
+        thread_mode = :low_high,
+    ),
+
+    PPBPhase(
+        id    = "B7",
+        label = "Heavy Constellation Scaling — Thread Ladder on Workloads Large Enough to Scale",
+        # B1-B6 all draw from cases whose post-warm-up solve time is a fraction of
+        # a second on a modern machine (0.017 s for gravity_16sat_l20_vacuum,
+        # 0.18 s for multi_64_high_fidelity). At that size the measurement is
+        # dominated by fixed per-solve setup and the serial spine of the
+        # integrator, so the thread ladder is flat by construction and no routing
+        # profile can distinguish itself. This phase runs the same ladder against
+        # workloads whose serial baseline is ~8 s and whose parallelisable RHS is
+        # the majority of that, which is the only regime where the scaling claim
+        # is testable.
+        #
+        # The case list is deliberately a contrast, not a sweep:
+        #   heavy_1024sat_l50_6hr       single heavy effector, no callbacks --
+        #                               the cleanest read on outer-loop scaling.
+        #   heavy_4096sat_l50_1hr       same physics, 4x the satellites per RHS
+        #                               call. Reference measurement on 12 physical
+        #                               cores: 1024 sats saturate at ~4 workers
+        #                               (3.9x) while 4096 keeps scaling to 12+
+        #                               (5.1x), so the pair localises where
+        #                               per-RHS fork/join overhead stops being
+        #                               amortised instead of reporting one number.
+        #   heavy_1024sat_fullstack_1hr heterogeneous effector mix plus density
+        #                               and thermal callbacks at scale -- the case
+        #                               where inner/callback parallelism has work.
+        #   heavy_256sat_coupled6dof_2hr attitude propagation on for every
+        #                               satellite; the only many-satellite case in
+        #                               the catalog that is actually 6-DOF.
+        cases = [
+            "heavy_1024sat_l50_6hr",
+            "heavy_4096sat_l50_1hr",
+            "heavy_1024sat_fullstack_1hr",
+            "heavy_256sat_coupled6dof_2hr",
+        ],
+        parity_cases = [
+            "heavy_1024sat_l50_6hr",
+            "heavy_1024sat_fullstack_1hr",
+            "heavy_256sat_coupled6dof_2hr",
+        ],
+        modes = [
+            "serial",
+            "outer_threads",
+            "outer_inner_adaptive",
+            "full_smart", "policy_v2",
+        ],
+        mc_samples  = [1],
+        repeats     = 3,
+        warmup      = 1,
+        thread_mode = :full_ladder,
+    ),
+
+    PPBPhase(
+        id    = "B8",
+        label = "Heavy Monte Carlo Process Throughput",
+        # B4's process-throughput curve uses samples that take milliseconds each,
+        # so its wall time is mostly per-worker process startup and JIT rather
+        # than the trials, and adding workers can make the curve go the wrong way.
+        # This phase uses a 12x longer aerobraking arc: ~1.05 s of integration per
+        # sample (measured), against which pmap dispatch is ~1% rather than the
+        # dominant term. (The harness change that provisions and warms the
+        # Distributed pool before the clock starts removes the startup component;
+        # this removes what remained of the signal-to-noise problem.)
+        #
+        # The sample ladder stops at 64 on purpose. Every worker-ladder entry is a
+        # separate controller run that re-executes the full mode x sample x repeat
+        # grid, and serial/full_smart produce identical numbers at every worker
+        # count (both run the batch in-process at thread_mode=:single), so their
+        # cost is paid seven times over. At [16, 64] that is ~13 min per entry;
+        # adding 256 quadruples it for no additional shape in the curve, since 64
+        # samples across 64 workers is already exactly one dispatch round.
+        cases        = ["montecarlo_heavy_aerobraking"],
+        parity_cases = ["montecarlo_heavy_aerobraking"],
+        modes        = ["serial", "outer_process", "full_smart", "policy_v2"],
+        mc_samples   = [16, 64],
+        repeats      = 3,
+        warmup       = 1,
+        thread_mode   = :single,
+        worker_ladder = [1, 2, 4, 8, 16, 32, 64],
+    ),
+
+    # ── B9-B14: the expanded router evaluation (review point 8) ───────────────
+    #
+    # Point 8 asks for the router to be evaluated across six workload axes and for
+    # router regret, (T_selected - T_best_static)/T_best_static, to be reported
+    # against the best tested static route. B6 attempted that and produced
+    # unreportable numbers (see its own comment); these six phases are the
+    # replacement, one axis each, and they differ from B6 in three ways that all
+    # matter for whether a regret figure means anything:
+    #
+    #   1. Sized to be measurable. Every case here targets a serial baseline of
+    #      several seconds, following B7's finding that sub-second workloads are
+    #      fixed-setup-dominated and flatten every routing profile onto the same
+    #      number. Reporting flags any point whose serial baseline lands under 3 s
+    #      as below_noise_floor rather than silently quoting it.
+    #   2. The full static ladder. B6 omitted inner_only (R2) and
+    #      outer_inner_static (R3), so its `best_static` was a minimum over a
+    #      subset -- which biases regret *downward*, flattering the router. Every
+    #      phase here runs all four static routes (plus outer_process where the
+    #      workload is independent), so the bar the adaptive routes are held to is
+    #      the real one.
+    #   3. A budget axis with more than two points (thread_mode=:router_ladder),
+    #      because the best static route is itself budget-dependent: regret
+    #      measured at one thread count says nothing about regret at another.
+    #
+    # Each phase varies exactly one workload property across its case list, with
+    # constellation size, mission duration and physics otherwise held fixed, so a
+    # regret difference between two rungs is attributable to the axis rather than
+    # to problem size. The per-case rationale lives on the ppc_single_config
+    # branches in parallelization_performance/cases.jl.
+
+    PPBPhase(
+        id    = "B9",
+        label = "Router Evaluation — Spacecraft Count",
+        # Axis: satellites per RHS call, at fixed physics (L50 harmonics, vacuum)
+        # and fixed 1 h duration. One heavy effector and no callbacks, so outer-loop
+        # routing is the only thing that can move the number.
+        #
+        # The ladder deliberately straddles the measurability floor: 64 satellites
+        # solve in ~0.15 s serial and 4096 in ~8 s, so the low rungs are the
+        # evidence for *where* routing stops being decidable rather than wasted
+        # points. Reuses the existing gravity_<N>sat_l50_vacuum_1hr family.
+        # 256 and 1024 spacecraft resolve in 0.22 s and 1.26 s serially, under the
+        # 3 s floor, so their regret was never quotable and they are not re-run.
+        # The evidence they carried -- that routing stops being decidable below
+        # the floor -- is established and does not need re-measuring.
+        cases = [
+            "gravity_4096sat_l50_vacuum_1hr",
+        ],
+        parity_cases = [
+            "gravity_4096sat_l50_vacuum_1hr",
+        ],
+        modes = [
+            "serial", "outer_threads", "inner_only", "outer_inner_static",
+            "outer_inner_adaptive", "full_smart", "policy_v2",
+        ],
+        mc_samples  = [1],
+        repeats     = 3,
+        warmup      = 2,
+        thread_mode = :router_ladder,
+    ),
+
+    PPBPhase(
+        id    = "B10",
+        label = "Router Evaluation — Atmosphere and GRAM Usage",
+        # Axis: how density is obtained, at fixed N=256, fixed 600 s duration and
+        # fixed L50 harmonics. Five rungs of increasing native-library
+        # serialisation: none -> analytic exponential -> precomputed GRAM
+        # surrogate -> live native GRAM -> live GRAM plus SPICE third-body.
+        #
+        # This is the load-bearing phase. Review point 7 reports that R5 runs ~25%
+        # slower than the best tested route on the GRAM workload and slower than
+        # serial, which is the single strongest argument against keeping adaptive
+        # routing as a contribution; nothing in the existing harness sweeps GRAM
+        # fidelity as an isolated variable, so that finding currently cannot be
+        # localised to a cause. 600 s rather than 1 h because that is the duration
+        # the heavy_<N>sat_gram_nbody_l50 family is already validated at up to
+        # N=256, and live GRAM at 256 satellites is the slowest thing in the
+        # catalog.
+        cases = [
+            # atmo256_vacuum_10min dropped: 0.14 s serial, far below the floor.
+            "atmo256_exponential_10min",
+            "atmo256_gram_surrogate_10min",
+            "atmo256_gram_live_10min",
+            "atmo256_gram_live_nbody_10min",
+        ],
+        parity_cases = [
+            "atmo256_exponential_10min",
+            "atmo256_gram_live_10min",
+        ],
+        modes = [
+            "serial", "outer_threads", "inner_only", "outer_inner_static",
+            "outer_inner_adaptive", "full_smart", "policy_v2",
+        ],
+        mc_samples  = [1],
+        repeats     = 3,
+        warmup      = 2,
+        thread_mode = :router_ladder,
+    ),
+
+    PPBPhase(
+        id    = "B11",
+        label = "Router Evaluation — Number of Force and Actuator Models",
+        # Axis: model count, at fixed N=256 and fixed 1 h duration, each rung
+        # adding exactly one model to the one before it (harmonics -> +SRP ->
+        # +aero -> +third-body -> +attitude propagation -> +actuators).
+        #
+        # §7.1 of the findings doc identifies the heterogeneous effector tuple as a
+        # first-order cost the flat work queue has to schedule around, but no
+        # existing case sweeps model count in isolation -- the multi-effector cases
+        # each pick one arbitrary stack. e5 and e6 are split so that turning on
+        # attitude propagation and adding the actuator/control-callback path are
+        # measured separately rather than confounded.
+        # Two sub-ladders, because the actuator rung is quadratic in satellite
+        # count and no single N puts every rung in a measurable band (measured
+        # per 10 s of simulated mission, serial: e1 0.0009 s / e5 0.0157 s /
+        # e6 0.583 s at N=32, and e5 0.13 s / e6 33.4 s at N=256 -- a full-length
+        # e6 at N=256 would run into the hours).
+        #
+        #   model count   e1..e5 at N=256 over 1 h, spanning ~3-47 s serial
+        #   actuators     e5 vs e6 at N=32 over 600 s, where e6 lands at ~35 s
+        #
+        # Each sub-ladder is internally single-variable, which is what makes the
+        # comparison mean anything; stack32_e5_6dof appears in both roles as the
+        # actuator pair's control. It sits under the noise floor at that size and
+        # is flagged accordingly -- the measurable half of that pair is e6, which
+        # is the rung carrying the axis.
+        # stack256_e1_harm (0.17 s) and stack32_e5_6dof (1.24 s) are below the
+        # floor and dropped. Note the cost: stack32_e5_6dof was the control for
+        # the actuator pair, so the single-variable e5-vs-e6 comparison now rests
+        # on the earlier measurement rather than on this run.
+        cases = [
+            "stack256_e3_aero",
+            "stack256_e4_nbody",
+            "stack256_e5_6dof",
+            "stack32_e6_actuated",
+        ],
+        parity_cases = [
+            "stack256_e4_nbody",
+            "stack32_e6_actuated",
+        ],
+        modes = [
+            "serial", "outer_threads", "inner_only", "outer_inner_static",
+            "outer_inner_adaptive", "full_smart", "policy_v2",
+        ],
+        mc_samples  = [1],
+        repeats     = 3,
+        warmup      = 2,
+        # Four rungs rather than five: this phase has the largest case list and the
+        # most expensive cases in the expanded set.
+        thread_mode = :router_ladder,
+    ),
+
+    PPBPhase(
+        id    = "B12",
+        label = "Router Evaluation — Interacting vs. Independent Propagation",
+        # Axis: how a fixed amount of work is arranged. interact_<N>sat_1hr
+        # propagates N satellites as one coupled simulation; independent_1sat_1hr
+        # run at mc_samples=N propagates the same N satellite-hours as N fully
+        # independent solves. Same planet, orbit, effectors, density model,
+        # tolerances and duration on both sides, so coupling is the only variable.
+        #
+        # B6 gestured at this axis by putting constellation and Monte Carlo cases
+        # in one phase, but those differ in physics, duration and size as well as
+        # in coupling, so nothing there isolated coupling. This pair is the direct
+        # test of the manuscript's third contribution -- that the router
+        # distinguishes shared-state multi-spacecraft propagation from
+        # process-isolable independent campaigns -- at matched total work.
+        #
+        # outer_process joins the mode ladder (it is only meaningful on the
+        # independent side, and its presence there is the point).
+        #
+        # inner_only is kept, but not for the reason it was restored. It was
+        # dropped on the grounds that with no outer work to contend with it
+        # duplicates outer_inner_static on the interacting side; it was restored
+        # on the theory that outer_active is a suppression signal to the inner
+        # layer (R3 sets it, R2 does not), which would make the two modes
+        # opposite ends of the axis rather than duplicates.
+        #
+        # Run 20260905_183451 measured that and it is not what happens. At
+        # interact_64sat_1hr t8, inner_only is 4.380 s / 1.015x and
+        # outer_inner_static is 4.336 s / 1.026x -- indistinguishable. At
+        # interact_256sat_1hr t8 they are 3.614 s / 4.24x and 3.503 s / 4.38x,
+        # again together. Both static modes lose inner parallelism at 64
+        # spacecraft and both regain it at 256, so the size threshold is in the
+        # inner policy and is not an outer_active gate. The original
+        # near-duplicate claim was right on the measurement.
+        #
+        # The adaptive regret figures did not move either: outer_inner_adaptive
+        # at interact_64sat_1hr read -76.1% / -83.3% (t8/t12) without inner_only
+        # in the field and -75.6% / -81.0% with it. They were never an artifact
+        # of the missing baseline.
+        #
+        # What separates the two families is more likely pre-solve RHS
+        # calibration, which follows each mode's own adaptive flag (see
+        # parallelization_performance/modes.jl): R0-R3 run without it, R4/R5/R6
+        # with it, and that file records 29.90 s -> 5.71 s (5.2x) on
+        # heavy_1024sat_fullstack_1hr at 12 threads. The 4.3-4.8x gap here is
+        # the same size. Not isolated in this run, so it is the candidate
+        # mechanism and not a settled one -- but it means the interacting-case
+        # win is at risk of being read as a routing result when it is a
+        # calibration result.
+        #
+        # inner_only stays because a measured baseline is worth its nine points
+        # where an assumed duplicate was not, and because it is what establishes
+        # the paragraph above.
+        cases = [
+            # interact_16sat_1hr dropped: 1.38 s serial, below the floor.
+            "interact_64sat_1hr",
+            "interact_256sat_1hr",
+            "independent_1sat_1hr",
+        ],
+        parity_cases = [
+            "interact_64sat_1hr",
+            "independent_1sat_1hr",
+        ],
+        modes = [
+            "serial", "outer_threads", "outer_process", "inner_only",
+            "outer_inner_static", "outer_inner_adaptive", "full_smart",
+            "policy_v2",
+        ],
+        # Only the independent case consumes these (ppc_run_controller runs
+        # non-Monte-Carlo cases once regardless), so each entry is one more
+        # independent-side point against the same three interacting cases. 64 is
+        # the matched partner of interact_64sat_1hr and carries the comparison;
+        # 16 and 256 bracket it so the independent side has its own size trend.
+        # mc=64 gives a 2.63 s baseline, below the floor; only 256 is retained.
+        mc_samples  = [256],
+        repeats     = 3,
+        warmup      = 2,
+        thread_mode = :router_ladder,
+    ),
+
+    PPBPhase(
+        id    = "B13",
+        label = "Router Evaluation — Thread vs. Process Budget Split",
+        # Axis: where a fixed total core budget is spent. Every entry in the grid
+        # below multiplies out to 32 cores, split six ways between process workers
+        # and threads per worker, so the sweep varies the *shape* of the
+        # parallelism and not its amount. 32 rather than the machine's 64 for the
+        # same reason the router ladder stops there -- see
+        # PPB_ROUTER_LADDER_MAX_THREADS.
+        #
+        # Nothing in the harness tests this today: B4 and B8 both pin
+        # thread_mode=:single and vary workers alone, and every constellation phase
+        # runs one process. The nested-split case is precisely what
+        # SPACEAGORA_OUTER_PARALLEL_ACTIVE / SPACEAGORA_INNER_THREAD_BUDGET exist
+        # to arbitrate (see §3 of the findings doc, where asserting outer_active
+        # unconditionally pinned the RHS to one worker), which makes it the
+        # configuration the router is most likely to get wrong and the least
+        # covered by evidence.
+        #
+        # montecarlo_heavy_aerobraking because at ~1.05 s per sample the trials
+        # dominate dispatch overhead, and because it is the only case that can be
+        # arranged either way -- 64 independent samples can be spread across
+        # processes, threads, or any mix of the two.
+        cases        = ["montecarlo_heavy_aerobraking"],
+        parity_cases = ["montecarlo_heavy_aerobraking"],
+        modes        = ["outer_process", "outer_threads", "outer_inner_adaptive", "full_smart", "policy_v2"],
+        mc_samples   = [64],
+        repeats      = 3,
+        warmup       = 2,
+        # Stops at 32 workers rather than 64: each Distributed worker is a full
+        # Julia process with SpaceAGORA and its Mars/SPICE state loaded (~2 GB),
+        # and the target box had ~140 GB free at sizing time, so a 64-worker pool
+        # would run within a few GB of the limit for the sake of one more point.
+        # (32, 2) already brackets the process-heavy end of the axis.
+        # One fixed budget split every way, at the USABLE core count.
+        #
+        # Was [(1,32), (2,16), (4,8), (8,4), (16,2), (32,1)] -- a total of 32,
+        # taken from Sys.CPU_THREADS on a machine with 12 physical cores. Two
+        # things were wrong with that. It is 2.7x oversubscribed before the
+        # measurement starts, so the wide-process rungs characterise contention
+        # rather than the split being studied. And it is not affordable: each
+        # process worker is a separate Julia instance with SpaceAGORA, SPICE
+        # kernels and its own aero/harmonics workspaces loaded, so the 32-worker
+        # rung exhausted 60 GB and took the machine's OOM killer with it
+        # (2026-09-01, kernel log: "julia invoked oom-killer ... global_oom").
+        #
+        # 12 is the usable core budget on this host. The grid keeps the phase's
+        # design -- one total, split from all-threads to all-processes -- and
+        # every rung now fits both the cores and the memory.
+        budget_grid  = [(1, 12), (2, 6), (3, 4), (4, 3), (6, 2), (12, 1)],
+    ),
+
+    PPBPhase(
+        id    = "B14",
+        label = "Router Evaluation — Mission Duration and Output Cadence",
+        # Two sub-ladders at N=1024, L50, vacuum, sharing the 1 h rung:
+        #
+        #   duration  15 min / 1 h / 6 h at no trajectory output
+        #   cadence   at 1 h: no output / saveat 60 s / 10 s / 1 s
+        #
+        # The cadence half is new work rather than a re-run. B6's cadence case
+        # varied num_steps_to_save, which nothing outside the telemetry-
+        # verification code reads -- the solve runs save_everystep with no saveat,
+        # so that case was byte-identical work to its own baseline (§10 of the
+        # findings doc). The real mechanism is simulation_settings.results gating
+        # get_data_saving_callback's SavingCallback(...; saveat=data_rate), and
+        # this harness had output switched off entirely. See ppc_build_config.
+        #
+        # At 1024 satellites the saving callback's per-satellite snapshot is a
+        # genuinely serial spine, so this ladder measures an Amdahl term the router
+        # has no visibility into at all -- which is the result either way it comes
+        # out.
+        # cadence_1024sat_none is the same configuration as
+        # gravity_1024sat_l50_vacuum_1hr (1 h, L50, 1024 satellites, no output),
+        # so the duration ladder's middle rung doubles as the cadence ladder's
+        # zero point rather than being run twice.
+        # The 15 min and 1 h rungs are 0.37 s and 1.39 s serially, both below the
+        # floor, and are dropped. That leaves the duration ladder with a single
+        # measurable point, so this phase now carries the cadence axis only: at
+        # 1024 spacecraft in vacuum, mission duration is not separable from noise
+        # until 6 h, which is itself the result for that axis.
+        cases = [
+            "heavy_1024sat_l50_6hr",
+            "cadence_1024sat_10s",
+            "cadence_1024sat_1s",
+        ],
+        parity_cases = [
+            "cadence_1024sat_10s",
+        ],
+        modes = [
+            "serial", "outer_threads", "inner_only", "outer_inner_static",
+            "outer_inner_adaptive", "full_smart", "policy_v2",
+        ],
+        mc_samples  = [1],
+        repeats     = 3,
+        warmup      = 2,
+        thread_mode = :router_ladder,
+    ),
+
+    PPBPhase(
+        id    = "B15",
+        label = "Router Evaluation — Joint Routing on Nested Monte Carlo Constellations",
+        # Axis: aspect ratio of a nested campaign at fixed total work. Every
+        # other phase leaves one routing axis empty -- the Monte Carlo phases
+        # (B4, B8, B12, B13) carry one spacecraft per sample and the
+        # constellation phases carry one sample -- so in all of them the route
+        # follows from the workload shape and no trade between the outer
+        # (sample) and inner (spacecraft) axes is ever made. The mcgrid_ rungs
+        # put work on both at once: S samples of N spacecraft with N*S held at
+        # 128 spacecraft-hours, so a router that is genuinely choosing should
+        # answer differently at 32x4 than at 8x16. This is also the only regime
+        # in which the in-campaign split race has anything to race.
+        #
+        # The 128 spacecraft-hour grid rather than the 1024 one: ~9 s serial per
+        # rung against ~74 s, and the budget grid below multiplies each rung by
+        # six splits and five modes, which puts the larger grid past an
+        # overnight slot. The rungs supply their own sample counts (see
+        # execution.jl's joint_routing handling); the mc_samples entry here is
+        # a placeholder that the harness ignores for this family.
+        cases = [
+            "mcgrid_32sat_4mc",
+            "mcgrid_16sat_8mc",
+            "mcgrid_8sat_16mc",
+            # The 1024 spacecraft-hour grid too (~74 s serial per rung, eight
+            # times the 128 grid): the open question this axis exists for is
+            # whether outer concurrency stays the right answer once each sample
+            # carries many spacecraft, and 8-32 spacecraft cannot ask it. The
+            # router's cold rule prefers outer for Monte Carlo; 64 spacecraft
+            # per sample is where inner parallelism (the harmonics flat queue
+            # reaches ~4-5x at 12 threads on B7/B9) starts to compete.
+            "mcgrid_64sat_16mc",
+            "mcgrid_32sat_32mc",
+            "mcgrid_16sat_64mc",
+        ],
+        parity_cases = [
+            "mcgrid_16sat_8mc",
+        ],
+        # inner_only is the inner-first static extreme -- samples run one at a
+        # time, each with the whole thread pool -- and is the control the
+        # many-spacecraft question needs: outer_process and outer_threads are
+        # both outer-first, so a ladder of only those two cannot show inner
+        # parallelism winning at 64 spacecraft per sample even if it does.
+        modes        = ["outer_process", "outer_threads", "inner_only",
+                        "outer_inner_adaptive", "full_smart", "policy_v2"],
+        mc_samples   = [1],
+        repeats      = 3,
+        warmup       = 2,
+        # Same fixed-budget split grid as B13, for the same reason: the total is
+        # held at the usable core count and only where it is spent varies.
+        budget_grid  = [(1, 12), (2, 6), (3, 4), (4, 3), (6, 2), (12, 1)],
+    ),
+    # ── Light router evaluation (--light): see PPB_LIGHT_PHASES ──────────────
+    PPBPhase(
+        id    = "L8",
+        label = "Light — Heavy Monte Carlo Process Throughput",
+        cases        = ["montecarlo_heavy_aerobraking"],
+        parity_cases = ["montecarlo_heavy_aerobraking"],
+        modes        = ["serial", "outer_process", "policy_v2"],
+        mc_samples   = [16],
+        # Five repeats on every Monte Carlo light phase: an adaptive point's
+        # repeats are cold, then up to two exploratory campaigns per arm on a
+        # rounds tie, then exploitation; three repeats put the median on an
+        # exploration campaign by construction.
+        repeats      = 5,
+        warmup       = 1,
+        thread_mode   = :single,
+        worker_ladder = [4, 12],
+    ),
+    PPBPhase(
+        id    = "L9",
+        label = "Light — Spacecraft Count (thread ladder ends)",
+        cases        = ["gravity_4096sat_l50_vacuum_1hr"],
+        parity_cases = ["gravity_4096sat_l50_vacuum_1hr"],
+        modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "policy_v2"],
+        mc_samples   = [1],
+        repeats      = 2,
+        warmup       = 1,
+        thread_mode  = :low_high,
+    ),
+    PPBPhase(
+        id    = "L10",
+        label = "Light — Atmosphere and GRAM Surrogate",
+        cases        = ["atmo256_exponential_10min", "atmo256_gram_surrogate_10min"],
+        parity_cases = ["atmo256_exponential_10min"],
+        modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "policy_v2"],
+        mc_samples   = [1],
+        repeats      = 2,
+        warmup       = 1,
+        thread_mode  = :max_only,
+    ),
+    PPBPhase(
+        id    = "L11",
+        label = "Light — Force and Actuator Model Count",
+        cases        = ["stack256_e4_nbody", "stack32_e6_actuated"],
+        parity_cases = ["stack32_e6_actuated"],
+        modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "policy_v2"],
+        mc_samples   = [1],
+        repeats      = 2,
+        warmup       = 1,
+        thread_mode  = :max_only,
+    ),
+    PPBPhase(
+        id    = "L12",
+        label = "Light — Interacting vs. Independent Propagation",
+        cases        = ["interact_64sat_1hr", "independent_1sat_1hr"],
+        parity_cases = ["independent_1sat_1hr"],
+        modes        = ["serial", "outer_threads", "outer_process", "outer_inner_static", "policy_v2"],
+        mc_samples   = [64],
+        repeats      = 5,
+        warmup       = 1,
+        thread_mode  = :low_high,
+    ),
+    PPBPhase(
+        id    = "L13",
+        label = "Light — Thread vs. Process Budget Split",
+        cases        = ["montecarlo_heavy_aerobraking"],
+        parity_cases = ["montecarlo_heavy_aerobraking"],
+        modes        = ["outer_process", "outer_threads", "policy_v2"],
+        mc_samples   = [16],
+        repeats      = 5,
+        warmup       = 1,
+        budget_grid  = [(1, 12), (3, 4), (12, 1)],
+    ),
+    PPBPhase(
+        id    = "L14",
+        label = "Light — Mission Duration and Output Cadence",
+        cases        = ["cadence_1024sat_10s", "heavy_1024sat_l50_6hr"],
+        parity_cases = ["cadence_1024sat_10s"],
+        modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "policy_v2"],
+        mc_samples   = [1],
+        repeats      = 2,
+        warmup       = 1,
+        thread_mode  = :max_only,
+    ),
+    PPBPhase(
+        id    = "L15",
+        label = "Light — Joint Routing on Nested Monte Carlo Constellations",
+        # One case per tie regime: 16sat_8mc ties at one round on (2,6),
+        # 8sat_16mc at three, 32sat_32mc has the pool ahead by a round.
+        cases        = ["mcgrid_16sat_8mc", "mcgrid_8sat_16mc", "mcgrid_32sat_32mc"],
+        parity_cases = ["mcgrid_16sat_8mc"],
+        modes        = ["outer_process", "outer_threads", "policy_v2"],
+        mc_samples   = [1],
+        repeats      = 5,
+        warmup       = 1,
+        budget_grid  = [(1, 12), (2, 6), (12, 1)],
+    ),
+
+    # ── Paper routing figures ────────────────────────────────────────────────
+    # See the P-series block above the phase catalog for what these four
+    # comparisons are and why their grids are host-sized.
+    PPBPhase(
+        id    = "P1",
+        label = "Paper — Constellation Size Scaling at a Fixed Budget",
+        cases = PPB_PAPER_SIZE_CASES,
+        # One parity case for the whole P-series: the routes have to produce the
+        # same trajectory for a timing comparison between them to mean anything,
+        # and 256 spacecraft is the largest rung where checking that is cheap.
+        parity_cases = [_ppb_paper_size_case(256)],
+        modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "policy_v2", "predictive"],
+        mc_samples   = [1],
+        repeats      = 3,
+        warmup       = 1,
+        thread_mode  = :max_only,
+    ),
+    PPBPhase(
+        id    = "P2",
+        label = "Paper — Thread Scaling at 4096 Spacecraft",
+        # P1's top rung, so the two phases cross-check each other at the point
+        # they share (4096 spacecraft at the full thread budget) and the serial
+        # baseline is the same number in both tables.
+        cases        = [_ppb_paper_size_case(4096)],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "policy_v2", "predictive"],
+        mc_samples   = [1],
+        repeats      = 3,
+        warmup       = 1,
+        thread_mode  = :full_ladder,
+    ),
+    PPBPhase(
+        id    = "P3",
+        label = "Paper — Monte Carlo Resource Ladder, One Spacecraft per Sample",
+        cases        = ["independent_1sat_1hr"],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "outer_process", "policy_v2", "predictive"],
+        # 256 samples, matching B12's campaign size: at 64 the serial baseline is
+        # ~2.4 s, under the 3 s measurability floor, so the point would be
+        # reported as unmeasurable routing rather than as a scaling result. The
+        # samples are independent solves, so the baseline scales with the count.
+        mc_samples   = [256],
+        # Five repeats on every Monte Carlo phase, as in L8-L15: an adaptive
+        # point's repeats are cold, then exploratory, then exploiting, so three
+        # repeats put the median on an exploration campaign by construction.
+        repeats      = 5,
+        warmup       = 1,
+        budget_grid  = _ppb_paper_resource_grid(),
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "P4",
+        label = "Paper — Monte Carlo Resource Ladder, Compute-Bound Samples",
+        # Same ladder as P3 on samples that are ~1 s of integration each rather
+        # than ~40 ms, so the pair separates routing overhead from routing
+        # throughput. 32 samples keeps the serial baseline above the floor at
+        # every rung without paying 64 aerobraking arcs per repeat.
+        cases        = ["montecarlo_heavy_aerobraking"],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "outer_process", "policy_v2", "predictive"],
+        mc_samples   = [32],
+        repeats      = 5,
+        warmup       = 1,
+        budget_grid  = _ppb_paper_resource_grid(),
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "P4g",
+        label = "Paper — Dispersed MarsGRAM Aerobraking Samples at the Full Budget",
+        # P4's samples flown through MarsGRAM, each with its own seed and the
+        # per-pass perturbed density: the campaign the paper's question names. A
+        # native GRAM campaign is offered only the pool and serial by the policy,
+        # so the process pool is the static route it is compared with; outer
+        # threads, serialized by the shared GRAM lock, are left out to keep the
+        # run to about half its length. One rung, the full budget. Repeats and
+        # warm-up are declared here (11 and 2) rather than raised by
+        # SPACEAGORA_PPB_MIN_*, so P4gs below can run fewer.
+        #
+        # Serial is P4gs: its full baseline (11 repeats) was measured at
+        # aaa2df00b, before the precompile-workload fix, and P4gs re-times it at
+        # the current commit to check the two agree.
+        cases        = ["montecarlo_heavy_aerobraking_gram"],
+        parity_cases = String[],
+        modes        = ["outer_process", "predictive"],
+        mc_samples   = [32],
+        repeats      = 11,
+        warmup       = 2,
+        budget_grid  = [(PPB_PAPER_BUDGET, PPB_PAPER_BUDGET)],
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "P4gs",
+        label = "Paper — Dispersed MarsGRAM Aerobraking Samples, Serial Spot Check",
+        cases        = ["montecarlo_heavy_aerobraking_gram"],
+        parity_cases = String[],
+        modes        = ["serial"],
+        mc_samples   = [32],
+        repeats      = 3,
+        warmup       = 1,
+        budget_grid  = [(PPB_PAPER_BUDGET, PPB_PAPER_BUDGET)],
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "P5",
+        label = "Paper — Monte Carlo over Constellations, Worker/Thread Split at a Fixed Budget",
+        # Two aspect ratios of the same 128 spacecraft-hour total, so the rungs
+        # are the same work reshaped: wide constellations with few samples, and
+        # many samples of narrow ones.
+        cases        = ["mcgrid_16sat_8mc", "mcgrid_8sat_16mc"],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "outer_process", "outer_inner_static", "policy_v2", "predictive"],
+        mc_samples   = [1],
+        repeats      = 5,
+        warmup       = 1,
+        budget_grid  = _ppb_paper_split_grid(),
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "P5f",
+        label = "Paper — Monte Carlo over Constellations, Full Machine",
+        # P5 runs every mode once per split, so its adaptive arms were always
+        # told the split and chose only a route within it. P5f asks the other
+        # question: handed the whole budget and no split, does R7 land within
+        # the criterion of the best static allocation over every route AND every
+        # split? The static modes run exactly as in P5 (every split of the same
+        # budget); predictive runs once per case at the full budget, with
+        # --threads and --process-workers both set to it (`_ppb_full_budget`).
+        # policy_v2 is not run here: R6 is scored against its given split in P5.
+        cases        = ["mcgrid_16sat_8mc", "mcgrid_8sat_16mc"],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "outer_process", "outer_inner_static", "predictive"],
+        full_budget_modes = ["predictive"],
+        mc_samples   = [1],
+        # Declared here rather than raised by SPACEAGORA_PPB_MIN_REPEATS, as P7
+        # does: the full-budget row is one median per case with nothing beside
+        # it, so the phase should not depend on the launcher remembering the
+        # floor. The warm-up is P5's, and SPACEAGORA_PPB_MIN_WARMUP raises it
+        # the same way.
+        repeats      = 11,
+        warmup       = 1,
+        budget_grid  = _ppb_paper_split_grid(),
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "P6",
+        label = "Paper — Thread Scaling at 4096 Spacecraft, Force-Model and Atmosphere Variants",
+        # Traces 1-5. Trace 2 comes from _ppb_paper_size_case so the rung is the
+        # same object P1 and P2 use and cannot drift from PPC_L50_ISO_MISSION_S.
+        cases = [
+            _ppb_p6_l20_case(),
+            _ppb_paper_size_case(PPB_P6_N_SAT),
+            _ppb_p6_nbody_case(),
+            _ppb_p6_aero_case("expatm"),
+            _ppb_p6_aero_case("gram_lookahead"),
+        ],
+        # No parity case, for P2's reason and one more: a parity run is 512
+        # sampled trajectory points per mode at the top thread count, and at 4096
+        # spacecraft against live native GRAM that is the most expensive single
+        # thing this catalog can be asked to do. P1 carries the P-series parity
+        # check at 256 spacecraft, and the force models here are the ones B10 and
+        # B11 already parity-check at their own sizes.
+        parity_cases = String[],
+        # inner_only (R2) is the route this figure is about: one simulation, the
+        # split inside the RHS across satellites, no outer split to confound it.
+        # serial supplies the speedup denominator -- the controller runs it at the
+        # bottom rung only, which is the one place it is not redundant. predictive
+        # (R7) is the adaptive arm; it runs the whole ladder rather than only the
+        # top rung because a phase cannot restrict one mode to one thread count,
+        # and the extra rungs roughly double the phase's cost.
+        modes        = ["serial", "inner_only", "predictive"],
+        mc_samples   = [1],
+        repeats      = 3,
+        warmup       = 1,
+        thread_mode  = :full_ladder,
+    ),
+    PPBPhase(
+        id    = "P6p",
+        label = "Paper — Process Route at 4096 Spacecraft, Native GRAM",
+        # Trace 6. Same spacecraft-missions as trace 5, arranged as one-spacecraft
+        # samples so the process route has something to spread; see the phase
+        # comment above the P6 constants for why this cannot live in P6.
+        cases        = [_ppb_p6_aero_case("gram_process")],
+        parity_cases = String[],
+        modes        = ["serial", "outer_process", "predictive"],
+        # Must equal the case name's spacecraft count: the trace only means "the
+        # same constellation, propagated as independent members" if every member
+        # is a sample. The case also carries this in default_samples, which the
+        # harness honours only for the joint_routing family, so the phase states
+        # it too.
+        mc_samples   = [PPB_P6_N_SAT],
+        repeats      = 3,
+        warmup       = 1,
+        # Worker count per rung, threads pinned at 1: each Distributed worker is
+        # its own --threads=1 process with its own native GRAM instance, which is
+        # the whole point of the trace and also its memory cost. The ladder is the
+        # host-sized budget ladder, the same axis P6's thread ladder sweeps, so
+        # the two traces can be plotted against one x axis. budget_grid_fixed
+        # because the ladder is already derived from this host -- see
+        # PPBPhase.budget_grid_fixed.
+        budget_grid  = [(w, 1) for w in _ppb_paper_budget_ladder()],
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "P7",
+        label = "Paper — Single Satellite, Short Missions",
+        # See the P7 block above the phase catalog.
+        cases        = PPB_P7_CASES,
+        # No parity case: P1 carries the P-series parity check, and these force
+        # models are parity-checked at their own sizes by B10 and B11.
+        parity_cases = String[],
+        # P1's modes and thread axis exactly, so a P7 row and P1's one-spacecraft
+        # row are the same comparison at a different amount of work.
+        modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "policy_v2", "predictive"],
+        mc_samples   = [1],
+        # Eleven here rather than P1's three raised by SPACEAGORA_PPB_MIN_REPEATS:
+        # a sub-second point is the one most exposed to scheduler noise, and the
+        # phase should not depend on the launcher remembering the floor. The
+        # floor only raises a count, so it leaves this one alone.
+        repeats      = 11,
+        warmup       = 1,
+        thread_mode  = :max_only,
+    ),
+    PPBPhase(
+        id    = "P6s",
+        label = "Paper — Static Routes at 4096 Spacecraft, Full Thread Budget",
+        # P6's five traces at the top rung only, with every thread route pinned,
+        # so the adaptive policy can be scored against the best static route
+        # there. P6 pins inner_only alone, which is not a best static route.
+        # P1's thread axis and P1's modes except policy_v2, which P1 and P7 run
+        # and P6s does not.
+        cases = [
+            _ppb_p6_l20_case(),
+            _ppb_paper_size_case(PPB_P6_N_SAT),
+            _ppb_p6_nbody_case(),
+            _ppb_p6_aero_case("expatm"),
+            _ppb_p6_aero_case("gram_lookahead"),
+        ],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "predictive"],
+        mc_samples   = [1],
+        repeats      = 11,
+        warmup       = 1,
+        thread_mode  = :max_only,
+    ),
+    PPBPhase(
+        id    = "P6ps",
+        label = "Paper — Static Routes at 4096 Spacecraft, Native GRAM Samples",
+        # P6p's case at the full budget with the thread route added beside the
+        # process route. Two points: (32, 32) gives each route 32 units of the
+        # resource it spends, as P3 and P4 do, and (32, 1) repeats P6p's own
+        # full-budget point, where the adaptive policy has workers only.
+        cases        = [_ppb_p6_aero_case("gram_process")],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "outer_process", "predictive"],
+        mc_samples   = [PPB_P6_N_SAT],
+        repeats      = 11,
+        warmup       = 1,
+        budget_grid  = [(PPB_PAPER_BUDGET, PPB_PAPER_BUDGET), (PPB_PAPER_BUDGET, 1)],
+        budget_grid_fixed = true,
+    ),
+
+    # ── Route exploration (2026-10-02) ───────────────────────────────────────
+    # Plans the adaptive policy can reach but never chooses, pinned through the
+    # force_* and rhs_* modes (parallelization_performance/modes.jl) and timed
+    # beside serial, the adaptive policy and the static routes in the same run.
+    # Full budget only. Not paper phases.
+    PPBPhase(
+        id    = "X3",
+        label = "Route exploration — P3 campaign plans at the full budget",
+        cases        = ["independent_1sat_1hr"],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "outer_process", "predictive",
+                        "force_process@w32+l1", "force_process@w32+l2", "force_process@w32+l4",
+                        "force_process@w32+l8", "force_process@w32+l15",
+                        "force_threads@w16+l0+b2", "force_threads@w8+l0+b4",
+                        "force_threads@w4+l0+b8", "force_none@w1+l0+b32"],
+        mc_samples   = [256],
+        repeats      = 11,
+        warmup       = 3,
+        budget_grid  = [(PPB_PAPER_BUDGET, PPB_PAPER_BUDGET)],
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "X4",
+        label = "Route exploration — P4 campaign plans at the full budget",
+        cases        = ["montecarlo_heavy_aerobraking"],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "outer_process", "predictive",
+                        "force_threads@w16+l0+b2", "force_threads@w8+l0+b4",
+                        "force_threads@w4+l0+b8", "force_none@w1+l0+b32"],
+        mc_samples   = [32],
+        repeats      = 11,
+        warmup       = 3,
+        budget_grid  = [(PPB_PAPER_BUDGET, PPB_PAPER_BUDGET)],
+        budget_grid_fixed = true,
+    ),
+    # P5f's static routes at every split; serial, the adaptive policy and the
+    # pinned plans once at the full budget. One phase per grid because the
+    # wider plans differ with the sample count.
+    PPBPhase(
+        id    = "X5a",
+        label = "Route exploration — P5f, 8 samples of 16 spacecraft",
+        cases        = ["mcgrid_16sat_8mc"],
+        parity_cases = String[],
+        modes        = ["outer_threads", "outer_process", "outer_inner_static",
+                        "serial", "predictive", "force_threads@w8+l0+b4",
+                        "force_threads@w4+l0+b8", "force_threads@w2+l0+b16", "force_none@w1+l0+b32"],
+        full_budget_modes = ["serial", "predictive", "force_threads@w8+l0+b4",
+                        "force_threads@w4+l0+b8", "force_threads@w2+l0+b16", "force_none@w1+l0+b32"],
+        mc_samples   = [1],
+        repeats      = 11,
+        warmup       = 3,
+        budget_grid  = _ppb_paper_split_grid(),
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "X5b",
+        label = "Route exploration — P5f, 16 samples of 8 spacecraft",
+        cases        = ["mcgrid_8sat_16mc"],
+        parity_cases = String[],
+        modes        = ["outer_threads", "outer_process", "outer_inner_static",
+                        "serial", "predictive", "force_threads@w16+l0+b2", "force_threads@w8+l0+b4",
+                        "force_threads@w4+l0+b8", "force_threads@w2+l0+b16", "force_none@w1+l0+b32"],
+        full_budget_modes = ["serial", "predictive", "force_threads@w16+l0+b2", "force_threads@w8+l0+b4",
+                        "force_threads@w4+l0+b8", "force_threads@w2+l0+b16", "force_none@w1+l0+b32"],
+        mc_samples   = [1],
+        repeats      = 11,
+        warmup       = 3,
+        budget_grid  = _ppb_paper_split_grid(),
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "X1",
+        label = "Route exploration — P1 RHS plans at 32 threads",
+        cases        = [_ppb_paper_size_case(4096), _ppb_paper_size_case(1024), _ppb_paper_size_case(64)],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "predictive",
+                        "rhs_serial", "rhs_satellite", "rhs_per_satellite", "rhs_flat"],
+        mc_samples   = [1],
+        repeats      = 11,
+        warmup       = 3,
+        thread_mode  = :max_only,
+    ),
+]
+
+# ── Quick benchmark (--quick) ─────────────────────────────────────────────────
+#
+# A sub-hour cut of the router evaluation, sized from the machine it runs on,
+# for checking a profile on hardware the full B-series was never run on. It
+# is not a replacement for the B-series: three phases, two repeats, no parity,
+# and one workload per axis. What it keeps is the three questions the
+# B-series answers -- does the constellation thread ladder track the best
+# pinned route (Q1), does calibration still find the pinned plan on a
+# workload that needs one (Q2), and does the Monte Carlo route follow the
+# better side of the thread/process split (Q3).
+#
+# Everything is derived from the host:
+#   cores    physical cores, capped at PPB_ROUTER_LADDER_MAX_THREADS
+#   ladder   the router ladder for that core count ([1, 8, 12] on 12 cores,
+#            [1, 4] on 4, [1, 8, 32] on 64)
+#   workers  min(cores, --process-workers, 3/4 of total memory / 3 GB): each
+#            process worker is a full Julia instance with SpaceAGORA and SPICE
+#            loaded. Total memory rather than free, so the grid is a property
+#            of the machine and not of whatever else is running at the time
+#   samples  4 per worker, clamped to [16, 64], so a campaign is a few dispatch
+#            rounds whatever the pool size
+#   splits   all-threads, all-processes, and one mixed split of the same budget
+#   N_sat    4096 spacecraft on 8+ cores, 1024 below, so the serial solve stays
+#            near 8 s on either
+#
+# Cost is dominated by the ~80 s of Julia startup and JIT per point, not by the
+# solves: Q1 is 10 points, Q2 is 4, Q3 is up to 12, which on a 12-core box came
+# to about 45 minutes. Points are the currency -- a bigger machine gets the
+# same point count on wider rungs, not more points.
+
+const PPB_QUICK_WORKER_GB = 3.0
+
+# Default for --process-workers when neither the flag nor the env sets it: the
+# machine's physical cores, bounded by three quarters of its memory at 3 GB per
+# worker, and by 32. It used to be a flat 32, which on an 18 GB laptop let B4's
+# and B8's worker ladders provision pools the machine could not hold; every
+# worker is a Julia process with SpaceAGORA and SPICE resident, and a GRAM
+# density-service worker adds its atmosphere tables on top.
+function _ppb_default_process_workers()::Int
+    cores = _ppc_physical_core_count()
+    mem_cap = try
+        max(1, floor(Int, 0.75 * Sys.total_memory() / (PPB_QUICK_WORKER_GB * 2^30)))
+    catch
+        cores
+    end
+    return max(1, min(32, cores, mem_cap))
+end
+
+function _ppb_quick_worker_cap(ppb::PPBConfig, cores::Int)::Int
+    mem_cap = try
+        max(1, floor(Int, 0.75 * Sys.total_memory() / (PPB_QUICK_WORKER_GB * 2^30)))
+    catch
+        cores
+    end
+    return max(1, min(cores, ppb.process_workers, mem_cap))
+end
+
+# All-threads, all-processes, and the mixed split whose worker count is the
+# largest proper divisor of the budget at or below its square root, so the
+# three rungs bracket the axis B13 sweeps in full.
+function _ppb_quick_budget_grid(budget::Int)::Vector{Tuple{Int, Int}}
+    budget <= 1 && return [(1, 1)]
+    grid = [(1, budget), (budget, 1)]
+    mid = 0
+    for w in 2:isqrt(budget)
+        budget % w == 0 && (mid = w)
+    end
+    mid > 1 && insert!(grid, 2, (mid, budget ÷ mid))
+    return grid
+end
+
+function ppb_quick_phases(ppb::PPBConfig)::Vector{PPBPhase}
+    cores   = min(_ppc_physical_core_count(), PPB_ROUTER_LADDER_MAX_THREADS)
+    workers = _ppb_quick_worker_cap(ppb, cores)
+    budget  = min(cores, workers)
+    samples = clamp(4 * workers, 16, 64)
+    n_sat   = cores >= 8 ? 4096 : 1024
+    return PPBPhase[
+        PPBPhase(
+            id    = "Q1",
+            label = "Quick — Constellation Thread Ladder ($(n_sat) spacecraft, L50, vacuum)",
+            cases = ["gravity_$(n_sat)sat_l50_vacuum_1hr"],
+            parity_cases = String[],
+            modes = ["serial", "outer_threads", "full_smart", "policy_v2"],
+            mc_samples = [1], repeats = 2, warmup = 1,
+            thread_mode = :router_ladder,
+        ),
+        PPBPhase(
+            id    = "Q2",
+            label = "Quick — Calibration on a Pinned-Plan Workload (256 spacecraft, harmonics+SRP+aero+third body)",
+            cases = ["stack256_e4_nbody"],
+            parity_cases = String[],
+            modes = ["outer_threads", "outer_inner_static", "full_smart", "policy_v2"],
+            mc_samples = [1], repeats = 2, warmup = 1,
+            thread_mode = :max_only,
+        ),
+        PPBPhase(
+            id    = "Q3",
+            label = "Quick — Monte Carlo Thread vs. Process Split ($(samples) samples over $(budget) cores)",
+            cases = ["montecarlo_heavy_aerobraking"],
+            parity_cases = String[],
+            modes = ["outer_process", "outer_threads", "full_smart", "policy_v2"],
+            mc_samples = [samples], repeats = 2, warmup = 1,
+            budget_grid = _ppb_quick_budget_grid(budget),
+        ),
+    ]
+end
+
+# ── CLI parsing ───────────────────────────────────────────────────────────────
+
+function ppb_parse_cli(args::Vector{String}=ARGS)::PPBConfig
+    phases          = _ppc_csv(get(ENV, "SPACEAGORA_PPB_PHASES", ""))
+    outdir          = get(ENV, "SPACEAGORA_PPB_OUTDIR", PPB_DEFAULT_OUTDIR)
+    threads         = _ppc_int_csv(get(ENV, "SPACEAGORA_PPB_THREADS", ""))
+    process_workers = let raw = strip(get(ENV, "SPACEAGORA_PPB_PROCESS_WORKERS", ""))
+        isempty(raw) ? _ppb_default_process_workers() : parse(Int, raw)
+    end
+    mc_samples_max  = let raw = strip(get(ENV, "SPACEAGORA_PPB_MC_SAMPLES_MAX", ""))
+        isempty(raw) ? nothing : parse(Int, raw)
+    end
+    seed            = parse(Int, get(ENV, "SPACEAGORA_PPB_SEED", "20260615"))
+    solver_mode     = lowercase(strip(get(ENV, "SPACEAGORA_PPB_SOLVER_MODE", "auto_stiff")))
+    cpu_pinning     = _ppc_parse_cpu_list(get(ENV, "SPACEAGORA_PPB_CPU_LIST", ""))
+    dry_run         = _ppc_bool(get(ENV, "SPACEAGORA_PPB_DRY_RUN", "0"))
+    preview         = _ppc_bool(get(ENV, "SPACEAGORA_PPB_PREVIEW", "0"))
+    quick           = _ppc_bool(get(ENV, "SPACEAGORA_PPB_QUICK", "0"))
+    lean_modes      = _ppc_bool(get(ENV, "SPACEAGORA_PPB_LEAN_MODES", "0"))
+    light           = _ppc_bool(get(ENV, "SPACEAGORA_PPB_LIGHT", "0"))
+    resume          = get(ENV, "SPACEAGORA_PPB_RESUME", "")
+
+    valid_phases = union(Set(p.id for p in PAPER_BENCHMARK_PHASES), Set(["Q1", "Q2", "Q3"]))
+    for arg in args
+        if arg in valid_phases
+            push!(phases, arg)
+        elseif startswith(arg, "--phases=")
+            append!(phases, _ppc_csv(_ppc_arg_value(arg)))
+        elseif startswith(arg, "--outdir=")
+            outdir = _ppc_arg_value(arg)
+        elseif startswith(arg, "--threads=")
+            threads = _ppc_int_csv(_ppc_arg_value(arg))
+        elseif startswith(arg, "--process-workers=")
+            process_workers = parse(Int, _ppc_arg_value(arg))
+        elseif startswith(arg, "--mc-samples-max=")
+            mc_samples_max = parse(Int, _ppc_arg_value(arg))
+        elseif startswith(arg, "--seed=")
+            seed = parse(Int, _ppc_arg_value(arg))
+        elseif startswith(arg, "--solver-mode=")
+            solver_mode = lowercase(strip(_ppc_arg_value(arg)))
+        elseif startswith(arg, "--cpu-list=")
+            cpu_pinning = _ppc_parse_cpu_list(_ppc_arg_value(arg))
+        elseif arg == "--dry-run"
+            dry_run = true
+        elseif arg == "--preview"
+            preview = true
+        elseif arg == "--quick"
+            quick = true
+        elseif arg == "--lean-modes"
+            lean_modes = true
+        elseif arg == "--light"
+            light = true
+        elseif startswith(arg, "--resume=")
+            resume = _ppc_arg_value(arg)
+        else
+            throw(ArgumentError("Unknown argument '$arg'. Valid phases: $(join(sort(collect(valid_phases)), ", "))."))
+        end
+    end
+
+    # --light selects the L8-L15 set (a --phases list narrows it) and implies
+    # --lean-modes, which is a no-op on the light phases' own mode lists.
+    if light
+        isempty(phases) && append!(phases, PPB_LIGHT_PHASES)
+        lean_modes = true
+    end
+    unique!(phases)
+    unknown = [p for p in phases if p ∉ valid_phases]
+    isempty(unknown) || throw(ArgumentError("Unknown phase(s): $(join(unknown, ", "))."))
+    (mc_samples_max === nothing || mc_samples_max >= 1) ||
+        throw(ArgumentError("--mc-samples-max must be >= 1, got $(mc_samples_max)."))
+    resume = strip(resume)
+    (isempty(resume) || isdir(resume)) ||
+        throw(ArgumentError("--resume path does not exist: $(resume)"))
+
+    return PPBConfig(
+        phases          = phases,
+        outdir          = abspath(outdir),
+        threads         = threads,
+        process_workers = max(1, process_workers),
+        mc_samples_max  = mc_samples_max,
+        seed            = seed,
+        solver_mode     = solver_mode,
+        cpu_pinning     = cpu_pinning,
+        dry_run         = dry_run,
+        preview         = preview,
+        quick           = quick,
+        lean_modes      = lean_modes,
+        resume          = isempty(resume) ? "" : abspath(resume),
+    )
+end

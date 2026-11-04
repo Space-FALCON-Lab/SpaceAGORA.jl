@@ -1,205 +1,52 @@
-.vscode
-*.bsp
-*.BSP
-*.tpc
-*.tls
-GRAM Suite 2.0/Build/bin/
-GRAM Suite 2.0/Build/lib/
-GRAM Suite 2.0/Build/mod/
-GRAM Suite 2.0/Build/*/obj/
-GRAM Suite 2.0/Build/*/tobj/
-GRAM Suite 2.0/SPICE/*
-GRAM Suite 2.0/simulation/GRAM/gram.env
-GRAM Suite 2.0/simulation/GRAM/gram.env.ps1
-GRAM Suite 2.0/simulation/GRAM/.gram-build-manifest
-GRAM_Data/*
-output/*
-GRAMpy/*
-*.pdf
-*.csv
-# ...but gravity and topography coefficient assets are versioned (see test/gmat_scenario_matrix.jl)
-!data/planets/gravity/*.csv
-!data/planets/topography/*.csv
-# SPICE pole/orientation overrides shipped with the planet inputs
-!data/planets/spice_overrides/*.tpc
-# Viewer surface textures: public-domain NASA/USGS mosaics registered in data/scene/textures/manifest.toml
-!data/scene/textures/
-!data/scene/textures/*.jpg
-!data/scene/textures/manifest.toml
-# 3D models for the viewer and the RPO station geometry (see data/scene/models/README.md)
-!data/scene/models/
-!data/scene/models/README.md
-*.png
-# Documentation figures are committed; scripts/docs_figures/ regenerates them
-!docs/src/assets/figures/*.png
-*.tex
-.DS_Store
-*.cov
-docs/build/
-docs/site/
-docs/src/generated/
-docs/.CondaPkg/
-docs/Manifest.toml
-test/Manifest.toml
-examples/Manifest.toml
-!test/fixtures/*/fixture.csv
-!test/fixtures/agora_earth_regression.csv
-!test/fixtures/research_contracts/pass_exponential_profile.csv
-data/telemetry/CYGNSS/
-data/telemetry/GRIFEX/
-# Reference and public flight sets synced from Space-FALCON-Lab/spaceagora-verification-data
-# by scripts/dev/fetch_private_telemetry.sh (see data/telemetry/PRIVATE_TELEMETRY.md).
-data/telemetry/Basilisk_Examples/
-data/telemetry/Basilisk_Examples_Full/
-data/telemetry/GMAT_Examples/
-data/telemetry/OPS-SAT1/
+# Generated experiment results remain local.
+/Output_3_rangeOnly_vs_positiveAlongTrack/results/
+/Output_3_rangeOnly_vs_positiveAlongTrack/plots/
+/Output_3_rangeOnly_vs_positiveAlongTrack/validation/
+/Output_3_rangeOnly_vs_positiveAlongTrack/comparison_summary.csv
+/Simulation/Output/
+/Simulation_absolute_RN/Output/
+/Tests/results/
+/Tests/runs/
+/Tests/absolute_RN/results/
+/Tests/absolute_RN/PilotOutput/
+/9_SpaceAGORA.jl-main_full integration/output/
+/9_SpaceAGORA.jl-main_full integration/benchmarks/studies/gram_multisat_harness/*.mem
+/9_SpaceAGORA.jl-main_full integration/benchmarks/studies/gram_multisat_harness/*.out
 
-# Julia sub-environments (removed; use --project=. from root)
-.AGORA/
-.SpaceAGORA/
-
-# CondaPkg generated environments
+# Local dependency environments and caches.
 .CondaPkg/
-
-# Tool-generated
-.claude/
-.codex
-.codex_logs/
-cache/
-CLAUDE.md
-
-# Binary data files
-*.feather
-# The only tracked feathers are the graded truth files named in
-# test/telemetry_benchmark_manifest.toml (plus the two Odyssey mission-record
-# alt files kept beside the kernel ones for reference). Anything else must be
-# fetched, not committed; ci_tracked_feather_registry_gate enforces it.
-!data/telemetry/Odyssey/True_Odyssey_periapsis_alts_kernel.feather
-!data/telemetry/Odyssey/True_Odyssey_apoapsis_alts_kernel.feather
-!data/telemetry/Odyssey/True_Odyssey_periapsis_alts.feather
-!data/telemetry/Odyssey/True_Odyssey_apoapsis_alts.feather
-!data/telemetry/Odyssey/odyssey_accelerometer_density.feather
-!data/telemetry/VEx/Vex_periapsis_data_new.feather
-!data/telemetry/VEx/Vex_apoapsis_data.feather
-!data/telemetry/GMAT_Earth_Aerobraking/Earth_Aerobraking_test.feather
-*.hdf5
-*.arrow
-*.zip
-
-# CAD / 3D model files
-*.[sS][tT][lL]
-*.[sS][tT][eE][pP]
-*.[sS][tT][pP]
-*.[iI][gG][eE][sS]
-*.[iI][gG][sS]
-*.[sS][lL][dD][pP][rR][tT]
-*.[sS][lL][dD][aA][sS][mM]
-*.[sS][lL][dD][dD][rR][wW]
-*.[fF]3[dD]
-*.[fF]3[zZ]
-*.[iI][pP][tT]
-*.[iI][aA][mM]
-*.[iI][dD][wW]
-*.[dD][wW][gG]
-*.[dD][xX][fF]
-*.[cC][aA][tT][pP][aA][rR][tT]
-*.[cC][aA][tT][pP][rR][oO][dD][uU][cC][tT]
-*.[pP][rR][tT]
-*.[aA][sS][mM]
-*.3[dD][mM]
-*.[bB][rR][eE][pP]
-*.[fF][cC][sS][tT][dD]
-*.[sS][cC][aA][dD]
-*.[sS][kK][pP]
-*.[jJ][tT]
-*.[pP][aA][rR]
-*.[pP][sS][mM]
-*.[dD][fF][tT]
-*.[oO][bB][jJ]
-*.[fF][bB][xX]
-*.[dD][aA][eE]
-*.[gG][lL][bB]
-# ...except the viewer models registered in data/scene/models/README.md (this must follow the *.glb rule)
-!data/scene/models/*.glb
-# ...and the RPO station mesh registered in the same README (this must follow the *.stl rule)
-!data/scene/models/*.stl
-*.[gG][lL][tT][fF]
-*.[pP][lL][yY]
-*.[wW][rR][lL]
-*.[xX]_[tT]
-*.[xX]_[bB]
-*.[sS][aA][tT]
-*.[sS][aA][bB]
-*.3[mM][fF]
-*.[aA][mM][fF]
-
-# Temp / editor artifacts
-texput.log
-.~lock.*#
-
-# PackageCompiler sysimage artifacts
-*.so
-*.dll
-*.dylib
-SpaceAGORA.so
-
-# Remote job push tool
-scripts/remote/remotes.conf
-remote_runs/
-
-# MERRA-2 native model-level granules for the EDL aerocapture GP study.
-# ~2.1 GB per day, fetched with a NASA Earthdata login; never committed.
-data/merra2_native/
+.venv/
+.venv-*/
+venv/
 __pycache__/
-# Viewer development payload written by write_viewer_dev_payload
-viewer/dev_data.js
+*.py[cod]
+node_modules/
 
-# Optional terrain asset tooling environment
-.venv-terrain/
-# Fetched terrain site bundles (scripts/dev/terrain/fetch_moon_site.py writes here)
-data/terrain/
+# Logs and temporary files.
+*.log
+*.tmp
+*.swp
+.DS_Store
 
-# Reproducible public Odyssey example environment resolves on each platform.
-examples/odyssey_surrogate_env/Manifest.toml
-# Default result folders of examples/odyssey_surrogate.jl run from the repository root.
-/odyssey_surrogate_results/
-/odyssey_surrogate_[0-9]*/
+# Local credentials; example environment files may be shared.
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+.netrc
+.pypirc
+id_rsa
+id_ed25519
+credentials.json
+secrets.json
+secrets.toml
+*.pem
+*.key
+*.p12
+*.pfx
 
-# Optional CYGNSS development Python environment
-.venv-cygnss/
-
-# Benchmark study outputs stay local; the studies' docs describe how to regenerate them.
-benchmarks/studies/aero_batch/results/
-benchmarks/studies/gram_memory_footprint/results/
-benchmarks/studies/gram_thread_scaling/results/
-benchmarks/studies/heap_contention/results/
-benchmarks/studies/paper_parallelization_benchmarks/workload/results/
-benchmarks/studies/rhs_heuristic_defaults/results/
-benchmarks/studies/small_wins/results/
-
-# Generated optional HYPR example environment; Project.template.toml is tracked.
-/examples/rpo_planner_env/Project.toml
-/examples/rpo_planner_env/Manifest.toml
-
-# Generated GNC algorithm example environment; Project.template.toml is tracked.
-/examples/gnc_algorithm_env/Project.toml
-/examples/gnc_algorithm_env/Manifest.toml
-
-# Generated extension walkthrough environment and the walkthroughs' results.
-/examples/walkthrough_env/Project.toml
-/examples/walkthrough_env/Manifest.toml
-/examples/walkthrough_env/output/
-
-# Optional viewer installation environment
-.visualizer-env/
-
-# Generated study reports and captures; historical copies belong in the research archive.
-/benchmarks/studies/edl_aerocapture_gp_uncertainty/RESULTS.md
-/benchmarks/studies/third_body_cost/profile_*.txt
-/benchmarks/studies/aero_batch/profile_*.txt
-/benchmarks/studies/gram_multisat_harness/*.mem
-/benchmarks/studies/gram_multisat_harness/*.out
-/benchmarks/studies/gram_multisat_harness/b6_fixed.json
-/benchmarks/studies/gram_multisat_harness/b6_nominal.json
-/benchmarks/studies/gram_multisat_harness/mars_patch/patched_mars.txt
-/benchmarks/studies/gram_multisat_harness/mars_patch/stock_mars.txt
+# Upload limit: 10 MiB per file. Git has no size-based ignore syntax;
+# oversized files need explicit rules in the nearest applicable .gitignore.
+# These LFS pointers reference pretrained models larger than that limit.
+/9_SpaceAGORA.jl-main_full integration/data/GRAM_surrogate/*.jls

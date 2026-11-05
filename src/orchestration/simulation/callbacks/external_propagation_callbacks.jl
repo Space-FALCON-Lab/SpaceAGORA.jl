@@ -18,30 +18,54 @@ function _external_owned_mask(args::SimulationConfiguration, num_sats::Int)
     return mask
 end
 
+function _synchronize_external_owners!(integrator, num_sats::Int)
+    buffers = integrator.p.shared_buffers
+    u = integrator.u
+    t = Float64(integrator.t)
+    modified = false
+    for (r, rt) in enumerate(buffers.external_runtimes)
+        advanced = ExternalPropagation.external_sync!(rt, t) > 0
+        configured = ExternalPropagation.external_capabilities(integrator.p.args.external_propagators[r]).configured_forces
+        (advanced || configured) || continue
+        for i in 1:num_sats
+            buffers.external_owner[i] == r || continue
+            st = ExternalPropagation.external_state(rt, t, buffers.external_local[i])
+            sc = u.sc[i]
+            sc.pos .= st.pos
+            sc.vel .= st.vel
+            if hasproperty(sc, :q)
+                sc.q .= st.q
+                sc.ω .= st.ω
+            end
+            modified = true
+        end
+    end
+    modified && DiffEqBase.derivative_discontinuity!(integrator, true)
+    return nothing
+end
+
+function _external_before_control_tick!(integrator, num_sats::Int)
+    any(ep -> ExternalPropagation.external_capabilities(ep).configured_forces, integrator.p.args.external_propagators) || return nothing
+    _synchronize_external_owners!(integrator, num_sats)
+    for (ep, rt) in zip(integrator.p.args.external_propagators, integrator.p.shared_buffers.external_runtimes)
+        ExternalPropagation.external_capabilities(ep).configured_forces || continue
+        t = Float64(integrator.t)
+        abs(ExternalPropagation.external_time(rt)-t) <= 16eps(max(abs(t),1.0)) ||
+            throw(ArgumentError("External owner must reach the physical control boundary before the command changes."))
+    end
+    return nothing
+end
+
+function _external_after_control_tick!(integrator)
+    for (ep, rt) in zip(integrator.p.args.external_propagators, integrator.p.shared_buffers.external_runtimes)
+        ExternalPropagation.external_capabilities(ep).configured_forces || continue
+        ExternalPropagation.external_control_changed!(rt, Float64(integrator.t))
+    end
+    return nothing
+end
+
 function get_external_propagation_callback(num_sats::Int)
     condition(u, t, integrator) = true
-    function affect!(integrator)
-        buffers = integrator.p.shared_buffers
-        u = integrator.u
-        t = Float64(integrator.t)
-        modified = false
-        for (r, rt) in enumerate(buffers.external_runtimes)
-            ExternalPropagation.external_sync!(rt, t) > 0 || continue
-            for i in 1:num_sats
-                buffers.external_owner[i] == r || continue
-                st = ExternalPropagation.external_state(rt, t, buffers.external_local[i])
-                sc = u.sc[i]
-                sc.pos .= st.pos
-                sc.vel .= st.vel
-                if hasproperty(sc, :q)
-                    sc.q .= st.q
-                    sc.ω .= st.ω
-                end
-                modified = true
-            end
-        end
-        modified && DiffEqBase.derivative_discontinuity!(integrator, true)
-        return nothing
-    end
+    affect!(integrator) = _synchronize_external_owners!(integrator, num_sats)
     return DiscreteCallback(condition, affect!; save_positions=(false, false))
 end

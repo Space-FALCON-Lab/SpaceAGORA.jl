@@ -99,7 +99,8 @@ refuses(f, rx) = (m = arg_error(f); m !== nothing && occursin(rx, m))
     @test EP.gravity_backbone_relative_acceleration_ii === SM.gravity_backbone_relative_acceleration_ii
     @test isempty(intersect(Set(EP.IMPLEMENTED_FUNCTIONS), Set(EP.CONSUMED_SERVICES)))
     metadata = Set((:ExternalPropagationServices, :CONTRACT_VERSION, :CompatibilityError,
-        :require_version, :IMPLEMENTED_FUNCTIONS, :CONSUMED_SERVICES))
+        :require_version, :IMPLEMENTED_FUNCTIONS, :CONSUMED_SERVICES,
+        :EXPERIMENTAL_LIFECYCLE_VERSION, :require_lifecycle_version))
     @test Set(names(EP)) == union(metadata, Set(EP.IMPLEMENTED_FUNCTIONS), Set(EP.CONSUMED_SERVICES))
     for name in union(metadata, Set(EP.IMPLEMENTED_FUNCTIONS), Set(EP.CONSUMED_SERVICES))
         @test Base.Docs.doc(Base.Docs.Binding(EP, name)) !== nothing

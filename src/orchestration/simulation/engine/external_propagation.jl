@@ -12,6 +12,63 @@ const _EXTERNAL_INDEX_FIELDS = (:chaser_index, :spacecraft_index)
 
 @inline _external_propagators(args) = args.external_propagators
 
+function _external_capabilities(ep)
+    c = SimulationModel.ExternalPropagation.external_capabilities(ep)
+    c isa NamedTuple && keys(c) == (:configured_forces, :checkpoint) &&
+        c.configured_forces isa Bool && c.checkpoint isa Bool ||
+        throw(ArgumentError("external_capabilities must return (configured_forces::Bool, checkpoint::Bool)."))
+    return c
+end
+
+_external_stage_safe(model) = model isa Union{SimulationModel.InverseSquaredGravityModel,
+    SimulationModel.InverseSquaredJ2GravityModel} ? !model.gravity_gradient : SimulationModel.ExternalPropagation.external_stage_safe(model)
+
+_external_stage_key(model) = model isa Union{SimulationModel.InverseSquaredGravityModel,
+    SimulationModel.InverseSquaredJ2GravityModel} ? (kind=string(typeof(model)), fields=Tuple(getfield(model,n) for n in fieldnames(typeof(model)))) :
+    SimulationModel.ExternalPropagation.external_stage_key(model)
+
+function _external_force_configuration(args)
+    planet = args.environment_model.planet
+    fields = (:name, :μ, :Rp_e, :Rp_p, :Rp_m, :ω, :J2)
+    ephemeris = args.environment_model.ephemerides_model
+    return (planet=Tuple((name, deepcopy(getproperty(planet,name))) for name in fields if hasproperty(planet,name)),
+        ephemeris=(kind=string(typeof(ephemeris)),fields=Tuple(getfield(ephemeris,n) for n in fieldnames(typeof(ephemeris)))),
+        epoch=Tuple(getfield(args.initial_time,n) for n in fieldnames(typeof(args.initial_time))),
+        forces=Tuple(_external_stage_key(m) for m in args.dynamics_model.dynamic_effectors),
+        controls=Tuple(_external_stage_key(m) for m in args.control_model.control_effectors),
+        spacecraft_mass=Tuple((dry_mass=sc.dry_mass,prop_mass=sc.prop_mass) for sc in args.dynamics_model.spacecraft),
+        control_rates=Tuple(args.control_model.control_rates),
+        guidance_rates=Tuple(args.guidance_model.guidance_rates), navigation_rates=Tuple(args.navigation_model.navigation_rates))
+end
+
+function _validate_external_force_service!(args, ep)
+    _external_capabilities(ep).configured_forces || return nothing
+    length(args.dynamics_model.spacecraft) == 1 &&
+        SimulationModel.ExternalPropagation.external_spacecraft(ep) == [1] ||
+        throw(ArgumentError("Experimental configured external forces support exactly one spacecraft."))
+    !args.mission_configuration.orientation_sim ||
+        throw(ArgumentError("Experimental configured external forces are translation-only; orientation_sim must be false."))
+    args.environment_model.ephemerides_model isa SimulationModel.SimpleEphemeridesModel ||
+        throw(ArgumentError("Experimental configured external forces currently require SimpleEphemeridesModel; other frame backends are unqualified."))
+    spacecraft = only(args.dynamics_model.spacecraft)
+    SimulationModel.mounted_actuator_count(spacecraft) == 0 &&
+        isempty(spacecraft.root.rw_assembly.mounted_rates) && isempty(spacecraft.root.rw_assembly.cmg_rates) ||
+        throw(ArgumentError("Experimental configured external forces do not support mounted actuator hardware, including wheel/CMG rate buffers."))
+    isempty(args.guidance_model.guidance_effectors) && isempty(args.navigation_model.navigation_effectors) ||
+        throw(ArgumentError("Experimental configured external forces currently require direct-state control without guidance/navigation effectors."))
+    args.interlink_model === nothing || throw(ArgumentError("External configured forces do not support interlinks."))
+    for model in args.dynamics_model.dynamic_effectors
+        _external_stage_safe(model) || throw(ArgumentError("External configured forces do not support dynamic effector $(typeof(model)); stage safety is not declared."))
+    end
+    for model in args.control_model.control_effectors
+        SimulationModel.actuation_mode(model) === :ideal &&
+            SimulationModel.SimulationCallbacks.tick_schedule(model) === :periodic &&
+            _external_stage_safe(model) || throw(ArgumentError("External configured forces require stage-safe, ideal, periodic control effectors; got $(typeof(model))."))
+    end
+    _external_force_configuration(args)
+    return nothing
+end
+
 """Owned run indices over every external propagator in `args` (empty when there are none)."""
 function _external_owned_indices(args)::Vector{Int}
     owned = Int[]
@@ -44,10 +101,11 @@ end
     _validate_external_propagators!(args, solver_mode)
 
 Setup-time guards for externally propagated spacecraft (each throws an `ArgumentError`). A no-op when
-`args.external_propagators` is empty. Refused: checkpointing or resume; the solver modes other than
+`args.external_propagators` is empty. Legacy owners refuse checkpointing, resume and actuation.
+Experimental lifecycle owners may explicitly opt in under the narrow force/grid/snapshot guards below.
+All owners refuse the solver modes other than
 `:tsit5`, `:auto_stiff`, `:rodas5p` and `:dp8`; articulated joints, compliant attachments or a robot arm on an
-owned spacecraft; a control effector that acts on an owned spacecraft (actuation arrives with the scene
-actuation stage); a guidance, navigation or control rate that is not an integer multiple of an owner's step;
+owned spacecraft; unsupported actuation; a guidance, navigation or control rate that is not an integer multiple of an owner's step;
 and the continuous events that would evaluate shadow entries (touchdown, orbit-count and entry-end
 termination, atmosphere-interface crossings).
 """
@@ -71,10 +129,21 @@ function _validate_external_propagators!(args, solver_mode::Symbol)
         push!(steps, dt)
     end
     allunique(owned) || throw(ArgumentError("A spacecraft cannot be owned by more than one external propagator or listed twice; got owned indices $(sort(owned))."))
-    if _typed_checkpoint_enabled(args)
+    if _typed_checkpoint_enabled(args) && any(ep -> !_external_capabilities(ep).checkpoint, eps)
         throw(ArgumentError(
             "Externally propagated spacecraft do not support checkpointing or resume: the external state is not part of the checkpoint. " *
             "Disable simulation_settings.checkpoint_enabled and resume_from_checkpoint."))
+    end
+    for ep in eps
+        _validate_external_force_service!(args, ep)
+        if _typed_checkpoint_enabled(args)
+            dt = EP.external_step(ep)
+            settings = args.simulation_settings
+            _is_integer_multiple(settings.checkpoint_interval_s, dt) &&
+                _is_integer_multiple(args.mission_configuration.mission_time, dt) ||
+                throw(ArgumentError("Experimental external checkpoints require checkpoint intervals and mission end on the owner step grid."))
+            EP.external_checkpoint_key(ep) # Missing snapshot identity fails before runtime construction.
+        end
     end
     if !(solver_mode in _EXTERNAL_ALLOWED_SOLVER_MODES)
         throw(ArgumentError(
@@ -91,7 +160,8 @@ function _validate_external_propagators!(args, solver_mode::Symbol)
             "Spacecraft $i is owned by an external propagator and has a compliant robot-arm effector; the two cannot be combined."))
     end
     for effector in args.control_model.control_effectors
-        _control_effector_targets_owned(effector, owned) && throw(ArgumentError(
+        _control_effector_targets_owned(effector, owned) &&
+            any(ep -> !_external_capabilities(ep).configured_forces, eps) && throw(ArgumentError(
             "Control effector $(nameof(typeof(effector))) acts on a spacecraft owned by an external propagator (or on every spacecraft). " *
             "Actuating externally propagated spacecraft is not supported yet; read their state from guidance or navigation only, " *
             "and bind control effectors to ordinary spacecraft through SpacecraftModel.control."))
@@ -117,6 +187,155 @@ function _validate_external_propagators!(args, solver_mode::Symbol)
         "they are not supported with externally propagated spacecraft."))
     for ep in eps
         EP.external_preflight(ep, args)
+    end
+    return nothing
+end
+
+# A trial view belongs only to this service. The runtime/configuration is this run's, so
+# force evaluation sees the current held command without changing committed spacecraft state.
+# The narrow preflight excludes history-dependent, mounted and coupled effectors.
+struct ExternalPhysicalForceService{P,U}
+    parameters::P
+    trial::U
+    satellite::Int
+end
+
+function (service::ExternalPhysicalForceService)(pos, vel, t::Real)
+    length(pos) == length(vel) == 3 || throw(ArgumentError("External trial position and velocity must have three components."))
+    all(isfinite, pos) && all(isfinite, vel) && isfinite(t) || throw(ArgumentError("External trial state/time must be finite."))
+    p = service.parameters; i = service.satellite; x = service.trial
+    x.pos .= pos; x.vel .= vel
+    forces = MVector{3,Float64}(0.0,0.0,0.0)
+    torques = MVector{3,Float64}(0.0,0.0,0.0)
+    sample = build_state_sample(x, p.args.dynamics_model.spacecraft[i], false, i)
+    # The serial effector sum of the run's right-hand side, including its effector
+    # scopes: an effector whose scope leaves this spacecraft out adds nothing.
+    effectors = p.args.dynamics_model.dynamic_effectors
+    scopes = _effector_scopes(p)
+    if scopes === nothing
+        _accumulate_effector_chain!(forces, torques, effectors, x, sample, p, i, Float64(t))
+    else
+        _check_scoped_tuple(scopes, effectors)
+        _accumulate_scoped_effector_chain!(forces, torques, effectors, scopes, 1, x, sample, p, i, Float64(t))
+    end
+    # The ordinary assembly clamps nonfinite propellant rates. The external contract is stricter:
+    # a declared constant-mass model must report a finite zero rate, not rely on that fallback.
+    for model in p.args.control_model.control_effectors
+        propellant = SimulationModel.control_propellant_rate(model, sample, p, Float64(t))
+        isfinite(propellant) && iszero(propellant) || throw(ArgumentError("External force service requires a finite zero propellant rate."))
+    end
+    mass_rate, wheel_torque = _control_effectors_with_wheels!(forces, torques, x, p, i, Float64(t), false)
+    mass_rate == 0.0 && all(iszero, torques) && all(iszero, wheel_torque) ||
+        throw(ArgumentError("External configured-force service refuses mass loss or torque; the opted-in model violated its stage-safe contract."))
+    mass = Float64(x.mass)
+    isfinite(mass) && mass > 0 || throw(ArgumentError("External force service requires positive finite constant mass."))
+    acceleration = SimulationModel.DynamicsTranslational.acceleration_from_force(forces, mass)
+    all(isfinite, acceleration) || throw(ArgumentError("External force service produced nonfinite acceleration."))
+    return acceleration
+end
+
+function _bind_external_force_services!(p, u)
+    EP = SimulationModel.ExternalPropagation
+    for (k, ep) in enumerate(_external_propagators(p.args))
+        _external_capabilities(ep).configured_forces || continue
+        i = only(EP.external_spacecraft(ep))
+        service = ExternalPhysicalForceService(p, deepcopy(u.sc[i]), i)
+        EP.external_bind_force_service!(p.shared_buffers.external_runtimes[k], service)
+    end
+    return nothing
+end
+
+"""Use the synchronized owner as the authority for a checkpoint segment's physical endpoint.
+The solver's saved endpoint can differ from its callback-corrected live state by rounding.
+Validate every owner and collect every update before changing the saved endpoint. Never advance an
+owner here: a control tick may already have installed the next interval's command.
+The returned diagnostic retains the pre-handoff discrepancy; only owned kinematic fields change.
+"""
+function _capture_external_checkpoint_endpoint!(p, u, t::Float64)
+    isempty(_external_propagators(p.args)) && return nothing
+    EP = SimulationModel.ExternalPropagation
+    updates = NamedTuple[]
+    for (k, ep) in enumerate(_external_propagators(p.args))
+        rt = p.shared_buffers.external_runtimes[k]
+        owner_t = EP.external_time(rt)
+        isfinite(owner_t) && abs(owner_t-t) <= 16eps(max(abs(t),1.0)) ||
+            throw(ArgumentError("External owner is not synchronized at checkpoint handoff time $t."))
+        for (slot, i) in enumerate(EP.external_spacecraft(ep))
+            state = EP.external_state(rt,t,slot)
+            pos = collect(Float64, state.pos); vel = collect(Float64, state.vel)
+            length(pos)==length(vel)==3 && all(isfinite,pos) && all(isfinite,vel) ||
+                throw(ArgumentError("Invalid external kinematics at checkpoint handoff."))
+            attitude = hasproperty(u.sc[i], :q)
+            q = attitude ? collect(Float64,state.q) : nothing
+            omega = attitude ? collect(Float64,state.ω) : nothing
+            (!attitude || (length(q)==4 && length(omega)==3 && all(isfinite,q) && all(isfinite,omega))) ||
+                throw(ArgumentError("Invalid external attitude at checkpoint handoff."))
+            push!(updates,(satellite=i,owner_time_s=owner_t,before_pos=collect(u.sc[i].pos),before_vel=collect(u.sc[i].vel),
+                pos=pos,vel=vel,before_q=attitude ? collect(u.sc[i].q) : nothing,
+                before_omega=attitude ? collect(u.sc[i].ω) : nothing,q=q,omega=omega))
+        end
+    end
+    for update in updates
+        sc = u.sc[update.satellite]
+        sc.pos .= update.pos; sc.vel .= update.vel
+        if update.q !== nothing
+            sc.q .= update.q; sc.ω .= update.omega
+        end
+    end
+    return isempty(updates) ? nothing : (version=1,time_s=t,updates=updates)
+end
+
+function _external_checkpoint_state(p, t::Float64; handoff=nothing)
+    isempty(_external_propagators(p.args)) && return nothing
+    EP = SimulationModel.ExternalPropagation
+    owners = Any[]
+    for (k, ep) in enumerate(_external_propagators(p.args))
+        _external_capabilities(ep).checkpoint || throw(ArgumentError("External owner did not opt in to checkpointing."))
+        rt = p.shared_buffers.external_runtimes[k]
+        abs(EP.external_time(rt)-t) <= 16eps(max(abs(t),1.0)) ||
+            throw(ArgumentError("External owner is not synchronized at checkpoint time $t."))
+        push!(owners, (key=deepcopy(EP.external_checkpoint_key(ep)), owned=copy(EP.external_spacecraft(ep)),
+            step=EP.external_step(ep), force_configuration=_external_capabilities(ep).configured_forces ? deepcopy(_external_force_configuration(p.args)) : nothing,
+            state=deepcopy(EP.external_checkpoint_state(rt,t))))
+    end
+    return isempty(owners) ? nothing : (version=1, time_s=t, owners=owners, handoff=handoff)
+end
+
+function _check_external_checkpoint_state(args, checkpoint)
+    EP = SimulationModel.ExternalPropagation
+    eps = _external_propagators(args)
+    runtime = get(checkpoint, :runtime_state, nothing)
+    entry = runtime === nothing ? nothing : get(runtime, :external_owners, nothing)
+    isempty(eps) && return entry === nothing ? nothing : throw(ArgumentError("Checkpoint contains external owners absent from this configuration."))
+    entry !== nothing && entry.version == 1 && entry.time_s == checkpoint.t && length(entry.owners) == length(eps) ||
+        throw(ArgumentError("Checkpoint is missing compatible external-owner state."))
+    for (ep, saved) in zip(eps, entry.owners)
+        _external_capabilities(ep).checkpoint && isequal(saved.key, EP.external_checkpoint_key(ep)) &&
+            saved.owned == EP.external_spacecraft(ep) && saved.step == EP.external_step(ep) ||
+            throw(ArgumentError("External checkpoint owner identity, ownership or step mismatch."))
+        expected = _external_capabilities(ep).configured_forces ? _external_force_configuration(args) : nothing
+        isequal(saved.force_configuration, expected) || throw(ArgumentError("External checkpoint configured physics or control parameters differ."))
+    end
+    return entry
+end
+
+function _restore_external_checkpoint_state!(p, entry, u, t::Float64)
+    entry === nothing && return nothing
+    EP = SimulationModel.ExternalPropagation
+    for (k, saved) in enumerate(entry.owners)
+        rt = p.shared_buffers.external_runtimes[k]
+        EP.external_restore_state!(rt, deepcopy(saved.state), t)
+        abs(EP.external_time(rt)-t) <= 16eps(max(abs(t),1.0)) || throw(ArgumentError("Restored external clock differs from checkpoint."))
+        for (slot, i) in enumerate(saved.owned)
+            state = EP.external_state(rt,t,slot)
+            state.pos == u.sc[i].pos && state.vel == u.sc[i].vel || throw(ArgumentError(
+                "Restored external physical state differs from checkpoint shadow state at t=$t: " *
+                "owner_pos=$(collect(state.pos)), shadow_pos=$(collect(u.sc[i].pos)), " *
+                "owner_vel=$(collect(state.vel)), shadow_vel=$(collect(u.sc[i].vel))."))
+            if hasproperty(u.sc[i], :q)
+                state.q == u.sc[i].q && state.ω == u.sc[i].ω || throw(ArgumentError("Restored external attitude differs from checkpoint shadow state."))
+            end
+        end
     end
     return nothing
 end

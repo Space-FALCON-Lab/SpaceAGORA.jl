@@ -28,7 +28,10 @@ The configuration preflight checks ownership and solver compatibility; the run
 itself still checks routing, the flat right-hand-side guard and its other
 restrictions. A run with an external propagator cannot write or resume
 checkpoints, cannot run as a constellation ensemble, and cannot apply control
-effectors to the owned spacecraft. It runs only in the solver modes `:tsit5`,
+effectors to the owned spacecraft, unless the owner opts into the
+[experimental lifecycle extension](#Experimental-lifecycle-extension), which
+lifts the checkpoint and control refusals in a narrow case. It runs only in the
+solver modes `:tsit5`,
 `:auto_stiff`, `:rodas5p` and `:dp8`, and its guidance, navigation and control
 periods must be whole multiples of each owner's step. Plan runs with an external
 propagator within these limits.
@@ -41,16 +44,19 @@ identities.
 
 | User | What it does | Supported access |
 |---|---|---|
-| MuJoCo `src/engine_coupling.jl` and other adapter implementations | Declares the spacecraft it owns, prepares a fresh runtime, synchronizes and reports state | Methods of the eight external-owner hooks in the inventory. |
+| MuJoCo `src/engine_coupling.jl` and other adapter implementations | Declares the spacecraft it owns, prepares a fresh runtime, synchronizes and reports state | Methods of the eight external-owner hooks in the inventory; an owner that opts into the lifecycle extension also implements its hooks. |
 | Configuration builders and the generated `companion` starter | Attach owners and run the configuration preflight | `with_external_propagators` and `validate_external_propagators`. |
 | Adapter preparation | Reads each spacecraft's initial state | `external_initial_state`, which returns copied samples by run index. |
 | Telemetry callbacks | Observe the owners' runtimes without changing them | `external_runtimes`, which returns borrowed runtimes; callbacks must not step them. |
 | MuJoCo `src/proximity_scene.jl` | Gets common frame and gravity quantities | The service module's frame and gravity services and the documented root API, including `StateSample` and `EnvironmentSample`. |
 
-The running engine calls seven of the eight hooks. It does not call
-`external_time(rt)`, which reports the owner's own clock: the contract keeps it as
-a time observer, so that tests and tools can check that an owner's clock agrees
-with the engine's, and SpaceAGORAMuJoCo implements it. Of the seven services
+For an owner that does not opt into the lifecycle extension, the running engine
+calls seven of the eight hooks. It does not call `external_time(rt)`, which
+reports the owner's own clock: the contract keeps it as a time observer, so that
+tests and tools can check that an owner's clock agrees with the engine's, and
+SpaceAGORAMuJoCo implements it. For an owner that opts in, the engine also reads
+`external_time` to check that the owner reached each control tick and
+checkpoint. Of the seven services
 SpaceAGORA supplies, five are used in SpaceAGORAMuJoCo's runtime code
 (`AbstractExternalPropagator`, `external_runtimes`, `external_initial_state`,
 `sample_planet_frame_with_lpi` and `gravity_backbone_relative_acceleration_ii`).
@@ -125,6 +131,44 @@ SpaceAGORA.ExternalPropagationServices.external_sync!
 SpaceAGORA.ExternalPropagationServices.external_time
 SpaceAGORA.ExternalPropagationServices.external_state
 SpaceAGORA.ExternalPropagationServices.external_acceleration
+```
+
+## Experimental lifecycle extension
+
+The lifecycle extension, version `0.1.0`, is versioned apart from the contract
+and is experimental. An owner opts in by returning `true` flags from
+`external_capabilities`:
+
+- `configured_forces`: the engine binds a run-local force service that returns
+  the total configured acceleration (gravity, other dynamic effectors and the
+  held control command) at a trial state, synchronizes the owner before each
+  periodic control tick, and calls `external_control_changed!` after it;
+- `checkpoint`: the owner's state is saved in checkpoints and restored on
+  resume, with checks of the owner's identity, step and force configuration,
+  and an exact check of the restored state against the checkpoint.
+
+The configuration check accepts configured forces only for one spacecraft with
+translation only and constant mass, the `SimpleEphemeridesModel` frame backend,
+central or J2 gravity and models that declare themselves stage safe
+(`external_stage_safe`, `external_stage_key`), ideal periodic stage-safe control
+effectors, no guidance or navigation effectors and no mounted actuators. It
+requires checkpoint intervals and the mission end on the owner's step grid.
+Owners that do not opt in are unchanged. The contributor
+note `docs/contributing/external-propagation-lifecycle-experiment.md` in the
+[contributor documentation](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/main/docs/contributing)
+lists the full scope and what is not covered yet.
+
+```@docs
+SpaceAGORA.ExternalPropagationServices.EXPERIMENTAL_LIFECYCLE_VERSION
+SpaceAGORA.ExternalPropagationServices.require_lifecycle_version
+SpaceAGORA.ExternalPropagationServices.external_capabilities
+SpaceAGORA.ExternalPropagationServices.external_stage_safe
+SpaceAGORA.ExternalPropagationServices.external_stage_key
+SpaceAGORA.ExternalPropagationServices.external_bind_force_service!
+SpaceAGORA.ExternalPropagationServices.external_control_changed!
+SpaceAGORA.ExternalPropagationServices.external_checkpoint_key
+SpaceAGORA.ExternalPropagationServices.external_checkpoint_state
+SpaceAGORA.ExternalPropagationServices.external_restore_state!
 ```
 
 ## Core services

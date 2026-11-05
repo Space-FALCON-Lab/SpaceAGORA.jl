@@ -152,9 +152,20 @@ function zoh(A,B,dt)
     E=exp(dt*Z);return E[1:n,1:n],E[1:n,n+1:end]
 end
 
-function rtn_model(y,c)
-    physical=ks_physical_tangent(y,c.planet)
+"""Direct inertial point-mass/J2 Jacobian, independent of the KS tangent map."""
+function cartesian_model(r,v,planet)
+    I3=Matrix{Float64}(I,3,3);rho=norm(r)
+    acceleration=-planet.μ*r/rho^3+ks_j2_acceleration_si(r,planet)
+    J=planet.μ*(3r*r'/rho^5-I3/rho^3)+ks_j2_acceleration_jacobian_si(r,planet)
+    return (;A_cartesian=[zeros(3,3) I3;J zeros(3,3)],
+        B_cartesian=[zeros(3,3);I3],acceleration)
+end
+
+function rtn_model(y,c;linearization=:ks)
     x=ks_state_to_cartesian(y);r=x.position_ii_m;v=x.velocity_ii_m
+    physical=linearization==:ks ? ks_physical_tangent(y,c.planet) :
+        linearization==:cartesian ? cartesian_model(r,v,c.planet) :
+        throw(ArgumentError("linearization must be :ks or :cartesian"))
     M=Matrix(rtn_dcm_from_inertial(r,v));I3=Matrix{Float64}(I,3,3)
     rd=(I3-M[:,1]*M[:,1]')*v/norm(r)
     nd=(I3-M[:,3]*M[:,3]')*cross(r,physical.acceleration)/norm(cross(r,v))
@@ -194,14 +205,14 @@ end
 Units: a in metres, angles in radians. Objectives :a, :i, :omega, :combined.
 Joint scales are 1000 m, one degree, one degree; weights are each 1/3.
 """
-function plan_laser_schedule(case,times;objective=:a,reference=nothing)
+function plan_laser_schedule(case,times;objective=:a,reference=nothing,linearization=:ks)
     objective in (:a,:i,:omega,:combined) || throw(ArgumentError("Unknown objective."))
     all(s!=1 && t==1 for (s,t) in case.edges) || throw(ArgumentError("Single-target star topology requires target ID 1."))
     c=case.config;n=length(times)-1;ne=length(case.edges)
     reference===nothing && (reference=replay_laser_schedule(case,times,zeros(Int,ne,n)))
     Fs=Matrix{Float64}[];Vs=Matrix{Float64}[];available=trues(ne,n)
     for k in 1:n
-        state=reference((times[k]+times[k+1])/2);model=rtn_model(view(state,slice(1)),c)
+        state=reference((times[k]+times[k+1])/2);model=rtn_model(view(state,slice(1)),c;linearization)
         pairs=laser_geometry(state,case)
         B=reduce(hcat,[model.B*(p.target_force/c.mass_kg) for p in pairs])
         F,V=zoh(model.A,B,times[k+1]-times[k]);push!(Fs,F);push!(Vs,V)

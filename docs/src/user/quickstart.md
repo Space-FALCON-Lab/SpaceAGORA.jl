@@ -31,20 +31,50 @@ julia --startup-file=no examples/setup.jl
 julia --project=examples examples/AGORA_Basic_Quickstart.jl
 ```
 
-On Windows the variable is set in a separate statement, and the remaining four
-lines above then run unchanged. Terminal, Windows PowerShell:
+On Windows, choose **one** of the following blocks for your shell and run it
+from top to bottom. Each block includes the whole path to the first result.
+Start in a folder you own and can write to, rather than a system directory.
+The commands below create `SpaceAGORA-work` under your user profile. If that
+folder already contains a checkout, choose a different folder name for a fresh
+trial; do not delete earlier work.
+
+Terminal, Windows PowerShell:
 
 ```text
+New-Item -ItemType Directory -Force -Path "$HOME/SpaceAGORA-work"
+Set-Location "$HOME/SpaceAGORA-work"
 $env:GIT_LFS_SKIP_SMUDGE = "1"
 git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
+Set-Location SpaceAGORA.jl
+julia --project=. -e "using Pkg; Pkg.instantiate(julia_version_strict=true)"
+julia --startup-file=no examples/setup.jl
+julia --project=examples examples/AGORA_Basic_Quickstart.jl
 ```
 
 Terminal, Windows Command Prompt:
 
 ```text
+if not exist "%USERPROFILE%\SpaceAGORA-work" mkdir "%USERPROFILE%\SpaceAGORA-work"
+cd /d "%USERPROFILE%\SpaceAGORA-work"
 set GIT_LFS_SKIP_SMUDGE=1
 git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
+cd SpaceAGORA.jl
+julia --project=. -e "using Pkg; Pkg.instantiate(julia_version_strict=true)"
+julia --startup-file=no examples/setup.jl
+julia --project=examples examples/AGORA_Basic_Quickstart.jl
 ```
+
+After entering `SpaceAGORA.jl`, that checkout is the working directory for the
+remaining commands. If a step reports access denied, stop and check that the
+folder is writable before continuing. A managed computer may require a lab
+workspace approved by your administrator. The normal setup does not require an
+administrator terminal.
+
+The last command prints a saved-sample count and writes
+`output/simulation_results.csv` and plots under `output/plots/`. See
+[What to expect](#What-to-expect) below for the complete output
+list. Compilation can take time on the first run; progress messages alone are
+not a failure.
 
 `GIT_LFS_SKIP_SMUDGE=1` leaves the seven GRAM surrogate grids under
 `data/planets/gram_surrogate/` as small Git LFS pointers. Together the grids

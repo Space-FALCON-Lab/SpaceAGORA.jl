@@ -20,6 +20,11 @@ to choose, how to pin SpaceAGORA and how to run the shared checks. Read
 algorithm guide. The [Extension Hook Reference](../generated/extension_hook_reference.md)
 lists every hook's signature and default.
 
+For your first controller, follow the numbered
+[controller walkthrough](gnc_feedback.md#Follow-this-path-first): run the example,
+choose its spacecraft, add the gyro estimator, then check restart behavior.
+Keep this page as the map when you need a different kind of algorithm.
+
 ## Which profile?
 
 Use the [feedback profile](gnc_feedback.md) when each tick computes a command or

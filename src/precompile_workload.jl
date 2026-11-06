@@ -1,6 +1,8 @@
-function _spaceagora_precompile_args()
+function _spaceagora_precompile_args(; planet=SimulationModel.Mars(),
+        dynamic_effectors=(SimulationModel.InverseSquaredGravityModel(),),
+        density_model=SimulationModel.ExponentialAtmosphereModel(planet),
+        results=false, results_directory=joinpath(tempdir(), "spaceagora_precompile"))
     SM = SimulationModel
-    planet = SM.Mars()
     spacecraft = TelemetryVerification.make_three_body_spacecraft(
         bus_dims=(1.2, 1.1, 0.9),
         panel_dims=(0.01, 0.8, 0.4),
@@ -24,15 +26,15 @@ function _spaceagora_precompile_args()
         spacecraft=spacecraft,
         mission_time=5.0,
         initial_time=SM.InitialTime(year=2024, month=1, day=1, hour=0, minute=0, second=0.0),
-        dynamic_effectors=(SM.InverseSquaredGravityModel(),),
-        density_model=SM.ExponentialAtmosphereModel(planet),
+        dynamic_effectors=dynamic_effectors,
+        density_model=density_model,
         ephemerides_model=SM.SimpleEphemeridesModel(),
         orientation_sim=false,
         keplerian=true,
         EI_km=140.0,
         verbose=false,
-        results=false,
-        results_directory=joinpath(tempdir(), "spaceagora_precompile")
+        results=results,
+        results_directory=results_directory
     )
 end
 
@@ -41,7 +43,15 @@ const _SPACEAGORA_PRECOMPILE_ENV = Dict("SPACEAGORA_PARALLEL_PROFILE" => "R2", "
 function _run_spaceagora_precompile_workload(; workspace::AbstractString=tempdir())
     ParallelProfiles.parse_parallel_profile("R2")
     engine_config = simulation_engine_config_from_env(_SPACEAGORA_PRECOMPILE_ENV)
-    args = _spaceagora_precompile_args()
+    # `ODEParams` specialises on planet, density and effector types, and the
+    # callback set on `results`, so each combination is its own compilation. After
+    # the Mars default: Earth with J2 and no atmosphere (the combination of
+    # examples/AGORA_Basic_Quickstart.jl) without and with CSV output. `Earth()`
+    # is the plain keyword constructor: it furnishes no SPICE kernel and fills no
+    # planet cache (the SPICE-backed one is `Earth("")`), so it leaves nothing for
+    # `_reset_furnished_kernels!` to undo. The CSV goes to the workload's tempdir.
+    earth = SimulationModel.Earth()
+    j2 = (SimulationModel.InverseSquaredJ2GravityModel(),)
     # The workload propagates without aerodynamics on purpose. Silence the
     # density-without-drag diagnostic for it, or every installation prints that
     # warning while precompiling; ordinary runs still warn. The GRAM perturbation
@@ -53,7 +63,18 @@ function _run_spaceagora_precompile_workload(; workspace::AbstractString=tempdir
             "SPACEAGORA_GRAM_DENSITY_PERTURBATION" => nothing) do
         mktempdir(workspace) do tmp
             cd(tmp) do
-                run_simulation(engine_config, args; return_solution=true)
+                sol = nothing
+                for args in (
+                    _spaceagora_precompile_args(),
+                    _spaceagora_precompile_args(planet=earth, dynamic_effectors=j2,
+                        density_model=SimulationModel.NoAtmosphereModel()),
+                    _spaceagora_precompile_args(planet=earth, dynamic_effectors=j2,
+                        density_model=SimulationModel.NoAtmosphereModel(),
+                        results=true, results_directory=tmp),
+                )
+                    sol = run_simulation(engine_config, args; return_solution=true)
+                end
+                sol
             end
         end
     end

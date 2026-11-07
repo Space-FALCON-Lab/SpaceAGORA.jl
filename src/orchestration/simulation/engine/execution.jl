@@ -287,10 +287,6 @@ end
         integrator_view = (p=p,)
         push!(times_acc, t_final)
         push!(data_acc, SimulationModel.SimulationCallbacks._save_snapshot(save_fields, sol.u[end], t_final, integrator_view))
-    elseif !isempty(_external_propagators(p.args))
-        # Checkpoint-enabled owners supply the authoritative saved endpoint before this helper.
-        # Rebuild a coincident endpoint row from that same state, retaining post-tick readouts.
-        data_acc[end] = SimulationModel.SimulationCallbacks._save_snapshot(save_fields, sol.u[end], t_final, (p=p,))
     end
     return nothing
 end

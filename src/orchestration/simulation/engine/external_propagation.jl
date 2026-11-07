@@ -65,7 +65,55 @@ function _validate_external_force_service!(args, ep)
             SimulationModel.SimulationCallbacks.tick_schedule(model) === :periodic &&
             _external_stage_safe(model) || throw(ArgumentError("External configured forces require stage-safe, ideal, periodic control effectors; got $(typeof(model))."))
     end
+    _check_external_lifecycle_cadences!(args, SimulationModel.ExternalPropagation.external_step(ep))
     _external_force_configuration(args)
+    return nothing
+end
+
+# Lifecycle times are exact. With a configured-force owner the owner step, the control
+# periods, the output interval, the mission end and (with checkpoints) the checkpoint interval
+# must be binary-exact: whole multiples of 2^-20 s below 2^33 s. Sums and whole multiples of such
+# values are exact in Float64, so checkpoint segment ends (built by adding the interval), the
+# output grid (built by index), the control ticks and the owner's step grid land on the same
+# Float64 values, and `floor(t / step)` is exact at every tick, checkpoint and output time. A
+# decimal cadence such as 0.1 s drifts by a few ulps between those constructions, which turns an
+# output time into a stop one ulp after a segment start; it is refused until it is supported.
+const _EXTERNAL_TIME_QUANTUM_EXPONENT = 20
+
+function _binary_exact_time(x::Real)
+    v = Float64(x)
+    q = ldexp(v, _EXTERNAL_TIME_QUANTUM_EXPONENT)
+    return isfinite(v) && v > 0.0 && isinteger(q) && q < 2.0^53
+end
+
+function _exact_step_multiple(x::Real, dt::Float64)
+    _binary_exact_time(x) || return false
+    k = Float64(x) / dt
+    return isinteger(k) && k >= 1.0 && k * dt == Float64(x)
+end
+
+function _check_external_lifecycle_cadences!(args, dt::Float64)
+    _binary_exact_time(dt) || throw(ArgumentError(
+        "Experimental configured external forces require a binary-exact owner step (a whole multiple of 2^-20 s, " *
+        "such as 1/128 s or 10 s); got $dt s. Decimal cadences are not supported yet."))
+    for rate in _periodic_control_rates(args)
+        _exact_step_multiple(rate, dt) || throw(ArgumentError(
+            "Experimental configured external forces require each control period to be an exact whole multiple of the " *
+            "owner step $dt s; got $rate s."))
+    end
+    mission = args.mission_configuration
+    _binary_exact_time(mission.data_rate) || throw(ArgumentError(
+        "Experimental configured external forces require a binary-exact output interval data_rate (a whole multiple of " *
+        "2^-20 s); got $(mission.data_rate) s."))
+    _binary_exact_time(mission.mission_time) || throw(ArgumentError(
+        "Experimental configured external forces require a binary-exact mission end (a whole multiple of 2^-20 s); " *
+        "got $(mission.mission_time) s."))
+    if _typed_checkpoint_enabled(args)
+        settings = args.simulation_settings
+        _exact_step_multiple(settings.checkpoint_interval_s, dt) && _exact_step_multiple(mission.mission_time, dt) ||
+            throw(ArgumentError("Experimental external checkpoints require the checkpoint interval and the mission end to be " *
+                "exact whole multiples of the owner step $dt s; got $(settings.checkpoint_interval_s) s and $(mission.mission_time) s."))
+    end
     return nothing
 end
 
@@ -135,6 +183,13 @@ function _validate_external_propagators!(args, solver_mode::Symbol)
             "Disable simulation_settings.checkpoint_enabled and resume_from_checkpoint."))
     end
     for ep in eps
+        caps = _external_capabilities(ep)
+        # Lifecycle extension 0.1.0 qualifies checkpoints only with configured forces: a checkpoint-only
+        # owner is synchronized only when it advances, so its saved rows between steps would be the
+        # shadow integration's.
+        caps.checkpoint && !caps.configured_forces && throw(ArgumentError(
+            "External propagator $(nameof(typeof(ep))) declares checkpoint without configured_forces; " *
+            "the experimental lifecycle extension supports checkpoints only together with configured forces."))
         _validate_external_force_service!(args, ep)
         if _typed_checkpoint_enabled(args)
             dt = EP.external_step(ep)

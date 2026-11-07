@@ -71,9 +71,12 @@ abstract type AbstractExternalPropagator end
 
 _unimplemented(f, T) = throw(ErrorException("Not implemented: $(f) for $(T); implement it for the AbstractExternalPropagator subtype."))
 
-"""Opt in to experimental lifecycle services; legacy owners retain all existing refusals.
-`configured_forces` requires the translation-only force-service contract; `checkpoint` requires
-versioned owner snapshots. Neither flag asserts numerical validity of an adapter.
+"""`external_capabilities(ep) -> (configured_forces::Bool, checkpoint::Bool)`: opt in to the
+experimental lifecycle extension. Return exactly this named tuple, with these two keys in this
+order. The default, both `false`, keeps every contract 2.0.0 refusal. `configured_forces` requires
+the translation-only force-service contract; `checkpoint` requires versioned owner snapshots and,
+in extension 0.1.0, `configured_forces` as well. Neither flag asserts numerical validity of an
+adapter.
 """
 external_capabilities(::AbstractExternalPropagator) = (configured_forces=false, checkpoint=false)
 
@@ -84,7 +87,11 @@ The initial force service also admits the built-in central and J2 gravity models
 external_stage_safe(model) = false
 
 """Stable configuration key for a declared stage-safe custom force/control model. Include all
-parameters affecting force or control, excluding held commands and other checkpointed runtime state.
+parameters affecting force or control, including any environment or spacecraft parameter the model
+reads that the engine's own force configuration does not record (planet constants, epoch, frame
+settings, masses and rates are recorded), and exclude held commands and other checkpointed runtime
+state. The key is saved in checkpoints and compared with `isequal` on resume, so it must survive
+`Serialization` and compare equal when the configuration is the same.
 Required for configured-force owners even before checkpointing is enabled.
 """
 external_stage_key(model) = _unimplemented("external_stage_key", typeof(model))
@@ -92,6 +99,7 @@ external_stage_key(model) = _unimplemented("external_stage_key", typeof(model))
 """Attach this run's opaque callable force service to an opted-in runtime. Call `service(pos,vel,t)`
 for inertial acceleration in SI at physical elapsed time; it includes configured held control.
 Do not retain the service across runs or serialize it. Trial evaluation must not advance the owner.
+The service reuses one trial buffer: call it from one thread at a time.
 """
 external_bind_force_service!(rt, service) = _unimplemented("external_bind_force_service!", typeof(rt))
 
@@ -102,11 +110,14 @@ external_control_changed!(rt, t::Float64) = _unimplemented("external_control_cha
 
 """Stable, serializable adapter/schema/configuration identity for an opted-in owner snapshot.
 Include adapter version and every owner setting that affects its trajectory; do not use runtime addresses.
+It is compared with `isequal` on resume, so it must survive `Serialization` and compare equal for the
+same owner configuration.
 """
 external_checkpoint_key(ep::AbstractExternalPropagator) = _unimplemented("external_checkpoint_key", typeof(ep))
 
 """Return an independent serializable snapshot of the owner's mathematical state at physical `t`.
 Include native coordinates, clock/grid origin and required numerical state, but not the force service.
+The snapshot is written with `Serialization`; it must not hold functions, tasks or native handles.
 """
 external_checkpoint_state(rt, t::Float64) = _unimplemented("external_checkpoint_state", typeof(rt))
 

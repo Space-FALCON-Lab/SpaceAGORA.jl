@@ -40,6 +40,28 @@ end
 # A control effector that declares no stage safety: configured-force owners refuse it.
 struct UnknownControl <: AbstractControlEffectorModel end
 
+# Declared stage safe, but each breaks the contract in one way the engine must catch.
+struct EventControl <: AbstractControlEffectorModel end
+SpaceAGORA.tick_schedule(::EventControl) = :event_driven
+struct TorqueControl <: AbstractControlEffectorModel end
+SpaceAGORA.control_wrench(::TorqueControl,x,p,t) = (ZERO3,SVector(0.0,0.0,1.0e-3))
+struct PropellantControl <: AbstractControlEffectorModel end
+SpaceAGORA.control_wrench(::PropellantControl,x,p,t) = (SVector(1.0e-3,0.0,0.0),ZERO3)
+SpaceAGORA.control_propellant_rate(::PropellantControl,x,p,t) = -1.0e-6
+struct WritingControl <: AbstractControlEffectorModel end
+SpaceAGORA.control_wrench(::WritingControl,x,p,t) = (ZERO3,ZERO3)
+function SpaceAGORA.update_control!(::WritingControl,u,p,t::Float64,i::Int64)
+    u.sc[i].pos[1] += 1.0   # control must act on an owned spacecraft through forces only
+    return nothing
+end
+SpaceAGORA.update_control!(::Union{TorqueControl,PropellantControl},u,p,t::Float64,i::Int64) = nothing
+for T in (EventControl,TorqueControl,PropellantControl,WritingControl)
+    @eval EP.external_stage_safe(::$T) = true
+    @eval EP.external_stage_key(::$T) = (kind=$(QuoteNode(nameof(T))),)
+end
+# A dynamic effector that declares no stage safety.
+struct UnknownForce <: AbstractForceTorqueModel end
+
 struct Owner <: EP.AbstractExternalPropagator
     dt::Float64
     key::Symbol
@@ -53,6 +75,18 @@ mutable struct Runtime
     changes::Vector{Float64}
     evaluations::Int
 end
+# Owners declaring other capabilities: checkpoint without configured forces, and a malformed
+# declaration (keys in the wrong order). Both are refused at setup.
+struct CheckpointOnlyOwner <: EP.AbstractExternalPropagator end
+struct MalformedOwner <: EP.AbstractExternalPropagator end
+for T in (CheckpointOnlyOwner,MalformedOwner)
+    @eval EP.external_spacecraft(::$T) = [1]
+    @eval EP.external_step(::$T) = 1/128
+    @eval EP.external_checkpoint_key(::$T) = (kind=$(QuoteNode(nameof(T))),)
+end
+EP.external_capabilities(::CheckpointOnlyOwner) = (configured_forces=false,checkpoint=true)
+EP.external_capabilities(::MalformedOwner) = (checkpoint=true,configured_forces=true)
+
 EP.external_spacecraft(::Owner) = [1]
 EP.external_step(o::Owner) = o.dt
 EP.external_capabilities(::Owner) = (configured_forces=true,checkpoint=true)
@@ -188,6 +222,58 @@ end
     hardware=setup();sc=only(hardware.dynamics_model.spacecraft)
     add_actuator!(sc,sc.root,ReactionWheel(spin_axis=SVector(1.0,0.0,0.0),max_torque_nm=1.0,max_momentum_nms=10.0))
     @test_throws ArgumentError EP.validate_external_propagators(hardware,:dp8)
+end
+
+with_dynamics(cfg,spacecraft,effectors) = SM.SimConfig._with_configuration(cfg;dynamics_model=SM.DynamicsModel(spacecraft,effectors))
+# The message of the ArgumentError that `f()` throws (unwrapping task failures), or "" otherwise.
+function refusal(f)
+    try
+        f()
+    catch err
+        err isa CompositeException && (err=first(err.exceptions))
+        err isa TaskFailedException && (err=err.task.exception)
+        return err isa ArgumentError ? err.msg : ""
+    end
+    return ""
+end
+@testset "configured-force refusals at setup" begin
+    base=setup()
+    sc=only(base.dynamics_model.spacecraft)
+    attitude=SM.SimConfig._with_configuration(base;
+        mission_configuration=SM.SimConfig._with_fields(base.mission_configuration;orientation_sim=true))
+    refused=[
+        "decimal owner step"=>(setup(owner=Owner(dt=0.1),period=0.2,data_rate=0.2,tend=1.0),r"binary-exact owner step"),
+        "decimal output interval"=>(setup(data_rate=0.1),r"binary-exact output interval"),
+        "decimal mission end"=>(setup(tend=1.1),r"binary-exact mission end"),
+        "decimal checkpoint interval"=>(setup(interval=0.1),r"checkpoint interval and the mission end"),
+        "checkpoint interval off the owner grid"=>(setup(interval=0.3),r"checkpoint interval and the mission end"),
+        "control period off the owner grid"=>(setup(period=0.3),r"control period"),
+        "checkpoint without configured forces"=>(setup(owner=CheckpointOnlyOwner(),interval=0.5),r"checkpoint without configured_forces"),
+        "malformed capabilities"=>(setup(owner=MalformedOwner()),r"external_capabilities must return"),
+        "two spacecraft"=>(with_dynamics(base,[sc,deepcopy(sc)],base.dynamics_model.dynamic_effectors),r"exactly one spacecraft"),
+        "attitude simulation"=>(attitude,r"translation-only"),
+        "gravity-gradient torque"=>(with_dynamics(base,[sc],(SM.InverseSquaredGravityModel(gravity_gradient=true),)),r"do not support dynamic effector"),
+        "undeclared dynamic effector"=>(with_dynamics(base,[sc],(UnknownForce(),)),r"do not support dynamic effector"),
+        "event-driven control"=>(setup(controller=EventControl()),r"ideal, periodic control effectors"),
+    ]
+    for (label,(cfg,expected)) in refused
+        @testset "$label" begin
+            @test occursin(expected,refusal(()->EP.validate_external_propagators(cfg,:dp8)))
+        end
+    end
+    # The ordinary spacecraft of the same configurations are not refused.
+    @test EP.validate_external_propagators(setup(owned=false,data_rate=0.1,tend=1.1),:dp8)===nothing
+end
+
+@testset "configured-force refusals while running" begin
+    # Declared stage safe, but torque, propellant flow or a write to the owned state is refused
+    # when it happens; nonfinite trial states are refused by the service.
+    @test occursin(r"refuses mass loss or torque",refusal(()->run(setup(controller=TorqueControl(),tend=0.5))))
+    @test occursin(r"finite zero propellant rate",refusal(()->run(setup(controller=PropellantControl(),tend=0.5))))
+    @test occursin(r"control update changed the position or velocity",refusal(()->run(setup(controller=WritingControl(),tend=0.5))))
+    r=run(setup(tend=0.5))
+    @test occursin(r"must be finite",refusal(()->r.rt.service(SVector(NaN,0.0,0.0),V0,0.25)))
+    @test occursin(r"must be finite",refusal(()->r.rt.service(R0,V0,Inf)))
 end
 
 @testset "actual configured forces and held control through run_simulation" begin
@@ -385,26 +471,41 @@ end
 same_rows(a,b) = propertynames(a)==propertynames(b) &&
     all(isequal(getproperty(a,name),getproperty(b,name)) for name in propertynames(a))
 
-# A run stopped at a checkpoint and resumed from it in a new run saves the rows of the same run
-# left uninterrupted, bit for bit, with a configured-force owner: restarted at a control tick
-# (1 s) and between two ticks (1.125 s). Outputs every 0.125 s fall between control ticks too.
+# A run stopped after a checkpoint and resumed from it in a new run, with the same configuration,
+# saves the rows of the same run left uninterrupted, bit for bit, with a configured-force owner:
+# restarted at a control tick (1 s) and between two ticks (1.125 s), without gravity and with J2.
+# Outputs every 0.125 s fall between control ticks too.
+struct StopAfterCheckpoint <: Exception end
+function stopped_run(cfg,stop)
+    factory(args)=CB.DiscreteCallback((u,t,int)->t>stop,int->throw(StopAfterCheckpoint());save_positions=(false,false))
+    try
+        run_simulation(cfg;return_results=true,return_solution=true,isolate_state=false,extra_callback_factories=(factory,))
+    catch err
+        (err isa StopAfterCheckpoint || err isa CompositeException) || rethrow()
+        return true
+    end
+    return false
+end
+
 @testset "checkpointed and resumed run saves the uninterrupted run's rows" begin
-    full_control=HeldAcceleration(gain=0.02)
-    full=run(setup(controller=full_control,data_rate=0.125))
-    @test Float64.(full.out.table.time)==collect(range(0.0,2.0;step=0.125))
-    for (stop,interval) in ((1.0,0.5),(1.125,0.375))
-        dir=test_directory()
-        stopped_cfg=setup(controller=HeldAcceleration(gain=0.02),interval=interval,tend=stop,dir=dir,data_rate=0.125)
-        run(stopped_cfg)
-        @test SE._load_checkpoint(stopped_cfg).t==stop
-        resumed_control=HeldAcceleration(gain=0.02)
-        resumed=recording_run(setup(controller=resumed_control,interval=interval,dir=dir,resume=true,data_rate=0.125))
-        # The new run resumed at the checkpoint: no step before it.
-        @test minimum(resumed.times)>stop
-        @test same_rows(resumed.out.table,full.out.table)
-        @test resumed_control.ticks==full_control.ticks
-        @test resumed_control.commands==full_control.commands
-        @test resumed.rt.n==full.rt.n && resumed.rt.y==full.rt.y
+    for gravity in (false,:j2)
+        full_control=HeldAcceleration(gain=0.02)
+        full=run(setup(controller=full_control,gravity=gravity,data_rate=0.125))
+        @test Float64.(full.out.table.time)==collect(range(0.0,2.0;step=0.125))
+        for (stop,interval) in ((1.0,0.5),(1.125,0.375))
+            dir=test_directory()
+            stopped_cfg=setup(controller=HeldAcceleration(gain=0.02),gravity=gravity,interval=interval,dir=dir,data_rate=0.125)
+            @test stopped_run(stopped_cfg,stop)
+            @test SE._load_checkpoint(stopped_cfg).t==stop
+            resumed_control=HeldAcceleration(gain=0.02)
+            resumed=recording_run(setup(controller=resumed_control,gravity=gravity,interval=interval,dir=dir,resume=true,data_rate=0.125))
+            # The new run resumed at the checkpoint: no step before it.
+            @test minimum(resumed.times)>stop
+            @test same_rows(resumed.out.table,full.out.table)
+            @test resumed_control.ticks==full_control.ticks
+            @test resumed_control.commands==full_control.commands
+            @test resumed.rt.n==full.rt.n && resumed.rt.y==full.rt.y
+        end
     end
 end
 

@@ -56,10 +56,23 @@ function _external_before_control_tick!(integrator, num_sats::Int)
     return nothing
 end
 
+# After the control models of a tick have updated: a control update acts on an owned spacecraft
+# only through forces, so its position and velocity must still be the owner's (the next sync
+# would silently overwrite a write). Then the owner learns that the held command changed.
 function _external_after_control_tick!(integrator)
-    for (ep, rt) in zip(integrator.p.args.external_propagators, integrator.p.shared_buffers.external_runtimes)
+    buffers = integrator.p.shared_buffers
+    t = Float64(integrator.t)
+    for (r, (ep, rt)) in enumerate(zip(integrator.p.args.external_propagators, buffers.external_runtimes))
         ExternalPropagation.external_capabilities(ep).configured_forces || continue
-        ExternalPropagation.external_control_changed!(rt, Float64(integrator.t))
+        for i in eachindex(buffers.external_owner)
+            buffers.external_owner[i] == r || continue
+            st = ExternalPropagation.external_state(rt, t, buffers.external_local[i])
+            sc = integrator.u.sc[i]
+            sc.pos == st.pos && sc.vel == st.vel || throw(ArgumentError(
+                "A control update changed the position or velocity of spacecraft $i, which an external owner propagates; " *
+                "control must act on it through forces."))
+        end
+        ExternalPropagation.external_control_changed!(rt, t)
     end
     return nothing
 end

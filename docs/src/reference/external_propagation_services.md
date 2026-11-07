@@ -149,11 +149,15 @@ opts in by returning `true` flags from `external_capabilities`:
   and an exact check of the restored state against the checkpoint.
 
 The configuration check accepts configured forces only for one spacecraft with
-translation only and constant mass, the `SimpleEphemeridesModel` frame backend,
-central or J2 gravity and models that declare themselves stage safe
-(`external_stage_safe`, `external_stage_key`), ideal periodic stage-safe control
-effectors, no guidance or navigation effectors and no mounted actuators. It
-requires checkpoint intervals and the mission end on the owner's step grid.
+translation only, the `SimpleEphemeridesModel` frame backend, central or J2
+gravity and models that declare themselves stage safe (`external_stage_safe`,
+`external_stage_key`), ideal periodic stage-safe control effectors, no guidance
+or navigation effectors and no mounted actuators. Its times must be
+binary-exact (whole multiples of 2^-20 s, such as 1/128 s or 10 s; decimal
+cadences such as 0.1 s are refused), with the control periods, the checkpoint
+interval and the checkpointed mission end on the owner's step grid.
+`checkpoint` is accepted only together with `configured_forces`. Constant mass
+and the absence of torque are checked at each evaluation of the force service.
 Every saved output time of a run with a configured-force owner is a solver
 stop, so the saved rows hold the owner's state. Owners that do not opt in are
 unchanged. The contributor

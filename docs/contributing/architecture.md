@@ -519,6 +519,7 @@ same spacecraft structure and model configuration.
 | The orbit each spacecraft is on | `ODEParams.orbit_counter`: the apoapsis callback counts the orbits, and a state anchor with an `orbit_count` sets it | a new `ODEParams`, the first orbit for every spacecraft | `orbits`, written once a spacecraft is past its first orbit | `_restore_orbit_counter_checkpoint_state!` | phase 1 |
 | Completed atmosphere entries | `SharedBuffers.entry_counter`: with an entry target enabled, the shared drag-state callback counts downward interface crossings when drag-phase changes are enabled; otherwise the standalone entry-end callback counts them | new run buffers, zero for every spacecraft | `entries`, written once a spacecraft has entered | `_restore_entry_counter_checkpoint_state!` | phase 1 |
 | Periodic tick clocks | each run-clock callback, and the run clock in the shared buffers | each solve's start; the run clock in phase 2 | `periodic_ticks` | `_pending_periodic_ticks`, taken at the first solve's start | phases 1 and 2 |
+| External owner state, with the experimental lifecycle extension's checkpoints | each external owner's runtime (`SharedBuffers.external_runtimes`) | `external_prepare` builds a new runtime; the run binds its force service (`_bind_external_force_services!`) | `external_owners`: each owner's key, owned spacecraft, step, the run's force configuration and its snapshot (`external_checkpoint_state`), with the endpoint handoff values | `_check_external_checkpoint_state` checks the identities in phase 1; `_restore_external_checkpoint_state!` restores the owner after phase 3 and the force-service binding, and refuses a restored position or velocity that differs from the checkpoint's | phases 1 and 3 |
 | Saved results rows | the run's row lists in `run_simulation` | empty | `results_rows`: how much of `simulation_checkpoint.results.bin`, beside the checkpoint, is its own | `_start_results_rows!` puts the rows back before the first segment, or warns when it cannot | before the solve |
 | GNC links | the shared object | `link_initialize!`, once per run | none of their own: the models save what they need | — | phase 3 |
 | The spacecraft each GNC model acts on | each guidance, navigation and control model's `spacecraft_scope` | the models' initializers: the RPO planner and controller set their positions from the spacecraft ids | `gnc_scopes`: each group's scopes in configuration order, as the initializers left them | not restored: compared by `_check_gnc_scope_baseline`, which refuses a model acting on other spacecraft before any model's run state comes back. A run with GNC models refuses a checkpoint without the entry (one written by SpaceAGORA 0.5.1 or earlier) in phase 1 (`_gnc_scope_checkpoint_entry`) | phases 1 and 3 |
@@ -533,7 +534,10 @@ Two consequences of the table:
 
 - Some runs cannot resume. EDG, `AlgorithmGuidance`, the GRAM density
   perturbation and externally propagated spacecraft refuse checkpoints or a
-  resume, because the checkpoint does not hold their run state.
+  resume, because the checkpoint does not hold their run state. The exception
+  is an external owner that opts into the experimental lifecycle extension's
+  checkpoints (`docs/contributing/external-propagation-lifecycle-experiment.md`),
+  whose state the checkpoint holds as `external_owners`.
 - Some run state is left out of the checkpoint on purpose, because it comes
   back by itself, as it does at the start of each checkpoint segment: the
   atmosphere flags (`in_atmosphere`), from the state at each solve's start;

@@ -357,7 +357,10 @@ and keeps each kind in the order below.
 11. The quaternion projection, when attitude is integrated.
 12. Plume interaction.
 13. The initial force output.
-14. Result saving.
+14. Result saving, then, with a configured-force external owner, the external
+    output stops: initialization only, after the saver has queued its save
+    times, each pending save time becomes a solver stop so the row saved there
+    is the synchronized owner state.
 15. `run_simulation`'s `extra_callbacks`, then the callbacks built by its
     `extra_callback_factories`.
 16. With interlinks, the interlink scheduler, at initialization (the same

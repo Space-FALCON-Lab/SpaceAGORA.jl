@@ -69,3 +69,52 @@ function get_external_propagation_callback(num_sats::Int)
     affect!(integrator) = _synchronize_external_owners!(integrator, num_sats)
     return DiscreteCallback(condition, affect!; save_positions=(false, false))
 end
+
+# Saved output epochs of configured-force owners are solver stops.
+#
+# The data-saving SavingCallback records `integrator.u` only when a requested save time equals
+# `integrator.t`; a save time between two stops is read from the outer solver's interpolant. For an
+# external owner that interpolant belongs to the shadow integration, not to the owner, so an
+# uninterrupted run saved interpolated shadow rows between stops while a checkpointed run saved the
+# owner state at its segment endpoints. With every save time a stop, the owner sync callback (which
+# precedes the SavingCallback) installs the owner state there and the saved row is that state. A
+# configured-force owner is synchronized into the shadow at every accepted step; other owners only when
+# they advance, so the stops are limited to runs with a configured-force owner.
+#
+# The stops are the saver's own pending requests. The run's saver is the run-clock wrapper
+# (`_run_clock_saving_callback`), whose initialization builds this solve's inner SavingCallback on the
+# run's output clock and initializes it (DiffEqCallbacks `saving_initialize` fills its request queue).
+# This callback follows the saver, so its initialization runs after that and reads the live inner
+# saver (`_current_saving_affect`), never one from an earlier segment. Each queued time
+# strictly inside the current solve becomes a stop with the identical Float64 value, and a step that
+# reaches a stop lands on that value, so each saved time equals `integrator.t`. The solve's final time
+# is already its last stop. Runs without a configured-force owner are unchanged.
+function _external_output_stops_required(args::SimulationConfiguration)
+    return any(ep -> ExternalPropagation.external_capabilities(ep).configured_forces, args.external_propagators)
+end
+
+function _register_external_output_stops!(integrator, saver)
+    integrator.tdir > 0 || throw(ArgumentError("External output stops support forward integration only."))
+    affect = _current_saving_affect(saver.affect!)
+    hasproperty(affect, :saveat) ||
+        throw(ArgumentError("External output stops need the SavingCallback request queue (`saveat`)."))
+    isempty(DiffEqBase.get_tstops_array(integrator)) && return nothing
+    t_now = integrator.t
+    t_last = DiffEqBase.get_tstops_max(integrator)
+    pending = deepcopy(affect.saveat)
+    while !isempty(pending)
+        s = pop!(pending)
+        t_now < s < t_last && DiffEqBase.add_tstop!(integrator, s)
+    end
+    return nothing
+end
+
+"""Initialization-only callback that makes each pending save time of `saver` (the run's data-saving
+SavingCallback) a solver stop. Install it after `saver`. `nothing` without a configured-force owner."""
+function get_external_output_stop_callback(args::SimulationConfiguration, saver)
+    _external_output_stops_required(args) || return nothing
+    condition(u, t, integrator) = false
+    affect!(integrator) = nothing
+    initialize(c, u, t, integrator) = _register_external_output_stops!(integrator, saver)
+    return DiscreteCallback(condition, affect!; initialize=initialize, save_positions=(false, false))
+end

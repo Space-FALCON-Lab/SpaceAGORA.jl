@@ -53,8 +53,8 @@ gives a stable configuration key with `external_stage_key(model)`: every
 parameter that affects its force or control, and none of its held or runtime
 state. Each evaluation also checks that every propellant rate is a finite
 zero, that no mass rate or torque appears, and that the acceleration is
-finite. A false
-declaration is a contract violation that these checks catch only in part.
+finite. A false declaration is a contract violation that these checks catch
+only in part.
 
 ## Control ticks
 
@@ -95,11 +95,41 @@ in its own contract.
 The returned solution of a checkpointed run is its last segment. Its dense
 interpolant is not rebuilt around the corrected endpoint.
 
+## Saved outputs
+
+The data-saving callback (the run-clock saver, which builds a `SavingCallback`
+for each solve) reads the solver's state only when a save time equals the
+solver time; between solver stops it interpolates the outer solution, which
+is SpaceAGORA's shadow integration and not the owner's state. So for a run with
+a configured-force owner every saved output time is a solver stop: an
+initialization-only callback placed after the saving callback turns each save
+time the saver has queued inside the solve into a stop with the identical
+value, and the owner sync installs the owner's state there before the row is
+saved. An uninterrupted run and a checkpointed run then save the same rows.
+Runs without a configured-force owner are unchanged. A save time between two
+points of the owner's grid is the owner's previewed partial step from its last
+grid point.
+
+Limits:
+
+- an owner that opts into checkpoints only is synchronized only when it
+  advances, and its rows are not covered;
+- the saved times come from the run's output clock, the same in every
+  segment, but a checkpointed run also saves a row at each checkpoint time; a
+  checkpoint interval that is not a whole multiple of `data_rate` therefore adds
+  rows that the uninterrupted run does not have (the rows both runs save are
+  the same). Decimal and noncommensurate cadences are not tested with an
+  external owner yet;
+- the stops cover the engine's result table only: the returned solution's
+  per-step states are the shadow states before the sync, and a
+  `TrajectoryRecorder` or a user saving callback is not covered.
+
 ## Not covered yet
 
-Off-grid checkpoints, scheduled discontinuities other than control ticks,
-state-dependent events, attitude and mass dynamics, several spacecraft per
-owner, and checkpoint-only owners.
+Off-grid checkpoints, decimal or noncommensurate output and checkpoint
+cadences, scheduled discontinuities other than control ticks, state-dependent
+events, attitude and mass dynamics, several spacecraft per owner, and
+checkpoint-only owners.
 
 ## Tests
 
@@ -110,5 +140,6 @@ feedback against the ordinary route and against a closed-form held-acceleration
 solution, central and J2 gravity through the service, output times between
 control ticks, checkpoints at and between control ticks with resume, several
 control rates, shared-template isolation, and the refusal of mismatched
-identities and corrupt owner snapshots. The test owner is not a production
-integrator.
+identities and corrupt owner snapshots. It also checks that every saved row
+of a configured-force run is the state at a solver stop, uninterrupted and
+checkpointed. The test owner is not a production integrator.

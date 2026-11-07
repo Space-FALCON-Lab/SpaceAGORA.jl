@@ -153,7 +153,9 @@ central or J2 gravity and models that declare themselves stage safe
 (`external_stage_safe`, `external_stage_key`), ideal periodic stage-safe control
 effectors, no guidance or navigation effectors and no mounted actuators. It
 requires checkpoint intervals and the mission end on the owner's step grid.
-Owners that do not opt in are unchanged. The contributor
+Every saved output time of a run with a configured-force owner is a solver
+stop, so the saved rows hold the owner's state. Owners that do not opt in are
+unchanged. The contributor
 note `docs/contributing/external-propagation-lifecycle-experiment.md` in the
 [contributor documentation](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/main/docs/contributing)
 lists the full scope and what is not covered yet.

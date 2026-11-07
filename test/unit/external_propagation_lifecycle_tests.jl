@@ -338,4 +338,44 @@ end
     @test isempty(only(shared.control_model.control_effectors).ticks)
 end
 
+# Saved output times of configured-force owners are solver stops, so each saved row is the
+# synchronized owner state rather than the outer solver's interpolant between stops.
+const CB = SM.SimulationCallbacks
+
+# Records integrator.t and the six owned shadow entries at every accepted step, after the sync
+# and saving callbacks (extra callbacks are appended last).
+function recording_run(cfg)
+    times=Float64[];states=Vector{Vector{Float64}}()
+    factory(args)=CB.DiscreteCallback((u,t,int)->true,
+        int->(push!(times,Float64(int.t));push!(states,vcat(collect(int.u.sc[1].pos),collect(int.u.sc[1].vel)));nothing);
+        save_positions=(false,false))
+    out=run_simulation(cfg;return_results=true,return_solution=true,extra_callback_factories=(factory,))
+    (;out,times,states)
+end
+
+@testset "configured-force owner output times are solver stops" begin
+    @test CB._external_output_stops_required(setup())
+    @test !CB._external_output_stops_required(setup(owned=false))
+    @test CB.get_external_output_stop_callback(setup(owned=false),nothing)===nothing
+    # Outputs every 0.125 s, controls every 0.25 s: half of the output times are not control stops.
+    r=recording_run(setup(controller=HeldAcceleration(gain=0.02),data_rate=0.125))
+    table_times=Float64.(r.out.table.time)
+    @test table_times==collect(range(0.0,2.0;step=0.125))
+    for (i,t) in enumerate(table_times)
+        t==0.0 && continue
+        j=findlast(==(t),r.times)
+        @test j!==nothing
+        # The saved row is the state the solver holds at that stop, after the owner sync.
+        j===nothing || @test state_row(r.out.table,i)==r.states[j]
+    end
+    # Checkpointed segments end on the same output grid; rows still come from stops.
+    c=recording_run(setup(controller=HeldAcceleration(gain=0.02),interval=0.5,tend=2.0,dir=test_directory(),data_rate=0.125))
+    @test Float64.(c.out.table.time)==table_times
+    for (i,t) in enumerate(table_times)
+        t==0.0 && continue
+        @test findlast(==(t),c.times)!==nothing
+        @test norm(state_row(c.out.table,i)-state_row(r.out.table,i))<1e-8
+    end
+end
+
 end # module

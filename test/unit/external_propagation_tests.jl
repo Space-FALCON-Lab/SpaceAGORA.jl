@@ -98,11 +98,19 @@ refuses(f, rx) = (m = arg_error(f); m !== nothing && occursin(rx, m))
     @test EP.sample_planet_frame_with_lpi === SE.sample_planet_frame_with_lpi
     @test EP.gravity_backbone_relative_acceleration_ii === SM.gravity_backbone_relative_acceleration_ii
     @test isempty(intersect(Set(EP.IMPLEMENTED_FUNCTIONS), Set(EP.CONSUMED_SERVICES)))
+    # Contract 2.0.0's inventory is exact (companions check it); the experimental lifecycle
+    # extension lists its hooks apart, with the same identities.
+    @test EP.IMPLEMENTED_FUNCTIONS == (:external_spacecraft, :external_step, :external_preflight, :external_prepare,
+        :external_sync!, :external_time, :external_state, :external_acceleration)
+    for name in EP.LIFECYCLE_FUNCTIONS
+        @test getfield(EP, name) === getfield(SM.ExternalPropagation, name)
+    end
+    @test isempty(intersect(Set(EP.LIFECYCLE_FUNCTIONS), union(Set(EP.IMPLEMENTED_FUNCTIONS), Set(EP.CONSUMED_SERVICES))))
     metadata = Set((:ExternalPropagationServices, :CONTRACT_VERSION, :CompatibilityError,
         :require_version, :IMPLEMENTED_FUNCTIONS, :CONSUMED_SERVICES,
-        :EXPERIMENTAL_LIFECYCLE_VERSION, :require_lifecycle_version))
-    @test Set(names(EP)) == union(metadata, Set(EP.IMPLEMENTED_FUNCTIONS), Set(EP.CONSUMED_SERVICES))
-    for name in union(metadata, Set(EP.IMPLEMENTED_FUNCTIONS), Set(EP.CONSUMED_SERVICES))
+        :EXPERIMENTAL_LIFECYCLE_VERSION, :require_lifecycle_version, :LIFECYCLE_FUNCTIONS))
+    @test Set(names(EP)) == union(metadata, Set(EP.IMPLEMENTED_FUNCTIONS), Set(EP.LIFECYCLE_FUNCTIONS), Set(EP.CONSUMED_SERVICES))
+    for name in union(metadata, Set(EP.IMPLEMENTED_FUNCTIONS), Set(EP.LIFECYCLE_FUNCTIONS), Set(EP.CONSUMED_SERVICES))
         @test Base.Docs.doc(Base.Docs.Binding(EP, name)) !== nothing
     end
 

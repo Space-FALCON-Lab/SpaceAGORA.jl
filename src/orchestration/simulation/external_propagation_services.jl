@@ -5,7 +5,9 @@ Versioned services for optional external spacecraft integrators. Call
 `require_version(v"2.0.0")` before defining adapter hook methods, and again at
 runtime initialization. `IMPLEMENTED_FUNCTIONS` lists the extension points;
 `CONSUMED_SERVICES` lists the types and core helpers adapters may use. Existing
-hook/type aliases retain their implementation owners and method identity.
+hook/type aliases retain their implementation owners and method identity. The
+experimental lifecycle extension (`EXPERIMENTAL_LIFECYCLE_VERSION`) lists its
+opt-in hooks in `LIFECYCLE_FUNCTIONS`.
 
 Owners coexist per configuration; this facade has no global provider registry
 and loads no optional engine. Each run prepares its own mutable owner runtime.
@@ -162,8 +164,15 @@ end
 const IMPLEMENTED_FUNCTIONS = (
     :external_spacecraft, :external_step, :external_preflight, :external_prepare,
     :external_sync!, :external_time, :external_state, :external_acceleration,
-    :external_capabilities, :external_stage_safe, :external_stage_key, :external_bind_force_service!, :external_control_changed!,
-    :external_checkpoint_key, :external_checkpoint_state, :external_restore_state!,
+)
+
+"""Hook identities to which an owner adds methods when it opts into the experimental lifecycle
+extension (`EXPERIMENTAL_LIFECYCLE_VERSION`). They are listed apart from `IMPLEMENTED_FUNCTIONS`,
+the contract 2.0.0 inventory, which this extension leaves unchanged: an owner that does not opt in
+implements none of them, and each has a default for such owners."""
+const LIFECYCLE_FUNCTIONS = (
+    :external_capabilities, :external_stage_safe, :external_stage_key, :external_bind_force_service!,
+    :external_control_changed!, :external_checkpoint_key, :external_checkpoint_state, :external_restore_state!,
 )
 
 """Core types and read/configuration services supplied to external adapters."""
@@ -174,5 +183,5 @@ const CONSUMED_SERVICES = (
 )
 
 public CONTRACT_VERSION, CompatibilityError, require_version, IMPLEMENTED_FUNCTIONS, CONSUMED_SERVICES
-public EXPERIMENTAL_LIFECYCLE_VERSION, require_lifecycle_version
+public EXPERIMENTAL_LIFECYCLE_VERSION, require_lifecycle_version, LIFECYCLE_FUNCTIONS
 end # module ExternalPropagationServices

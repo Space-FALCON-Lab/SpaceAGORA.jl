@@ -44,7 +44,7 @@ identities.
 
 | User | What it does | Supported access |
 |---|---|---|
-| MuJoCo `src/engine_coupling.jl` and other adapter implementations | Declares the spacecraft it owns, prepares a fresh runtime, synchronizes and reports state | Methods of the eight external-owner hooks in the inventory; an owner that opts into the lifecycle extension also implements its hooks. |
+| MuJoCo `src/engine_coupling.jl` and other adapter implementations | Declares the spacecraft it owns, prepares a fresh runtime, synchronizes and reports state | Methods of the eight external-owner hooks in `IMPLEMENTED_FUNCTIONS`; an owner that opts into the lifecycle extension also implements the hooks in `LIFECYCLE_FUNCTIONS`. |
 | Configuration builders and the generated `companion` starter | Attach owners and run the configuration preflight | `with_external_propagators` and `validate_external_propagators`. |
 | Adapter preparation | Reads each spacecraft's initial state | `external_initial_state`, which returns copied samples by run index. |
 | Telemetry callbacks | Observe the owners' runtimes without changing them | `external_runtimes`, which returns borrowed runtimes; callbacks must not step them. |
@@ -136,8 +136,9 @@ SpaceAGORA.ExternalPropagationServices.external_acceleration
 ## Experimental lifecycle extension
 
 The lifecycle extension, version `0.1.0`, is versioned apart from the contract
-and is experimental. An owner opts in by returning `true` flags from
-`external_capabilities`:
+and is experimental. Its hooks are listed in `LIFECYCLE_FUNCTIONS`, apart from
+`IMPLEMENTED_FUNCTIONS`, which stays the contract `2.0.0` inventory. An owner
+opts in by returning `true` flags from `external_capabilities`:
 
 - `configured_forces`: the engine binds a run-local force service that returns
   the total configured acceleration (gravity, other dynamic effectors and the
@@ -163,6 +164,7 @@ lists the full scope and what is not covered yet.
 ```@docs
 SpaceAGORA.ExternalPropagationServices.EXPERIMENTAL_LIFECYCLE_VERSION
 SpaceAGORA.ExternalPropagationServices.require_lifecycle_version
+SpaceAGORA.ExternalPropagationServices.LIFECYCLE_FUNCTIONS
 SpaceAGORA.ExternalPropagationServices.external_capabilities
 SpaceAGORA.ExternalPropagationServices.external_stage_safe
 SpaceAGORA.ExternalPropagationServices.external_stage_key

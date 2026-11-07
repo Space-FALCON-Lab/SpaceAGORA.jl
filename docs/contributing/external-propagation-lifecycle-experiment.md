@@ -18,6 +18,9 @@ An adapter returns `(configured_forces=true, checkpoint=true)` from
 `external_capabilities(ep)`. Either flag may be false; a false flag keeps the
 refusal it would lift. The adapter checks the extension version with
 `require_lifecycle_version(v"0.1.0")`, next to `require_version(v"2.0.0")`.
+The extension's hooks are listed in `LIFECYCLE_FUNCTIONS`, apart from
+`IMPLEMENTED_FUNCTIONS`: the contract `2.0.0` inventory stays exactly as it
+was, because companions and the companion starter check it name for name.
 
 ## Configured forces
 

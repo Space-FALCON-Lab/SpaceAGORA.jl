@@ -343,14 +343,17 @@ end
 const CB = SM.SimulationCallbacks
 
 # Records integrator.t and the six owned shadow entries at every accepted step, after the sync
-# and saving callbacks (extra callbacks are appended last).
+# and saving callbacks (extra callbacks are appended last), and the owner's runtime.
 function recording_run(cfg)
-    times=Float64[];states=Vector{Vector{Float64}}()
-    factory(args)=CB.DiscreteCallback((u,t,int)->true,
-        int->(push!(times,Float64(int.t));push!(states,vcat(collect(int.u.sc[1].pos),collect(int.u.sc[1].vel)));nothing);
-        save_positions=(false,false))
-    out=run_simulation(cfg;return_results=true,return_solution=true,extra_callback_factories=(factory,))
-    (;out,times,states)
+    times=Float64[];states=Vector{Vector{Float64}}();runtime=Ref{Any}(nothing)
+    function record(int)
+        push!(times,Float64(int.t));push!(states,vcat(collect(int.u.sc[1].pos),collect(int.u.sc[1].vel)))
+        isempty(EP.external_runtimes(int)) || (runtime[]=first(EP.external_runtimes(int)))
+        return nothing
+    end
+    factory(args)=CB.DiscreteCallback((u,t,int)->true,record;save_positions=(false,false))
+    out=run_simulation(cfg;return_results=true,return_solution=true,isolate_state=false,extra_callback_factories=(factory,))
+    (;out,times,states,rt=runtime[])
 end
 
 @testset "configured-force owner output times are solver stops" begin
@@ -375,6 +378,33 @@ end
         t==0.0 && continue
         @test findlast(==(t),c.times)!==nothing
         @test norm(state_row(c.out.table,i)-state_row(r.out.table,i))<1e-8
+    end
+end
+
+# Every column of two saved tables, compared with `isequal` (bit for bit, NaN equal to NaN).
+same_rows(a,b) = propertynames(a)==propertynames(b) &&
+    all(isequal(getproperty(a,name),getproperty(b,name)) for name in propertynames(a))
+
+# A run stopped at a checkpoint and resumed from it in a new run saves the rows of the same run
+# left uninterrupted, bit for bit, with a configured-force owner: restarted at a control tick
+# (1 s) and between two ticks (1.125 s). Outputs every 0.125 s fall between control ticks too.
+@testset "checkpointed and resumed run saves the uninterrupted run's rows" begin
+    full_control=HeldAcceleration(gain=0.02)
+    full=run(setup(controller=full_control,data_rate=0.125))
+    @test Float64.(full.out.table.time)==collect(range(0.0,2.0;step=0.125))
+    for (stop,interval) in ((1.0,0.5),(1.125,0.375))
+        dir=test_directory()
+        stopped_cfg=setup(controller=HeldAcceleration(gain=0.02),interval=interval,tend=stop,dir=dir,data_rate=0.125)
+        run(stopped_cfg)
+        @test SE._load_checkpoint(stopped_cfg).t==stop
+        resumed_control=HeldAcceleration(gain=0.02)
+        resumed=recording_run(setup(controller=resumed_control,interval=interval,dir=dir,resume=true,data_rate=0.125))
+        # The new run resumed at the checkpoint: no step before it.
+        @test minimum(resumed.times)>stop
+        @test same_rows(resumed.out.table,full.out.table)
+        @test resumed_control.ticks==full_control.ticks
+        @test resumed_control.commands==full_control.commands
+        @test resumed.rt.n==full.rt.n && resumed.rt.y==full.rt.y
     end
 end
 

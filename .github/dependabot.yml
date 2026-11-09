@@ -32,6 +32,10 @@ updates:
       - dependency-name: "SparseArrays"
       - dependency-name: "TOML"
       - dependency-name: "Test"
+      # JSON 1.x is a breaking rewrite of the 0.21 API the package is written
+      # against; moving to it is a change of its own.
+      - dependency-name: "JSON"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "julia"
     directory: "/docs"

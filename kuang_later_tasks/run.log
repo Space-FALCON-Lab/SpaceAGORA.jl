@@ -1,0 +1,11 @@
+Running 40 spacecraft for 1608.9445727393636 s; animation disabled.
+Running the matching 40-spacecraft no-link control.
+Running data fixture producer_control
+Running data fixture production_competition
+Running data fixture busy_relay
+Running data fixture direct_route_control
+Running data fixture production_competition_refined
+Running data fixture busy_relay_refined
+Test Summary:               |  Pass  Total   Time
+Kuang later-task validation | 26657  26657  43.0s
+Verified results and REPORT.md saved in /home/space-falcon-3/Desktop/SpaceAGORA_Constellation_Test/kuang_later_tasks

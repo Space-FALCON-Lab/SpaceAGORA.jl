@@ -1,0 +1,6 @@
+case,quantity,expected_bits,actual_bits,error_bits,tolerance_bits
+busy_relay_refined,delivered,2.0000060650488537e7,2.0000060650488533e7,-3.725290298461914e-9,1.0
+busy_relay_refined,source_sent,1.9999939349511467e7,1.9999939349511463e7,-3.725290298461914e-9,1.0
+busy_relay_refined,relay_produced,2.0e7,2.0e7,0.0,1.0
+busy_relay_refined,relay_overflow,1.999987869902293e7,1.9999878699022926e7,-3.725290298461914e-9,1.0
+busy_relay_refined,relay_final_stored,2.0e7,2.0e7,0.0,1.0

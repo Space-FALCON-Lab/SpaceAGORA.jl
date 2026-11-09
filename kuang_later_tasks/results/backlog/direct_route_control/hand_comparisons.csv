@@ -1,0 +1,6 @@
+case,quantity,expected_bits,actual_bits,error_bits,tolerance_bits
+direct_route_control,delivered,3.0e7,2.9999999999999996e7,-3.725290298461914e-9,1.0
+direct_route_control,source_sent,1.0e7,9.999999999999998e6,-1.862645149230957e-9,1.0
+direct_route_control,relay_produced,2.0e7,1.9999999999999996e7,-3.725290298461914e-9,1.0
+direct_route_control,relay_overflow,0.0,0.0,0.0,1.0
+direct_route_control,relay_final_stored,2.0e7,2.0e7,0.0,1.0

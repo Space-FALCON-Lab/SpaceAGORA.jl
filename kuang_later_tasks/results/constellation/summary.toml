@@ -1,0 +1,8 @@
+duration_s = 1608.9445727393636
+maximum_active = 10
+maximum_control_drift_m = 6.668269634246826e-7
+maximum_score_error_m_per_s = 1.0408340855860843e-17
+maximum_target_effect_m = 12.881022952497005
+minimum_target_effect_m = 12.881022904068232
+samples = 168
+switches = 1

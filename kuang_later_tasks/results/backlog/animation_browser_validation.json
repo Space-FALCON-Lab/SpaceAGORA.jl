@@ -1,0 +1,120 @@
+{
+  "status": "passed",
+  "checked_utc": "2026-11-09T04:07:35.177Z",
+  "browser": "158.0.8127.18",
+  "videos": [
+    {
+      "case": "producer_control",
+      "frames": 704,
+      "fps": 30,
+      "duration_s": 23.466667,
+      "width": 1600,
+      "height": 1080,
+      "source": "file:///home/space-falcon-3/Desktop/SpaceAGORA_Constellation_Test/kuang_later_tasks/results/backlog/producer_control/animation/animation.mp4",
+      "error": null,
+      "played_seconds": 0.1637,
+      "seek_times_s": [
+        11.7333335,
+        23.450000333333335
+      ],
+      "decoded_frames": 319,
+      "video_sha256": "1bfc3d1b3860c4689e376f5305fb902e3840d3d402faa1b9563a4059e12c4bec",
+      "frame_map_sha256": "3380f8315fcc1f32f2132238deff5e651bd700c1ba6ababce0afd35ed081e2d4"
+    },
+    {
+      "case": "production_competition",
+      "frames": 839,
+      "fps": 30,
+      "duration_s": 27.966667,
+      "width": 1600,
+      "height": 1080,
+      "source": "file:///home/space-falcon-3/Desktop/SpaceAGORA_Constellation_Test/kuang_later_tasks/results/backlog/production_competition/animation/animation.mp4",
+      "error": null,
+      "played_seconds": 0.1663,
+      "seek_times_s": [
+        13.9833335,
+        27.950000333333335
+      ],
+      "decoded_frames": 271,
+      "video_sha256": "d7fafc533dfd1d5df0d83931d8764959200322db4b819d13022052bf795d43a3",
+      "frame_map_sha256": "32d613a908aadd2629750ddbad33cfcf9d02b35b5330bf83b497da933b20e7e9"
+    },
+    {
+      "case": "busy_relay",
+      "frames": 719,
+      "fps": 30,
+      "duration_s": 23.966667,
+      "width": 1600,
+      "height": 1080,
+      "source": "file:///home/space-falcon-3/Desktop/SpaceAGORA_Constellation_Test/kuang_later_tasks/results/backlog/busy_relay/animation/animation.mp4",
+      "error": null,
+      "played_seconds": 0.1691,
+      "seek_times_s": [
+        11.9833335,
+        23.950000333333335
+      ],
+      "decoded_frames": 341,
+      "video_sha256": "1b6fac139ffcb073bc87d1be290d1c98a2e6619840d16e241dc80e5073dcc81e",
+      "frame_map_sha256": "5cd93736a5f43f0182540de29cd2c7b7223da9deb231f69ad3c79df83f857bfc"
+    },
+    {
+      "case": "direct_route_control",
+      "frames": 704,
+      "fps": 30,
+      "duration_s": 23.466667,
+      "width": 1600,
+      "height": 1080,
+      "source": "file:///home/space-falcon-3/Desktop/SpaceAGORA_Constellation_Test/kuang_later_tasks/results/backlog/direct_route_control/animation/animation.mp4",
+      "error": null,
+      "played_seconds": 0.1681,
+      "seek_times_s": [
+        11.7333335,
+        23.450000333333335
+      ],
+      "decoded_frames": 319,
+      "video_sha256": "4a3c6eea137ed6a1b8e0b8dbef426e7ba4869120f172b755d0c04401be8d57a7",
+      "frame_map_sha256": "4079b2bd1f536f4baea5fd817c5f0e7c73c7f0a2e603ab85604c4dec2ec49e98"
+    },
+    {
+      "case": "production_competition_refined",
+      "frames": 989,
+      "fps": 30,
+      "duration_s": 32.966667,
+      "width": 1600,
+      "height": 1080,
+      "source": "file:///home/space-falcon-3/Desktop/SpaceAGORA_Constellation_Test/kuang_later_tasks/results/backlog/production_competition_refined/animation/animation.mp4",
+      "error": null,
+      "played_seconds": 0.17,
+      "seek_times_s": [
+        16.4833335,
+        32.950000333333335
+      ],
+      "decoded_frames": 497,
+      "video_sha256": "66067a17b14631d36a530364f2341178edeb82698e54e14c68817fd90aec54a5",
+      "frame_map_sha256": "abe93bc717660d92cc322fae8790ce198438dcb7bcf3c4de1c88bba21951fc4b"
+    },
+    {
+      "case": "busy_relay_refined",
+      "frames": 719,
+      "fps": 30,
+      "duration_s": 23.966667,
+      "width": 1600,
+      "height": 1080,
+      "source": "file:///home/space-falcon-3/Desktop/SpaceAGORA_Constellation_Test/kuang_later_tasks/results/backlog/busy_relay_refined/animation/animation.mp4",
+      "error": null,
+      "played_seconds": 0.1692,
+      "seek_times_s": [
+        11.9833335,
+        23.950000333333335
+      ],
+      "decoded_frames": 342,
+      "video_sha256": "84ede5ceed0b427d71e5a3932ab07c5ef22d1b98f90fab396f46e16a0dfd0127",
+      "frame_map_sha256": "988a1b0aaa7a17991f344f13f97361cbadb7fcfebc2218e08004113808d4f486"
+    }
+  ],
+  "local_links_checked": 38,
+  "mobile_overflow_checked": true,
+  "page_errors": [],
+  "gallery_sha256": "f74c27ccd5630912a5e1eb42d6be99a4125c86e8117ad48789b8dc872c389c2b",
+  "checker_sha256": "4602149421f5cc0917e092676c445b6c711d9e693e5dd470a6eaef7e76da6808"
+}

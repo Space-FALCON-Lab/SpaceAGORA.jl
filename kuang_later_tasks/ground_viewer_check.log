@@ -1,0 +1,33 @@
+
+> test
+> node check.cjs
+
+{
+  "status": "passed",
+  "checked_utc": "2026-11-09T01:33:56.924Z",
+  "samples_checked": 3924,
+  "rendered_links_checked": 53675,
+  "stations": [
+    {
+      "name": "Equator_0",
+      "longitude_deg": 0
+    },
+    {
+      "name": "Equator_120E",
+      "longitude_deg": 120
+    },
+    {
+      "name": "Equator_120W",
+      "longitude_deg": -120
+    }
+  ],
+  "final_received_bits": [
+    1471158012.5333288,
+    1454207105.9380221,
+    1463078562.2114494
+  ],
+  "toggles_checked": true,
+  "playback_checked": true,
+  "page_errors": [],
+  "viewer_sha256": "fb4e5dfc11c4bafdd0cdc3985275fac6120fefce236b64207eb97041afc848ac"
+}

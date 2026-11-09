@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Three equatorial stations - recorded downlinks</title>
+<style>
+body { font: 16px system-ui, sans-serif; margin: 20px auto; max-width: 1080px; padding: 0 16px; color: #17283b; background: #f5f8fc; }
+h1 { font-size: 24px; } .controls { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
+input[type=range] { width: min(600px, 85vw); } button { padding: 8px 14px; cursor: pointer; }
+svg { width: 100%; max-height: 65vh; background: white; border: 1px solid #ccd7e4; border-radius: 12px; }
+.active-link { stroke: #e07900; stroke-width: 3; } .contact-link { stroke: #399565; stroke-width: 1.5; stroke-dasharray: 5 4; }
+.satellite { fill: #245aa0; } .station { fill: #14743e; stroke: white; stroke-width: 1.5; }
+text { font: 12px system-ui; fill: #17283b; } .station-label { font-weight: bold; font-size: 14px; }
+table { border-collapse: collapse; } td, th { text-align: left; padding: 5px 16px 5px 0; }
+.legend { color: #344b61; } #error { color: #a00000; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>40 spacecraft and 3 equatorial ground stations</h1>
+<p>Earth-fixed north-polar projection. Positions and connections come from recorded accepted steps, not an inferred schedule.</p>
+<div class="controls">
+<button id="play" type="button">Play samples</button>
+<label><input id="contacts" type="checkbox" checked> Available idle links</label>
+<label><input id="active" type="checkbox" checked> Active downlinks</label>
+</div>
+<p><label for="time">Recorded sample</label> <input id="time" type="range" min="0" value="0" step="1"></p>
+<p id="status" aria-live="polite"></p>
+<svg id="scene" viewBox="0 0 1000 800" role="img" aria-label="Earth, three equatorial stations and recorded spacecraft downlinks"></svg>
+<p class="legend">Green diamonds: stations | Blue dots: spacecraft | Orange: selected | Dashed green: available but idle</p>
+<table><thead><tr><th>Ground station</th><th>Longitude</th><th>Received (Mbit)</th></tr></thead><tbody id="delivery"></tbody></table>
+<p>Stations: latitude 0 degrees, altitude 0 m, minimum elevation 10 degrees. Playback advances scheduling samples, not equal amounts of simulation time. This is a diagnostic viewer, not the optional 3D renderer.</p>
+<pre id="error" role="alert"></pre>
+<script id="ground-data" type="application/json">__GROUND_DATA__</script>
+<script>
+"use strict";
+try {
+  const data = JSON.parse(document.getElementById("ground-data").textContent);
+  const slider = document.getElementById("time");
+  const svg = document.getElementById("scene");
+  const ns = "http://www.w3.org/2000/svg";
+  const scale = 310 / data.radius_m;
+  const xy = p => [500 + p[0] * scale, 400 - p[1] * scale];
+  const links = new Map(data.links.map(link => [link.key, link]));
+  slider.max = String(data.frames.length - 1);
+  function element(tag, attributes, text) {
+    const node = document.createElementNS(ns, tag);
+    for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, String(value));
+    if (text !== undefined) node.textContent = text;
+    svg.appendChild(node);
+    return node;
+  }
+  function render() {
+    const index = Number(slider.value), frame = data.frames[index];
+    svg.replaceChildren();
+    element("circle", {cx:500, cy:400, r:310, fill:"#dfedf9", stroke:"#9ab8ce"});
+    element("text", {x:480, y:400}, "Earth");
+    const active = new Set(frame.active);
+    for (const key of frame.available) {
+      const selected = active.has(key);
+      if (!(selected ? document.getElementById("active").checked : document.getElementById("contacts").checked)) continue;
+      const link = links.get(key);
+      const [x1, y1] = xy(frame.positions_m[link.spacecraft - 1]);
+      const [x2, y2] = xy(data.stations[link.station - 1].position_m);
+      element("line", {x1, y1, x2, y2, class:selected ? "active-link" : "contact-link", "data-key":key});
+    }
+    frame.positions_m.forEach((position, i) => {
+      const [cx, cy] = xy(position);
+      element("circle", {cx, cy, r:4, class:"satellite", "data-spacecraft":i + 1});
+      element("text", {x:cx + 6, y:cy - 5}, String(i + 1));
+    });
+    data.stations.forEach((station, s) => {
+      const [x, y] = xy(station.position_m);
+      element("path", {d:`M ${x} ${y-8} L ${x+8} ${y} L ${x} ${y+8} L ${x-8} ${y} Z`, class:"station", "data-station":s + 1});
+      element("text", {x:x + 12, y:y + 18, class:"station-label"}, station.name);
+    });
+    document.getElementById("status").textContent =
+      `t = ${frame.time_s.toFixed(3)} s | sample ${index + 1}/${data.frames.length} | ${frame.active.length} selected / ${frame.available.length} available`;
+    const body = document.getElementById("delivery");
+    body.replaceChildren();
+    data.stations.forEach((station, s) => {
+      const row = body.insertRow();
+      for (const value of [station.name, `${station.longitude_deg} deg`, (frame.delivered_bits[s] / 1e6).toFixed(6)]) row.insertCell().textContent = value;
+    });
+  }
+  slider.addEventListener("input", render);
+  for (const id of ["contacts", "active"]) document.getElementById(id).addEventListener("change", render);
+  let timer = null;
+  document.getElementById("play").addEventListener("click", () => {
+    if (timer !== null) {
+      clearInterval(timer); timer = null;
+      document.getElementById("play").textContent = "Play samples";
+      return;
+    }
+    if (Number(slider.value) === data.frames.length - 1) slider.value = "0";
+    document.getElementById("play").textContent = "Pause";
+    timer = setInterval(() => {
+      slider.value = String(Number(slider.value) + 1); render();
+      if (Number(slider.value) === data.frames.length - 1) {
+        clearInterval(timer); timer = null;
+        document.getElementById("play").textContent = "Play samples";
+      }
+    }, 100);
+  });
+  render();
+} catch (error) {
+  document.getElementById("error").textContent = `Viewer failed: ${error.message}`;
+  throw error;
+}
+</script>
+</body>
+</html>

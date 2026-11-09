@@ -1,0 +1,35 @@
+active_project = "/home/space-falcon-3/Desktop/Summary_Table_for_Other_Labs/2_SpaceAGORA.jl/Project.toml"
+case = "producer_control"
+display_interpolation = "linear positions/counters; left-held recorded selections/scores"
+fps = 30
+frames = 704
+generated_utc = "2026-11-09T04:03:54.192"
+glmakie_version = "0.13.8"
+recorded_samples = 85
+reference_renderer = "/home/space-falcon-3/Desktop/Summary_Table_for_Other_Labs/3_Kuang's Prototype Code_for_animation/functions/10_Animation_ver2.jl"
+reference_renderer_sha256 = "2b1a7cc39aa59e1a0d2f61e2bc00bdb2e731fd93bf3919674fdd16083dc47d14"
+renderer_sha256 = "ddfe4085cdb05ce57e652c8c24b2d6f6e6e79e316cd16e7d429e7acfe2ae24fd"
+review_holds = "1.5 s at start; 0.5 s at every selection change; 2 s at final totals"
+selection_changes = 0
+simulation_duration_s = 20.0
+status = "passed"
+video_duration_s = 23.466666666666665
+video_sha256 = "1bfc3d1b3860c4689e376f5305fb902e3840d3d402faa1b9563a4059e12c4bec"
+
+[input_sha256]
+"accepted_steps.csv" = "f73bc1949a06891b61f098f078a913b2aff37d799bc92947ed0476c70130c3f5"
+"candidate_scores.csv" = "40c710be533c9337def02327af46b0d977d474e6e43bcbdbef2dbf38d8c16f5c"
+"link_schedule.csv" = "5b3a6726cd20b9acb163fec9b8f21e3705cd2213dbc4a34f7649dcd49839533a"
+"network_accounting.csv" = "2ba10ececa2b614d01c398c4952ccb700e7b07509c18ab313f4cc456af8e998f"
+"node_accounting.csv" = "cd7a72af3b6a915fdd49a58dc2ef1065f13c98806e991e046fc514e33618bd33"
+"settings.toml" = "180dc5fedb2fd5867869327a53ffee9eac9fd1057b071e90035bef915a376798"
+"spacecraft_before_run.csv" = "1427f8098678c5ed12a9500b98b1ffcafefcaec614d39d237c44131c74596a5f"
+
+[video_probe]
+codec_name = "h264"
+duration = "23.466667"
+height = "1080"
+nb_frames = "704"
+pix_fmt = "yuv420p"
+r_frame_rate = "30/1"
+width = "1600"

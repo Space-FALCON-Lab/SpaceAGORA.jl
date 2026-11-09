@@ -1,0 +1,5 @@
+window,link,kind,directed,a_spacecraft,a_terminal,b_spacecraft,b_terminal,start_s,end_s,duration_s,steps,score_start,score_end,score_min,score_max
+active,1,DataLink{FixedRateBudget},true,1,1,3,1,0.0,20.0,20.0,86,500000.0,500000.0,500000.0,500000.0
+active,2,DataLink{FixedRateBudget},true,2,2,3,2,0.0,20.0,20.0,86,1.0e6,1.0e6,1.0e6,1.0e6
+contact,1,DataLink{FixedRateBudget},true,1,1,3,1,0.0,20.0,20.0,86,NaN,NaN,NaN,NaN
+contact,2,DataLink{FixedRateBudget},true,2,2,3,2,0.0,20.0,20.0,86,NaN,NaN,NaN,NaN

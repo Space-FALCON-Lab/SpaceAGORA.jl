@@ -1,0 +1,2 @@
+case,quantity,expected_bits,actual_bits,error_bits,tolerance_bits
+production_competition_refined,delivered_from_initial_and_production_minus_backlog,1.1082065734343072e7,1.1082065734343072e7,0.0,1.0

@@ -1,0 +1,18 @@
+Rendering producer_control: 704 frames at 30 fps.
+Test Summary:              |  Pass  Total   Time
+producer_control animation | 10528  10528  55.3s
+Rendering production_competition: 839 frames at 30 fps.
+Test Summary:                    |  Pass  Total   Time
+production_competition animation | 16808  16808  29.7s
+Rendering busy_relay: 719 frames at 30 fps.
+Test Summary:        |  Pass  Total   Time
+busy_relay animation | 17264  17264  24.9s
+Rendering direct_route_control: 704 frames at 30 fps.
+Test Summary:                  |  Pass  Total   Time
+direct_route_control animation | 16889  16889  24.7s
+Rendering production_competition_refined: 989 frames at 30 fps.
+Test Summary:                            |  Pass  Total   Time
+production_competition_refined animation | 20408  20408  34.3s
+Rendering busy_relay_refined: 719 frames at 30 fps.
+Test Summary:                |  Pass  Total   Time
+busy_relay_refined animation | 17817  17817  25.3s

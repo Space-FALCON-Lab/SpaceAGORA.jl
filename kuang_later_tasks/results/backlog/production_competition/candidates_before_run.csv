@@ -1,0 +1,3 @@
+time_s,tx,tx_terminal,rx,rx_terminal,allowed,distance_m,range_m,planet_clearance_m,geometrically_feasible,available,link_rate_bps,held_tx_bits,production_tx_bps,room_rx_bits,previous_feasible_outflow_rx_bps,previous_active,hypothetical_score_bps,score_bps
+0.0,1,1,3,1,true,19999.993346643074,200000.0,699992.9359950917,true,true,1.0e6,0.0,200000.0,1.0e9,0.0,false,200000.0,200000.0
+0.0,2,1,3,1,true,9999.999168330323,200000.0,699998.2339985529,true,true,1.0e6,8.0e6,0.0,1.0e9,0.0,false,1.0e6,1.0e6

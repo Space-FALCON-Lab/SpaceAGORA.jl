@@ -89,6 +89,80 @@ solution = run_simulation(args; return_solution=true)
 history = solution.prob.p.args.interlink_model.history
 ```
 
+For a small case with a known answer, run the four-spacecraft tree check from
+the repository root (the root project is sufficient; no plotting or Python
+backend is needed):
+
+```sh
+julia --startup-file=no --project=. examples/known_answer_tree_interlinks.jl
+```
+
+It adapts the forty-spacecraft example into the path `1-3-2-4`, with one
+terminal per spacecraft and unequal masses. Before propagation it writes the
+allowed pairs, geometry, scores and all matching subsets to separate CSVs.
+The two outer edges should beat the largest single edge. During the run it
+checks the selected score against exhaustive enumeration, verifies terminal
+capacities, and checks that a close but unregistered pair never activates.
+With `record_available=true`, the saved schedule includes both contact and
+active windows. An independent force-impulse check uses each endpoint's own
+mass. The reviewer-ready report and evidence are written under
+`output/known_answer_tree_interlinks/`; these generated files are git-ignored.
+
+To animate that recorded four-spacecraft graph, prepare the existing examples
+plotting environment and run the separate postprocessor:
+
+```sh
+julia --startup-file=no examples/setup.jl
+julia --startup-file=no --project=examples examples/animate_known_answer_tree_interlinks.jl
+```
+
+The postprocessor reads the saved candidate, spacecraft and accepted-step
+comparison CSVs; it does not rerun or alter the simulation. It writes
+`interlinks.gif` and `interlinks_preview.png` beside the check-in report.
+The GIF shows a simplified square on the left: spacecraft 2 at top left, 1 at
+top right, 3 at bottom left and 4 at bottom right, with a vertical legend on
+the right. All six pairs are drawn: `(1,2)`, `(1,4)` and `(3,4)` are solid gray
+because they are not in the allowed graph but are geometrically feasible;
+`(2,3)` is green (available but
+idle); `(1,3)` and `(2,4)` are orange (active). Gray pairs are visual references
+only, not registered candidates, so the scheduling graph remains a tree.
+Node labels retain roles, altitudes and masses. A moving timeline beneath the
+graph displays the current simulation time in seconds; scores and diagnostic
+annotations are omitted. There are 121 uniformly spaced frames at 12 fps,
+holding the latest recorded status without interpolation. This run's matching
+never switches, but its timeline advances through the 60-second run. The layout is
+schematic, not orbital geometry. Plotting dependencies stay separate from the
+root-project scheduler check, and no Python matching backend is needed.
+
+For visible status changes, `examples/changing_tree_interlinks.jl` runs the
+same initial conditions for 2400 s (40 minutes), saving a separate recording
+without overwriting the 60-second check:
+
+```sh
+julia --startup-file=no --project=. examples/changing_tree_interlinks.jl
+julia --startup-file=no --project=examples -e 'include("examples/animate_known_answer_tree_interlinks.jl"); KnownAnswerTreeAnimation.save_animation(input="output/changing_tree_interlinks", frame_count=241)'
+```
+
+The faster, lower-altitude helpers drift past the targets. The selected
+matching changes from the two outer edges to the middle edge, then becomes
+empty when no available link has a positive score; later, separations exceed
+the 200 km range. Every accepted-step matching is checked against exhaustive
+enumeration. The output folder contains the animation, `status_changes.md`,
+recorded allowed-link change times, candidate scores at those times, and the full
+active/contact schedule. The run also verifies the initially circular, equatorial
+1000 km / 1100 km geometry and independently checks each endpoint's link-only
+velocity change against its force impulse divided by its own unequal mass,
+including partner changes and idle periods. `endpoint_dv_check.csv` records the
+expected/recorded vectors, active durations, errors and tolerances over all 2400 s.
+The same simplified layout is used: solid gray means
+excluded but geometrically feasible; any pair outside range is dashed light
+gray, even when it is also excluded from the allowed graph. In particular,
+`(1,4)` changes to dashed when it leaves range, without becoming a candidate.
+Geometry for all six pairs is recorded at every accepted step. Older
+recordings without these fields must be regenerated with their simulation
+example before rendering. Frames hold the latest recorded status, so use the CSVs for
+accepted-step timing rather than inferring exact transitions from the GIF.
+
 ## Terminals
 
 A spacecraft's terminals are numbered in two groups: first its `n_terminal`

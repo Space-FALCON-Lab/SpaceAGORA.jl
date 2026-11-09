@@ -1,0 +1,3 @@
+case,quantity,expected_bits,actual_bits,error_bits,tolerance_bits
+producer_control,delivered,4.0e6,4.0000000000000005e6,4.656612873077393e-10,1.0
+producer_control,sender_stored,0.0,0.0,0.0,1.0

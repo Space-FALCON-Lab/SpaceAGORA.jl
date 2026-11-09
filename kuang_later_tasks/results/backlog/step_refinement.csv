@@ -1,0 +1,3 @@
+case,coarse_dtmax_s,refined_dtmax_s,coarse_switches,refined_switches,coarse_delivered_bits,refined_delivered_bits,delivered_difference_bits,loss_difference_bits
+production_competition,0.25,0.125,9,19,1.108206573434307e7,1.1082065734343072e7,1.862645149230957e-9,0.0
+busy_relay,0.25,0.125,1,1,2.0000060650488533e7,2.0000060650488533e7,0.0,0.0

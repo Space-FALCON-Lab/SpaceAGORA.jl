@@ -1,0 +1,5 @@
+mask,matching,terminal_feasible,all_available,positive_scores,feasible,total_score_bps
+0,empty,true,true,true,true,0.0
+1,1.1->3.1,true,true,true,true,500000.0
+2,2.2->3.2,true,true,true,true,1.0e6
+3,1.1->3.1;2.2->3.2,true,true,true,true,1.5e6

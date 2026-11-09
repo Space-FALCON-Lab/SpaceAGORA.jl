@@ -1,0 +1,4 @@
+station,name,latitude_deg,longitude_deg,altitude_m,minimum_elevation_deg,antennas
+1,Equator_0,0.0,0.0,0.0,10.0,1
+2,Equator_120E,0.0,120.0,0.0,10.0,1
+3,Equator_120W,0.0,-120.0,0.0,10.0,1

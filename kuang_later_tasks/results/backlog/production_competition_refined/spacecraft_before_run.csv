@@ -1,0 +1,4 @@
+spacecraft,capacity_bits,initial_bits,production_bps,terminal_capacity,arc_m,destination
+1,1.0e8,0.0,200000.0,1,0.0,false
+2,1.0e8,8.0e6,0.0,1,10000.0,false
+3,1.0e9,0.0,0.0,1,20000.0,true

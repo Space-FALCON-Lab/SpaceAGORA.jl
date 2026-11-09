@@ -96,6 +96,8 @@ include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "interlinks", 
 @reexport using .InterLinkModels
 include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "control", "interlinks", "interlink_scheduling.jl"))
 @reexport using .SchedulingPolicies
+include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "control", "interlinks", "controllability_scheduling.jl"))
+@reexport using .ControllabilityScheduling
 
 # 4. Functions for building the model (add_...!)
 include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "spacecraft", "assembly.jl"))

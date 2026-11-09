@@ -220,6 +220,7 @@ script configures, including scripts whose historical names say "Control":
 | `Earth_Torque_Free_Test.jl` | Torque-free attitude propagation |
 | `Earth_RW_Test.jl` | Quaternion PD attitude control using an ideal body torque; no explicit wheel dynamics |
 | `Earth_Momentum_Manager_Test.jl` | Magnetic unloading of accumulated wheel momentum, with accounting-only and solver-tolerance comparisons |
+| `Mounted_Actuator_Solver_Comparison.jl` | [Solver comparison tutorial](../tutorials/solver_comparison.md): fresh instances of the mounted-actuator case; Tsit5 and independent MRI step sweeps against a refined DP8 reference, with error CSVs and recorded settings; examples environment, no external data |
 | `Earth_CubeSat_Mounted_Actuators.jl` | Mounted actuators: a controller sets levels for three reaction wheels, three torque rods and a laser terminal; the wheels detumble the CubeSat within their limits and the rods unload them; reads the actuator level and power columns |
 | `Earth_CubeSat_Power_Budget.jl` | Power budget: a solar array, a battery, a constant load and a laser terminal over two orbits; the battery fills in sunlight, empties in eclipse with the laser shed, and recovers; reads the power columns |
 | `Earth_Navigation.jl` | Distributed relative navigation: optical line-of-sight measurements between spacecraft, range-limited communication between observers and fusion of their tracks |
@@ -425,6 +426,12 @@ examples use their prepared projects.
   ten targets. Its optional GIF shows the connection graph, not orbital
   geometry. The default run spans twenty target orbits; the CI smoke route
   uses the standard shortened mission duration and turns the animation off.
+- `constellation_edge_scheduling.jl` propagates four spacecraft, builds the
+  feasible-edge graph of their laser links at each step and a Cartesian linear
+  model of the window, and compares a constant link set with the greedy
+  schedules by their Gramians and the least energy of one reconfiguration. It
+  needs no external data.
 
 See [Interlinks](interlinks.md#Setting-up-interlinks) for interpretation,
-optional cyclic matching and the model's physical limits.
+optional cyclic matching and the model's physical limits, and
+[Edge Scheduling](edge_scheduling.md) for planning over a horizon.

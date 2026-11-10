@@ -270,13 +270,52 @@ function scheduling_runs(;orbits=5,intervals=240orbits,out=OUTPUT)
     end
 end
 
+"""Receding-horizon MPC (`run_laser_mpc`) with KS versus Cartesian linearization.
+
+Defaults follow examples/Constellation_Laser_MPC.jl: five-orbit planning horizon,
+one orbit executed per replan. Segment errors compare each plan's linear delta a
+with the nonlinear KS replay of the executed commands. Each executed schedule is
+also replayed continuously in KS and Cartesian against that route's no-laser run.
+"""
+function mpc_runs(;orbits=5,horizon=1200,execute=240,out=OUTPUT)
+    mkpath(out);case=walker27_constellation();n=round(Int,240orbits)
+    times=collect(range(0.,orbits*case.period_s;length=n+1));off=zeros(Int,length(case.edges),n)
+    reference=replay_laser_schedule(case,times,off);cart_reference=cart_replay(case,times,off)
+    for route in (:ks,:cartesian)  # warm compilation
+        run_laser_mpc(case,times[1:5];horizon=4,execute=2,linearization=route)
+    end
+    rows=NamedTuple[]
+    for objective in (:a,:i,:omega,:combined)
+        commands=Dict()
+        for route in (:ks,:cartesian)
+            GC.gc();stats=@timed run_laser_mpc(case,times;horizon,execute,objective,linearization=route)
+            r=stats.value;commands[route]=r.command
+            predicted=[s.predicted[1] for s in r.segments];actual=[s.actual[1] for s in r.segments]
+            ks=replay_laser_schedule(case,times,r.command);cart=cart_replay(case,times,r.command)
+            tf=last(times)
+            ks_da=element_delta(CS.elements(view(ks(tf),1:10),case.config),CS.elements(view(reference(tf),1:10),case.config))[1]
+            cart_da=element_delta(cart_elements(cart,tf,case),cart_elements(cart_reference,tf,case))[1]
+            push!(rows,(;objective=string(objective),route=string(route),orbits,horizon,execute,
+                replans=length(r.segments),wall_s=stats.time,gc_s=stats.gctime,bytes=stats.bytes,
+                segment_max_abs_error_a_m=maximum(abs.(predicted-actual)),
+                segment_sum_predicted_a_m=sum(predicted),segment_sum_actual_a_m=sum(actual),
+                ks_nonlinear_a_m=ks_da,cartesian_nonlinear_a_m=cart_da,
+                active_intervals=sum(r.command),different_intervals=0))
+        end
+        d=count(k->commands[:ks][:,k]!=commands[:cartesian][:,k],1:n)
+        rows[end]=merge(rows[end],(;different_intervals=d));rows[end-1]=merge(rows[end-1],(;different_intervals=d))
+        CSV.write(joinpath(out,"mpc.csv"),DataFrame(rows))
+        println("MPC comparison finished $objective, $orbits orbits ($d different intervals)");flush(stdout)
+    end
+end
+
 end
 
 if abspath(PROGRAM_FILE)==@__FILE__
     using .NativeCoordinateComparison
     NativeCoordinateComparison.BLAS.set_num_threads(1)
     mode=isempty(ARGS) ? "short" : ARGS[1]
-    mode in ("short","full","nonlinear","schedule","extended") || error("Choose short, full, nonlinear, schedule or extended")
+    mode in ("short","full","nonlinear","schedule","extended","mpc") || error("Choose short, full, nonlinear, schedule, extended or mpc")
     if mode=="extended"
         NativeCoordinateComparison.nonlinear_runs(;horizons=(1,5,50,100,200),
             out=joinpath(NativeCoordinateComparison.OUTPUT,"extended_horizons"))
@@ -287,4 +326,5 @@ if abspath(PROGRAM_FILE)==@__FILE__
     if mode in ("short","full","schedule")
         NativeCoordinateComparison.scheduling_runs()
     end
+    mode=="mpc" && NativeCoordinateComparison.mpc_runs()
 end

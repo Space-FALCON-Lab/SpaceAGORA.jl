@@ -55,6 +55,8 @@ PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
 SpaceAGORAEDG = "a782e8ee-96d7-4dd6-8231-bb64649e6ad4"
 SpaceAGORAVisualizer = "a4677e92-0b7f-4d10-9ebd-8cde6a49f03a"
 GRAMSuite = "b50455af-6a46-4eae-bf92-8039261dd674"
+HiGHS = "87dc4568-4c63-4d18-b0c0-bb2238e4078b"
+JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [extensions]
@@ -63,6 +65,7 @@ SpaceAGORAPythonCallExt = "PythonCall"
 SpaceAGORAEDGExt = "SpaceAGORAEDG"
 SpaceAGORAVisualizerExt = "SpaceAGORAVisualizer"
 SpaceAGORAGRAMSuiteExt = "GRAMSuite"
+SpaceAGORAResourceSchedulingExt = ["JuMP", "HiGHS"]
 SpaceAGORATestExt = "Test"
 
 [extras]
@@ -88,6 +91,8 @@ DataFrames = "1"
 DiffEqBase = "7.21.2"
 DiffEqCallbacks = "4"
 GRAMSuite = "0.1"
+HiGHS = "1"
+JuMP = "1"
 Interpolations = "0.16"
 JSON = "0.21"
 LinearSolve = "5.18.1"

@@ -109,6 +109,9 @@ include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "power", "powe
 # Onboard data: the data store, the data sources and their production (needs the spacecraft types).
 include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "data", "data_storage.jl"))
 @reexport using .DataStorage
+# The lumped thermal node (needs the spacecraft types).
+include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "thermal", "thermal_node.jl"))
+@reexport using .ThermalNodes
 # Actuator failure modes (needs ActuatorMounting).
 include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "actuators", "faults.jl"))
 @reexport using .ActuatorFaults

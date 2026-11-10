@@ -307,6 +307,8 @@ mutable struct Link
     # store (root link, at most one) and the data sources.
     data_stores::Vector{DataStore}
     data_sources::Vector{AbstractDataSource}
+    # The lumped thermal node (root link, at most one; see ThermalNodes.add_thermal!).
+    thermal_nodes::Vector{ThermalNode}
 
     function Link(; root=false,
         r=MVector{3, Float64}(0, 0, 0),
@@ -348,7 +350,8 @@ mutable struct Link
         faults=FaultSet(),
         sensors=AbstractSensor[],
         data_stores=DataStore[],
-        data_sources=AbstractDataSource[])
+        data_sources=AbstractDataSource[],
+        thermal_nodes=ThermalNode[])
 
         n_rw = size(J_rw, 2)
         rw_assembly = ReactionWheelAssembly(
@@ -362,7 +365,8 @@ mutable struct Link
         )
         new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, θ, reflection_coefficient, rw_assembly, net_force, net_torque, attitude_control_rate, SRP_facets, thrusters, magnets, cop_offset_b, Vector{Magnetorquer}(magnetorquers), Vector{LaserTerminal}(laser_terminals), Vector{PanelHinge}(hinges), Vector{ThrusterGimbal}(gimbals), Vector{AbstractActuator}(custom_actuators),
             Vector{SolarArray}(solar_arrays), Vector{Battery}(batteries), Vector{PowerLoad}(power_loads), faults,
-            Vector{AbstractSensor}(sensors), Vector{DataStore}(data_stores), Vector{AbstractDataSource}(data_sources))
+            Vector{AbstractSensor}(sensors), Vector{DataStore}(data_stores), Vector{AbstractDataSource}(data_sources),
+            Vector{ThermalNode}(thermal_nodes))
     end
 end
 

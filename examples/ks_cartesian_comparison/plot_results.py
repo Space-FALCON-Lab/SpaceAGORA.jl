@@ -1,13 +1,14 @@
 """Render the native-coordinate comparison CSVs without requiring Julia plotting packages."""
 from pathlib import Path
 import math
+import sys
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter, NullFormatter
 import pandas as pd
 
-OUT = Path(__file__).resolve().parents[2] / "outputs/ks_cartesian_comparison"
+OUT = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path(__file__).resolve().parents[2] / "outputs/ks_cartesian_comparison"
 plt.rcParams.update({"font.size": 10, "pdf.fonttype": 42, "ps.fonttype": 42})
 LABELS = {"a_m": r"$\Delta a$ (m)", "i_deg": r"$\Delta i$ (deg)",
           "omega_deg": "Delta argument of\nperiapsis (deg)"}
@@ -131,30 +132,67 @@ def main():
             "Times are recorded measurements from the validation machine; see docs/ks_cartesian_comparison.md for methodology and limitations.", "",
             "## Fastest passing nonlinear settings tested", "",
             "Limits: 0.01 m maximum position error and 0.00001 m/s maximum velocity error, adding the measured truth-refinement difference as a safety margin (not a rigorous bound on reference error). This selects among the tested settings only; it is not a global matched-accuracy search. One warmed timing sample per configuration.", "",
-            "| e | Orbits | Route | Solver | Mode | Setting | Solve (s) | Total (s) | Max position (m) |",
-            "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: |"]
+            "| e | Orbits | Route | Solver | Mode | Setting | Solve (s) | Total (s) | Max position (m) | RMS position (m) | Max velocity (m/s) |",
+            "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: |"]
     for (e, orbits, route), group in data.groupby(["e", "orbits", "route"]):
         uncertainty = truth[(truth.e == e) & (truth.orbits == orbits)].iloc[0]
         passing = group[(group.max_position_m + uncertainty.max_position_m <= .01) &
                         (group.max_velocity_m_s + uncertainty.max_velocity_m_s <= .00001)]
         if passing.empty:
-            text.append(f"| {e} | {orbits} | {route} | No passing setting | | | | | |")
+            text.append(f"| {e} | {orbits} | {route} | No passing setting | | | | | | | |")
         else:
             best = passing.loc[passing.total_s.idxmin()]
-            text.append(f"| {e} | {orbits} | {route} | {best.integrator} | {best['mode']} | {best.setting:g} | {best.solve_s:.4g} | {best.total_s:.4g} | {best.max_position_m:.4g} |")
+            text.append(f"| {e} | {orbits} | {route} | {best.integrator} | {best['mode']} | {best.setting:g} | {best.solve_s:.4g} | {best.total_s:.4g} | {best.max_position_m:.4g} | {best.rms_position_m:.4g} | {best.max_velocity_m_s:.4g} |")
     text += ["",
-            "## Five-orbit scheduling results", "",
+            f"## {terminal.time_orbits.iloc[0]:g}-orbit scheduling results", "",
             "Both nonlinear routes replay the KS-selected schedule. Changes subtract each route's own no-laser trajectory.", "",
             "| Objective | Element | KS linear | Cartesian linear | KS nonlinear | Cartesian nonlinear | Different intervals |",
             "| --- | --- | ---: | ---: | ---: | ---: | ---: |"]
     for r in terminal.itertuples():
         text.append(f"| {r.objective} | {r.element} | {r.ks_linear:.10g} | {r.cartesian_linear:.10g} | {r.ks_nonlinear:.10g} | {r.cartesian_nonlinear:.10g} | {r.different_intervals} |")
+    timing = pd.read_csv(OUT / "scheduling_timing.csv").set_index(["objective", "stage", "route"])
+    text += ["",
+             "## KS versus Cartesian terminal-gain scheduling: runtime and error", "",
+             "Wall time of one warmed call per objective, GC in parentheses. Planning is `plan_laser_schedule` with `linearization=:ks` or `:cartesian` (GC forced beforehand); replay integrates the KS-selected schedule nonlinearly (no forced GC). Ratio is Cartesian / KS. Errors are terminal delta a: linear error is each route's prediction minus its own nonlinear replay; cross-route columns are KS minus Cartesian. Other elements are in the next table.", "",
+             "| Objective | KS planning (s) | Cartesian planning (s) | Ratio | KS linear Δa error (m) | Cartesian linear Δa error (m) | Linear KS − Cartesian Δa (m) | KS replay (s) | Cartesian replay (s) | Ratio | Nonlinear KS − Cartesian Δa (m) |",
+             "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
+    for objective in terminal.objective.unique():
+        a = terminal[(terminal.objective == objective) & (terminal.element == "a_m")].iloc[0]
+        cells = []
+        for stage in ("planning", "replay"):
+            ks, cart = timing.loc[(objective, stage, "ks")], timing.loc[(objective, stage, "cartesian")]
+            cells += [f"{ks.wall_s:.4g} ({ks.gc_s:.3g})", f"{cart.wall_s:.4g} ({cart.gc_s:.3g})", f"{cart.wall_s / ks.wall_s:.3g}"]
+            if stage == "planning":
+                cells += [f"{a.ks_linear - a.ks_nonlinear:.4g}", f"{a.cartesian_linear - a.cartesian_nonlinear:.4g}", f"{a.ks_linear - a.cartesian_linear:.3g}"]
+            else:
+                cells.append(f"{a.ks_nonlinear - a.cartesian_nonlinear:.3g}")
+        text.append(f"| {objective} | " + " | ".join(cells) + " |")
+    text += ["",
+             "## KS versus Cartesian terminal-gain scheduling: errors by element", "",
+             "Linear-prediction error is each route's terminal linear prediction minus its own nonlinear replay of the KS-selected schedule (both routes selected identical schedules, see Different intervals above). Cross-route columns are KS minus Cartesian. Max gain difference is the largest terminal-gain mismatch between the two linearizations.", "",
+             "| Objective | Element | KS linear error | Cartesian linear error | Linear KS − Cartesian | Nonlinear KS − Cartesian | Max gain difference |",
+             "| --- | --- | ---: | ---: | ---: | ---: | ---: |"]
+    for r in terminal.itertuples():
+        text.append(f"| {r.objective} | {r.element} | {r.ks_linear - r.ks_nonlinear:.4g} | {r.cartesian_linear - r.cartesian_nonlinear:.4g} | {r.ks_linear - r.cartesian_linear:.3g} | {r.ks_nonlinear - r.cartesian_nonlinear:.3g} | {r.max_gain_difference:.3g} |")
+    if (OUT / "mpc.csv").exists():
+        mpc = pd.read_csv(OUT / "mpc.csv").set_index(["objective", "route"])
+        first = mpc.iloc[0]
+        text += ["",
+                 "## KS versus Cartesian receding-horizon MPC: runtime and error", "",
+                 f"`run_laser_mpc` over {first.orbits:g} orbits, horizon {first.horizon:g} intervals, {first.execute:g} executed per replan ({first.replans:g} replans). Runtime is one warmed call (GC in parentheses) and includes the per-segment nonlinear KS replays. Segment error is the largest |linear − nonlinear KS| delta a over segments. Terminal delta a replays each route's executed schedule continuously in KS and Cartesian against that coordinate's no-laser run. Ratio is Cartesian / KS.", "",
+                 "| Objective | KS MPC (s) | Cartesian MPC (s) | Ratio | KS max segment Δa error (m) | Cartesian max segment Δa error (m) | KS schedule: Δa KS / Cartesian replay (m) | Cartesian schedule: Δa KS / Cartesian replay (m) | Different intervals |",
+                 "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
+        for objective in mpc.index.get_level_values(0).unique():
+            ks, cart = mpc.loc[(objective, "ks")], mpc.loc[(objective, "cartesian")]
+            text.append(f"| {objective} | {ks.wall_s:.4g} ({ks.gc_s:.3g}) | {cart.wall_s:.4g} ({cart.gc_s:.3g}) | {cart.wall_s / ks.wall_s:.3g} | "
+                        f"{ks.segment_max_abs_error_a_m:.4g} | {cart.segment_max_abs_error_a_m:.4g} | "
+                        f"{ks.ks_nonlinear_a_m:.6g} / {ks.cartesian_nonlinear_a_m:.6g} | {cart.ks_nonlinear_a_m:.6g} / {cart.cartesian_nonlinear_a_m:.6g} | {ks.different_intervals:g} |")
     text += ["", "## Interpretation", "",
              "The scheduler uses the original frozen-interval physical-time model in RTN. Its KS route maps SpaceAGORA's analytical KS tangent to Cartesian before RTN/ZOH. It is not a native fictitious-time STM scheduler.",
              "The nonlinear benchmark is inertial: no RTN conversion, scheduling, or Jacobian assembly enters its solve timing. KS uses target fictitious time; fixed KS steps are nominal physical-second equivalents.",
              "Equal numerical tolerances on differently scaled states are not a matched-accuracy result. Use work-precision plots and truth_refinement.csv, not one runtime alone, to judge tradeoffs.",
              "A separate inertial_zoh.csv per objective propagates the selected schedule with native-s KS and inertial Cartesian matrices, with no RTN conversion. KS applies a fixed-physical-time clock correction after each interval. These finite-step approximations need not coincide with the RTN ZOH or with each other; they are not used to replace the original optimizer.",
-             f"Nonlinear horizons completed: {', '.join(str(h) for h in horizons)} orbits; {len(data)} configurations. The scheduling and native inertial linear comparisons remain five-orbit runs. Historical affine/GVE/PPTX experiments have not been re-created by this driver."]
+             f"Nonlinear horizons completed: {', '.join(str(h) for h in horizons)} orbits; {len(data)} configurations. The scheduling and native inertial linear comparisons are {terminal.time_orbits.iloc[0]:g}-orbit runs. Historical affine/GVE/PPTX experiments have not been re-created by this driver."]
     (OUT / "README.md").write_text("\n".join(text) + "\n")
 
 

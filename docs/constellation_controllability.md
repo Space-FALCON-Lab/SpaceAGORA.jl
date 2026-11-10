@@ -4,7 +4,8 @@
 
 This separate local repository integrates the fixed-reference terminal-gain
 scheduler into SpaceAGORA. It is not the active-reference receding-horizon
-scheduler, nor the battery, temperature, or data-constrained variant.
+scheduler. The battery, temperature and data-constrained variant is ported
+separately; see "Battery, thermal and data constraints" below.
 
 Base: `SpaceAGORA_MPC_Integration` at
 `1af9cbab34452b277d9fd7efdd9038b36d3f4c9c`. On October 30, 2026, this exact
@@ -42,6 +43,9 @@ julia --project=. examples/Constellation_Terminal_Gain_Scheduling.jl --no-plots
 julia --project=examples -e 'using Pkg; Pkg.instantiate()'
 julia --project=examples examples/Constellation_Terminal_Gain_Scheduling.jl
 julia --project=. examples/Constellation_Interlink_Replay.jl
+julia --project=. test/unit/gnc/constellation_mpc_tests.jl
+julia --project=. examples/Constellation_Laser_MPC.jl --check
+julia --project=. examples/Constellation_Laser_MPC.jl
 ```
 
 The full example runs four objectives, 27 satellites, five orbits and 1200
@@ -68,6 +72,9 @@ Compilation is included in the first invocation, not a propagation benchmark.
 | New `examples/Constellation_Terminal_Gain_Scheduling.jl` | Walker constellation configuration, CSV exports and plots |
 | New `test/unit/gnc/constellation_scheduling_tests.jl` | Map, Jacobian, native geometry, ZOH and selection checks |
 | New `test/unit/gnc/terminal_gain_interlink_engine_tests.jl` | Native engine emitter-switch/coast timing and KS trajectory agreement |
+| New `src/models/gnc/control/constellation_scheduling/laser_mpc.jl` | Receding-horizon MPC (`run_laser_mpc`) over the fixed-reference planner |
+| New `examples/Constellation_Laser_MPC.jl` | Horizon sweep, geometry-drift diagnosis and MPC study, CSV exports |
+| New `test/unit/gnc/constellation_mpc_tests.jl` | Impulse gain vs nonlinear replay, MPC segment predictions and chained vs continuous replay |
 
 The existing drag-area input derivative is not a laser input matrix. The new
 acceleration lift supplies the correct three inertial acceleration columns.
@@ -331,3 +338,138 @@ These are integration/coordinate-route agreement figures, not linear-prediction
 errors. The native-engine full-horizon comparison covers the a objective; the
 four-objective scheduler/archive regression uses nonlinear KS replay with the native
 SpaceAGORA link geometry and force functions.
+
+## Long horizons and receding-horizon MPC
+
+`examples/Constellation_Laser_MPC.jl` studies the planner past the five-orbit
+case above, at 240 intervals per orbit, and writes
+`outputs/constellation_laser_mpc/`. Every accuracy figure compares the linear
+prediction with a nonlinear KS replay of the same schedule.
+
+One plan over the whole horizon (`horizon_sweep.csv`) stays accurate to about
+five orbits, then fails:
+
+| Orbits | a: linear / nonlinear (m) | i relative error | omega relative error |
+| ---: | --- | ---: | ---: |
+| 5 | 728.70 / 728.58 | 0.32% | 0.07% |
+| 10 | 1511 / 725 | 1.5% | 0.13% |
+| 20 | 3252 / -688 | 2.9% | 35% |
+| 100 | 22195 / 209 | 75% | 402% |
+
+The linearization itself is not the cause. A single firing's nonlinear effect
+matches its terminal gain to the replay noise floor (about 1e-4 to 1e-3 m in a
+per impulse, independent of laser power, with `:ks` and `:cartesian` agreeing);
+`test/unit/gnc/constellation_mpc_tests.jl` checks one such impulse. The cause is
+the fixed reference (`geometry_drift.csv`): in the 100-orbit plan, commanded
+links stay available (at most 1.7% unavailable in any orbit) and keep their
+force magnitude (replayed/planned ratio 1.000), but the targets drift 10-100 km
+from the reference and the replayed force direction departs from the planned
+one, from a mean of under 2 degrees in the first five orbits to 72-94 degrees
+after orbit 10.
+
+`run_laser_mpc` (`src/models/gnc/control/constellation_scheduling/laser_mpc.jl`)
+re-plans with the same planner from the replayed state. With a five-orbit
+horizon over 100 orbits (`mpc_summary.csv`):
+
+| Objective | Execute | Gain, last-orbit mean | Segment prediction error, median / max |
+| --- | ---: | ---: | --- |
+| a | 1 orbit | 1644.3 m | 0.007% / 1.0% |
+| a | 5 orbits | 1620.5 m | 2.4% / 23% |
+| i | 1 orbit | 0.03393 deg | 0.024% / 0.062% |
+| i | 5 orbits | 0.03400 deg | 0.79% / 1.5% |
+| omega | 1 orbit | 7.030 deg | 0.030% / 0.59% |
+| omega | 5 orbits | 7.006 deg | 0.028% / 4.4% |
+
+The one-shot 100-orbit plan gives -9.7 m, 0.0188 deg and 1.64 deg for the same
+measure. Executing one orbit per plan keeps the predictions accurate; it does
+not raise the gain over re-planning every five orbits. Segment errors count only
+segments that moved the element by at least 1% of the largest segment change.
+For a, the planner commands a link in only about 3,200 of 24,000 intervals.
+
+Gains are against the no-laser trajectory averaged over the last orbit. Once
+targets drift, J2 short-period terms make terminal osculating a roughly twice
+the averaged value, so use the average for a. The planner itself still scores
+terminal osculating elements. One continuous replay of the executed MPC
+schedule reproduces the chained replays' last-orbit gains to the stated
+precision; the final positions differ by 6-135 m after 100 orbits, which is
+along-track drift from integrator-level energy differences, not a change in
+the elements.
+
+## Battery, thermal and data constraints
+
+The constraint formulation is ported from Constellation-Controllability
+(`src/resource_constrained_scheduling.jl`, `scripts/walker27_resource_scheduling.jl`;
+equations and assumptions in its `docs/RESOURCE_CONSTRAINED_SCHEDULING.md`,
+including the single reflected-return emitter heating). The orbital model and
+terminal gains are unchanged: battery energy, one lumped temperature and a data
+queue per spacecraft are added as time-coupled states, so the independent
+best-positive-link rule is replaced by a HiGHS mixed-integer linear program.
+
+Every hardware coefficient is read from SpaceAGORA's own parts mounted on the
+spacecraft; `resource_model(case)` does the reading:
+
+| Constraint input | SpaceAGORA part |
+| --- | --- |
+| Battery capacity, initial charge, charge/discharge efficiency and limits | `Battery` |
+| Solar input (Sun-tracking: `min(max_power_w, area * efficiency * flux)` at 1 AU, times sampled sunlight) | `SolarArray` |
+| Bus load, including the target's laser-receiver electronics | `PowerLoad` |
+| Laser electrical draw `max_power_w / efficiency`, and its waste heat | `LaserTerminal` |
+| Ground downlink draw `max_power_w / efficiency` and rate `max_rate_bps` | `RadioTerminal` on the target |
+| Buffer and initial data; production | `DataStore`, `DataSource` |
+| Helper-to-target data rate while the laser is on | a `DataLink` (`FixedRateBudget`) beside each laser link |
+| Heat capacity, conductance, temperature limits, laser absorptivity/reflectivity | `ThermalNode` (new) |
+
+`ThermalNode` (`src/models/vehicle/thermal/thermal_components.jl`, mounted with
+`add_thermal!`) is a new part: the branch had no spacecraft temperature model. The
+engine does not integrate it yet; only this scheduler reads it. Two inputs are
+planning choices rather than hardware and stay arguments of `resource_model`: the
+lowest planned state of charge (`reserve_soc`, default 0.2) and each store's
+end-of-plan data cap (`terminal_bits`). `walker27_resource_constellation` mounts
+illustrative parts equal to the original study's values; they are not derived
+from a spacecraft design. Laser links stay on the virtual terminals, so mounting
+the `LaserTerminal`s does not change the force model or the schedule.
+
+Two modeling consequences of using these parts: a `PowerLoad` is constant, so the
+target's 50 W receiver electronics draw (and heat) continuously rather than only
+while receiving; and with `Battery` efficiencies below 1 the program may charge
+and discharge in one interval, which wastes energy but never creates it, so the
+planned energy is then a lower bound on the battery's (exact at efficiency 1, the
+default).
+
+| File | Role |
+| --- | --- |
+| `src/models/gnc/control/constellation_scheduling/resource_scheduling.jl` | Hardware constellation, `resource_model`, environment sampling, closed-form replay, warm start, `plan_resource_schedule` |
+| `ext/SpaceAGORAResourceSchedulingExt.jl` | `optimize_resources` MILP; loads with `using JuMP, HiGHS` (weak dependencies) |
+| `src/models/vehicle/thermal/thermal_components.jl`, `thermal_node.jl` | `ThermalNode` and `add_thermal!` |
+| `examples/Constellation_Resource_Scheduling.jl` | The original eight five-orbit cases, resource and nonlinear KS replay checks |
+| `test/unit/gnc/constellation_resource_tests.jl` | The original checks, hardware-reading and battery-efficiency checks, Walker-27 integration |
+
+```bash
+julia --project=test test/unit/gnc/constellation_resource_tests.jl
+julia --project=examples examples/Constellation_Resource_Scheduling.jl --check
+julia --project=examples examples/Constellation_Resource_Scheduling.jl
+```
+
+`plan_resource_schedule` sums `plan_laser_schedule` gains over blocks of
+`stride=5` fine intervals (240 command blocks over five orbits) and marks a block
+available only if all its fine intervals are. Unlike the original, these gains
+carry the scheduler's native roundoff cutoffs (below 1e-9 m in a), which is
+immaterial at the reported precision.
+
+Validation against the original five-orbit outputs
+(`outputs/walker27_resource_scheduling_5orbits`, which predate the reflected-return
+heat term): the sampled sun, heat-sink and ground-contact environment matches all
+6480 entries exactly; the unconstrained objective (728.701172 m), its minimum
+energy (-241.476813 kWh) and the data case's minimum energy (-215.405722 kWh) are
+identical when read from the mounted hardware; with `return_capture_fraction=0`
+the unconstrained peak temperature is 415.726981 K in both. Constrained cases stop
+at the original 120 s time limit with 0.5-23 % optimality gaps, so their schedules
+are incumbents, not optima, and need not match the original's; the thermal case
+also sees the target's constant receiver load (164 active blocks against the
+original's 175). With return heating (default), for the semi-major-axis objective,
+all constraints give 92 active blocks, linear delta a 222.91 m against 216.30 m in
+nonlinear KS replay; in every constrained case battery and temperature stay
+within bounds (worst 2e-11 kWh) when re-evaluated on the commanded orbit's own
+environment. This remains the original
+all-off first-order orbital model; resource constraints do not correct its
+geometry-feedback error.

@@ -20,7 +20,9 @@ include(joinpath(@__DIR__, "orchestration", "simulation", "callbacks", "terminal
 using .TerminalGainScheduleReplay
 export LaserSchedulingConfig, walker27_constellation, plan_laser_schedule,
     replay_laser_schedule, laser_element_history, laser_geometry, signed_link_schedule,
-    TerminalGainPolicy, terminal_gain_schedule_callback, constellation_replay_configuration
+    TerminalGainPolicy, terminal_gain_schedule_callback, constellation_replay_configuration,
+    run_laser_mpc, walker27_resource_constellation, resource_model, resource_environment, resource_replay,
+    optimize_resources, plan_resource_schedule
 include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "direct_planner.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "companions", "hypr", "rpo_planner_adapter.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "comparison", "planner_contract.jl"))
@@ -425,6 +427,7 @@ using .SimulationModel: add_actuator!, mounted_actuators, actuator_context, allo
 using .SimulationModel: propellant_mass_rate, ActuatorRequirements, actuator_requirements, applied_actuator_levels, mounted_power
 using .SimulationModel: SolarArray, Battery, PowerLoad, add_power!
 using .SimulationModel: AbstractDataSource, DataStore, DataSource, add_data!, data_production_bps
+using .SimulationModel: ThermalNode, add_thermal!, has_thermal_node, thermal_node
 using .SimulationModel: ActuatorFault, add_fault!
 using .SimulationModel: RateGyro, StarTracker, Magnetometer, SensorTruth, sensor_measure, sensor_dimension, sensor_requirements, sensor_period_s, initialize_sensor!
 using .SimulationModel: GNSSReceiver, SunSensor, Accelerometer, sensor_needs_specific_force, is_gravitational
@@ -607,6 +610,8 @@ end
 @doc (@doc SimulationModel.DataStore) DataStore
 @doc (@doc SimulationModel.DataSource) DataSource
 @doc (@doc SimulationModel.add_data!) add_data!
+@doc (@doc SimulationModel.ThermalNode) ThermalNode
+@doc (@doc SimulationModel.add_thermal!) add_thermal!
 @doc (@doc SimulationModel.data_production_bps) data_production_bps
 @doc (@doc SimulationModel.ActuatorFault) ActuatorFault
 @doc (@doc SimulationModel.add_fault!) add_fault!
@@ -921,6 +926,7 @@ export add_actuator!, mounted_actuators, actuator_context, allocation_matrix, mo
 export propellant_mass_rate, ActuatorRequirements, actuator_requirements, applied_actuator_levels, mounted_power
 export SolarArray, Battery, PowerLoad, add_power!
 export AbstractDataSource, DataStore, DataSource, add_data!, data_production_bps
+export ThermalNode, add_thermal!, has_thermal_node, thermal_node
 export ActuatorFault, add_fault!
 export AbstractSensor, RateGyro, StarTracker, Magnetometer, SensorTruth, sensor_measure, sensor_dimension, sensor_requirements, sensor_period_s, initialize_sensor!
 export GNSSReceiver, SunSensor, Accelerometer, sensor_needs_specific_force, is_gravitational

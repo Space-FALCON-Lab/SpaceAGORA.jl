@@ -11,7 +11,8 @@ using ..OrbitalElementSensitivity: orbital_element_jacobian
 
 export LaserSchedulingConfig, walker27_constellation, plan_laser_schedule,
     replay_laser_schedule, laser_element_history, laser_geometry, signed_link_schedule,
-    TerminalGainPolicy
+    TerminalGainPolicy, run_laser_mpc, walker27_resource_constellation, resource_model, resource_environment,
+    resource_replay, optimize_resources, plan_resource_schedule
 
 """Fixed-interval terminal-gain policy for SpaceAGORA's native interlink matcher.
 
@@ -260,4 +261,6 @@ function plan_laser_schedule(case,times;objective=:a,reference=nothing,lineariza
     replay_policy=TerminalGainPolicy(times,case.keys,scores.*command)
     return (;command,reference,predicted,gains,available,scores,weights,C,policy=replay_policy,times=collect(times))
 end
+include("laser_mpc.jl")
+include("resource_scheduling.jl")
 end

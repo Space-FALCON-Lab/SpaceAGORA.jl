@@ -16,6 +16,7 @@ export ThrusterGimbal, gimbal_step, thrust_direction
 export ControlMomentGyro, cmg_momentum, cmg_torque_axis, cmg_angle_saturate, CMGInnerGimbal, cmg_torque_axes
 export SolarArray, Battery, PowerLoad
 export AbstractDataSource, DataStore, DataSource
+export ThermalNode
 export ActuatorFault, FaultSet
 export RateGyro, StarTracker, Magnetometer, GNSSReceiver, SunSensor, Accelerometer
 
@@ -38,6 +39,8 @@ include(joinpath(@__DIR__, "..", "actuators", "gimbal.jl"))
 include(joinpath(@__DIR__, "..", "power", "power_components.jl"))
 # Onboard-data records (mounted with DataStorage.add_data!).
 include(joinpath(@__DIR__, "..", "data", "data_components.jl"))
+# The thermal-node record (mounted with ThermalNodes.add_thermal!).
+include(joinpath(@__DIR__, "..", "thermal", "thermal_components.jl"))
 # The actuator-fault record (mounted with ActuatorFaults.add_fault!).
 include(joinpath(@__DIR__, "..", "actuators", "fault.jl"))
 # The built-in sensor kinds (mounted with SensorMounting.add_sensor!).

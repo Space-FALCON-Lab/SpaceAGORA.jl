@@ -226,6 +226,140 @@ function ppc_mode_specs()::Dict{String, PPCModeSpec}
             persistent=true,
             allow_inner_with_outer=true
         ),
+        # `predictive` with mixed plans explicitly allowed (the adaptive-policy default is off).
+        "predictive_mixed" => PPCModeSpec(
+            name="predictive_mixed",
+            profile="R7",
+            backend="auto",
+            outer_active=true,
+            policy_adaptive=true,
+            rhs_batch="auto",
+            density="auto",
+            control="auto",
+            thermal="auto",
+            multibody="auto",
+            effector="auto",
+            scheduler="static",
+            persistent=true,
+            allow_inner_with_outer=true,
+            extra_env=["SPACEAGORA_PLANNER_ALLOW_MIXED" => "1"]
+        ),
+        # Alias for explicit ALLOW_MIXED=0 (same plan space as `predictive` under the adaptive policy).
+        "predictive_nomixed" => PPCModeSpec(
+            name="predictive_nomixed",
+            profile="R7",
+            backend="auto",
+            outer_active=true,
+            policy_adaptive=true,
+            rhs_batch="auto",
+            density="auto",
+            control="auto",
+            thermal="auto",
+            multibody="auto",
+            effector="auto",
+            scheduler="static",
+            persistent=true,
+            allow_inner_with_outer=true,
+            extra_env=["SPACEAGORA_PLANNER_ALLOW_MIXED" => "0"]
+        ),
+        # `predictive` with only the pre-solve plan sweep turned off.
+        "predictive_nocalib" => PPCModeSpec(
+            name="predictive_nocalib",
+            profile="R7",
+            backend="auto",
+            outer_active=true,
+            policy_adaptive=true,
+            rhs_batch="auto",
+            density="auto",
+            control="auto",
+            thermal="auto",
+            multibody="auto",
+            effector="auto",
+            scheduler="static",
+            persistent=true,
+            allow_inner_with_outer=true,
+            calibrate="off"
+        ),
+        # `predictive_nocalib` (calibration off) with the per-region width tuner also off.
+        "predictive_nocalib_notuner" => PPCModeSpec(
+            name="predictive_nocalib_notuner",
+            profile="R7",
+            backend="auto",
+            outer_active=true,
+            policy_adaptive=true,
+            rhs_batch="auto",
+            density="auto",
+            control="auto",
+            thermal="auto",
+            multibody="auto",
+            effector="auto",
+            scheduler="static",
+            persistent=true,
+            allow_inner_with_outer=true,
+            calibrate="off",
+            extra_env=["SPACEAGORA_RHS_REGION_WIDTH" => "off"]
+        ),
+        # Full `predictive` (calibration on) with only the per-region width tuner off.
+        "predictive_notuner" => PPCModeSpec(
+            name="predictive_notuner",
+            profile="R7",
+            backend="auto",
+            outer_active=true,
+            policy_adaptive=true,
+            rhs_batch="auto",
+            density="auto",
+            control="auto",
+            thermal="auto",
+            multibody="auto",
+            effector="auto",
+            scheduler="static",
+            persistent=true,
+            allow_inner_with_outer=true,
+            extra_env=["SPACEAGORA_RHS_REGION_WIDTH" => "off"]
+        ),
+        # `predictive_notuner` plus the A/B confirmation of freshly pinned plans and the
+        # sweep_ns floor (the control arm is predictive_notuner + SWEEP_NS_FLOOR=1).
+        "predictive_notuner_confirm" => PPCModeSpec(
+            name="predictive_notuner_confirm",
+            profile="R7",
+            backend="auto",
+            outer_active=true,
+            policy_adaptive=true,
+            rhs_batch="auto",
+            density="auto",
+            control="auto",
+            thermal="auto",
+            multibody="auto",
+            effector="auto",
+            scheduler="static",
+            persistent=true,
+            allow_inner_with_outer=true,
+            extra_env=["SPACEAGORA_RHS_REGION_WIDTH" => "off",
+                       "SPACEAGORA_RHS_CALIBRATE_CONFIRM" => "1",
+                       "SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR" => "1"]
+        ),
+        # The former `predictive` default: region width tuner auto, no sweep_ns
+        # floor, no plan confirmation. Identical to `predictive` under the
+        # earlier library defaults, kept so that default can still be measured.
+        "predictive_legacy" => PPCModeSpec(
+            name="predictive_legacy",
+            profile="R7",
+            backend="auto",
+            outer_active=true,
+            policy_adaptive=true,
+            rhs_batch="auto",
+            density="auto",
+            control="auto",
+            thermal="auto",
+            multibody="auto",
+            effector="auto",
+            scheduler="static",
+            persistent=true,
+            allow_inner_with_outer=true,
+            extra_env=["SPACEAGORA_RHS_REGION_WIDTH" => "auto",
+                       "SPACEAGORA_RHS_CALIBRATE_CONFIRM" => "0",
+                       "SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR" => "0"]
+        ),
         (("force_" * key) => PPCModeSpec(
             name="force_" * key, profile="R7", backend="auto", outer_active=true,
             policy_adaptive=true, rhs_batch="auto", density="auto", control="auto",
@@ -522,6 +656,15 @@ function ppc_mode_env_pairs(
     if outer_active && mode.backend == "threads" && outer_tasks > 1 &&
        !haskey(merged, "SPACEAGORA_INNER_THREAD_BUDGET")
         put!("SPACEAGORA_INNER_THREAD_BUDGET", string(max(1, fld(Threads.nthreads(), outer_tasks))))
+    end
+    # The library defaults under the adaptive policy are now region-width tuner
+    # off, sweep_ns floor on, plan confirmation on (what `predictive` measures).
+    # Every other adaptive mode keeps its earlier meaning by pinning the former
+    # defaults here; its own extra_env below still wins.
+    if mode.policy_adaptive && !(mode.name in ("predictive", "predictive_nomixed", "predictive_mixed"))
+        put!("SPACEAGORA_RHS_REGION_WIDTH", "auto")
+        put!("SPACEAGORA_RHS_CALIBRATE_SWEEP_NS_FLOOR", "0")
+        put!("SPACEAGORA_RHS_CALIBRATE_CONFIRM", "0")
     end
     for (k, v) in mode.extra_env
         put!(k, v)

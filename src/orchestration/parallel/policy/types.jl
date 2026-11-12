@@ -72,11 +72,33 @@ Base.@kwdef mutable struct PolicyTelemetry
     #                       the scheduler became part of the calibrated plan
     #                       rather than a process-global setting.
     rhs_plan_scheduler::Symbol = :none
+    #   rhs_plan_sweep_ns / rhs_plan_sweeps_total  wall time of the route sweep
+    #                       that ran in THIS context (0 when the plan came from
+    #                       the cache), and how many sweeps ran. Accounting only.
+    rhs_plan_sweep_ns::Float64 = 0.0
+    rhs_plan_sweeps_total::Int64 = 0
+    # A/B confirmation of a freshly pinned plan (SPACEAGORA_RHS_CALIBRATE_CONFIRM,
+    # rhs_calibration.jl): :none (off / not applicable) | :confirming | :kept |
+    # :demoted, the per-arm sample target K, samples taken so far and the arms'
+    # median whole-solve wall times (0 until the arm has samples). Accounting only.
+    rhs_confirm_state::Symbol = :none
+    rhs_confirm_k::Int64 = 0
+    rhs_confirm_n_pin::Int64 = 0
+    rhs_confirm_n_heur::Int64 = 0
+    rhs_confirm_pin_median_ns::Float64 = 0.0
+    rhs_confirm_heur_median_ns::Float64 = 0.0
     # Pre-solve density-callback width calibration (V2): the pinned width (0 =
     # static per-call decision retained) and the static width it was measured
     # against. Accounting only.
     callback_width_density::Int64 = 0
     callback_width_density_static::Int64 = 0
+    # --- regret guard (regret_guard.jl): set once when the guard freezes the
+    # process to the baseline plan. Accounting only. ---
+    regret_guard_fired::Bool = false
+    regret_guard_reason::Symbol = :none
+    regret_guard_margin::Float64 = 0.0
+    regret_guard_count::Int64 = 0
+    # --- end regret guard ---
 end
 
 Base.@kwdef mutable struct AdaptiveChoiceStats

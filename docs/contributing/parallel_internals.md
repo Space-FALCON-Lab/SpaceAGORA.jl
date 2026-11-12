@@ -336,3 +336,13 @@ allocations with it on, on the same warmed-up workload; the correctness tests
 do not measure its effect on run time. Set the value to `"0"` or remove the
 variable to restore the default. As with the other runtime controls, set it
 before the simulation starts.
+
+## Regret guard (off by default)
+
+`SPACEAGORA_POLICY_REGRET_GUARD=1` freezes the process to the baseline plan once
+the policy-chosen plan's measured cost exceeds the caller-supplied baseline
+prediction by more than `SPACEAGORA_POLICY_REGRET_MARGIN` (relative, required
+when the guard is on; no default) after `SPACEAGORA_POLICY_REGRET_MIN_SOLVES`
+solves (default 3). The rule uses the minimum sample, so one cold or JIT-slowed
+solve cannot fire it. The firing is recorded in
+`ParallelPolicy.regret_guard_snapshot()`. Source: `regret_guard.jl`.

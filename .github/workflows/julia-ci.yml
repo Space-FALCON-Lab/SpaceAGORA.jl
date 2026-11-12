@@ -656,6 +656,9 @@ jobs:
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
+      - name: Core CSV and JSON output regressions
+        run: julia --startup-file=no --project=. test/smoke/ci_core_dependency_versions.jl
+
       - name: Terrain producer tests
         shell: bash
         run: |
@@ -677,6 +680,11 @@ jobs:
 
       - name: Prepare examples environment (README command)
         run: julia --startup-file=no examples/setup.jl
+
+      - name: Plotting dependency isolation
+        run: |
+          julia --startup-file=no --project=examples test/smoke/ci_plotting_dependency_versions.jl
+          git diff --exit-code -- Project.toml Manifest.toml examples/Project.toml
 
       - name: README quickstart command and artifacts
         run: python3 -B test/smoke/ci_readme_quickstart.py

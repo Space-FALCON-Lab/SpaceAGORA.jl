@@ -5,7 +5,9 @@ Versioned services for optional external spacecraft integrators. Call
 `require_version(v"2.0.0")` before defining adapter hook methods, and again at
 runtime initialization. `IMPLEMENTED_FUNCTIONS` lists the extension points;
 `CONSUMED_SERVICES` lists the types and core helpers adapters may use. Existing
-hook/type aliases retain their implementation owners and method identity.
+hook/type aliases retain their implementation owners and method identity. The
+experimental lifecycle extension (`EXPERIMENTAL_LIFECYCLE_VERSION`) lists its
+opt-in hooks in `LIFECYCLE_FUNCTIONS`.
 
 Owners coexist per configuration; this facade has no global provider registry
 and loads no optional engine. Each run prepares its own mutable owner runtime.
@@ -17,6 +19,16 @@ module ExternalPropagationServices
 
 """Exact version of this external-propagation adapter contract."""
 const CONTRACT_VERSION = v"2.0.0"
+
+"""Opt-in experimental force/control/checkpoint extension version; the legacy owner contract remains 2.0.0."""
+const EXPERIMENTAL_LIFECYCLE_VERSION = v"0.1.0"
+
+"""Require the experimental lifecycle extension before opting in; this does not assert adapter scientific validity."""
+function require_lifecycle_version(expected::VersionNumber)
+    expected == EXPERIMENTAL_LIFECYCLE_VERSION || throw(CompatibilityError(
+        "External lifecycle adapter requires $expected; this build provides $EXPERIMENTAL_LIFECYCLE_VERSION."))
+    return nothing
+end
 
 """Error raised when the requested external-propagation service version is unsupported."""
 struct CompatibilityError <: Exception
@@ -42,6 +54,9 @@ end
 using ..SimulationModel.ExternalPropagation: AbstractExternalPropagator
 using ..SimulationModel.ExternalPropagation: external_spacecraft, external_step, external_preflight, external_prepare
 using ..SimulationModel.ExternalPropagation: external_sync!, external_time, external_state, external_acceleration
+using ..SimulationModel.ExternalPropagation: external_capabilities, external_stage_safe, external_stage_key
+using ..SimulationModel.ExternalPropagation: external_bind_force_service!, external_control_changed!
+using ..SimulationModel.ExternalPropagation: external_checkpoint_key, external_checkpoint_state, external_restore_state!
 using ..SimulationModel: gravity_backbone_relative_acceleration_ii
 using ..SimulationEngine: sample_planet_frame_with_lpi
 import ..SimulationModel
@@ -50,6 +65,8 @@ import StaticArrays
 
 export AbstractExternalPropagator, external_spacecraft, external_step, external_preflight, external_prepare
 export external_sync!, external_time, external_state, external_acceleration
+export external_capabilities, external_stage_safe, external_stage_key, external_bind_force_service!, external_control_changed!
+export external_checkpoint_key, external_checkpoint_state, external_restore_state!
 export with_external_propagators, validate_external_propagators, external_runtimes, external_initial_state
 export sample_planet_frame_with_lpi, gravity_backbone_relative_acceleration_ii
 
@@ -62,6 +79,14 @@ export sample_planet_frame_with_lpi, gravity_backbone_relative_acceleration_ii
 @doc (@doc SimulationModel.ExternalPropagation.external_time) external_time
 @doc (@doc SimulationModel.ExternalPropagation.external_state) external_state
 @doc (@doc SimulationModel.ExternalPropagation.external_acceleration) external_acceleration
+@doc (@doc SimulationModel.ExternalPropagation.external_capabilities) external_capabilities
+@doc (@doc SimulationModel.ExternalPropagation.external_stage_safe) external_stage_safe
+@doc (@doc SimulationModel.ExternalPropagation.external_stage_key) external_stage_key
+@doc (@doc SimulationModel.ExternalPropagation.external_bind_force_service!) external_bind_force_service!
+@doc (@doc SimulationModel.ExternalPropagation.external_control_changed!) external_control_changed!
+@doc (@doc SimulationModel.ExternalPropagation.external_checkpoint_key) external_checkpoint_key
+@doc (@doc SimulationModel.ExternalPropagation.external_checkpoint_state) external_checkpoint_state
+@doc (@doc SimulationModel.ExternalPropagation.external_restore_state!) external_restore_state!
 @doc (@doc SimulationModel.gravity_backbone_relative_acceleration_ii) gravity_backbone_relative_acceleration_ii
 @doc (@doc SimulationEngine.sample_planet_frame_with_lpi) sample_planet_frame_with_lpi
 
@@ -88,9 +113,10 @@ but does not prepare a runtime or advance a simulation. Run setup still performs
 these checks using its resolved solver mode.
 
 Supported modes are `:tsit5`, `:auto_stiff`, `:rodas5p` and `:dp8`. Checkpointing,
-resume, continuous events on owned spacecraft, engine articulation or control
-of owned spacecraft, and callback rates incompatible with an owner's fixed
-step are refused. An empty owner tuple requires no external-propagation checks.
+resume and control are refused for legacy owners. The separately versioned experimental lifecycle
+extension permits only explicitly opted-in, stage-safe translation/control and aligned owner checkpoints.
+Continuous events on owned spacecraft, engine articulation and callback rates incompatible with an
+owner's fixed step remain refused. An empty owner tuple requires no external-propagation checks.
 Ensemble/process-pool routing and the flat-RHS environment guard are checked
 elsewhere during run setup. Owner-defined preflight may perform its own checks;
 this function is not a guarantee of complete run readiness or side-effect freedom.
@@ -140,6 +166,15 @@ const IMPLEMENTED_FUNCTIONS = (
     :external_sync!, :external_time, :external_state, :external_acceleration,
 )
 
+"""Hook identities to which an owner adds methods when it opts into the experimental lifecycle
+extension (`EXPERIMENTAL_LIFECYCLE_VERSION`). They are listed apart from `IMPLEMENTED_FUNCTIONS`,
+the contract 2.0.0 inventory, which this extension leaves unchanged: an owner that does not opt in
+implements none of them, and each has a default for such owners."""
+const LIFECYCLE_FUNCTIONS = (
+    :external_capabilities, :external_stage_safe, :external_stage_key, :external_bind_force_service!,
+    :external_control_changed!, :external_checkpoint_key, :external_checkpoint_state, :external_restore_state!,
+)
+
 """Core types and read/configuration services supplied to external adapters."""
 const CONSUMED_SERVICES = (
     :AbstractExternalPropagator, :with_external_propagators, :validate_external_propagators,
@@ -148,4 +183,5 @@ const CONSUMED_SERVICES = (
 )
 
 public CONTRACT_VERSION, CompatibilityError, require_version, IMPLEMENTED_FUNCTIONS, CONSUMED_SERVICES
+public EXPERIMENTAL_LIFECYCLE_VERSION, require_lifecycle_version, LIFECYCLE_FUNCTIONS
 end # module ExternalPropagationServices

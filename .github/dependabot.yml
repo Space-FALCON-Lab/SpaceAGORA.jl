@@ -32,6 +32,15 @@ updates:
       - dependency-name: "SparseArrays"
       - dependency-name: "TOML"
       - dependency-name: "Test"
+      # JSON 1.x is a breaking rewrite of the 0.21 API the package is written
+      # against; moving to it is a change of its own.
+      - dependency-name: "JSON"
+        update-types: ["version-update:semver-major"]
+      # SpaceIndices 2.2 and later require JSON 1, which the entry above holds
+      # back, so a minor update finds nothing it can change and the run fails.
+      # Move both together.
+      - dependency-name: "SpaceIndices"
+        update-types: ["version-update:semver-minor"]
 
   - package-ecosystem: "julia"
     directory: "/docs"

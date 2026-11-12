@@ -5,7 +5,9 @@ modules. A service module (the code calls it a facade) is a module inside
 SpaceAGORA, such as `SpaceAGORA.HYPRServices`, `SpaceAGORA.EDGServices` or
 `SpaceAGORA.ExternalPropagationServices`, that lists by name what a companion may
 use (`CONSUMED_SERVICES`) and the functions it may add methods to
-(`IMPLEMENTED_FUNCTIONS`). Those names are the supported boundary. Any other way
+(`IMPLEMENTED_FUNCTIONS`; an opt-in extension lists its own hooks apart, as
+`ExternalPropagationServices.LIFECYCLE_FUNCTIONS` does for the experimental
+lifecycle extension). Those names are the supported boundary. Any other way
 into SpaceAGORA, such as an internal module, an internal name or the engine's raw
 storage, is a private path: it is not supported and can change without notice.
 

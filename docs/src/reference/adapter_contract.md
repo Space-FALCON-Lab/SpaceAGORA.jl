@@ -112,7 +112,16 @@ they are not undone.
 
 Contract versions must match exactly, even when a change only adds a name. A
 change to signatures, units, frames, result fields, mutability, ownership or
-failure behavior needs a new, reviewed contract version. A package compatibility
+failure behavior needs a new, reviewed contract version.
+
+One exception keeps existing adapters loading: an opt-in extension. A service
+module may add an extension with its own version, its own exact version check
+and its own named list of hooks, as long as the contract's version, its
+`IMPLEMENTED_FUNCTIONS` and `CONSUMED_SERVICES`, and the behavior of every
+adapter that does not opt in stay exactly as they were. Every new hook has a
+default that keeps the contract's behavior. An adapter opts in by implementing
+the extension's hooks and checking its version. The contract history lists the
+extension's versions under the contract they extend. A package compatibility
 range only limits what the resolver may install; record which releases in the
 range you actually tested.
 
@@ -123,6 +132,7 @@ version is listed here with what changed, newest first.
 
 | Facade | Contract | Change |
 |---|---|---|
+| `ExternalPropagationServices` | 2.0.0, lifecycle extension 0.1.0 | Experimental opt-in extension: configured forces, periodic control ticks and checkpoints for external owners, versioned on its own (`EXPERIMENTAL_LIFECYCLE_VERSION`, `require_lifecycle_version`) with its hooks in `LIFECYCLE_FUNCTIONS`. Contract 2.0.0, its inventories and every owner that does not opt in are unchanged. |
 | `HYPRServices` | 3.0.0 | Narrowed to what SpaceAGORA's own code calls or exports and what HYPR uses: 20 extension points, 50 services and the three `Cloth` services. 75 RPO and robot-arm helpers that only HYPR called, including `rpo_path_cost`, `rpo_retime_path` and `rpo_retimed_reference`, are now HYPR's own functions. The `SwarmPolicy` namespace and the policy entries are removed (HYPR exports those functions), and three unused services leave the list, their functions staying in SpaceAGORA. No remaining name changes. HYPR implements it from version 0.5.0, and SpaceAGORA accepts HYPR 0.5.0 only. |
 | `EDGServices` | 3.0.0 | Removes `_edg_planet_frame_lpi` and `_edg_sample_prediction_atmosphere`, which the companion did not call. Nothing else changes. SpaceAGORAEDG implements it from version 0.5.0. |
 | `ExternalPropagationServices` | 2.0.0 | `external_state` and `external_acceleration` take `(rt, t, slot)`, time before the owner-local position, instead of `(rt, k, t)`. The attitude quaternion is defined by a formula. No numerical change. SpaceAGORAMuJoCo implements it from version 0.2.0. |

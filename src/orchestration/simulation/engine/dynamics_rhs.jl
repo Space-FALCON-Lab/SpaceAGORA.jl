@@ -1271,15 +1271,16 @@ end
 # writes per-spacecraft (or per-item) slots in a fixed order, so the final
 # state is bit-identical at any width, including a width that changes mid-solve.
 #
-# SPACEAGORA_RHS_REGION_WIDTH=off disables it; =on forces it on outside the
-# adaptive policy.
+# Unset = off (the search lost to the static routes in measurement).
+# SPACEAGORA_RHS_REGION_WIDTH=auto turns it on under the adaptive policy only
+# (the former default); =on forces it on anywhere; =off disables it.
 const _REGION_SAMPLES = 3
 const _REGION_STOP = 1.25
 const _REGION_MARGIN = 0.05
 const _REGION_REPROBE = 1024
 
 function _rhs_region_width_enabled()::Bool
-    raw = lowercase(strip(_engine_env_get("SPACEAGORA_RHS_REGION_WIDTH", "auto")))
+    raw = lowercase(strip(_engine_env_get("SPACEAGORA_RHS_REGION_WIDTH", "off")))
     raw in ("off", "0", "false", "no") && return false
     raw in ("on", "1", "true", "yes") && return true
     raw == "auto" || throw(ArgumentError(

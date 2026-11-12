@@ -1531,7 +1531,8 @@ end
 
 @inline function _write_checkpoint!(args, t::Float64, u_state, solver_mode::String; is_active=nothing, callback_state=nothing,
                                      model_state=nothing, periodic_ticks=nothing, gnc_scopes=nothing,
-                                     results_rows=nothing, interlink_history=nothing, maneuver_buffers=nothing, orbits=nothing, entries=nothing)
+                                     results_rows=nothing, interlink_history=nothing, maneuver_buffers=nothing, orbits=nothing, entries=nothing,
+                                     external_owners=nothing)
     runtime = _interlink_checkpoint_runtime_state(args, is_active)
     link_attitudes = _link_attitude_checkpoint_state(args)
     if link_attitudes !== nothing
@@ -1573,6 +1574,9 @@ end
     if interlink_history !== nothing
         runtime = runtime === nothing ? (interlink_history=interlink_history,) :
             merge(runtime, (interlink_history=interlink_history,))
+    end
+    if external_owners !== nothing
+        runtime = runtime === nothing ? (external_owners=external_owners,) : merge(runtime, (external_owners=external_owners,))
     end
     return SimulationModel.IOSerialization._write_checkpoint!(
         args,

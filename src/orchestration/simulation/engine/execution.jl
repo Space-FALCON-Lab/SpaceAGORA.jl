@@ -785,6 +785,7 @@ function _resume_engine_state!(args, p, solver_mode, initial_conditions)
     interlink_history = nothing
     link_attitudes = nothing
     callback_checkpoint = nothing
+    external_snapshot = nothing
     forecast_restart = _CONTROL_FORECAST_RESTART[]
     if args.simulation_settings.resume_from_checkpoint || forecast_restart !== nothing
         ckpt = forecast_restart === nothing ? _load_checkpoint(args) : forecast_restart.checkpoint
@@ -806,6 +807,7 @@ function _resume_engine_state!(args, p, solver_mode, initial_conditions)
             _check_effector_scope_checkpoint_state(args, ckpt)
             scope_entry = _gnc_scope_checkpoint_entry(args, ckpt)
             link_attitudes = _check_link_attitude_checkpoint_state(args, ckpt)
+            external_snapshot = _check_external_checkpoint_state(args, ckpt)
             callback_checkpoint = ckpt
             _restore_activity_checkpoint_state!(args, ckpt, p.is_active)
             _restore_interlink_checkpoint_state!(args, ckpt, p.is_active)
@@ -828,7 +830,8 @@ function _resume_engine_state!(args, p, solver_mode, initial_conditions)
             end
         end
     end
-    return (; resumed, model_snapshot, scope_entry, pending_ticks, t_start, u_start, results_rows, interlink_history, link_attitudes, callback_checkpoint)
+    return (; resumed, model_snapshot, scope_entry, pending_ticks, t_start, u_start, results_rows, interlink_history, link_attitudes,
+        callback_checkpoint, external_snapshot)
 end
 
 # Phase 2, the run clock of the periodic navigation, guidance and control ticks
@@ -1090,7 +1093,8 @@ function run_simulation(
 
     # The run's start, in three phases (defined above): a resumed run's engine and
     # callback state, the run clock, then the models.
-    (; resumed, model_snapshot, scope_entry, pending_ticks, t_start, u_start, results_rows, interlink_history, link_attitudes, callback_checkpoint) =
+    (; resumed, model_snapshot, scope_entry, pending_ticks, t_start, u_start, results_rows, interlink_history, link_attitudes,
+        callback_checkpoint, external_snapshot) =
         _resume_engine_state!(args, p, solver_mode, initial_conditions)
 
 
@@ -1107,6 +1111,10 @@ function run_simulation(
     _start_run_clock!(p, run_clock, mission_end, pending_ticks)
     gnc_scopes = _start_run_models!(args, p, u_start, t_start, run_clock, resumed, model_snapshot, scope_entry,
         checkpoint_active; link_attitudes, callback_checkpoint)
+    # Owners that opt into the experimental lifecycle extension: bind this run's force
+    # service, then restore a resumed owner after the models (no-ops otherwise).
+    _bind_external_force_services!(p, u_start)
+    _restore_external_checkpoint_state!(p, external_snapshot, u_start, Float64(t_start))
     p.shared_buffers.solve_segment_end_time[] = mission_end
     # prob_debug exists only to feed the NaN-probe below, which itself only
     # runs when SPACEAGORA_DEBUG_INITIAL_DERIVATIVE is set. Building it
@@ -1285,6 +1293,14 @@ function run_simulation(
             # materialise values (fresh SVectors), so nothing retains a
             # reference into the integrator's own state buffer.
             seg_sol = _solve_run_interval!(solver_trace, solve_setup, u_cursor, (t_cursor, t_next), jac_prototype, results_inputs)
+            # An external owner with lifecycle checkpoints is the authority for the
+            # segment's endpoint: it is copied into the saved endpoint before the rows
+            # and the checkpoint read it (a no-op without external owners).
+            external_handoff = if SciMLBase.successful_retcode(seg_sol.retcode) && !isempty(seg_sol.t)
+                _capture_external_checkpoint_endpoint!(p, seg_sol.u[end], Float64(seg_sol.t[end]))
+            else
+                nothing
+            end
             if solver_mode == :gravity_backbone_split
                 _append_backbone_saved_segment!(checkpoint_saved_times, checkpoint_saved_data, seg_sol, save_fields_resolved, p)
             else
@@ -1313,7 +1329,8 @@ function run_simulation(
                 callback_state=_callback_checkpoint_state(args), model_state=_model_checkpoint_state(args),
                 periodic_ticks=_periodic_tick_checkpoint_state(p, t_cursor), gnc_scopes=gnc_scopes,
                 results_rows=rows_entry, interlink_history=history_entry, maneuver_buffers=_maneuver_buffer_checkpoint_state(p),
-                orbits=_orbit_counter_checkpoint_state(p), entries=_entry_counter_checkpoint_state(p))
+                orbits=_orbit_counter_checkpoint_state(p), entries=_entry_counter_checkpoint_state(p),
+                external_owners=_external_checkpoint_state(p, t_cursor; handoff=external_handoff))
             checkpoint_written = true
             if string(seg_sol.retcode) != "Success" || !_gravity_backbone_time_reached(t_cursor, t_next)
                 break

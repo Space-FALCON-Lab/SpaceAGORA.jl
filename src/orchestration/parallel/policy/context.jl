@@ -201,6 +201,33 @@ end
     return polls
 end
 
+# Function barrier: `pool.request` is a Ref{Any}, so reading fields in the loop
+# above boxes every one of them on every dispatch. Specializing here on the
+# request's concrete type removes those per-worker, per-call allocations.
+function _spin_run_request!(worker_id::Int, request)::Nothing
+    num_items      = request.num_items
+    active_workers = request.active_workers
+    scheduler      = request.scheduler
+    chunk          = request.chunk
+    f              = request.f
+    if scheduler == :dynamic
+        next_index = request.next_index
+        @inbounds while true
+            start_idx = Threads.atomic_add!(next_index, chunk)
+            start_idx > num_items && break
+            stop_idx = min(num_items, start_idx + chunk - 1)
+            for idx in start_idx:stop_idx
+                f(worker_id, idx)
+            end
+        end
+    else
+        @inbounds for idx in worker_id:active_workers:num_items
+            f(worker_id, idx)
+        end
+    end
+    return nothing
+end
+
 function _spin_barrier_worker_loop_w(worker_id::Int, pool::_SpinBarrierPool)::Nothing
     my_gen = 0
     polls = 0
@@ -216,26 +243,7 @@ function _spin_barrier_worker_loop_w(worker_id::Int, pool::_SpinBarrierPool)::No
         request = pool.request[]
         captured = nothing
         try
-            num_items      = request.num_items
-            active_workers = request.active_workers
-            scheduler      = request.scheduler
-            chunk          = request.chunk
-            f              = request.f
-            if scheduler == :dynamic
-                next_index = request.next_index
-                @inbounds while true
-                    start_idx = Threads.atomic_add!(next_index, chunk)
-                    start_idx > num_items && break
-                    stop_idx = min(num_items, start_idx + chunk - 1)
-                    for idx in start_idx:stop_idx
-                        f(worker_id, idx)
-                    end
-                end
-            else
-                @inbounds for idx in worker_id:active_workers:num_items
-                    f(worker_id, idx)
-                end
-            end
+            _spin_run_request!(worker_id, request)
         catch err
             captured = Base.CapturedException(err, catch_backtrace())
         end

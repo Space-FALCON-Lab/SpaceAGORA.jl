@@ -1,5 +1,5 @@
 # The renderer is installed only on explicit request in a separate environment.
 url = "https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl.git"
-rev = "3e1ed00864a414ebf52b6b594d8a338480dba204"
+rev = "9d969572428a9f069be8c6d4984c8b83937e900c"
 uuid = "a4677e92-0b7f-4d10-9ebd-8cde6a49f03a"
 version = "0.2.0"

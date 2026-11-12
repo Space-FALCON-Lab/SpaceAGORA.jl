@@ -72,11 +72,9 @@ function record_policy_observation!(
     measured_reward = hints_enabled &&
         (env === nothing ? adaptive_measured_reward_enabled() : env.adaptive_measured_reward)
 
-    hint_signature = ""
-    hint_allotment = Int64(1)
-    adaptive_active = false
-
-    lock(ctx.lock) do
+    # The lock block returns its results as a tuple: assigning outer variables
+    # inside the closure would box them.
+    hint_signature, hint_allotment, adaptive_active = lock(ctx.lock) do
         t = ctx.telemetry
         # Keep the per-source work estimate current even when the adaptive
         # branch below is skipped: the hint layer's gate reads it, and a source
@@ -98,25 +96,21 @@ function record_policy_observation!(
             t.serial_elapsed_ns_total += elapsed_ns_clamped
         end
 
-        hint_signature = get(ctx.decision_signature, source, "")
-        hint_allotment = get(ctx.decision_allotment, source, use_threads ? Int64(max(1, min(budget, num_items))) : Int64(1))
-        t.last_signature = hint_signature
+        sig = get(ctx.decision_signature, source, "")
+        allot = get(ctx.decision_allotment, source, use_threads ? Int64(max(1, min(budget, num_items))) : Int64(1))
+        t.last_signature = sig
 
-        adaptive_active = adaptive_possible && !isempty(hint_signature)
-        if !adaptive_active
-            return nothing
-        end
-
-        if measured_reward
+        active = adaptive_possible && !isempty(sig)
+        if active && measured_reward
             # Measured-reward mode: the hint layer drives the width.
             st = _adaptive_state_for(ctx, source)
-            st.desire = max(Int64(1), hint_allotment)
+            st.desire = max(Int64(1), allot)
             t.adaptation_updates_total += 1
             t.last_desire = st.desire
         end
         # No AIMD: without measured reward the width is static (see
         # thread_policy_decision) and there is nothing to update.
-        return nothing
+        return (sig, allot, active)
     end
 
     # `adaptive_active` already implies a non-empty signature, which in turn

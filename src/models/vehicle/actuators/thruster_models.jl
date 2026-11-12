@@ -140,8 +140,8 @@ locations are expressed in the spacecraft body frame. Control logic should use
 this as hardware data and perform allocation in a control effector.
 """
 struct SixAxisThrusterModel <: AbstractThrusterModel
-    directions_body::SMatrix{3, 6, Float64}
-    locations_body::SMatrix{3, 6, Float64}
+    directions_body::SMatrix{3, 6, Float64, 18}
+    locations_body::SMatrix{3, 6, Float64, 18}
     max_thrust_n::SVector{6, Float64}
     isp_s::SVector{6, Float64}
     min_firing_time_s::Float64

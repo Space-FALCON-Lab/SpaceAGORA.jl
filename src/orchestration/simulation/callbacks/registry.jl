@@ -29,7 +29,7 @@ using ..GravityEffectors: InverseSquaredJ2GravityModel, j2_secular_rates
 using ..AbstractTypes: AbstractPlanet, AbstractDensityModel
 using ..ConfigTypes: SaveData
 using ..SceneVisualization: link_pose_vector, link_pose_link_indices, arm_pose_vector, robot_arm_plan_for
-import ..ConfigTypes: GramTrackCache, VacuumPredictedGRAMCache, GramDensityPerturbationState
+import ..ConfigTypes: GramTrackCache, VacuumPredictedGRAMCache, DensityQueryMemo, GramDensityPerturbationState
 import ..ConfigTypes: GramTrackCacheConfig, CallbackEnvConfig, PolicyDecisionEnvConfig
 using ..ControlHooks: update_control!, control_thruster_levels, _thruster_levels_at, touchdown_spec, refresh_burn!, mounted_burn_tick!, burn_edge
 using ..ControlHooks: _effective_burn_window, _burn_window_changed, _burn_window_pending

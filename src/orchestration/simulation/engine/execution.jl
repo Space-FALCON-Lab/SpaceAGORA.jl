@@ -121,6 +121,152 @@ function _build_block_diagonal_jac_prototype(
     return sparse(rows, cols, ones(Float64, nnz_total), n_total, n_total)
 end
 
+"""
+Colored finite-difference Jacobian of `spacecraft_dynamics!`, used as the `jac` of the
+implicit full-state solvers (`:rodas5p`, `:auto_stiff`).
+
+Why not the solver's own FD: with a sparse `jac_prototype`, OrdinaryDiffEq turns
+`AutoFiniteDiff` into a compressed Jacobian built from FiniteDiff JVPs, whose step is
+`relstep * norm(u) / norm(seed)` over the WHOLE state. Every perturbed component then
+gets the same absolute step (about 0.1 for an 8-satellite state), however small it is,
+so quaternion and angular-rate columns are 54-56% off in low-altitude drag.
+(`FiniteDiff.finite_difference_jacobian!` with a coloring is no fix: its step is one
+`relstep * sqrt(norm(x_color))` per color, not per component.)
+
+Each column uses a centered difference with a per-component step
+`max(relstep*abs(x_j), relstep)`, where `relstep = cbrt(eps(Float64))`.
+The larger step reduces subtractive cancellation in small mass derivatives alongside
+gravity; centering removes the first-order truncation error. The denominator uses
+the actual representable displacement. Columns of one color are perturbed together;
+for a block-separable RHS this equals column-by-column centered differences.
+This costs two RHS evaluations per color. Colors come from the prototype's columns.
+
+`heat_loads` columns get color 0 and are never perturbed: no RHS term reads
+`heat_loads` (the RHS only writes `du.heat_loads`; every read is in callbacks/guidance),
+so the columns are exactly zero. Their ROWS (d heat_loads / d other states) are kept.
+`test/unit/simulation/colored_fd_jacobian_tests.jl` checks the zero-column claim against dense FD.
+
+`prototype === nothing` means a single satellite: dense `J`, one color per column.
+"""
+struct ColoredFDJacobian{A}
+    axes::A
+    colors::Vector{Int}          # 0 = column not perturbed (zero by construction)
+    color_ptr::Vector{Int}       # columns of color c: color_cols[color_ptr[c]:color_ptr[c+1]-1]
+    color_cols::Vector{Int}
+    x0::Vector{Float64}
+    x::Vector{Float64}
+    fx0::Vector{Float64}
+    fx1::Vector{Float64}
+    rhs_calls::Base.RefValue{Int}
+end
+
+const _FD_RELSTEP = cbrt(eps(Float64))   # centered differences: balance rounding and O(h^2) truncation
+
+"""Mask of the `heat_loads` entries of a ComponentVector constellation state."""
+function _heat_load_mask(u0::ComponentVector)::BitVector
+    probe = zero(u0)
+    for i in 1:length(u0.sc)
+        hasproperty(u0.sc[i], :heat_loads) && (probe.sc[i].heat_loads .= 1.0)
+    end
+    return BitVector(!iszero(v) for v in Vector{Float64}(probe))
+end
+
+"""Greedy column coloring of `P` in natural order; columns with `skip[j]` get color 0."""
+function _greedy_column_colors(P::SparseMatrixCSC, skip::AbstractVector{Bool})::Vector{Int}
+    n = size(P, 2)
+    colors = zeros(Int, n)
+    row_colors = [Int[] for _ in 1:size(P, 1)]
+    mark = zeros(Int, n + 1)
+    rv = rowvals(P)
+    @inbounds for j in 1:n
+        skip[j] && continue
+        for k in nzrange(P, j), c in row_colors[rv[k]]
+            mark[c] = j
+        end
+        c = 1
+        while mark[c] == j
+            c += 1
+        end
+        colors[j] = c
+        for k in nzrange(P, j)
+            push!(row_colors[rv[k]], c)
+        end
+    end
+    return colors
+end
+
+function ColoredFDJacobian(u0::ComponentVector, prototype::Union{Nothing, SparseMatrixCSC})
+    n = length(u0)
+    skip = _heat_load_mask(u0)
+    colors = if prototype === nothing
+        c = zeros(Int, n)
+        c[.!skip] .= 1:count(!, skip)
+        c
+    else
+        _greedy_column_colors(prototype, skip)
+    end
+    ncolors = maximum(colors; init=0)
+    color_ptr = zeros(Int, ncolors + 1)
+    for c in colors
+        c > 0 && (color_ptr[c + 1] += 1)
+    end
+    color_ptr[1] = 1
+    cumsum!(color_ptr, color_ptr)
+    color_cols = Vector{Int}(undef, color_ptr[end] - 1)
+    fill_at = copy(color_ptr)
+    for j in 1:n
+        c = colors[j]
+        c > 0 || continue
+        color_cols[fill_at[c]] = j
+        fill_at[c] += 1
+    end
+    return ColoredFDJacobian(getaxes(u0), colors, color_ptr, color_cols,
+        zeros(n), zeros(n), zeros(n), zeros(n), Ref(0))
+end
+
+@inline function _fd_store_column!(J::SparseMatrixCSC, j::Int, fx1, fx0, h)
+    rv = rowvals(J)
+    nz = nonzeros(J)
+    @inbounds for k in nzrange(J, j)
+        nz[k] = (fx1[rv[k]] - fx0[rv[k]]) / h
+    end
+    return nothing
+end
+@inline function _fd_store_column!(J::AbstractMatrix, j::Int, fx1, fx0, h)
+    @inbounds for i in axes(J, 1)
+        J[i, j] = (fx1[i] - fx0[i]) / h
+    end
+    return nothing
+end
+
+function (jf::ColoredFDJacobian)(J, u, p, t)
+    x0, x, fx0, fx1 = jf.x0, jf.x, jf.fx0, jf.fx1
+    copyto!(x0, u)
+    copyto!(x, x0)
+    J isa SparseMatrixCSC ? fill!(nonzeros(J), 0.0) : fill!(J, 0.0)
+    f!(dx, xv) = spacecraft_dynamics!(ComponentArray(dx, jf.axes), ComponentArray(xv, jf.axes), p, t)
+    for c in 1:(length(jf.color_ptr) - 1)
+        cols = view(jf.color_cols, jf.color_ptr[c]:(jf.color_ptr[c + 1] - 1))
+        @inbounds for j in cols
+            x[j] = x0[j] + max(_FD_RELSTEP * abs(x0[j]), _FD_RELSTEP)
+        end
+        f!(fx1, x)
+        jf.rhs_calls[] += 1
+        @inbounds for j in cols
+            x[j] = x0[j] - max(_FD_RELSTEP * abs(x0[j]), _FD_RELSTEP)
+        end
+        f!(fx0, x)
+        jf.rhs_calls[] += 1
+        @inbounds for j in cols
+            h = max(_FD_RELSTEP * abs(x0[j]), _FD_RELSTEP)
+            displacement = (x0[j] + h) - x[j]
+            _fd_store_column!(J, j, fx1, fx0, displacement)
+            x[j] = x0[j]
+        end
+    end
+    return nothing
+end
+
 # Satellite-index fields an effector uses to name a satellite other than the one
 # it is being evaluated for. An effector carrying two of these with different
 # values reads across satellites, so its contribution to the Jacobian lands
@@ -242,8 +388,19 @@ end
             callback=callbacks
         )
     end
-    if jac_prototype !== nothing
-        f = ODEFunction{true, SciMLBase.FullSpecialize}(spacecraft_dynamics!; jac_prototype=jac_prototype)
+    # Implicit full-state solvers get the colored per-component FD Jacobian (see
+    # ColoredFDJacobian). Multi-satellite runs carry the sparse prototype; a single
+    # satellite takes a dense J. A run with cross-satellite coupling has no prototype
+    # and several satellites: it keeps the solver's own dense FD (audit B3, open).
+    jac = nothing
+    if mode in (:rodas5p, :auto_stiff) && u0 isa ComponentVector &&
+            (jac_prototype !== nothing ||
+             (length(u0.sc) == 1 && !_config_has_cross_satellite_coupling(p.args)))
+        jac = ColoredFDJacobian(u0, jac_prototype)
+    end
+    if jac_prototype !== nothing || jac !== nothing
+        f = ODEFunction{true, SciMLBase.FullSpecialize}(spacecraft_dynamics!;
+            jac_prototype=jac_prototype, jac=jac)
         return ODEProblem(f, u0, tspan, p; callback=callbacks)
     end
     return ODEProblem(spacecraft_dynamics!, u0, tspan, p, callback=callbacks)

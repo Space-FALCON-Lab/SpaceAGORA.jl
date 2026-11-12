@@ -26,14 +26,14 @@ function cfd_spacecraft(planet, id::Int, n::Int)
     return SpacecraftModel(Joint[], links, root, true, sum(l.m for l in links), 0.0, root.inertia, 0, 0, ic, id)
 end
 
-function cfd_args(planet, n_sats::Int)
+function cfd_args(planet, n_sats::Int; density_model=EM_CFD.ExponentialAtmosphereModel(planet))
     return SimulationConfiguration(
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false,
             normalize=false, save_csv=false),
         mission_configuration=MissionConfiguration(mission_type=MissionTime, keplerian=true,
             number_of_orbits=1, mission_time=10.0, orientation_sim=false, num_steps_to_save=10, data_rate=1.0),
         environment_model=EnvironmentModel(planet=planet, EI=120.0,
-            density_model=EM_CFD.ExponentialAtmosphereModel(planet),
+            density_model=density_model,
             thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
             topography=false, wind=false, ephemerides_model=SimpleEphemeridesModel()),
         dynamics_model=DynamicsModel([cfd_spacecraft(planet, i, n_sats) for i in 1:n_sats],
@@ -46,17 +46,20 @@ function cfd_args(planet, n_sats::Int)
     )
 end
 
-# Dense forward FD, one column at a time, FiniteDiff's default per-component step.
+# Dense centered FD, one column at a time.
 function cfd_dense_fd(f!, x0)
     n = length(x0)
-    relstep = sqrt(eps(Float64))
-    f0 = zeros(n); f!(f0, x0)
+    relstep = cbrt(eps(Float64))
+    f0 = zeros(n)
     J = zeros(n, n)
     for j in 1:n
         h = max(relstep * abs(x0[j]), relstep)
         x = copy(x0); x[j] += h
         f1 = zeros(n); f!(f1, x)
-        J[:, j] = (f1 .- f0) ./ h
+        xp = x[j]
+        x[j] = x0[j] - h
+        f!(f0, x)
+        J[:, j] = (f1 .- f0) ./ (xp - x[j])
     end
     return J
 end
@@ -98,7 +101,7 @@ end
     @test all(iszero, Jm[:, heat])
     # heat_loads ROWS keep their entries (d heat_rate / d state is nonzero).
     @test any(!iszero, Jm[heat, .!heat])
-    @test jf.rhs_calls[] == 1 + maximum(jf.colors)
+    @test jf.rhs_calls[] == 2 * maximum(jf.colors)
 
     # single satellite: dense J, one color per non-heat column
     args1 = cfd_args(planet, 1)
@@ -114,6 +117,59 @@ end
     p1 = ODEParams(n_sats=1, args=args1)
     prob1 = SE_CFD._build_typed_solver_problem(u1, (0.0, 1.0), p1, nothing, :rodas5p, nothing)
     @test prob1.f.jac isa SE_CFD.ColoredFDJacobian
+end
+
+
+@testset "mass derivative at low and high orbital altitude" begin
+    planet = Earth()
+    for altitude in (150e3, 500e3)
+        # Explicit nonzero atmosphere at both heights: the planet default
+        # becomes effectively vacuum at 500 km and would make this check vacuous.
+        density = EM_CFD.ExponentialAtmosphereModel(altitude == 150e3 ? 2e-9 : 1e-12, altitude, 50e3;
+            valid_min_altitude_m=0.0, valid_max_altitude_m=1e6)
+        args = cfd_args(planet, 1; density_model=density)
+        u = SE_CFD.build_initial_conditions(args)
+        u.sc[1].pos .= (planet.Rp_e + altitude, 0.0, 0.0)
+        u.sc[1].vel .= (300.0, 7600.0, 300.0)
+        p = ODEParams(n_sats=1, args=args)
+        SE_CFD._initialize_save_cache_buffers!(p)
+        SE_CFD._initialize_heat_rate_buffers!(p)
+        jf = SE_CFD.ColoredFDJacobian(u, nothing)
+        J = zeros(length(u), length(u))
+        jf(J, u, p, 0.0)
+        probe = zero(u); probe.sc[1].mass = 1.0
+        column = findfirst(!iszero, Vector(probe))
+        sample = SE_CFD.build_state_sample(u.sc[1], args.dynamics_model.spacecraft[1], false, 1)
+        aero = args.dynamics_model.dynamic_effectors[2]
+        force = SE_CFD._effector_force_ii(aero, u.sc[1], sample, p, 1, 0.0)
+        @test maximum(abs, force) > 0
+        # Gravity acceleration is mass-independent. Aerodynamic force is independent
+        # of mass, so d(F/m)/dm = -F/m^2. This reference uses no finite differences.
+        expected = zero(u)
+        expected.sc[1].vel .= -force / u.sc[1].mass^2
+        @test maximum(abs, J[:, column] - Vector(expected)) < 2e-12
+        @test ComponentArray(J[:, column], getaxes(u)).sc[1].vel[2] ≈ expected.sc[1].vel[2] rtol=1e-4 atol=1e-18
+
+        # Compare the implicit solve with a tight explicit reference on the same
+        # physical RHS. Separate parameter buffers prevent cache sharing.
+        function problem(with_jac)
+            params = ODEParams(n_sats=1, args=deepcopy(args))
+            SE_CFD._initialize_save_cache_buffers!(params)
+            SE_CFD._initialize_heat_rate_buffers!(params)
+            f = with_jac ? SE_CFD.ODEFunction(SE_CFD.spacecraft_dynamics!;
+                jac=SE_CFD.ColoredFDJacobian(u, nothing)) : SE_CFD.spacecraft_dynamics!
+            SE_CFD.ODEProblem(f, copy(u), (0.0, 60.0), params)
+        end
+        reference = SE_CFD.solve(problem(false), SE_CFD.Tsit5(); reltol=1e-12, abstol=1e-12, dtmax=0.2)
+        for algorithm in (SE_CFD.Rodas5P(autodiff=SE_CFD.AutoFiniteDiff()),
+                          SE_CFD._auto_tsit5(SE_CFD.Rodas5P(autodiff=SE_CFD.AutoFiniteDiff())))
+            solution = SE_CFD.solve(problem(true), algorithm; reltol=1e-10, abstol=1e-10, dtmax=0.2)
+            @test SE_CFD.SciMLBase.successful_retcode(solution.retcode)
+            @test maximum(abs, solution.u[end].sc[1].pos - reference.u[end].sc[1].pos) < 1e-3
+            @test maximum(abs, solution.u[end].sc[1].vel - reference.u[end].sc[1].vel) < 1e-6
+        end
+        @test SE_CFD.SciMLBase.successful_retcode(reference.retcode)
+    end
 end
 
 end # module

@@ -133,16 +133,18 @@ so quaternion and angular-rate columns are 54-56% off in low-altitude drag.
 (`FiniteDiff.finite_difference_jacobian!` with a coloring is no fix: its step is one
 `relstep * sqrt(norm(x_color))` per color, not per component.)
 
-Here each column `j` gets FiniteDiff's own dense per-component step,
-`max(relstep*|x_j|, relstep)` with `relstep = sqrt(eps(Float64))`, and the columns of one
-color are perturbed together, each by its own step. That is exact for a block-separable
-RHS: the result equals column-by-column dense FD. Colors come from a greedy coloring of
-the prototype's columns.
+Each column uses a centered difference with a per-component step
+`max(relstep*abs(x_j), relstep)`, where `relstep = cbrt(eps(Float64))`.
+The larger step reduces subtractive cancellation in small mass derivatives alongside
+gravity; centering removes the first-order truncation error. The denominator uses
+the actual representable displacement. Columns of one color are perturbed together;
+for a block-separable RHS this equals column-by-column centered differences.
+This costs two RHS evaluations per color. Colors come from the prototype's columns.
 
 `heat_loads` columns get color 0 and are never perturbed: no RHS term reads
 `heat_loads` (the RHS only writes `du.heat_loads`; every read is in callbacks/guidance),
 so the columns are exactly zero. Their ROWS (d heat_loads / d other states) are kept.
-`test/unit/colored_fd_jacobian_tests.jl` checks the zero-column claim against dense FD.
+`test/unit/simulation/colored_fd_jacobian_tests.jl` checks the zero-column claim against dense FD.
 
 `prototype === nothing` means a single satellite: dense `J`, one color per column.
 """
@@ -158,7 +160,7 @@ struct ColoredFDJacobian{A}
     rhs_calls::Base.RefValue{Int}
 end
 
-const _FD_RELSTEP = sqrt(eps(Float64))   # FiniteDiff.default_relstep(Val(:forward), Float64)
+const _FD_RELSTEP = cbrt(eps(Float64))   # centered differences: balance rounding and O(h^2) truncation
 
 """Mask of the `heat_loads` entries of a ComponentVector constellation state."""
 function _heat_load_mask(u0::ComponentVector)::BitVector
@@ -243,8 +245,6 @@ function (jf::ColoredFDJacobian)(J, u, p, t)
     copyto!(x, x0)
     J isa SparseMatrixCSC ? fill!(nonzeros(J), 0.0) : fill!(J, 0.0)
     f!(dx, xv) = spacecraft_dynamics!(ComponentArray(dx, jf.axes), ComponentArray(xv, jf.axes), p, t)
-    f!(fx0, x0)
-    jf.rhs_calls[] += 1
     for c in 1:(length(jf.color_ptr) - 1)
         cols = view(jf.color_cols, jf.color_ptr[c]:(jf.color_ptr[c + 1] - 1))
         @inbounds for j in cols
@@ -253,8 +253,14 @@ function (jf::ColoredFDJacobian)(J, u, p, t)
         f!(fx1, x)
         jf.rhs_calls[] += 1
         @inbounds for j in cols
+            x[j] = x0[j] - max(_FD_RELSTEP * abs(x0[j]), _FD_RELSTEP)
+        end
+        f!(fx0, x)
+        jf.rhs_calls[] += 1
+        @inbounds for j in cols
             h = max(_FD_RELSTEP * abs(x0[j]), _FD_RELSTEP)
-            _fd_store_column!(J, j, fx1, fx0, h)
+            displacement = (x0[j] + h) - x[j]
+            _fd_store_column!(J, j, fx1, fx0, displacement)
             x[j] = x0[j]
         end
     end

@@ -18,7 +18,7 @@ function example_project(path)
     name = basename(path)
     if name in EDG_EXAMPLES
         # Reuse the CLI's explicit/active paired-project validation. The child
-        # loads EDG before common.jl activates core, while LOAD_PATH stays isolated.
+        # selects plotting-compatible core before loading EDG; LOAD_PATH remains isolated.
         return SpaceAGORA.SpaceAGORACLI._edg_project()
     end
     return name in HYPR_EXAMPLES ?

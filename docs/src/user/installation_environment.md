@@ -126,6 +126,11 @@ OpenSSL_jll, follow the installed Julia. The committed root manifest stays
 unchanged and uses CSV 1.3 and JSON 1.13; CI checks its saved and streamed output
 separately from the full plotting-enabled suite.
 
+Start plotting examples in a fresh Julia process. Julia cannot replace JSON 1
+after it has been loaded in a core REPL. EDG and HYPR plotting examples select
+the examples environment before importing core, then load the explicitly
+selected companion without leaving its environment on `LOAD_PATH`.
+
 Most examples include `examples/common.jl`. Started with `--project=.`, such an
 example switches to the examples environment by itself once that environment
 is prepared, and otherwise stops and prints the setup command. The cloth-panel

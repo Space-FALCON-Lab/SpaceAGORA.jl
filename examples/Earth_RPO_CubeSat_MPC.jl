@@ -1,8 +1,8 @@
-# Load from the companion environment before common.jl continues in the examples environment.
+# Select plotting-compatible core before loading the selected companion.
 # Setup: julia --startup-file=no examples/rpo_planner_env/setup.jl
 #        julia --startup-file=no examples/setup.jl
-using SpaceAGORA, HYPR
-include(joinpath(@__DIR__, "common.jl"))
+include(joinpath(@__DIR__, "support", "provider_bootstrap.jl"))
+ExampleProviderBootstrap.load!(@__MODULE__, :HYPR)
 using CSV
 using DataFrames
 using PlotlyJS

@@ -9,6 +9,11 @@ const MANIFEST = TOML.parsefile(joinpath(ROOT, "Manifest.toml"))["deps"]
     @test pkgversion(JSON) == VersionNumber(MANIFEST["JSON"][1]["version"])
 end
 
+include(joinpath(ROOT, "examples", "support", "provider_bootstrap.jl"))
+@testset "plotting refuses an already-loaded incompatible JSON" begin
+    @test_throws ArgumentError ExampleProviderBootstrap.load!(@__MODULE__, :HYPR)
+end
+
 # The full suite uses PlotlyJS's older dependency set. Exercise the core's
 # committed CSV/JSON versions independently, including saved and streamed data.
 include(joinpath(ROOT, "test", "unit", "io", "long_layout_tests.jl"))

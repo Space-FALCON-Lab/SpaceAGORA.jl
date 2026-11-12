@@ -395,7 +395,13 @@ end
 # producer that changes its consumer's scope stops the run at the second read
 # (SpaceAGORA 0.6 followed the change). The parallel policy's observation of the
 # tick covers steps 2 and 3.
+#
+# With an external owner that opts into configured forces (the experimental
+# lifecycle extension), the owner is first brought to the tick time with the old
+# command, and after step 3 it is told that the held command changed. Both are
+# no-ops for every other run.
 function _periodic_control_tick!(integrator, control_model, producers, num_sats::Int, period::Float64, slot=nothing)
+    _external_before_control_tick!(integrator, num_sats)
     _prepare_linked_producers!(integrator, control_model, producers, num_sats, slot)
     scope = spacecraft_scope(control_model)
     _check_run_scope(slot, scope, num_sats)
@@ -404,6 +410,7 @@ function _periodic_control_tick!(integrator, control_model, producers, num_sats:
     started_ns = time_ns()
     _apply_control_ticks!(integrator, control_model, positions, period, decision)
     _register_control_stops!(integrator, control_model, positions)
+    _external_after_control_tick!(integrator)
     decision.policy_applied && _record_control_tick_policy!(integrator, decision, length(positions), started_ns)
     return nothing
 end

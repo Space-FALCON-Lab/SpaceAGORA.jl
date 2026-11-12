@@ -399,6 +399,19 @@ end
     # Search off, or a region never run: every observation is at full width.
     @test RHSDA_SE._rhs_region_ran_full(fake(false), :probe)
     @test RHSDA_SE._rhs_region_ran_full(fake(true), :never_run)
+    # Unset: the tuner is off, under the adaptive policy too; auto restores the former default.
+    withenv("SPACEAGORA_RHS_REGION_WIDTH" => nothing, "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1") do
+        @test !RHSDA_SE._rhs_region_width_enabled()
+    end
+    withenv("SPACEAGORA_RHS_REGION_WIDTH" => "auto", "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1") do
+        @test RHSDA_SE._rhs_region_width_enabled()
+    end
+    withenv("SPACEAGORA_RHS_REGION_WIDTH" => "auto", "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => nothing) do
+        @test !RHSDA_SE._rhs_region_width_enabled()
+    end
+    withenv("SPACEAGORA_RHS_REGION_WIDTH" => "on", "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => nothing) do
+        @test RHSDA_SE._rhs_region_width_enabled()
+    end
     # An unrecognised setting is an error, not a silent "auto".
     withenv("SPACEAGORA_RHS_REGION_WIDTH" => "8") do
         @test_throws ArgumentError RHSDA_SE._rhs_region_width_enabled()

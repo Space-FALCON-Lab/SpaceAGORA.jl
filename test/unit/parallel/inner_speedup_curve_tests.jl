@@ -157,6 +157,26 @@ end
     @test_throws ArgumentError SCamp.InnerSpeedupCurve(Float64[])
 end
 
+@testset "a physically impossible curve is clamped or rejected" begin
+    _with_store(joinpath(mktempdir(), "rhs_calibration_sane.toml")) do
+        # Mild superlinear reading (cache effects): clamped to b.
+        SEng._rhs_calib_store!(_sig(budget = 8, outer = 1), _flat(4), 1.0e6;
+                               timings = [_record(_flat(1), 8.0e6), _record(_flat(2), 3.5e6),
+                                          _record(_flat(4), 1.5e6)])
+        curve = SEng.rhs_inner_speedup_curve(_stem())
+        @test all(curve[b] <= b for b in eachindex(curve))
+        @test curve[2] == 2.0 && curve[4] == 4.0
+        # Contaminated t(1) (2.98 ms vs 43 us at width 4, as in the tier-C sweep): no curve.
+        SEng._rhs_calib_store!(_sig(eff = "noisy"), _flat(4), 1.0e6;
+                               timings = [_record(_flat(1), 2.98e6, reps = 2), _record(_flat(2), 2.99e6, reps = 2),
+                                          _record(_flat(4), 4.3e4, reps = 2)])
+        @test SEng.rhs_inner_speedup_curve(_stem(eff = "noisy")) === nothing
+        withenv("SPACEAGORA_INNER_CURVE_SUPERLINEAR_SLACK" => "1.0") do
+            @test SEng.rhs_inner_speedup_curve(_stem()) === nothing
+        end
+    end
+end
+
 _cfg(; threads) = SCamp.PredictivePlannerConfig(
     margin = 0.15, guard_factor = 1.5, local_slots_max = threads - 1, remote_overhead = 0.0,
     route_switch = false, heap_model = :locals, local_thrash = 3.0)
@@ -213,4 +233,43 @@ end
     @test plan.route === :threads && plan.workers == 2 && plan.inner_thread_budget == 16
     @test SCamp._predictive_parse_plan_key("threads@w8+l0+b4") == (:threads, 8, 0, 4)
     @test SCamp._predictive_parse_plan_key("process@w8+l3") == (:process, 8, 3, 1)
+end
+
+@testset "SPACEAGORA_PLANNER_ALLOW_MIXED=0 keeps only static plans, not the 1-sample whole-pool plan" begin
+    strong = SCamp.InnerSpeedupCurve(Float64.(1:8))
+    nomix(; n, pool) = withenv("SPACEAGORA_PLANNER_ALLOW_MIXED" => "0") do
+        _planning(n = n, threads = 16, pool = pool, curve = strong)
+    end
+    @test withenv(() -> SCamp.PredictivePlannerConfig().allow_mixed,
+                  "SPACEAGORA_PLANNER_ALLOW_MIXED" => nothing, "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "0")
+    @test !withenv(() -> SCamp.PredictivePlannerConfig().allow_mixed,
+                   "SPACEAGORA_PLANNER_ALLOW_MIXED" => nothing, "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1")
+    @test withenv(() -> SCamp.PredictivePlannerConfig().allow_mixed,
+                  "SPACEAGORA_PLANNER_ALLOW_MIXED" => "1", "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1")
+    # Unset + adaptive on: no multi-sample mixed plan; unset + adaptive off: mixed allowed;
+    # explicit 1 + adaptive on: allowed; n = 1 unchanged.
+    unset(adaptive, mixed; n, pool) = withenv("SPACEAGORA_PLANNER_ALLOW_MIXED" => mixed,
+            "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => adaptive) do
+        _planning(n = n, threads = 16, pool = pool, curve = strong)
+    end
+    @test all(q -> q.static_equivalent, unset("1", nothing; n = 16, pool = 8).plans)
+    @test any(q -> !q.static_equivalent, unset("0", nothing; n = 16, pool = 8).plans)
+    @test any(q -> !q.static_equivalent, unset("1", "1"; n = 16, pool = 8).plans)
+    @test unset("1", nothing; n = 1, pool = 0).plans == unset("0", nothing; n = 1, pool = 0).plans
+    @test !withenv(() -> SCamp.PredictivePlannerConfig().allow_mixed, "SPACEAGORA_PLANNER_ALLOW_MIXED" => "0")
+    # Default: a strong curve picks a mixed (b > 1, W < n) plan for 16 samples.
+    d = _planning(n = 16, threads = 16, pool = 8, curve = strong)
+    @test any(p -> !p.static_equivalent && p.inner_thread_budget > 1, d.plans)
+    # Knob off: every candidate is static-equivalent for a multi-sample campaign.
+    p = nomix(n = 16, pool = 8)
+    @test all(q -> q.static_equivalent, p.plans)
+    @test p.chosen.static_equivalent
+    # Fewer samples than threads: all-concurrent threads@n+b stays (not mixed).
+    q = nomix(n = 4, pool = 0)
+    @test q.chosen.route === :threads && q.chosen.workers == 4 && q.chosen.inner_thread_budget == 4
+    # One sample: the whole-pool plan survives.
+    one = nomix(n = 1, pool = 0)
+    ref = _planning(n = 1, threads = 16, pool = 0, curve = strong)
+    @test one.chosen == ref.chosen && one.plans == ref.plans
+    @test one.chosen.route === :none
 end

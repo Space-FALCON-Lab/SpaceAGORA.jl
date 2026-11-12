@@ -309,7 +309,11 @@ function get_callbacks(
     callbacks = _append_callback(callbacks,
         get_initial_force_output_callback(effectors; solver_mode=solver_mode))
     if !backbone_mode && (args.simulation_settings.results || record_saved_values)
-        callbacks = _append_callback(callbacks, get_data_saving_callback(num_sats, args, save_fields_resolved, saved_values))
+        saver = get_data_saving_callback(num_sats, args, save_fields_resolved, saved_values)
+        callbacks = _append_callback(callbacks, saver)
+        # Configured-force external owners: each pending save time is a solver stop. Initialization
+        # only; it must follow the saver so the saver's request queue exists when it runs.
+        owned_mask === nothing || (callbacks = _append_callback(callbacks, get_external_output_stop_callback(args, saver)))
     end
     callbacks = _append_callbacks(callbacks, extra_callbacks)
 

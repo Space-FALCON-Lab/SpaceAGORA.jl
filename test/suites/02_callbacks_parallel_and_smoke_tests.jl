@@ -1473,7 +1473,16 @@ end
         candidates = SimulationEngine._rhs_plan_candidates(p_sweep, effs)
         @test length(candidates) > 1
 
+        pert_sweep = SpaceAGORA.SimulationModel.DynamicEffectors.PerturbationEffectors
+        pool_before_sweep = pert_sweep.harmonics_batch_pool_snapshot()
         plan, elapsed = SimulationEngine._run_rhs_sweep!(p_sweep, u_sweep, effs, false)
+        # The sweep's candidates grow the harmonics batch pool; the sweep must
+        # give it back as it found it (same entries, same objects) and drop the
+        # per-solve cached reference to the grown one.
+        pool_after_sweep = pert_sweep.harmonics_batch_pool_snapshot()
+        @test keys(pool_after_sweep) == keys(pool_before_sweep)
+        @test all(k -> pool_after_sweep[k] === pool_before_sweep[k], keys(pool_before_sweep))
+        @test p_sweep.shared_buffers.rhs_harmonics_batch_pool[] === nothing
         @test plan !== nothing
         @test elapsed > 0.0
         @test any(c -> c.mode === plan.mode && c.allotment == plan.allotment &&

@@ -1,5 +1,5 @@
-using SpaceAGORAEDG
-include(joinpath(@__DIR__, "common.jl"))
+include(joinpath(@__DIR__, "support", "provider_bootstrap.jl"))
+ExampleProviderBootstrap.load!(@__MODULE__, :SpaceAGORAEDG)
 SpaceAGORA.EDGServices.require_provider()
 using CSV
 using DataFrames

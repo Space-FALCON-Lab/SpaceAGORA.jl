@@ -37,8 +37,9 @@ The clone options skip large data files that the first run does not need. The
 third command installs SpaceAGORA with the package versions in the committed
 manifest; `julia_version_strict=true` makes it stop with a clear message if your
 Julia is not 1.12. The fourth prepares the examples environment, which adds the
-plotting and analysis packages the examples use and keeps the versions the root
-manifest records. The last one flies an Earth orbit that needs no atmosphere
+plotting and analysis packages the examples use. It keeps the core versions
+except for the CSV/JSON family, which resolves separately for PlotlyJS compatibility.
+The last one flies an Earth orbit that needs no atmosphere
 data, GRAM or SPICE kernels, and writes its results and plots under `output/`.
 
 On Windows, set `GIT_LFS_SKIP_SMUDGE` in a command of its own before cloning.

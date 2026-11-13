@@ -5,8 +5,9 @@ const REPO_PROJECT = joinpath(REPO_ROOT, "Project.toml") # path to the Project.t
 # provides the packages the examples use beyond SpaceAGORA itself. The examples
 # environment (`julia --startup-file=no examples/setup.jl`, then
 # `julia --project=examples examples/<name>.jl`) and the test environment do. A
-# provider environment (HYPR, EDG, the visualizer) does not: an example loads its
-# provider there first and then continues in the examples environment.
+# provider environment (HYPR, EDG, the visualizer) does not. Plotting examples
+# select this environment before importing core and then load their provider
+# through support/provider_bootstrap.jl.
 let core = Base.PkgId(Base.UUID("afbfb69f-5c0b-4832-b760-43725dff8540"), "SpaceAGORA"),
     source = joinpath(REPO_ROOT, "src", "SpaceAGORA.jl"),
     examples = joinpath(REPO_ROOT, "examples")

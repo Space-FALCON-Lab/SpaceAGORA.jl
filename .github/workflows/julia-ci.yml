@@ -66,7 +66,8 @@ jobs:
   # build and the manifests). When it exists this only looks it up.
   depot:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Cold caches compile both the core and plotting CSV/JSON dependency sets.
+    timeout-minutes: 90
     env:
       # Hosted runners come with different CPUs, and a package image built for
       # one CPU is rejected on another: in the first sharded run a third of the
@@ -656,6 +657,9 @@ jobs:
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
+      - name: Core CSV and JSON output regressions
+        run: julia --startup-file=no --project=. test/smoke/ci_core_dependency_versions.jl
+
       - name: Terrain producer tests
         shell: bash
         run: |
@@ -677,6 +681,11 @@ jobs:
 
       - name: Prepare examples environment (README command)
         run: julia --startup-file=no examples/setup.jl
+
+      - name: Plotting dependency isolation
+        run: |
+          julia --startup-file=no --project=examples test/smoke/ci_plotting_dependency_versions.jl
+          git diff --exit-code -- Project.toml Manifest.toml examples/Project.toml
 
       - name: README quickstart command and artifacts
         run: python3 -B test/smoke/ci_readme_quickstart.py
@@ -1009,6 +1018,10 @@ jobs:
         env:
           JULIA_LOAD_PATH: "@:@stdlib"
         run: julia --startup-file=no --project=. test/optional/hypr/example_routing.jl
+      - name: HYPR plotting imports in a fresh provider process
+        env:
+          JULIA_LOAD_PATH: "@:@stdlib"
+        run: julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" test/smoke/ci_provider_plotting_bootstrap.jl HYPR
       - name: Core without HYPR installed
         env:
           JULIA_LOAD_PATH: "@:@stdlib"
@@ -1243,6 +1256,10 @@ jobs:
         run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional/edg/cli.jl
       - name: EDG example smoke child environment
         run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional/edg/example_smoke.jl
+      - name: EDG plotting imports in a fresh provider process
+        env:
+          JULIA_LOAD_PATH: "@:@stdlib"
+        run: julia --startup-file=no --project="$RUNNER_TEMP/edg-installations/edg" test/smoke/ci_provider_plotting_bootstrap.jl SpaceAGORAEDG
       # With coverage: the EDG kernel tests run here, and the next step collects
       # the companion's .cov files for the per-file coverage gate.
       - name: Companion tests

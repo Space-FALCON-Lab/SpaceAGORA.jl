@@ -3,6 +3,9 @@ const EXAMPLES_DIR = joinpath(REPO_ROOT, "examples")
 # The examples run in the examples environment (examples/setup.jl prepares it).
 const PROJECT_PATH = joinpath(REPO_ROOT, "examples")
 
+using Pkg
+Pkg.activate(PROJECT_PATH; io=devnull)
+
 using CSV
 using DataFrames
 using LinearAlgebra

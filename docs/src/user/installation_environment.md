@@ -117,10 +117,19 @@ julia --startup-file=no examples/setup.jl
 julia --project=examples examples/AGORA_Basic_Quickstart.jl
 ```
 
-The setup copies the root manifest to the ignored `examples/Manifest.toml` and
-resolves from that copy, so the packages SpaceAGORA uses keep the versions the
-root manifest records. Only the records of the libraries bundled with Julia,
-such as OpenSSL_jll, follow the installed Julia.
+The setup seeds the ignored `examples/Manifest.toml` from the root manifest.
+PlotlyJS still requires JSON 0.21, which cannot share CSV 1's Parsers dependency,
+so examples and full tests use CSV 0.10 and JSON 0.21. Setup resolves only CSV,
+JSON, Parsers and SpaceIndices to that compatible family and preserves all
+unrelated core package versions. Libraries bundled with Julia, such as
+OpenSSL_jll, follow the installed Julia. The committed root manifest stays
+unchanged and uses CSV 1.3 and JSON 1.13; CI checks its saved and streamed output
+separately from the full plotting-enabled suite.
+
+Start plotting examples in a fresh Julia process. Julia cannot replace JSON 1
+after it has been loaded in a core REPL. EDG and HYPR plotting examples select
+the examples environment before importing core, then load the explicitly
+selected companion without leaving its environment on `LOAD_PATH`.
 
 Most examples include `examples/common.jl`. Started with `--project=.`, such an
 example switches to the examples environment by itself once that environment
@@ -328,7 +337,8 @@ SPACEAGORA_EDG_TEST_ENV=/path/to/edg-test-env julia --startup-file=no --project=
 The tests run in the repository's test environment, which holds the test tools,
 and start their example and CLI children in the examples environment; the EDG
 environment is added as the provider. `test/setup.jl` retains the core's dependency
-versions. The EDG shortcut delegates to the companion-owned installer, which
+versions except for the plotting-compatible CSV/JSON family described above.
+The EDG shortcut delegates to the companion-owned installer, which
 resolves a separate manifest from the packages' compatibility requirements. Both
 leave the core's tracked project files unchanged. Older test environments bearing
 the `.spaceagora-edg-test-environment.toml` marker are not adopted by the shared

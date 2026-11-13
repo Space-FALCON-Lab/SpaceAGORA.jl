@@ -152,7 +152,10 @@ end
         @test_throws ArgumentError SV.terrain_tiles_payload(sub,indexpath)
         @test_throws ArgumentError SV.terrain_tiles_payload(sub,"../imagery/imagery/tiles.json")
         invalids=Any[]
-        for (key,value) in (("lat_min",4.0),("lat_max",91.0),("lon_max",350.0),("lon_max",710.0),("lat_min",true),("lon_min",Inf))
+        # JSON 0.21 encoded Inf as null; JSON 1 rejects it while writing.
+        # Write null explicitly so this fixture reaches the terrain validator
+        # with the same invalid value under either supported JSON version.
+        for (key,value) in (("lat_min",4.0),("lat_max",91.0),("lon_max",350.0),("lon_max",710.0),("lat_min",true),("lon_min",nothing))
             bad=deepcopy(index);bad["root"][key]=value;push!(invalids,bad)
         end
         for (key,value) in (("level",-1),("level",21),("level",true),("x",1),("y",-1),("x",0.5),("m_per_px",0.0),("m_per_px","1"),("file","missing.jpg"),("file","../../grid.f32"))
@@ -166,6 +169,11 @@ end
             _write_json(indexpath,bad)
             @test_throws Exception SV.terrain_payload(sitepath)
         end
+        # An overflowing JSON number must also be rejected. Construct its
+        # literal text rather than asking a JSON writer to serialize Inf.
+        bad=deepcopy(index);bad["root"]["lon_min"]="__overflowing_longitude__"
+        write(indexpath,replace(JSON.json(bad),JSON.json("__overflowing_longitude__")=>"1e999"))
+        @test_throws Exception SV.terrain_payload(sitepath)
         _write_json(indexpath,index)
         # A declared file cannot escape through a symlink, even under a safe relative name.
         mktempdir() do outside

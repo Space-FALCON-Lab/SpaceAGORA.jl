@@ -13,7 +13,7 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 
 [compat]
-CSV = "0.10"
+CSV = "0.10, 1.3"
 GRAMSuite = "0.1"
 SpaceAGORA = "0.7"
 StaticArrays = "1"

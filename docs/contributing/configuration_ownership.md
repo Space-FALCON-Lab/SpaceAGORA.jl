@@ -43,3 +43,8 @@ that change, and every other field passes through the type's own constructor,
 so no copy lists another instance's fields one by one. Isolating mutable run
 state is the engine's job (`run_simulation`'s `isolate_state`), not the copy
 helpers'.
+
+The experimental `contact_models` tuple stores provider configuration only.
+`ContactLoadServices.with_contact_model` uses the same shallow-copy helper;
+native handles belong to the engine’s per-run contact runtime and are never
+configuration fields. Runs close those handles on success and failure.

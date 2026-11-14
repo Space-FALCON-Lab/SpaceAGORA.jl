@@ -5,6 +5,7 @@ module SimulationEngine
 using ..SimulationModel
 import ..SimulationLifecycle
 import ..RuntimeServices
+import ..ContactLoadServices
 import DiffEqBase
 import ADTypes: AutoFiniteDiff
 using SPICE
@@ -32,6 +33,7 @@ include(joinpath(@__DIR__, "effector_scopes.jl"))
 include(joinpath(@__DIR__, "state_access.jl"))
 include(joinpath(@__DIR__, "setup.jl"))
 include(joinpath(@__DIR__, "external_propagation.jl"))
+include(joinpath(@__DIR__, "contact_coupling.jl"))
 include(joinpath(@__DIR__, "ks_solver.jl"))
 include(joinpath(@__DIR__, "solver_policy.jl"))
 include(joinpath(@__DIR__, "dynamics_rhs.jl"))

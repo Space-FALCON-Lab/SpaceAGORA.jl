@@ -3299,7 +3299,8 @@ end
         dynamic_effectors,
         sat_idx,
     )
-    SimulationModel.apply_attachments_rigid!(du_view, sc_view, rt, t, forces, torques, gravity)
+    SimulationModel.apply_attachments_rigid!(du_view, sc_view, rt, t, forces, torques, gravity;
+        defer_derivatives=p.shared_buffers.contact_runtime[] !== nothing)
     return nothing
 end
 
@@ -3678,6 +3679,18 @@ end
 # the body below has two exits (the flat-queue route returns early). Wrapping
 # here is the only place both are covered.
 function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Float64)
+    run = p.shared_buffers.contact_runtime[]
+    run === nothing && return _spacecraft_dynamics_unlocked!(du, u, p, t)
+    Threads.atomic_cas!(run.busy, false, true) &&
+        throw(ArgumentError("Concurrent queries on one contact runtime are not supported."))
+    try
+        return _spacecraft_dynamics_unlocked!(du, u, p, t)
+    finally
+        run.busy[] = false
+    end
+end
+
+function _spacecraft_dynamics_unlocked!(du::ComponentVector, u::ComponentVector, p, t::Float64)
     trial = p.shared_buffers.rhs_width_trial[]
     if trial === nothing
         sbt = p.shared_buffers.spin_barrier_tuner
@@ -3804,6 +3817,7 @@ Base.@propagate_inbounds function _spacecraft_full_rhs!(sc_du, sc_state, p, i, t
         mass_rate, rw_torque_body = _control_effectors_with_wheels!(forces, torques, sc_view, p, i, t, debug_control)
         _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
         _apply_attachments_rigid!(du_view, sc_view, p, i, t, forces, torques, dynamic_effectors)
+        _apply_contact_loads!(du_view, sc_view, p, t, forces, torques)
         heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
             p,
             sc_view,

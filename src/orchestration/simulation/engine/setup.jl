@@ -2899,6 +2899,7 @@ function _validate_run_models!(args, solver_mode)
     _enforce_typed_normalize_policy!(args)
     _validate_articulated_spacecraft!(args, solver_mode)
     _validate_attachments!(args, solver_mode)
+    _validate_contact_coupling!(args, solver_mode)
     _validate_external_propagators!(args, solver_mode)
     _validate_interlinks!(args, solver_mode)
     _validate_data_parts!(args)
@@ -2965,6 +2966,8 @@ function _prepare_run_ephemerides!(args, p)
 end
 
 function _prepare_run_execution_policy!(p, u_start, args)
+    # Contact owns mutable native scratch and always uses its pinned serial plan.
+    p.shared_buffers.contact_runtime[] === nothing || return nothing
     # Auto-calibration: time candidate execution plans before the solve and pin the
     # fastest one for the duration.  No-ops when budget <= 1, SPACEAGORA_RHS_CALIBRATE=off,
     # or a cached result already exists for this machine + scenario signature.

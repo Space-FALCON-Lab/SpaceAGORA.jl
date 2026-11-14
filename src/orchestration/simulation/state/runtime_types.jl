@@ -1,5 +1,6 @@
 
 module ConfigTypes
+using ...ContactLoadServices: ContactRunState
 using ..SpacecraftModels: SpacecraftModel
 using ..ArticulatedBody: ArticulatedRuntime
 using ..CompliantAttachmentDynamics: AttachmentRuntime
@@ -1068,6 +1069,7 @@ export RhsEffectorDecision, RhsExecutionPlan
         # by one thread at a time, like the articulated workspaces.
         attachment_runtimes::Vector{Union{Nothing, AttachmentRuntime}} = _typed_nothing_vector(AttachmentRuntime, n_sats)
         attachments_present::Base.RefValue{Bool} = Ref(false)
+        contact_runtime::Base.RefValue{Union{Nothing,ContactRunState}} = Ref{Union{Nothing,ContactRunState}}(nothing)
         # Externally propagated spacecraft (shadow entries; see SimulationModel.ExternalPropagation): the run's
         # runtimes (one per propagator, built by `_initialize_external_runtimes!`), and for each satellite the
         # runtime index (0 = ordinary) and its position among that propagator's owned spacecraft.

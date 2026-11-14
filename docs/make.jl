@@ -328,6 +328,7 @@ makedocs(
             "Optional Adapter Contract" => "reference/adapter_contract.md",
             "EDG Service Contract" => "reference/edg_adapter_boundary.md",
             "External Propagation Services" => "reference/external_propagation_services.md",
+            "Experimental Contact Loads" => "reference/contact_load_services.md",
             "RPO Planner Contract" => "reference/rpo_planner_contract.md",
             "HYPR Service Contract" => "reference/hypr_services.md",
             "Distributed and HPC" => "distributed_hpc.md",

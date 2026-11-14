@@ -160,12 +160,13 @@ included before the gravity code, hence the hook.
 @inline relative_gravity(gravity, r_base, ρ, g_base) = gravity(r_base + ρ) - g_base
 
 """
-    attachment_loads!(du_view, sc_view, rt, k, mount, gravity, base_pos, base_gravity) -> (force_on_mount, torque_on_mount)
+    assemble_attachment_loads!(sc_view, rt, k, mount, gravity, base_pos, base_gravity) -> (force_on_mount, torque_on_mount)
 
 Evaluate attachment `k` in coordinates relative to the base (`mount` is relative too): its rest schedule
-(at the runtime clock `rt.time`), the compliant joint loads, and the body derivatives written to
-`du_view.att_*`. Returns the reaction on the mount (force at the mount origin and torque about it,
-inertial). `att_v'` is written WITHOUT the base acceleration: [`finish_attachments!`](@ref) subtracts it
+(at the runtime clock `rt.time`) and the compliant joint loads. Leaves body COM forces and
+body-frame torques in runtime scratch for optional contact injection before
+`attachment_derivatives!`. Returns the reaction on the mount (force at the mount origin
+and torque about it, inertial). Derivatives exclude the base acceleration; [`finish_attachments!`](@ref) subtracts it
 once the base acceleration, which includes these reactions, is known.
 
 Only the gravity DIFFERENCE `g(r_base + r_rel) - g(r_base)` enters here (about 1e-6 m/s^2 for a 1 m
@@ -174,7 +175,7 @@ differencing for the engine's gravity models, so the large common part never rea
 acceleration. The remaining `g(r_base) - a_base` is the negative of the
 non-gravitational base acceleration and is formed in `finish_attachments!`.
 """
-function attachment_loads!(du_view, sc_view, rt::AttachmentRuntime, k::Int, mount::ClothMultibody.CompliantMountKinematics, gravity,
+function assemble_attachment_loads!(sc_view, rt::AttachmentRuntime, k::Int, mount::ClothMultibody.CompliantMountKinematics, gravity,
         base_pos::SVector{3, Float64}, base_gravity::SVector{3, Float64})
     model = rt.compiled[k]
     col0 = rt.col0[k]
@@ -191,10 +192,22 @@ function attachment_loads!(du_view, sc_view, rt::AttachmentRuntime, k::Int, moun
         rt.forces[2, c] += m * g[2]
         rt.forces[3, c] += m * g[3]
     end
-    ClothMultibody.compliant_body_derivatives!(
-        du_view.att_r, du_view.att_q, du_view.att_v, du_view.att_ω, model, col0,
-        rt.forces, rt.torques, att_q, att_v, att_ω)
     return f_mount, t_mount
+end
+
+"""Assign derivatives after all smooth and contact loads have been assembled."""
+function attachment_derivatives!(du_view, sc_view, rt::AttachmentRuntime, k::Int)
+    ClothMultibody.compliant_body_derivatives!(
+        du_view.att_r, du_view.att_q, du_view.att_v, du_view.att_ω, rt.compiled[k], rt.col0[k],
+        rt.forces, rt.torques, sc_view.att_q, sc_view.att_v, sc_view.att_ω)
+    return nothing
+end
+
+function attachment_loads!(du_view, sc_view, rt::AttachmentRuntime, k::Int, mount::ClothMultibody.CompliantMountKinematics, gravity,
+        base_pos::SVector{3,Float64}, base_gravity::SVector{3,Float64})
+    reaction = assemble_attachment_loads!(sc_view, rt, k, mount, gravity, base_pos, base_gravity)
+    attachment_derivatives!(du_view, sc_view, rt, k)
+    return reaction
 end
 
 """
@@ -222,7 +235,7 @@ Rigid spacecraft, stage 1: evaluate every attachment (relative to the bus) and a
 bus `forces` (inertial) and `torques` (body frame, about the bus position) before the bus equations of
 motion. Call [`finish_attachments!`](@ref) with the bus acceleration afterwards.
 """
-function apply_attachments_rigid!(du_view, sc_view, rt::AttachmentRuntime, t::Float64, forces, torques, gravity)
+function apply_attachments_rigid!(du_view, sc_view, rt::AttachmentRuntime, t::Float64, forces, torques, gravity; defer_derivatives::Bool=false)
     rt.time[] = t
     z = SVector{3, Float64}(0.0, 0.0, 0.0)
     pos = SVector{3, Float64}(sc_view.pos[1], sc_view.pos[2], sc_view.pos[3])
@@ -233,7 +246,8 @@ function apply_attachments_rigid!(du_view, sc_view, rt::AttachmentRuntime, t::Fl
     for k in 1:rt.n_att
         a = rt.attachments[k]
         mount = ClothMultibody.compliant_mount_kinematics(z, z, q, ω, rt.link_offset[k], rt.link_q[k], a.mount_point, a.mount_quaternion)
-        f, τ = attachment_loads!(du_view, sc_view, rt, k, mount, gravity, pos, g_base)
+        f, τ = assemble_attachment_loads!(sc_view, rt, k, mount, gravity, pos, g_base)
+        defer_derivatives || attachment_derivatives!(du_view, sc_view, rt, k)
         F, τ_ref = ClothMultibody.compliant_mount_wrench(mount, z, f, τ)
         τb = ClothMultibody.compliant_world_to_body(q, τ_ref)
         forces[1] += F[1]; forces[2] += F[2]; forces[3] += F[3]

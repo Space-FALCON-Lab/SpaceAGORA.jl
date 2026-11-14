@@ -87,10 +87,21 @@ end
 if !NC_GRAM_READY
     @info "Skipping native GRAM collection tests: no libGRAM on this host." lib = NC_GRAM_LIB
 else
-    if Base.find_package("GRAMSuite") === nothing
-        pushfirst!(LOAD_PATH, NC_GRAM_ROOT)
+    # Import the vendored provider without leaving its dependency environment
+    # ahead of the test project. Later Distributed workers inherit LOAD_PATH;
+    # retaining this entry can resolve StaticArrays from GRAM's manifest while
+    # loading its ChainRulesCore extension from the full test environment.
+    let saved_load_path = copy(LOAD_PATH)
+        try
+            if Base.find_package("GRAMSuite") === nothing
+                pushfirst!(LOAD_PATH, NC_GRAM_ROOT)
+            end
+            @eval import GRAMSuite
+        finally
+            empty!(LOAD_PATH)
+            append!(LOAD_PATH, saved_load_path)
+        end
     end
-    @eval import GRAMSuite
     const EXT = Base.get_extension(SpaceAGORA, :SpaceAGORAGRAMSuiteExt)
 
     # Sets the accounting to a known state; the counters are process-global.

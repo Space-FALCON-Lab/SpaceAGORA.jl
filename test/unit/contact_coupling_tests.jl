@@ -63,6 +63,12 @@ end
     args=C.with_contact_model(fixture(),FakeContact(:zero))
     @test S._validate_run_models!(args,:tsit5) === nothing
     copywith=SM.SimConfig._with_configuration
+    # Existing interlink examples pass a bare scheduling policy by keyword.
+    # The contact field must preserve that convenience and every provider.
+    bare=copywith(args;scheduling_policy_model=SemimajorAxisRatePolicy())
+    @test bare.scheduling_policy_model isa SchedulingPolicyModel
+    @test bare.contact_models==args.contact_models
+    @test isempty(copywith(fixture();scheduling_policy_model=SemimajorAxisRatePolicy()).contact_models)
     @test_throws ArgumentError S._validate_run_models!(args,:rodas5p)
     @test_throws ArgumentError S._validate_run_models!(copywith(args;contact_models=(:invalid,)),:tsit5)
     @test_throws ArgumentError S._validate_run_models!(copywith(args;contact_models=(FakeContact(:zero),FakeContact(:zero))),:tsit5)

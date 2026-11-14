@@ -252,6 +252,28 @@ the run is allocation-free when the schedule is.
 
 ### How the loads reach the spacecraft
 
+Translational damping compares the parent and child rigid-body velocity fields
+at the midpoint of their joint anchors. If the anchor separation is
+`delta_r = p_parent - p_child`, its slip velocity is
+`s = v_parent_anchor - v_child_anchor - ((omega_parent + omega_child)/2) × delta_r`,
+all in inertial axes. The parent damping force is `F_d = -C*s`; the child gets
+`-F_d`. Each anchor also receives the transfer couple
+`-delta_r × F_d / 2`. The complete damper has zero net force and moment, and
+power `-s' C s`, nonpositive for a positive-semidefinite damping matrix.
+Common rigid motion therefore creates no damping load, even when the anchors
+are separated. The standalone model, generic attachments, and coupled robot
+arm share this calculation.
+
+This corrects the earlier use of raw anchor velocity difference: that law could
+produce an internal moment during transverse deformation. Coincident-anchor
+and purely axial, nonrotating cases retain their earlier damping forces.
+`CompliantJointLoad` compliance torques now include the transfer couples at the
+anchors; add the anchor-to-COM force moment arms when constructing COM wrenches.
+Parent and child torque fields alone need not be negatives of each other.
+The translational spring law is unchanged: its moment cancels for isotropic
+stiffness. Arbitrary anisotropic stiffness still needs a separate frame and
+energy-law qualification; damping balance does not establish that qualification.
+
 The joint loads and the gravity difference are computed from relative
 quantities. The acceleration of the bus (or of the articulated base), which
 includes the reactions, is then known, and each body's relative acceleration

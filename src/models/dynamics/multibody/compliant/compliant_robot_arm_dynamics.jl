@@ -7,6 +7,7 @@ using StaticArrays
 using ..OrientationQuaternionMath: _Q_IDENTITY, _unit_quat, _quat_conj, _quat_mul
 using ..OrientationQuaternionMath: _quat_raw_mul, _rot, _axis_angle_error
 using ..ClothMultibody
+using ..ClothMultibody: _translation_joint_wrench
 using ..RobotArmPlanning
 using ..Robotics
 
@@ -317,9 +318,7 @@ function assign_coupled_cloth_robot_arm_rhs!(
         parent = _coupled_parent_kinematics(sc_view, parent_idx, parent_point)
         child = _coupled_parent_kinematics(sc_view, i, child_point)
 
-        Δr = parent.point - child.point
-        Δv = parent.point_velocity - child.point_velocity
-        force_parent = -Kx[i] * Δr - Cx[i] * Δv
+        force_parent, damping_couple = _translation_joint_wrench(Kx[i], Cx[i], parent, child)
         force_child = -force_parent
 
         if parent_idx == 0
@@ -344,7 +343,8 @@ function assign_coupled_cloth_robot_arm_rhs!(
             limited_child_body = clamp.(raw_child_body, -actuator.torque_limit_n_m, actuator.torque_limit_n_m)
             torque_child_world += child.R * (actuator.efficiency * limited_child_body)
         end
-        torque_parent_world = -torque_child_world
+        torque_parent_world = -torque_child_world + damping_couple
+        torque_child_world += damping_couple
         if parent_idx == 0
             base_torques_body .+= R_base' * torque_parent_world
         else

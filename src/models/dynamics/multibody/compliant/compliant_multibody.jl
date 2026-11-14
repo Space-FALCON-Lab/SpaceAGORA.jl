@@ -28,7 +28,13 @@ struct CompliantBody
     inertia_body_kg_m2::SMatrix{3, 3, Float64, 9}
 end
 
-"""Compliant connection between a parent body and child body."""
+"""Compliant connection between a parent body and child body.
+
+Translational damping acts on the difference of the two rigid-body velocity
+fields at the midpoint of the anchors. Its forces and transfer couples conserve
+angular momentum; for a positive-semidefinite damping matrix its power is
+nonpositive. Translational stiffness retains its anchor-displacement law.
+"""
 struct CompliantJoint
     name::Symbol
     parent::Int
@@ -100,7 +106,13 @@ struct CompliantJointActuator
     efficiency::Float64
 end
 
-"""Force and torque diagnostics for one compliant joint."""
+"""Force and torque diagnostics for one compliant joint.
+
+Compliance torques include the translational damper's transfer couples about
+the anchors. Parent and child compliance torques therefore need not be opposite;
+the total joint moment, including anchor-force moments, is balanced for isotropic
+translational stiffness. These torques exclude anchor-to-COM force moment arms.
+"""
 struct CompliantJointLoad
     name::Symbol
     parent::Int
@@ -471,14 +483,30 @@ function _actuator_torque_child_world(
     return child.R * (actuator.efficiency * limited_child_body)
 end
 
+"""Translational joint force and the common damping couple at each anchor.
+
+Evaluate both rigid velocity fields at the same midpoint: s = Δv - ωmean × Δr.
+The damper force on the parent is -C*s; transferring that midpoint force back
+to each anchor adds the same couple -Δr × force_damping / 2. The net internal
+moment vanishes and the total damping power is -s' C s, including both couples.
+Using raw anchor Δv instead would damp common rigid rotation and create a net
+internal moment for separated anchors. Stiffness is unchanged.
+"""
+@inline function _translation_joint_wrench(K, C, parent, child)
+    Δr = parent.point - child.point
+    Δv = parent.point_velocity - child.point_velocity
+    slip = Δv - cross((parent.ω_world + child.ω_world) / 2, Δr)
+    damping_force = -C * slip
+    return -K * Δr + damping_force, -cross(Δr, damping_force) / 2
+end
+
 """
 Evaluate one compliant joint from parent and child attachment kinematics. Shared by
 `compliant_joint_loads` and `compliant_joint_loads_in_place!`; allocation-free.
 """
 @inline function _joint_load_kernel(joint, jidx::Int, parent, child, rest, joint_actuators)
-    Δr = parent.point - child.point
-    Δv = parent.point_velocity - child.point_velocity
-    force_parent = -joint.k_translation_n_m * Δr - joint.c_translation_n_s_m * Δv
+    force_parent, damping_couple = _translation_joint_wrench(
+        joint.k_translation_n_m, joint.c_translation_n_s_m, parent, child)
     force_child = -force_parent
 
     desired_child_q = _quat_mul(parent.q, rest)
@@ -494,7 +522,8 @@ Evaluate one compliant joint from parent and child attachment kinematics. Shared
     return (
         force_parent=force_parent,
         force_child=force_child,
-        compliance_child_world=compliance_child_world,
+        compliance_child_world=compliance_child_world + damping_couple,
+        compliance_parent_world=-compliance_child_world + damping_couple,
         actuator_child_world=actuator_child_world,
     )
 end
@@ -517,7 +546,7 @@ function compliant_joint_loads(
 
         compliance_child_world = k.compliance_child_world
         actuator_child_world = k.actuator_child_world
-        compliance_parent_world = -compliance_child_world
+        compliance_parent_world = k.compliance_parent_world
         actuator_parent_world = -actuator_child_world
         compliance_child_body = child.R' * compliance_child_world
         actuator_child_body = child.R' * actuator_child_world
@@ -855,7 +884,7 @@ function compliant_joint_loads_in_place!(
         child = _column_kinematics(pos, quat, vel, angvel, cc, joint.child_point_body)
         k = _joint_load_kernel(joint, jidx, parent, child, rest[jidx], model.actuators)
 
-        compliance_parent_world = -k.compliance_child_world
+        compliance_parent_world = k.compliance_parent_world
         actuator_parent_world = -k.actuator_child_world
         if joint.parent == 0
             f_mount += k.force_parent

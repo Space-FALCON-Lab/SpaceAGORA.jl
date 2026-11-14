@@ -938,6 +938,7 @@ const KNOWN_GAPS = [
 
 # The versioned facades, one row each; their own pages list their functions.
 const VERSIONED_FACADES = [
+    (symbol = :ContactLoadServices, page = "reference/contact_load_services.md"),
     (symbol = :EDGServices, page = "reference/edg_adapter_boundary.md"),
     (symbol = :ExternalPropagationServices, page = "reference/external_propagation_services.md"),
     (symbol = :HYPRServices, page = "reference/hypr_services.md"),

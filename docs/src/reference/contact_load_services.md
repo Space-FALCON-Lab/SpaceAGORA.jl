@@ -71,3 +71,18 @@ wrench injection, moment balance, unsupported configurations, serial ownership
 and cleanup. Native contact qualification and the remaining Issue #4 matrix
 belong to the companion; passing these core tests alone does not qualify a
 contact law or deployment scenario.
+
+## API reference
+
+```@docs
+SpaceAGORA.ContactLoadServices.AbstractContactModel
+SpaceAGORA.ContactLoadServices.AbstractContactRuntime
+SpaceAGORA.ContactLoadServices.ContactBody
+SpaceAGORA.ContactLoadServices.ContactState
+SpaceAGORA.ContactLoadServices.ContactWrench
+SpaceAGORA.ContactLoadServices.contact_preflight
+SpaceAGORA.ContactLoadServices.contact_prepare
+SpaceAGORA.ContactLoadServices.contact_evaluate!
+SpaceAGORA.ContactLoadServices.contact_close!
+SpaceAGORA.ContactLoadServices.with_contact_model
+```

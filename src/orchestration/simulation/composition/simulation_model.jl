@@ -11,6 +11,9 @@ using Reexport
 isdefined(parentmodule(@__MODULE__), :RuntimeServices) ||
     Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "runtime_services.jl"))
 
+isdefined(parentmodule(@__MODULE__), :ContactLoadServices) ||
+    Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "contact_load_services.jl"))
+
 isdefined(parentmodule(@__MODULE__), :GNCRuntime) ||
     Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "contracts", "gnc_runtime.jl"))
 

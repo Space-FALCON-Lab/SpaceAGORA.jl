@@ -37,6 +37,8 @@ end
     @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "orchestration", "simulation", "composition", "simulation_model.jl"))
     _test_standalone_comparison_tracking(sandbox.SimulationModel)
     @test Core.eval(sandbox, :(isdefined(@__MODULE__, :RuntimeServices)))
+    @test isdefined(sandbox, :ContactLoadServices)
+    @test sandbox.SimulationModel.ConfigTypes.ContactRunState === sandbox.ContactLoadServices.ContactRunState
     @test isdefined(sandbox, :SimulationLifecycle)
     @test isdefined(sandbox, :VisualizerServices)
     # The comparison planners subtype the RPO planner contract, which the aggregator supplies standalone.
@@ -101,6 +103,8 @@ end
     lifecycle = sandbox.SimulationLifecycle
     @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "interfaces", "analysis", "visualization", "visualizer_services.jl"))
     visualizer = sandbox.VisualizerServices
+    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "orchestration", "simulation", "contact_load_services.jl"))
+    contact = sandbox.ContactLoadServices
 
     Base.include_string(sandbox, """
     module ConflictingExports
@@ -112,6 +116,8 @@ end
 
     @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "orchestration", "simulation", "composition", "simulation_model.jl"))
     _test_standalone_comparison_tracking(sandbox.SimulationModel)
+    @test sandbox.ContactLoadServices === contact
+    @test sandbox.SimulationModel.ConfigTypes.ContactRunState === contact.ContactRunState
     @test sandbox.SimulationLifecycle === lifecycle
     @test sandbox.SimulationModel.ControlHooks.SimulationLifecycle === lifecycle
     @test sandbox.VisualizerServices === visualizer

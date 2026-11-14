@@ -7,12 +7,12 @@ binding_path(path::Tuple{Vararg{Symbol}}) = path
 resolve_binding(facade, path) = foldl(getproperty, binding_path(path); init=facade)
 
 # Each facade's reviewed contract version; a bump changes its entry here.
-const CONTRACT_VERSIONS = (HYPRServices=v"3.0.0", ExternalPropagationServices=v"2.0.0", EDGServices=v"3.0.0")
+const CONTRACT_VERSIONS = (HYPRServices=v"3.0.0", ExternalPropagationServices=v"2.0.0", EDGServices=v"3.0.0", ContactLoadServices=v"0.1.0")
 
 @testset "Optional adapter facade conformance" begin
     # Version, exact require_version, unique and disjoint inventories that resolve:
     # SpaceAGORA.Conformance.check_service_facade, which companions call on their facade.
-    for facade in (SpaceAGORA.HYPRServices, SpaceAGORA.ExternalPropagationServices, SpaceAGORA.EDGServices)
+    for facade in (SpaceAGORA.HYPRServices, SpaceAGORA.ExternalPropagationServices, SpaceAGORA.EDGServices, SpaceAGORA.ContactLoadServices)
         test_service_facade(facade; version=CONTRACT_VERSIONS[nameof(facade)])
     end
     for path in SpaceAGORA.HYPRServices.CLOTH_SERVICES

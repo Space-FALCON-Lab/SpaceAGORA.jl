@@ -257,7 +257,9 @@ end
 
 Run `f(evaluate)` with a dedicated local Julia worker, where
 `evaluate(candidate; duration_s, sample_period_s)` calls [`run_control_forecast`](@ref).
-The worker uses the current Julia/project and is removed on success or failure.
+The worker uses the current Julia/project, puts that project first in its package
+load path, and is removed on success or failure. Other caller environments remain
+available as fallbacks.
 `packages` contains the `Base.PkgId`s of companion packages defining candidate
 controllers; core is loaded automatically. No existing worker is adopted.
 """
@@ -265,8 +267,13 @@ function with_control_forecast_worker(f,snapshot::ControlForecastSnapshot;packag
     _CONTROL_FORECAST_RESTART[]===nothing || throw(ArgumentError("A candidate cannot create a nested forecast worker."))
     project=Base.active_project()
     project===nothing && throw(ArgumentError("An active project is required for a forecast worker."))
+    # A vendored environment prepended by the caller must not shadow the
+    # worker project during fresh package/extension loading.
+    pathsep=Sys.iswindows() ? ";" : ":"
+    worker_env=collect(snapshot.environment)
+    push!(worker_env,"JULIA_LOAD_PATH"=>join(["@";filter(!=("@"),LOAD_PATH)],pathsep))
     workers=Distributed.addprocs(1;exeflags=`--startup-file=no --project=$(dirname(project)) --threads=1`,
-        env=collect(snapshot.environment))
+        env=worker_env)
     worker=only(workers)
     try
         Distributed.remotecall_fetch(Base.require,worker,Base.PkgId(parentmodule(@__MODULE__)))

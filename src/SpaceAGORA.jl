@@ -12,6 +12,8 @@ include(joinpath(@__DIR__, "orchestration", "parallel", "process", "parallel_pro
 include(joinpath(@__DIR__, "interfaces", "analysis", "visualization", "visualizer_services.jl"))
 include(joinpath(@__DIR__, "orchestration", "simulation", "runtime_services.jl"))
 include(joinpath(@__DIR__, "orchestration", "simulation", "callback_services.jl"))
+include(joinpath(@__DIR__, "orchestration", "simulation", "contact_load_services.jl"))
+public ContactLoadServices
 include(joinpath(@__DIR__, "orchestration", "simulation", "composition", "simulation_model.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "direct_planner.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "companions", "hypr", "rpo_planner_adapter.jl"))

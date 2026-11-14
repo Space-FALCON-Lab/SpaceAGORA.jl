@@ -1011,6 +1011,7 @@ function run_simulation(
                            visualization=visualization)
         end
     end
+    contact_owner = Ref{Union{Nothing,CLS.ContactRunState}}(nothing)
     # After the re-entry above, so that each link's `check_link` runs once per run.
     SimulationModel.SimulationCallbacks.check_gnc_links(args)
     try
@@ -1035,6 +1036,10 @@ function run_simulation(
     solver_mode === :ks && _validate_ks_config!(args)
 
     _validate_run_models!(args, solver_mode)
+    if !isempty(args.contact_models)
+        isempty(extra_callbacks) && isempty(extra_callback_factories) && isempty(priority_callback_factories) && solver_cache === nothing ||
+            throw(ArgumentError("Contact coupling refuses custom callbacks and reused solver caches."))
+    end
     if args.interlink_model !== nothing
         empty!(args.interlink_model.history)
         graph = args.interlink_model.graph
@@ -1061,6 +1066,7 @@ function run_simulation(
 
     # Define the ODE parameters and callbacks
     p = _prepare_run_runtime!(args, initial_conditions, solver_mode)
+    _initialize_contact_runtime!(p, initial_conditions, contact_owner)
     save_fields_resolved = isnothing(save_fields) ? SimulationModel.default_save_fields(args) : collect(save_fields)
     # Explicit save_fields built before the visualization flag was applied
     # (e.g. `vcat(default_save_fields(args), ...)` in an example run under
@@ -1458,6 +1464,10 @@ function run_simulation(
         # collector cannot see its size. Collect once enough of them have been
         # discarded (see collect_unreferenced_gram_atmospheres!). Changes when
         # native memory is released, not what the run computed.
-        SimulationModel.EnvironmentModels.collect_unreferenced_gram_atmospheres!()
+        try
+            contact_owner[] === nothing || CLS.contact_close!(contact_owner[].runtime)
+        finally
+            SimulationModel.EnvironmentModels.collect_unreferenced_gram_atmospheres!()
+        end
     end
 end

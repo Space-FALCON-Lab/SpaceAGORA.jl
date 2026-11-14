@@ -25,6 +25,7 @@ callback or registry.
 |---|---|---|---|
 | HYPR planning | The `HYPR.jl` extension, activated by loading SpaceAGORA and HYPR directly | [`SpaceAGORA.HYPRServices`](hypr_services.md) | HYPR is activated explicitly; planner state is created for each request |
 | External propagation, including MuJoCo | The independent [SpaceAGORAMuJoCo.jl companion](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl) for MuJoCo scenes; each other adapter owns its own domain implementation | [`SpaceAGORA.ExternalPropagationServices`](external_propagation_services.md) | Propagators are set in the configuration; each simulation gets its own mutable runtime |
+| Experimental same-state contact loads | The optional MuJoCo companion | [`SpaceAGORA.ContactLoadServices`](contact_load_services.md), contract `v"0.1.0"` | Core integrates both bodies; per-run providers return contact-only COM wrenches |
 | Experimental EDG guidance | The independent `SpaceAGORAEDG.jl` companion | [`SpaceAGORA.EDGServices`](edg_adapter_boundary.md), contract `v"3.0.0"` | SpaceAGORA owns the callbacks and the per-run state; the companion gets copied observations and prediction queries that are valid for one call |
 
 EDG is experimental: review its scientific results separately from its

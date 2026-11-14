@@ -17,7 +17,18 @@
     external_propagators::Tuple = () # SimulationModel.ExternalPropagation owners of externally propagated spacecraft (shadow entries); () = none
     interlink_model::Union{Nothing, InterlinkModel} = nothing
     scheduling_policy_model::SchedulingPolicyModel = SchedulingPolicyModel(SemimajorAxisRatePolicy()) # or a scheduling policy alone
+    contact_models::Tuple = () # Experimental same-trial-state contact-load providers.
 end # struct SimulationConfiguration
+
+# Preserve the pre-contact positional constructor.
+SimulationConfiguration(file_paths, simulation_settings, mission_configuration,
+    environment_model, dynamics_model, guidance_model, navigation_model, control_model,
+    initial_time, integration_tolerances, solver_config, external_propagators,
+    interlink_model, scheduling_policy_model::SchedulingPolicyModel) =
+    SimulationConfiguration(file_paths, simulation_settings, mission_configuration,
+        environment_model, dynamics_model, guidance_model, navigation_model, control_model,
+        initial_time, integration_tolerances, solver_config, external_propagators,
+        interlink_model, scheduling_policy_model, ())
 
 # Preserve the positional constructor used before interlinks were added.
 SimulationConfiguration(file_paths, simulation_settings, mission_configuration,
@@ -37,6 +48,17 @@ SimulationConfiguration(file_paths, simulation_settings, mission_configuration,
         environment_model, dynamics_model, guidance_model, navigation_model, control_model,
         initial_time, integration_tolerances, solver_config, external_propagators,
         interlink_model, SchedulingPolicyModel(scheduling_policy_model))
+
+# Keyword construction now forwards all fifteen fields, including contact_models.
+# Keep the documented bare-policy convenience on that path as well.
+SimulationConfiguration(file_paths, simulation_settings, mission_configuration,
+    environment_model, dynamics_model, guidance_model, navigation_model, control_model,
+    initial_time, integration_tolerances, solver_config, external_propagators,
+    interlink_model, scheduling_policy_model::AbstractSchedulingPolicy, contact_models::Tuple) =
+    SimulationConfiguration(file_paths, simulation_settings, mission_configuration,
+        environment_model, dynamics_model, guidance_model, navigation_model, control_model,
+        initial_time, integration_tolerances, solver_config, external_propagators,
+        interlink_model, SchedulingPolicyModel(scheduling_policy_model), contact_models)
 
 """
     _with_fields(x; changes...)

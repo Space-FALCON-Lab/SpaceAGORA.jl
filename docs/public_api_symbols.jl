@@ -338,6 +338,7 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :PlotlyJSUnavailableError, rendered = "SpaceAGORA.PlotlyJSUnavailableError"),
             (owner = :SpaceAGORA, symbol = :export_viewer_payload, rendered = "SpaceAGORA.export_viewer_payload"),
             (owner = :SpaceAGORA, symbol = :ExternalPropagationServices, rendered = "SpaceAGORA.ExternalPropagationServices"),
+            (owner = :SpaceAGORA, symbol = :ContactLoadServices, rendered = "SpaceAGORA.ContactLoadServices"),
             (owner = :SpaceAGORA, symbol = :EDGServices, rendered = "SpaceAGORA.EDGServices")
         ]
     ),

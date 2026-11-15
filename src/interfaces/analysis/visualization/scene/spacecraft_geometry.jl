@@ -103,20 +103,22 @@ end
 
 `[rx, ry, rz, qx, qy, qz, qw]` per arm link from a spacecraft state view
 carrying `arm_r`/`arm_q` (inertial COM position in meters, inertial
-quaternion), with positions relative to the spacecraft position `r_ii_m`.
+quaternion), or contact-enabled `arm_rel_r`/`arm_q` (COM offset in inertial
+axes). Output positions are relative to `r_ii_m` in either case.
 Empty when the view has no arm state.
 """
 function arm_pose_vector(sc_view, r_ii_m)::Vector{Float64}
-    hasproperty(sc_view, :arm_r) && hasproperty(sc_view, :arm_q) || return Float64[]
-    arm_r = getproperty(sc_view, :arm_r)
+    relative = hasproperty(sc_view, :arm_rel_r)
+    (relative || hasproperty(sc_view, :arm_r)) && hasproperty(sc_view, :arm_q) || return Float64[]
+    arm_r = getproperty(sc_view, relative ? :arm_rel_r : :arm_r)
     arm_q = getproperty(sc_view, :arm_q)
     n = size(arm_r, 2)
     out = Vector{Float64}(undef, LINK_POSE_STRIDE * n)
     @inbounds for i in 1:n
         k = LINK_POSE_STRIDE * (i - 1)
-        out[k + 1] = Float64(arm_r[1, i]) - Float64(r_ii_m[1])
-        out[k + 2] = Float64(arm_r[2, i]) - Float64(r_ii_m[2])
-        out[k + 3] = Float64(arm_r[3, i]) - Float64(r_ii_m[3])
+        out[k + 1] = Float64(arm_r[1, i]) + (relative ? Float64(sc_view.pos[1]) - Float64(r_ii_m[1]) : -Float64(r_ii_m[1]))
+        out[k + 2] = Float64(arm_r[2, i]) + (relative ? Float64(sc_view.pos[2]) - Float64(r_ii_m[2]) : -Float64(r_ii_m[2]))
+        out[k + 3] = Float64(arm_r[3, i]) + (relative ? Float64(sc_view.pos[3]) - Float64(r_ii_m[3]) : -Float64(r_ii_m[3]))
         out[k + 4] = Float64(arm_q[1, i])
         out[k + 5] = Float64(arm_q[2, i])
         out[k + 6] = Float64(arm_q[3, i])

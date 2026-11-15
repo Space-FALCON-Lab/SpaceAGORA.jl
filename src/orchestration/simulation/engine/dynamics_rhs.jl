@@ -4278,7 +4278,7 @@ function build_initial_conditions(args)::ComponentVector
         end
         coupling = _robot_arm_coupling(args, i, 0.0; run_start=true)
         coupling === nothing && return base_shape
-        return merge(base_shape, SimulationModel.coupled_cloth_robot_arm_state_shape(coupling.plan))
+        return merge(base_shape, SimulationModel.coupled_cloth_robot_arm_state_shape(coupling.plan; relative_positions=!isempty(args.contact_models)))
     end
 
     # Each ground station's bits received and sent, in a run that counts them.

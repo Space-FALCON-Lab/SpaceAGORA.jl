@@ -27,7 +27,7 @@ function C.contact_evaluate!(rt::ArmRuntime,states::NTuple{N,C.ContactState},t::
     end
 end
 
-function fixture(;duration=.01)
+function fixture(;duration=.01,origin=SVector(7e6,0.,0.))
     bus=Link(root=true,m=20.,dims=MVector(1.,.8,.6))
     arm=SM.default_robot_arm_model(link_lengths_m=(.3,.25,.2),link_radii_m=(.03,.025,.02),
         link_masses_kg=(.7,.5,.3),mount_offset_body=(.5,0.,0.))
@@ -36,7 +36,7 @@ function fixture(;duration=.01)
     effector=SM.RobotArmReactionEffector(plan=plan,k_translation_n_m=200.,
         c_translation_n_s_m=.2,k_rotation_n_m_rad=2.,c_rotation_n_m_s_rad=.02)
     sc=SpacecraftModel(links=[bus],root=bus,prop_mass=0.,inertia_tensor=bus.inertia,
-        initial_condition=CartesianInitialCondition(SVector(7e6,0.,0.),Z))
+        initial_condition=CartesianInitialCondition(origin,Z))
     args=make_example_config(planet=SM.make_no_gram_planet(:earth),spacecraft=sc,
         mission_time=duration,initial_time=InitialTime(year=2020,month=1,day=1),
         dynamic_effectors=(effector,),ephemerides_model=SM.SimpleEphemeridesModel(),
@@ -55,7 +55,7 @@ end
     @test length(bodies)==4
     @test [b.mass_kg for b in bodies]==[20.,.7,.5,.3]
     u=S.build_initial_conditions(args)
-    u.sc[1].arm_r[2,2]+=.001
+    u.sc[1].arm_rel_r[2,2]+=.001
     u.sc[1].arm_v[:,3].=[.01,-.02,.03]
     p=S._prepare_run_runtime!(args,u,:tsit5)
     plain=S._prepare_run_runtime!(base,u,:tsit5)
@@ -77,7 +77,7 @@ end
             @test du.sc[1].arm_v[:,i]-baseline.sc[1].arm_v[:,i]≈w[i+1].force_n/b.mass_kg atol=1e-12
             @test du.sc[1].arm_ω[:,i]-baseline.sc[1].arm_ω[:,i]≈b.inertia_body_kg_m2\(CM._rot(q)'*w[i+1].torque_nm) atol=1e-11
         end
-        before=copy(u); altered=copy(u);altered.sc[1].arm_r[1,2]+=.02
+        before=copy(u); altered=copy(u);altered.sc[1].arm_rel_r[1,2]+=.02
         S.spacecraft_dynamics!(zero(u),altered,p,1.)
         replay=zero(u);S.spacecraft_dynamics!(replay,u,p,0.)
         @test replay==du && u==before
@@ -86,12 +86,22 @@ end
     end
 end
 
-@testset "zero contact preserves the existing robot-arm route" begin
-    args=fixture()
+@testset "relative contact coordinates preserve the unforced arm trajectory" begin
+    args=fixture(origin=Z)
     a=run_simulation(args;return_solution=true,visualization=false)
     b=run_simulation(C.with_contact_model(args,ArmContact(Z));return_solution=true,visualization=false)
-    @test a.t==b.t
-    @test a.u==b.u
+    @test hasproperty(first(a.u).sc[1],:arm_r)
+    @test hasproperty(first(b.u).sc[1],:arm_rel_r)
+    @test !hasproperty(first(b.u).sc[1],:arm_r)
+    for time in range(0.,.01;length=5)
+        x=a(time).sc[1];y=b(time).sc[1]
+        @test x.pos≈y.pos atol=1e-10
+        @test x.vel≈y.vel atol=1e-10
+        @test x.arm_r≈y.arm_rel_r.+y.pos atol=1e-10
+        @test x.arm_v≈y.arm_v atol=1e-10
+        @test x.arm_q≈y.arm_q atol=1e-10
+        @test x.arm_ω≈y.arm_ω atol=1e-9
+    end
 end
 @testset "multiple attachments subtract the final bus acceleration once" begin
     bus=Link(root=true,m=20.,dims=MVector(1.,.8,.6))
@@ -122,6 +132,29 @@ end
         end
     finally
         C.contact_close!(owner[].runtime)
+    end
+end
+@testset "arm strain avoids cancellation at orbital origins" begin
+    args=C.with_contact_model(fixture(),ArmContact(Z));u=S.build_initial_conditions(args);sc=only(u.sc)
+    sc.pos.=0.
+    for i in 1:3
+        sc.arm_rel_r[:,i].=[.5+.25i,.125i,0.]
+        sc.arm_v[:,i].=[.125i,-.0625i,.03125i]
+    end
+    moved=copy(u);shift=SVector(7e6,-3e6,1e6)
+    moved.sc[1].pos.+=shift
+    plan=only(args.dynamics_model.dynamic_effectors).plan
+    f=zeros(3);t=zeros(3);mf=zeros(3);mt=zeros(3)
+    a=CA._coupled_robot_arm_loads!(sc,plan,0.,f,t)
+    b=CA._coupled_robot_arm_loads!(moved.sc[1],plan,0.,mf,mt)
+    @test a.forces==b.forces
+    @test a.torques_body==b.torques_body
+    @test f==mf
+    @test t==mt
+    du=zero(u); CA._coupled_robot_arm_derivatives!(du.sc[1],sc,plan,a)
+    for i in 1:3
+        @test du.sc[1].arm_rel_r[:,i]≈sc.arm_v[:,i]-sc.vel
+        @test CA._coupled_body_state(moved.sc[1],i).r≈sc.arm_rel_r[:,i]+shift
     end
 end
 end

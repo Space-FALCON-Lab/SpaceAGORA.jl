@@ -112,7 +112,7 @@ function _apply_contact_loads!(du_view, sc, p, t, forces, torques, arm_loads=not
                 v+SVector{3,Float64}(sc.att_v[:,i]),aq,SVector{3,Float64}(sc.att_ω[:,i]),
                 SVector{3,Float64}(rt.forces[:,i]),CM._rot(aq)*SVector{3,Float64}(rt.torques[:,i])))
         else
-            push!(observations,CLS.ContactState(r+SVector{3,Float64}(sc.arm_r[:,i]-sc.pos),
+            push!(observations,CLS.ContactState(r+SVector{3,Float64}(hasproperty(sc,:arm_rel_r) ? sc.arm_rel_r[:,i] : sc.arm_r[:,i]-sc.pos),
                 SVector{3,Float64}(sc.arm_v[:,i])-run.origin_velocity_m_s,aq,SVector{3,Float64}(sc.arm_ω[:,i]),
                 arm_loads.loads.forces[i],CM._rot(aq)*arm_loads.loads.torques_body[i]))
         end

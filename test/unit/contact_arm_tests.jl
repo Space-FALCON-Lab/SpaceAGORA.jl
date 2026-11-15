@@ -93,4 +93,35 @@ end
     @test a.t==b.t
     @test a.u==b.u
 end
+@testset "multiple attachments subtract the final bus acceleration once" begin
+    bus=Link(root=true,m=20.,dims=MVector(1.,.8,.6))
+    attachments=map((.2,-.2)) do offset
+        node=CompliantTopologyNode(:bumper;mass_kg=1.,inertia_body_kg_m2=.004,position=SVector(.12,0.,0.))
+        edge=CompliantTopologyEdge(:mount,0,1;parent_point_body=Z,child_point_body=SVector(-.11,0.,0.),
+            k_translation_n_m=200.,c_translation_n_s_m=.2,k_rotation_n_m_rad=2.,c_rotation_n_m_s_rad=.02)
+        CompliantAttachment(model=build_compliant_topology([node],[edge]),link=bus,mount_point=SVector(.5,offset,0.))
+    end
+    sc=SpacecraftModel(links=[bus],root=bus,prop_mass=0.,inertia_tensor=bus.inertia,
+        initial_condition=CartesianInitialCondition(SVector(7e6,0.,0.),Z),attachments=collect(attachments))
+    base=SM.SimConfig._with_configuration(fixture();dynamics_model=DynamicsModel([sc],()))
+    args=C.with_contact_model(base,ArmContact(SVector(-.4,.3,.2)))
+    @test S._validate_run_models!(args,:tsit5)===nothing
+    @test [b.mass_kg for b in S._contact_bodies(args)]==[20.,1.,1.]
+    u=S.build_initial_conditions(args);p=S._prepare_run_runtime!(args,u,:tsit5)
+    plain=S._prepare_run_runtime!(base,u,:tsit5);owner=Ref{Union{Nothing,C.ContactRunState}}(nothing)
+    S._initialize_contact_runtime!(p,u,owner)
+    try
+        du=zero(u);baseline=zero(u)
+        S.spacecraft_dynamics!(baseline,u,plain,0.);S.spacecraft_dynamics!(du,u,p,0.)
+        states,_=last(owner[].runtime.observations);loads=C.contact_evaluate!(owner[].runtime,states,0.)
+        bus_delta=du.sc[1].vel-baseline.sc[1].vel
+        @test bus_delta≈loads[1].force_n/20 atol=1e-12
+        for i in 1:2
+            @test du.sc[1].att_v[:,i]-baseline.sc[1].att_v[:,i]+bus_delta≈loads[i+1].force_n atol=1e-12
+            @test .004*(du.sc[1].att_ω[:,i]-baseline.sc[1].att_ω[:,i])≈loads[i+1].torque_nm atol=1e-12
+        end
+    finally
+        C.contact_close!(owner[].runtime)
+    end
+end
 end

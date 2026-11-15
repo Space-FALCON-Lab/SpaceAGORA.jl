@@ -64,20 +64,33 @@ COM torques and returned contact COM torques are world-frame, in SI units.
 Smooth torques exclude gyroscopic pseudo-torques. `ContactBody` supplies finite
 positive physical mass and symmetric positive-definite body-frame COM inertia.
 
-A provider must reset all history for every query, including repeated states,
+A provider must reset all trial scratch for every query, including repeated states,
 reversed times and rejected trial steps. It must not call a native time step,
 cache an old force, mutate observations or include smooth loads in its returned
-contact wrench. It must reject native warnings, capacity exhaustion, nonfinite
+contact wrench. Hybrid providers may read their committed mode, but cannot
+change it during trial evaluations. It must reject native warnings, capacity exhaustion, nonfinite
 results and unconverged solves. Core's balance check is not a convergence test.
 
 ## Provider inventory
 
 Check `require_version(v"0.2.0")` before method definitions/native loading and
-again during package initialization. The only extension hooks are
+again during package initialization. The common extension hooks are
 `contact_preflight`, `contact_prepare`, `contact_evaluate!` and `contact_close!`.
 The consumed types/helpers are `AbstractContactModel`, `AbstractContactRuntime`,
 `ContactBody`, `ContactState`, `ContactWrench` and `with_contact_model`.
 `ContactRunState` and engine internals are not provider APIs.
+
+Hybrid models additionally subtype `AbstractHybridContactModel` and return an
+`AbstractHybridContactRuntime`. Their `contact_event_value` is positive inside
+the current mode; a downward zero crossing asks core to locate a transition.
+Core calls `contact_accept!` only at initialization, localized events and accepted
+steps. That hook recomputes from the supplied complete state, commits the mode,
+and returns one `ContactVelocityCorrection` per body. Core rejects nonfinite
+corrections, net linear/angular impulse, or an increase in kinetic energy. It
+records projection work separately from continuous contact work. Event trial
+forces may extend a mode's equations outside its admissible region for root
+localization; physical qualification must check accepted states and both sides
+of transitions. Providers cannot advance time or modify the integrator directly.
 
 Core tests cover zero-contact trajectory identity, trial-state purity, one-time
 wrench injection, moment balance, unsupported configurations, serial ownership
@@ -90,6 +103,9 @@ contact law or deployment scenario.
 ```@docs
 SpaceAGORA.ContactLoadServices.AbstractContactModel
 SpaceAGORA.ContactLoadServices.AbstractContactRuntime
+SpaceAGORA.ContactLoadServices.AbstractHybridContactModel
+SpaceAGORA.ContactLoadServices.AbstractHybridContactRuntime
+SpaceAGORA.ContactLoadServices.ContactVelocityCorrection
 SpaceAGORA.ContactLoadServices.ContactBody
 SpaceAGORA.ContactLoadServices.ContactState
 SpaceAGORA.ContactLoadServices.ContactWrench
@@ -97,5 +113,7 @@ SpaceAGORA.ContactLoadServices.contact_preflight
 SpaceAGORA.ContactLoadServices.contact_prepare
 SpaceAGORA.ContactLoadServices.contact_evaluate!
 SpaceAGORA.ContactLoadServices.contact_close!
+SpaceAGORA.ContactLoadServices.contact_event_value
+SpaceAGORA.ContactLoadServices.contact_accept!
 SpaceAGORA.ContactLoadServices.with_contact_model
 ```

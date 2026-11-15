@@ -1094,6 +1094,10 @@ function run_simulation(
         callbacks = CallbackSet(SimulationModel.SimulationCallbacks.interlink_scheduler_initialization(; initialization_active), callbacks,
             SimulationModel.interlink_scheduler_callback(; initialization_active))
     end
+    contact_run=p.shared_buffers.contact_runtime[]
+    if contact_run!==nothing && contact_run.runtime isa CLS.AbstractHybridContactRuntime
+        callbacks=CallbackSet(_contact_callbacks(p),callbacks)
+    end
     # Last, after every wrapper: building a CallbackSet from another flattens it
     # back into tuples.
     callbacks = _solver_callback_set(callbacks)

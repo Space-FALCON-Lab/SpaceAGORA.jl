@@ -85,7 +85,8 @@ function _initialize_contact_runtime!(p, initial_state, owner)
     sc = only(initial_state.sc)
     runtime = CLS.contact_prepare(only(p.args.contact_models), _contact_bodies(p.args))
     runtime isa CLS.AbstractContactRuntime || throw(ArgumentError("Contact prepare must return AbstractContactRuntime."))
-    run = CLS.ContactRunState(runtime, SVector{3,Float64}(sc.pos), SVector{3,Float64}(sc.vel), Threads.Atomic{Bool}(false))
+    run = CLS.ContactRunState(runtime, SVector{3,Float64}(sc.pos), SVector{3,Float64}(sc.vel), Threads.Atomic{Bool}(false),
+        Ref{Any}(nothing),Ref(0.),Ref(0),NamedTuple{(:time_s,:work_J),Tuple{Float64,Float64}}[])
     owner[] = run
     p.shared_buffers.contact_runtime[] = run
     p.shared_buffers.rhs_plan_override[] = (mode=:serial, allotment=1, scheduler=:serial,
@@ -117,6 +118,7 @@ function _apply_contact_loads!(du_view, sc, p, t, forces, torques, arm_loads=not
         end
     end
     states=Tuple(observations)
+    run.observations[]=states
     all(s -> all(name -> all(isfinite, getfield(s,name)), fieldnames(CLS.ContactState)), states) && isfinite(t) ||
         throw(ArgumentError("Nonfinite contact trial state or smooth load."))
     loads = CLS.contact_evaluate!(run.runtime, states, Float64(t))
@@ -151,4 +153,72 @@ function _apply_contact_loads!(du_view, sc, p, t, forces, torques, arm_loads=not
         SimulationModel.ClothRobotArmDynamics._coupled_robot_arm_derivatives!(du_view,sc,arm_loads.plan,arm_loads.loads)
     end
     return nothing
+end
+
+function _contact_observe_at!(p,u,t)
+    # Evaluate a complete fresh trial; never read the last adaptive-stage query.
+    spacecraft_dynamics!(zero(u),u,p,Float64(t))
+    return p.shared_buffers.contact_runtime[].observations[]
+end
+
+function _contact_accept_core!(integrator)
+    p=integrator.p;run=p.shared_buffers.contact_runtime[]
+    states=_contact_observe_at!(p,integrator.u,integrator.t)
+    corrections=CLS.contact_accept!(run.runtime,states,Float64(integrator.t))
+    corrections isa Tuple && length(corrections)==length(states) &&
+        all(c->c isa CLS.ContactVelocityCorrection,corrections) ||
+        throw(ArgumentError("Hybrid contact must return one velocity correction per body."))
+    all(c->all(isfinite,c.linear_world_m_s)&&all(isfinite,c.angular_body_rad_s),corrections) ||
+        throw(ArgumentError("Nonfinite hybrid contact projection."))
+    CM=SimulationModel.ClothMultibody;bodies=_contact_bodies(p.args)
+    impulse=SVector(0.,0.,0.);moment=impulse;work=0.;scale=1.
+    for (b,s,c) in zip(bodies,states,corrections)
+        dp=b.mass_kg*c.linear_world_m_s
+        dh=CM._rot(s.quaternion)*(b.inertia_body_kg_m2*c.angular_body_rad_s)
+        impulse+=dp;moment+=cross(s.position_m-first(states).position_m,dp)+dh
+        scale+=norm(dp)+norm(dh)
+        work+=dot(dp,s.velocity_m_s+c.linear_world_m_s/2)+
+            dot(b.inertia_body_kg_m2*c.angular_body_rad_s,s.angular_velocity_body_rad_s+c.angular_body_rad_s/2)
+    end
+    norm(impulse)<=1e-10*scale && norm(moment)<=1e-10*scale ||
+        throw(ArgumentError("Hybrid contact projection violates momentum balance."))
+    work<=1e-12 || throw(ArgumentError("Hybrid contact projection adds kinetic energy."))
+    changed=any(c->!iszero(c.linear_world_m_s)||!iszero(c.angular_body_rad_s),corrections)
+    if changed
+        sc=only(integrator.u.sc);c=first(corrections)
+        sc.vel.+=c.linear_world_m_s;sc.ω.+=c.angular_body_rad_s
+        arm=_robot_arm_coupling(p.args,1,Float64(integrator.t))
+        for i in 2:length(corrections)
+            delta=corrections[i]
+            if arm===nothing
+                sc.att_v[:,i-1].+=delta.linear_world_m_s-c.linear_world_m_s
+                sc.att_ω[:,i-1].+=delta.angular_body_rad_s
+            else
+                sc.arm_v[:,i-1].+=delta.linear_world_m_s
+                sc.arm_ω[:,i-1].+=delta.angular_body_rad_s
+            end
+        end
+        run.projection_work_J[]+=work;run.projection_count[]+=1
+        push!(run.projections,(time_s=Float64(integrator.t),work_J=work))
+    end
+    # A mode can change even when its capture velocity is exactly zero.
+    # Recompute the RHS after every accepted hybrid transition.
+    DiffEqBase.u_modified!(integrator,true)
+    nothing
+end
+
+function _contact_callbacks(p)
+    run=p.shared_buffers.contact_runtime[]
+    (run===nothing || !(run.runtime isa CLS.AbstractHybridContactRuntime)) && return CallbackSet()
+    condition=(u,t,integrator)->begin
+        states=_contact_observe_at!(integrator.p,u,t)
+        value=CLS.contact_event_value(run.runtime,states,Float64(t))
+        isfinite(value) || throw(ArgumentError("Nonfinite hybrid contact event value."))
+        value
+    end
+    event=ContinuousCallback(condition,nothing,_contact_accept_core!;
+        abstol=1e-12,reltol=0.,save_positions=(true,true))
+    accepted=DiscreteCallback((u,t,integrator)->true,_contact_accept_core!;
+        initialize=(callback,u,t,integrator)->_contact_accept_core!(integrator),save_positions=(false,false))
+    CallbackSet(event,accepted)
 end

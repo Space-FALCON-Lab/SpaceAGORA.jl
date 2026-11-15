@@ -218,7 +218,10 @@ function _contact_callbacks(p)
     end
     event=ContinuousCallback(condition,nothing,_contact_accept_core!;
         abstol=1e-12,reltol=0.,save_positions=(true,true))
+    # A continuous event can save first, followed by capture in this accepted
+    # callback. Explicitly save the corrected state so right-continuous dense
+    # output does not retain only the pre-projection event state.
     accepted=DiscreteCallback((u,t,integrator)->true,_contact_accept_core!;
-        initialize=(callback,u,t,integrator)->_contact_accept_core!(integrator),save_positions=(false,false))
+        initialize=(callback,u,t,integrator)->_contact_accept_core!(integrator),save_positions=(false,true))
     CallbackSet(event,accepted)
 end

@@ -31,6 +31,9 @@ function C.contact_accept!(rt::HybridRuntime,states::NTuple{2,C.ContactState},t:
     if !rt.released && t>=.003-1e-12
         rt.released=true;rt.release_time=t
     end
+    if rt.kind==:late && (t<.003-1e-12 || length(rt.accepted)<2 || rt.accepted[end-1]!=t)
+        return (C.ContactVelocityCorrection(Z,Z),C.ContactVelocityCorrection(Z,Z))
+    end
     if !rt.projected
         rt.projected=true
         relative=states[2].velocity_m_s[1]-states[1].velocity_m_s[1]
@@ -61,5 +64,12 @@ end
         @test_throws ArgumentError run_simulation(C.with_contact_model(base,HybridContact(kind));return_solution=true,visualization=false)
         @test last(CREATED).closed
     end
+end
+@testset "capture after a continuous event saves the corrected state" begin
+    sol=run_simulation(C.with_contact_model(fixture(),HybridContact(:late));return_solution=true,visualization=false)
+    rt=last(CREATED);run=sol.prob.p.shared_buffers.contact_runtime[]
+    @test rt.projected && rt.closed
+    @test only(run.projections).time_s≈.003 atol=1e-10
+    @test abs(sol(rt.release_time;continuity=:right).sc[1].att_v[1,1])<1e-14
 end
 end

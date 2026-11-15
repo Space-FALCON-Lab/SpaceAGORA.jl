@@ -57,7 +57,7 @@ function fixture(; h=2.0^-12, duration=.01, position=SVector(7e6,0.,0.))
 end
 
 @testset "experimental contact service and refusals" begin
-    SpaceAGORA.Conformance.test_service_facade(C; version=v"0.1.0")
+    SpaceAGORA.Conformance.test_service_facade(C; version=v"0.2.0")
     @test_throws ArgumentError C.ContactBody(-1.,Matrix{Float64}(I,3,3))
     @test_throws ArgumentError C.ContactBody(1.,zeros(3,3))
     args=C.with_contact_model(fixture(),FakeContact(:zero))

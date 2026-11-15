@@ -3262,13 +3262,7 @@ end
     _robot_arm_present(p) || return nothing
     coupling = _robot_arm_coupling(p.args, sat_idx, t; members=_control_members(p, sat_idx))
     coupling === nothing && return nothing
-    SimulationModel.assign_coupled_cloth_robot_arm_rhs!(
-        du_view,
-        sc_view,
-        coupling.plan,
-        coupling.t_s,
-        forces,
-        torques;
+    settings=(;
         k_translation_n_m=coupling.k_translation_n_m,
         c_translation_n_s_m=coupling.c_translation_n_s_m,
         k_rotation_n_m_rad=coupling.k_rotation_n_m_rad,
@@ -3276,6 +3270,13 @@ end
         joint_actuators=coupling.joint_actuators,
         link_gravity_ii=_ArmLinkGravity(p, t, sat_idx),
     )
+    if p.shared_buffers.contact_runtime[] !== nothing
+        loads=SimulationModel.ClothRobotArmDynamics._coupled_robot_arm_loads!(
+            sc_view,coupling.plan,coupling.t_s,forces,torques;settings...)
+        return (;plan=coupling.plan,loads)
+    end
+    SimulationModel.assign_coupled_cloth_robot_arm_rhs!(
+        du_view,sc_view,coupling.plan,coupling.t_s,forces,torques;settings...)
     return nothing
 end
 
@@ -3815,9 +3816,9 @@ Base.@propagate_inbounds function _spacecraft_full_rhs!(sc_du, sc_state, p, i, t
         torques = MVector{3, Float64}(0.0, 0.0, 0.0)
         _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
         mass_rate, rw_torque_body = _control_effectors_with_wheels!(forces, torques, sc_view, p, i, t, debug_control)
-        _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
+        arm_loads=_apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
         _apply_attachments_rigid!(du_view, sc_view, p, i, t, forces, torques, dynamic_effectors)
-        _apply_contact_loads!(du_view, sc_view, p, t, forces, torques)
+        _apply_contact_loads!(du_view, sc_view, p, t, forces, torques, arm_loads)
         heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
             p,
             sc_view,

@@ -273,12 +273,14 @@ function _coupled_parent_kinematics(sc_view, parent::Int, p_body)
     )
 end
 
-"""Write coupled compliant robot-arm derivatives into the simulation RHS vector.
+"""Assemble smooth link COM loads and add the joint reaction to the moving bus.
 
-`link_gravity_ii` is an optional callable `r_ii -> acceleration` evaluated at each link's own
-inertial position; `nothing` (default) applies no gravity to the links."""
-function assign_coupled_cloth_robot_arm_rhs!(
-    du_view,
+Forces use world axes and torques use each link's body frame. Gravity is evaluated
+at each link's own position. No body derivatives are assigned, so contact loads
+can be added once before acceleration is computed. The returned buffers belong
+to this evaluation and do not retain history across trial states.
+"""
+function _coupled_robot_arm_loads!(
     sc_view,
     plan::RobotArmPlan,
     t_s::Real,
@@ -291,9 +293,7 @@ function assign_coupled_cloth_robot_arm_rhs!(
     joint_actuators::AbstractVector{CompliantJointActuator}=CompliantJointActuator[],
     link_gravity_ii=nothing,
 )
-    hasproperty(sc_view, :arm_r) || return nothing
     n = length(plan.model.links)
-    n == 0 && return nothing
     Kx = _joint_compliance_matrices(k_translation_n_m, n, :k_translation_n_m)
     Cx = _joint_compliance_matrices(c_translation_n_s_m, n, :c_translation_n_s_m)
     Kr = _joint_compliance_matrices(k_rotation_n_m_rad, n, :k_rotation_n_m_rad)
@@ -353,6 +353,17 @@ function assign_coupled_cloth_robot_arm_rhs!(
         torques_body[i] += child.R' * torque_child_world
     end
 
+    if link_gravity_ii !== nothing
+        for i in eachindex(plan.model.links)
+            forces[i] += plan.model.links[i].mass_kg *
+                SVector{3,Float64}(link_gravity_ii(_coupled_body_state(sc_view,i).r))
+        end
+    end
+    return (;forces, torques_body)
+end
+
+"""Assign arm derivatives from the complete smooth-plus-contact COM loads."""
+function _coupled_robot_arm_derivatives!(du_view, sc_view, plan::RobotArmPlan, loads)
     for i in eachindex(plan.model.links)
         link = plan.model.links[i]
         state = _coupled_body_state(sc_view, i)
@@ -360,11 +371,23 @@ function assign_coupled_cloth_robot_arm_rhs!(
         qdot = 0.5 .* _quat_raw_mul(state.q, SVector{4, Float64}(state.ω[1], state.ω[2], state.ω[3], 0.0))
         du_view.arm_r[:, i] .= state.v
         du_view.arm_q[:, i] .= qdot
-        f_link = link_gravity_ii === nothing ? forces[i] :
-            forces[i] + link.mass_kg * SVector{3, Float64}(link_gravity_ii(state.r))
-        du_view.arm_v[:, i] .= f_link / link.mass_kg
-        du_view.arm_ω[:, i] .= J \ (torques_body[i] - cross(state.ω, J * state.ω))
+        du_view.arm_v[:, i] .= loads.forces[i] / link.mass_kg
+        du_view.arm_ω[:, i] .= J \ (loads.torques_body[i] - cross(state.ω, J * state.ω))
     end
+    return nothing
+end
+
+"""Write coupled compliant robot-arm derivatives into the simulation RHS vector.
+
+`link_gravity_ii` is an optional callable evaluated at each link's own inertial
+position. Joint reaction loads are added to the bus exactly once.
+"""
+function assign_coupled_cloth_robot_arm_rhs!(du_view, sc_view, plan::RobotArmPlan,
+        t_s::Real, base_forces_world, base_torques_body; kwargs...)
+    hasproperty(sc_view, :arm_r) || return nothing
+    isempty(plan.model.links) && return nothing
+    loads=_coupled_robot_arm_loads!(sc_view,plan,t_s,base_forces_world,base_torques_body;kwargs...)
+    _coupled_robot_arm_derivatives!(du_view,sc_view,plan,loads)
     return nothing
 end
 

@@ -1,6 +1,6 @@
 # Experimental contact-load services
 
-`SpaceAGORA.ContactLoadServices` is a separate, exact-version `v"0.1.0"`
+`SpaceAGORA.ContactLoadServices` is a separate, exact-version `v"0.2.0"`
 contract for contact forces evaluated at the integrator's current trial state.
 It does not propagate any state. The optional MuJoCo companion implements the
 native contact solve; the core package has no native contact dependency.
@@ -15,16 +15,18 @@ copying or sharing live native handles.
 
 ## Supported first slice
 
-One rigid spacecraft link and one generic compliant attachment body, connected
-directly to the bus mount by one joint. The joint coefficients must be finite,
+One rigid spacecraft link with generic compliant attachments, or the existing
+compliant robot-arm route supplied by one `RobotArmReactionEffector`. All links
+participate with their own mass and full inertia. The arm requires a nonempty,
+fixed rest plan and no joint actuators. The joint coefficients must be finite,
 nonnegative and isotropic. Use serial `:tsit5`, attitude integration and a fixed
 time-bounded mission. Both maximum step caps must be positive and at most
 `2^-10` seconds; begin with `2^-12` and refine. Contact pins serial execution
 and disables execution calibration; concurrent queries on one runtime fail
 before touching shared scratch. Distinct runs own distinct scratch.
 
-This first slice refuses other effectors, GNC, mounted devices, articulated
-backbones, multiple bodies/attachments, variable rest schedules, actuators,
+This experimental slice refuses other effectors, GNC, mounted devices, articulated
+backbones, mixed attachment/arm routes, variable rest schedules, actuators,
 external propagation, interlinks, checkpoint/resume, custom callbacks and
 reused solver caches. It is a bounded gravity-free experiment, not a qualified
 general collision interface. Provider-specific geometry and numerical settings
@@ -34,13 +36,24 @@ are checked before native allocation.
 
 1. Assemble all smooth bus and attachment loads, including the compliant mount
    reaction, without yet assigning attachment acceleration.
-2. Pass two immutable `ContactState` values and the exact trial time to
-   `contact_evaluate!`. Slot 1 is the bus and slot 2 is the attachment body.
-3. Validate the two contact-only `ContactWrench` values, including finite values,
+2. Pass an immutable tuple of `ContactState` values and the exact trial time to
+   `contact_evaluate!`. Slot 1 is the bus; remaining slots follow attachment or
+   arm state-column order.
+3. Validate one contact-only `ContactWrench` per body, including finite values,
    equal/opposite force and moment balance about a common origin.
-4. Add each wrench once to its body's COM load. Compute both accelerations,
+4. Add each wrench once to its body's COM load. Compute all accelerations,
    then subtract the final bus acceleration once from the relative attachment
    acceleration.
+
+Arm positions and velocities are already inertial in the existing arm state;
+their derivatives do not subtract bus acceleration. Arm smooth-load assembly is
+separate from derivative assignment so contact is included before computing each
+link's acceleration. With a zero-contact provider, the existing arm trajectory
+is bit-identical. Generic attachments retain their relative translation layout.
+
+This force-only interface does not by itself implement exact sticking. The
+expanded arm/geometry and exact-sticking qualification for Issue #4 is in
+progress; passing core load-injection tests is not physical qualification.
 
 Positions and velocities are in inertial-parallel axes relative to an origin
 following the initial bus velocity. This removes the large initial orbital
@@ -59,7 +72,7 @@ results and unconverged solves. Core's balance check is not a convergence test.
 
 ## Provider inventory
 
-Check `require_version(v"0.1.0")` before method definitions/native loading and
+Check `require_version(v"0.2.0")` before method definitions/native loading and
 again during package initialization. The only extension hooks are
 `contact_preflight`, `contact_prepare`, `contact_evaluate!` and `contact_close!`.
 The consumed types/helpers are `AbstractContactModel`, `AbstractContactRuntime`,

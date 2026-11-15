@@ -1,7 +1,7 @@
 """
     SpaceAGORA.ContactLoadServices
 
-Experimental v0.1.0 contract for same-trial-state contact loads. Core owns all
+Experimental v0.2.0 contract for same-trial-state contact loads. Core owns all
 body states and integration; providers return only contact COM wrenches. Each
 run owns a separate runtime, which is closed on success and failure. Providers
 must reset all scratch/history on every query and must never integrate time.
@@ -9,7 +9,7 @@ must reset all scratch/history on every query and must never integrate time.
 module ContactLoadServices
 using LinearAlgebra, StaticArrays
 
-const CONTRACT_VERSION = v"0.1.0"
+const CONTRACT_VERSION = v"0.2.0"
 struct CompatibilityError <: Exception
     message::String
 end
@@ -26,7 +26,8 @@ abstract type AbstractContactModel end
 """One run's provider scratch. Reset fully on every evaluate call; never integrate."""
 abstract type AbstractContactRuntime end
 
-"""Physical body at its COM. Slot 1 is the rigid bus; slot 2 its sole attachment body."""
+"""Physical body at its COM. Slot 1 is the rigid bus; remaining slots are the
+attachment or compliant-arm links in state-column order."""
 struct ContactBody
     mass_kg::Float64
     inertia_body_kg_m2::SMatrix{3,3,Float64,9}
@@ -59,16 +60,16 @@ struct ContactWrench
 end
 
 """Validate provider geometry/settings before allocating native resources."""
-contact_preflight(model::AbstractContactModel, bodies::NTuple{2,ContactBody}) =
+contact_preflight(model::AbstractContactModel, bodies::NTuple{N,ContactBody}) where {N} =
     throw(ArgumentError("No contact provider implements preflight for $(typeof(model))."))
 """Allocate one runtime; clean up partial allocations if preparation throws."""
-contact_prepare(model::AbstractContactModel, bodies::NTuple{2,ContactBody}) =
+contact_prepare(model::AbstractContactModel, bodies::NTuple{N,ContactBody}) where {N} =
     throw(ArgumentError("No contact provider implements prepare for $(typeof(model))."))
-"""Return a pair of ContactWrenches for this complete trial state/time.
+"""Return one ContactWrench per body for this complete trial state/time.
 Reject nonfinite results, warnings, capacity exhaustion and unconverged solves;
 never reuse a previous force or advance native time. Inputs cannot be mutated.
 """
-contact_evaluate!(runtime::AbstractContactRuntime, states::NTuple{2,ContactState}, time_s::Float64) =
+contact_evaluate!(runtime::AbstractContactRuntime, states::NTuple{N,ContactState}, time_s::Float64) where {N} =
     throw(ArgumentError("No contact evaluator implements $(typeof(runtime))."))
 """Release this run's native resources. Must be safe after a failed query and idempotent."""
 contact_close!(runtime::AbstractContactRuntime) =

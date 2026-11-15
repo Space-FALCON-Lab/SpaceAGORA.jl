@@ -127,35 +127,46 @@ function cloth_robot_arm_initial_state(plan::RobotArmPlan; t_s::Real=0.0)
     )
 end
 
-"""Return body and state dimensions for a coupled compliant robot-arm plan."""
-function coupled_cloth_robot_arm_state_shape(plan::RobotArmPlan)
+"""Return body and state dimensions for a coupled compliant robot-arm plan.
+
+`relative_positions=true` uses `arm_rel_r` (link COM minus bus COM, in inertial
+axes), with derivative `arm_v - vel`. Contact-enabled runs select this chart to
+avoid losing small deflections at large inertial origins. The default preserves
+legacy absolute `arm_r`. Both charts retain absolute `arm_v` and inertial attitudes.
+"""
+function coupled_cloth_robot_arm_state_shape(plan::RobotArmPlan; relative_positions::Bool=false)
     n = length(plan.model.links)
-    return (
-        arm_r=zeros(3, n),
+    positions = relative_positions ? (arm_rel_r=zeros(3, n),) : (arm_r=zeros(3, n),)
+    return merge(positions, (
         arm_q=zeros(4, n),
         arm_v=zeros(3, n),
         arm_ω=zeros(3, n),
-    )
+    ))
 end
 
 """Write the compliant robot-arm initial state into a spacecraft view."""
 function initialize_coupled_cloth_robot_arm_state!(sc_view, plan::RobotArmPlan; t_s::Real=0.0)
-    hasproperty(sc_view, :arm_r) || return nothing
+    (hasproperty(sc_view, :arm_r) || hasproperty(sc_view, :arm_rel_r)) || return nothing
     sample = robot_arm_plan_sample(plan, t_s)
     base_q = hasproperty(sc_view, :q) ? _unit_quat(sc_view.q) : plan.base_pose.quaternion
     base_r = SVector{3, Float64}(sc_view.pos)
     base_v = hasproperty(sc_view, :vel) ? SVector{3, Float64}(sc_view.vel) : SVector{3, Float64}(0.0, 0.0, 0.0)
     base_ω = hasproperty(sc_view, :ω) ? SVector{3, Float64}(sc_view.ω) : SVector{3, Float64}(0.0, 0.0, 0.0)
-    pose = cloth_fk(plan.model, ClothArmBasePose(base_r, base_q), sample.q)
+    relative = hasproperty(sc_view, :arm_rel_r)
+    pose = cloth_fk(plan.model, ClothArmBasePose(relative ? zero(base_r) : base_r, base_q), sample.q)
     R_base = _rot(base_q)
     ω_world = R_base * base_ω
     for i in eachindex(plan.model.links)
         r = pose.link_com_positions[i]
         q = pose.link_quaternions[i]
         R_link = _rot(q)
-        sc_view.arm_r[:, i] .= r
+        if relative
+            sc_view.arm_rel_r[:, i] .= r
+        else
+            sc_view.arm_r[:, i] .= r
+        end
         sc_view.arm_q[:, i] .= q
-        sc_view.arm_v[:, i] .= base_v + cross(ω_world, r - base_r)
+        sc_view.arm_v[:, i] .= base_v + cross(ω_world, relative ? r : r - base_r)
         sc_view.arm_ω[:, i] .= R_link' * ω_world
     end
     return nothing
@@ -235,7 +246,9 @@ end
 """Read one coupled robot-arm body state from a spacecraft view."""
 @inline function _coupled_body_state(sc_view, i::Int)
     return (
-        r=SVector{3, Float64}(sc_view.arm_r[:, i]),
+        r=hasproperty(sc_view, :arm_rel_r) ?
+            SVector{3,Float64}(sc_view.pos) + SVector{3,Float64}(sc_view.arm_rel_r[:,i]) :
+            SVector{3,Float64}(sc_view.arm_r[:,i]),
         q=_unit_quat(sc_view.arm_q[:, i]),
         v=SVector{3, Float64}(sc_view.arm_v[:, i]),
         ω=SVector{3, Float64}(sc_view.arm_ω[:, i]),
@@ -244,9 +257,12 @@ end
 
 """Return parent attachment kinematics for spacecraft-coupled arm dynamics."""
 function _coupled_parent_kinematics(sc_view, parent::Int, p_body)
+    # Contact-enabled arms use one bus-relative, inertial-parallel chart for
+    # internal joint geometry; gravity still reads world COMs via _coupled_body_state.
+    relative = hasproperty(sc_view, :arm_rel_r)
     if parent == 0
         q = hasproperty(sc_view, :q) ? _unit_quat(sc_view.q) : _Q_IDENTITY
-        r = SVector{3, Float64}(sc_view.pos)
+        r = relative ? SVector(0.,0.,0.) : SVector{3, Float64}(sc_view.pos)
         v = SVector{3, Float64}(sc_view.vel)
         ω = hasproperty(sc_view, :ω) ? SVector{3, Float64}(sc_view.ω) : SVector{3, Float64}(0.0, 0.0, 0.0)
         R = _rot(q)
@@ -262,23 +278,26 @@ function _coupled_parent_kinematics(sc_view, parent::Int, p_body)
     end
     s = _coupled_body_state(sc_view, parent)
     R = _rot(s.q)
+    r = relative ? SVector{3,Float64}(sc_view.arm_rel_r[:,parent]) : s.r
     return (
-        r=s.r,
+        r=r,
         q=s.q,
         R=R,
         ω=s.ω,
         ω_world=R * s.ω,
-        point=s.r + R * p_body,
+        point=r + R * p_body,
         point_velocity=_body_offset_velocity_world(s.v, s.q, s.ω, p_body),
     )
 end
 
-"""Write coupled compliant robot-arm derivatives into the simulation RHS vector.
+"""Assemble smooth link COM loads and add the joint reaction to the moving bus.
 
-`link_gravity_ii` is an optional callable `r_ii -> acceleration` evaluated at each link's own
-inertial position; `nothing` (default) applies no gravity to the links."""
-function assign_coupled_cloth_robot_arm_rhs!(
-    du_view,
+Forces use world axes and torques use each link's body frame. Gravity is evaluated
+at each link's own position. No body derivatives are assigned, so contact loads
+can be added once before acceleration is computed. The returned buffers belong
+to this evaluation and do not retain history across trial states.
+"""
+function _coupled_robot_arm_loads!(
     sc_view,
     plan::RobotArmPlan,
     t_s::Real,
@@ -291,9 +310,7 @@ function assign_coupled_cloth_robot_arm_rhs!(
     joint_actuators::AbstractVector{CompliantJointActuator}=CompliantJointActuator[],
     link_gravity_ii=nothing,
 )
-    hasproperty(sc_view, :arm_r) || return nothing
     n = length(plan.model.links)
-    n == 0 && return nothing
     Kx = _joint_compliance_matrices(k_translation_n_m, n, :k_translation_n_m)
     Cx = _joint_compliance_matrices(c_translation_n_s_m, n, :c_translation_n_s_m)
     Kr = _joint_compliance_matrices(k_rotation_n_m_rad, n, :k_rotation_n_m_rad)
@@ -353,18 +370,45 @@ function assign_coupled_cloth_robot_arm_rhs!(
         torques_body[i] += child.R' * torque_child_world
     end
 
+    if link_gravity_ii !== nothing
+        for i in eachindex(plan.model.links)
+            forces[i] += plan.model.links[i].mass_kg *
+                SVector{3,Float64}(link_gravity_ii(_coupled_body_state(sc_view,i).r))
+        end
+    end
+    return (;forces, torques_body)
+end
+
+"""Assign arm derivatives from the complete smooth-plus-contact COM loads."""
+function _coupled_robot_arm_derivatives!(du_view, sc_view, plan::RobotArmPlan, loads)
     for i in eachindex(plan.model.links)
         link = plan.model.links[i]
         state = _coupled_body_state(sc_view, i)
         J = _link_inertia(link)
         qdot = 0.5 .* _quat_raw_mul(state.q, SVector{4, Float64}(state.ω[1], state.ω[2], state.ω[3], 0.0))
-        du_view.arm_r[:, i] .= state.v
+        if hasproperty(sc_view, :arm_rel_r)
+            du_view.arm_rel_r[:, i] .= state.v - SVector{3,Float64}(sc_view.vel)
+        else
+            du_view.arm_r[:, i] .= state.v
+        end
         du_view.arm_q[:, i] .= qdot
-        f_link = link_gravity_ii === nothing ? forces[i] :
-            forces[i] + link.mass_kg * SVector{3, Float64}(link_gravity_ii(state.r))
-        du_view.arm_v[:, i] .= f_link / link.mass_kg
-        du_view.arm_ω[:, i] .= J \ (torques_body[i] - cross(state.ω, J * state.ω))
+        du_view.arm_v[:, i] .= loads.forces[i] / link.mass_kg
+        du_view.arm_ω[:, i] .= J \ (loads.torques_body[i] - cross(state.ω, J * state.ω))
     end
+    return nothing
+end
+
+"""Write coupled compliant robot-arm derivatives into the simulation RHS vector.
+
+`link_gravity_ii` is an optional callable evaluated at each link's own inertial
+position. Joint reaction loads are added to the bus exactly once.
+"""
+function assign_coupled_cloth_robot_arm_rhs!(du_view, sc_view, plan::RobotArmPlan,
+        t_s::Real, base_forces_world, base_torques_body; kwargs...)
+    (hasproperty(sc_view, :arm_r) || hasproperty(sc_view, :arm_rel_r)) || return nothing
+    isempty(plan.model.links) && return nothing
+    loads=_coupled_robot_arm_loads!(sc_view,plan,t_s,base_forces_world,base_torques_body;kwargs...)
+    _coupled_robot_arm_derivatives!(du_view,sc_view,plan,loads)
     return nothing
 end
 

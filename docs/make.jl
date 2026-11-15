@@ -360,6 +360,8 @@ makedocs(
     ],
     doctest = true,
     linkcheck = true,
+    # Keep remote-link failures fatal, while allowing slow archive responses.
+    linkcheck_timeout = 30,
     # The PDS Geosciences Node often times out from CI runners (curl exit 28), which
     # failed the required docs checks of unrelated pull requests. Its two links on
     # docs/src/user/lunar_imagery_sources.md are stable archive addresses: check them

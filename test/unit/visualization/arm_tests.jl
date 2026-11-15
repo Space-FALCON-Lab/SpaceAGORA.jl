@@ -91,6 +91,10 @@ _decode_f32(b64) = collect(reinterpret(Float32, base64decode(b64)))
         v = SV.arm_pose_vector(view, SVector(0.5, 0.5, 0.5))
         @test v == [0.5, 2.5, 4.5, 0.0, 0.0, 0.0, 1.0, 1.5, 3.5, 5.5, 0.0, 0.0, 1.0, 0.0]
         @test isempty(SV.arm_pose_vector((pos=zeros(3),), zeros(3)))
+        origin=SVector(7e6,-3e6,1e6)
+        relative=(pos=origin,arm_rel_r=view.arm_r.-.5,arm_q=view.arm_q)
+        @test SV.arm_pose_vector(relative,origin)==v
+        @test SV.arm_pose_vector(relative,origin.-.25)[1:3]==v[1:3].+.25
     end
 
     @testset "coupled run records the arm and the page carries it" begin

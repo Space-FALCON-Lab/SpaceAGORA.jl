@@ -19,4 +19,3 @@ function fixture(; h=2.0^-12, duration=.01, position=SVector(7e6,0.,0.))
         integration_tolerances=IntegrationTolerances(dt_max_orbit=h,dt_max_atmosphere=h,
             reltol_orbit=1e-10,abstol_orbit=1e-11,reltol_quaternion=1e-10,abstol_quaternion=1e-11))
 end
-

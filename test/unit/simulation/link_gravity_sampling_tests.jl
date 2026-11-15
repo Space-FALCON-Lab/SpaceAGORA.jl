@@ -53,6 +53,7 @@ function sampling_params(effectors, plan)
             spice_runtime_counters=(planet_pxform_runtime_calls=Threads.Atomic{Int64}(0),),
             planet_frame_ephemeris_cache=Ref{Any}(nothing),
             robot_arm_present=Ref{Union{Nothing, Bool}}(nothing),
+            contact_runtime=Ref{Union{Nothing,SpaceAGORA.ContactLoadServices.ContactRunState}}(nothing),
         ),
     )
 end

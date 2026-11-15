@@ -1,6 +1,6 @@
 module ContactHybridTests
 using Test, LinearAlgebra, StaticArrays, SpaceAGORA
-using ..ContactCouplingTests: fixture
+include("../helpers/contact_fixture.jl")
 const C=SpaceAGORA.ContactLoadServices
 const Z=SVector(0.,0.,0.)
 struct HybridContact <: C.AbstractHybridContactModel

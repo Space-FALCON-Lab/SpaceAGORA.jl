@@ -1055,9 +1055,9 @@ version = "1.2.0"
 
 [[deps.LoopVectorization]]
 deps = ["ArrayInterface", "CPUSummary", "CloseOpenIntervals", "DocStringExtensions", "HostCPUFeatures", "IfElse", "LayoutPointers", "LinearAlgebra", "OffsetArrays", "PolyesterWeave", "PrecompileTools", "SIMDTypes", "SLEEFPirates", "Static", "StaticArrayInterface", "ThreadingUtilities", "UnPack", "VectorizationBase"]
-git-tree-sha1 = "7a8449291a67c97435ec4d704ca08a548097305c"
+git-tree-sha1 = "601fbca43b01121626e25c084dce417f6bb8a4b3"
 uuid = "bdcacae8-1622-11e9-2a5c-532679323890"
-version = "0.12.175"
+version = "0.12.176"
 
     [deps.LoopVectorization.extensions]
     ForwardDiffExt = ["ChainRulesCore", "ForwardDiff"]

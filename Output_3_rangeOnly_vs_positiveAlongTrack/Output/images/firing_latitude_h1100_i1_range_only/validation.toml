@@ -1,0 +1,54 @@
+completed_utc = "2026-11-12T20:38:38.568"
+force_model = "Recorded BP/c force, equal/opposite on selected helper and target; includes held out-of-range portions"
+helper_counts = [300, 800]
+latitude_bin_width_deg = 10
+latitude_definition = "u = atan2(r_hat dot (N_hat cross node_hat), r_hat dot node_hat), modulo 360 deg; instantaneous target orbital plane"
+method = "Replay each recorded held-link interval from its saved boundary states; split time at dense-output angular-bin crossings; integrate on-time and Gauss inclination rate."
+not_event_start_histogram = true
+orbit_node_definition = "Ascending mutual node is parallel to N_helper cross N_target; target crosses toward the positive helper-plane normal. Descending node is opposite."
+orbit_node_marker_tolerance_deg = 0.05
+orbit_node_markers_deg = [0, 180, 360]
+orbit_node_sampling = "Selected-helper and target osculating planes at every replay solver state during firing; plotted case summaries use the 5 s step cap. Signed ascending-node offsets are near 0 deg."
+orbits = 100
+passed = true
+physical_sources = ["gravity_kernel.jl", "recorded run_info.toml and laser_firing.feather"]
+policy = "naive_next_entering"
+relative_phase_bin_width_deg = 0.1
+relative_phase_definition = "atan2(r_helper dot T_target, r_helper dot R_target); positive is helper ahead; helper projected into target plane"
+solver = "Vern9, reltol=abstol=1e-12; 10 s versus 5 s convergence; plotted data use 5 s"
+target_altitude_km = 1100
+target_initial_inclination_deg = 1
+
+[convergence.300]
+max_bin_inclination_change_deg = 2.305242116844437e-16
+max_bin_time_change_s = 5.340552888810635e-9
+max_joint_bin_time_change_s = 4.0745362639427185e-9
+max_node_extrema_change_deg = 4.40619762898109e-16
+
+[convergence.800]
+max_bin_inclination_change_deg = 4.098963140814341e-16
+max_bin_time_change_s = 1.0339135769754648e-8
+max_joint_bin_time_change_s = 4.495404937188141e-9
+max_node_extrema_change_deg = 5.655198531684391e-15
+
+[csv_checksums]
+"case_summary.csv" = "40228c5a2d24eefe52116f58a08df16d6b839d7c8776c3a09a98d5179c91485e"
+"joint_latitude_relative_phase.csv" = "0447cc86c6689cdfac4e767064a813c64f0fc9834620b0e569aac1d46d296a75"
+"latitude_bins.csv" = "138455a5f985bc6053803b70e3026c58d8be3f2bd431fc0b46340f097463dbcc"
+
+[figure_checksums]
+"inclination_contribution_vs_argument_of_latitude.pdf" = "903153a6ad26db9a34c7e1aea09185f66361d07262def10ab35e8dcac6741320"
+"inclination_contribution_vs_argument_of_latitude.png" = "83cb09fce0845debc5289ac74f3c078b4326f9428235b6564e42e7dfe181031d"
+"joint_target_latitude_helper_relative_phase.pdf" = "39847d155bf5f953a86c82e48e7df6587d01cb2e3c6611b2c1b59bb96b985e82"
+"joint_target_latitude_helper_relative_phase.png" = "67e1c46b2b47c241e2be8a509af8172a48c3093848d6f423de68bb4d20745d46"
+"laser_on_time_and_inclination_vs_argument_of_latitude.pdf" = "5f92a339443d64b2dfa44ec89d92bcb8d35e0767dfb61faf85051ddec32bb2fd"
+"laser_on_time_and_inclination_vs_argument_of_latitude.png" = "91dcec7596259ecba0d383aceec54732875a1c09c2865bc467076317b439e961"
+"laser_on_time_and_inclination_vs_argument_of_latitude_clean.pdf" = "ea196df8720c62f1992bb960c4b7e7d16f51e1bdd000ac17e5485e8ddbbf18c8"
+"laser_on_time_and_inclination_vs_argument_of_latitude_clean.png" = "f39ed71e5626a134680df1b62c3ac241f4c102f1d22a7a4653047fd8b8c5ace8"
+"laser_on_time_vs_argument_of_latitude.pdf" = "7f0a213a7c65684b5d06f9b6761728293bb7887fd0d6c99d67eef932c1017c93"
+"laser_on_time_vs_argument_of_latitude.png" = "4993620276767852d96961361b2e9b543ee1cdbb0e0af76ee55e4cdf628040df"
+
+[source_code_checksums]
+"/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Output_2_Simulation_absolute_RN/Code/EncounterTimingRecorder.jl" = "62edaf631a7ed7398c238498539cb10850914fc5a0f89d904576dc0ba88c1c6f"
+"/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Output_3_rangeOnly_vs_positiveAlongTrack/Code/gravity_kernel.jl" = "a3c07e118da4b841d4f35d97ee15971da1cd06de7715dd174d966b34de149471"
+"/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Output_3_rangeOnly_vs_positiveAlongTrack/Code/plot_firing_latitude.jl" = "10b0925dfb1ca7f11d9df74b6fa0c45797ada5a8405b6e1b7fcef2fec01c82ae"

@@ -1,0 +1,1 @@
+laser_id,start_encounter_id,sc_a,sc_b,start_time_s,end_time_s,duration_s,start_clipped,end_clipped,within_range_s,outside_range_s,run_id,target_inclination_deg,target_altitude_km,helper_count,scheduler

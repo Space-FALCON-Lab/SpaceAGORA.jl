@@ -126,20 +126,40 @@ function make_plot(kind; directory=@__DIR__, output=directory,
         spacing=kind == :oe ? OE_SPACING : DV_SPACING,
         legend_settings=kind == :oe ? OE_LEGEND : DV_LEGEND,
         show_access=kind == :oe ? SHOW_OE_ACCESS : SHOW_DV_ACCESS,
-        colors=LINE_COLORS, styles=LINE_STYLES)
+        colors=LINE_COLORS, styles=LINE_STYLES, policies=POLICIES,
+        policy_labels=(gve_sma="\$\\Delta a\$-max", gve_inc="\$\\Delta i\$-max"),
+        specification=nothing, orbit_window=100, endpoint_row=1001, source_limits=nothing,
+        averaging_orbits::Int=0)
     kind in (:oe, :dv) || throw(ArgumentError("Expected :oe or :dv"))
     all(isfinite, (legend_settings.x_offset, legend_settings.y_offset,
         legend_settings.row_spacing)) && legend_settings.row_spacing > 0 ||
         error("Legend offsets must be finite and row_spacing must be positive and finite")
-    spec = getproperty(SPECS, kind)
+    spec = specification === nothing ? getproperty(SPECS, kind) : specification
+    length(spec.fields) == length(spec.scales) == length(spec.labels) == 4 ||
+        error("Paper figures require four quantity rows")
+    !isempty(policies) && length(unique(policies)) == length(policies) && length(policies) <= 2 ||
+        error("Paper figures require one or two distinct schedulers")
     rows = collect(CSV.File(joinpath(directory, spec.csv)))
-    expected = Set((p, h, i, n) for p in POLICIES for h in ALTITUDES
+    expected = Set((p, h, i, n) for p in policies for h in ALTITUDES
         for i in INCLINATIONS for n in HELPERS)
     length(rows) == length(expected) &&
         Set((r.scheduler, r.target_altitude_km, r.delta_i_deg, r.helpers) for r in rows) == expected ||
-        error("Expected the complete 162-case grid in $(spec.csv)")
-    all(r -> r.orbits == 100 && r.row == 1001, rows) || error("Expected 100-orbit endpoints")
-    ranges = kind == :oe ? merge(Y_LIMITS, (draan_deg=raan_limits(rows),)) : Y_LIMITS
+        error("Expected the complete $(length(expected))-case grid in $(spec.csv)")
+    all(r -> r.orbits == orbit_window && r.row == endpoint_row, rows) ||
+        error("Expected $orbit_window-orbit endpoints at row $endpoint_row")
+    averaging_orbits in (0, 2) || error("Only endpoint or last-two-orbit figures are supported")
+    if averaging_orbits > 0
+        all(r -> r.aggregation == "time_weighted_mean" &&
+            r.averaging_orbits == averaging_orbits &&
+            r.window_start_orbits == orbit_window - averaging_orbits &&
+            r.window_end_orbits == orbit_window && r.window_end_row == endpoint_row &&
+            r.window_start_row == round(Int, 10(orbit_window - averaging_orbits)) + 1 &&
+            r.sample_count == r.window_end_row - r.window_start_row + 1 &&
+            r.window_end_time_s > r.window_start_time_s, rows) ||
+            error("Invalid last-two-orbit averaging metadata")
+    end
+    ranges = source_limits === nothing ?
+        (kind == :oe ? merge(Y_LIMITS, (draan_deg=raan_limits(rows),)) : Y_LIMITS) : source_limits
     thresholds = show_access ? collect(CSV.File(joinpath(directory, "continuous_access_thresholds.csv"))) : []
     panels = Plots.Plot[]
     for (r, field) in enumerate(spec.fields), (c, altitude) in enumerate(ALTITUDES)
@@ -159,7 +179,7 @@ function make_plot(kind; directory=@__DIR__, output=directory,
             right_margin=spacing.panel_margins_mm.right*Plots.mm,
             top_margin=spacing.panel_margins_mm.top*Plots.mm,
             bottom_margin=(r == 4 ? spacing.bottom_row_margin_mm : spacing.panel_margins_mm.bottom)*Plots.mm)
-        for policy in POLICIES, (k, inclination) in enumerate(INCLINATIONS)
+        for policy in policies, (k, inclination) in enumerate(INCLINATIONS)
             curve = sort(filter(row -> row.scheduler == policy &&
                 row.target_altitude_km == altitude && row.delta_i_deg == inclination, rows);
                 by=row -> row.helpers)
@@ -182,7 +202,8 @@ function make_plot(kind; directory=@__DIR__, output=directory,
                 !ismissing(threshold.minimum_helpers) && threshold.minimum_helpers <= maximum(HELPERS) ||
                     error("Continuous-access threshold is outside this paper figure's helper range")
                 vline!(panel, [threshold.minimum_helpers];
-                    color=colors.gve_sma[k], linestyle=:dash, lw=ACCESS_LINE_WIDTH, alpha=0.75)
+                    color=getproperty(colors, Symbol(first(policies)))[k],
+                    linestyle=:dash, lw=ACCESS_LINE_WIDTH, alpha=0.75)
             end
         end
         push!(panels, panel)
@@ -193,14 +214,14 @@ function make_plot(kind; directory=@__DIR__, output=directory,
     base_y = show_access ? (0.85, 0.85-0.33, 0.17) : (0.78, 0.78-0.50)
     row_y = map(y -> first(base_y) + legend_settings.y_offset +
         (y-first(base_y))*legend_settings.row_spacing, base_y)
-    for (j, policy) in enumerate(POLICIES), (k, inclination) in enumerate(INCLINATIONS)
+    for (j, policy) in enumerate(policies), (k, inclination) in enumerate(INCLINATIONS)
         x = 0.06 + legend_settings.x_offset + (k-1)/3
         y = row_y[j]
         plot!(footer, [x, x+0.065], [y, y];
             color=getproperty(colors, Symbol(policy))[k],
             linestyle=getproperty(styles, Symbol(policy))[k], lw=LINE_WIDTH,
             marker=:circle, ms=MARKER_SIZE, markerstrokewidth=0)
-        label = "$(policy == "gve_sma" ? "\$\\Delta a\$-max" : "\$\\Delta i\$-max"), $inclination\u00b0"
+        label = "$(getproperty(policy_labels, Symbol(policy))), $inclination\u00b0"
         annotate!(footer, x+0.08, y, text(label, FONT_SIZE, :left, FONT_FAMILY))
     end
     if show_access
@@ -208,7 +229,8 @@ function make_plot(kind; directory=@__DIR__, output=directory,
             x = 0.06 + legend_settings.x_offset + (k-1)/3
             y = row_y[3]
             plot!(footer, [x, x+0.065], [y, y];
-                color=colors.gve_sma[k], linestyle=:dash, lw=ACCESS_LINE_WIDTH, alpha=0.75)
+                color=getproperty(colors, Symbol(first(policies)))[k],
+                linestyle=:dash, lw=ACCESS_LINE_WIDTH, alpha=0.75)
             annotate!(footer, x+0.08, y,
                 text("\$N_{\\mathrm{cont}},\\; $inclination^\\circ\$",
                     FONT_SIZE, :left, FONT_FAMILY))
@@ -217,8 +239,13 @@ function make_plot(kind; directory=@__DIR__, output=directory,
     geometry = canvas_geometry(settings)
     layout = grid(2, 1; heights=[1-geometry.footer_fraction, geometry.footer_fraction])
     layout[1, 1] = grid(4, 3)
-    figure = plot(panels..., footer; layout, size=geometry.size, dpi=DPI,
-        fontfamily=FONT_FAMILY)
+    average_title = averaging_orbits == 0 ? (;) :
+        (; plot_title="Time-weighted mean: reference orbits $(orbit_window - averaging_orbits)-$orbit_window",
+            plot_titlefontsize=FONT_SIZE + 1)
+    canvas_size = averaging_orbits == 0 ? geometry.size :
+        (geometry.size[1] + 90, geometry.size[2])
+    figure = plot(panels..., footer; layout, size=canvas_size, dpi=DPI,
+        fontfamily=FONT_FAMILY, average_title...)
     # Anchor titles to the same canvas coordinate, not each row's tick-label width.
     Plots.prepare_output(figure)
     for (r, label) in enumerate(spec.labels)

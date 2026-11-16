@@ -1,0 +1,15 @@
+OE_definition = "OE(t)-OE(0)"
+RAAN_definition = "independently unwrapped at every saved row; undefined equatorial RAAN omitted"
+cases = 162
+difference = false
+laser_RTN_definition = "laser-only integrals in instantaneous target RTN; signed R/T and positive/negative N"
+orbits = 80
+schedulers = ["naive_next_entering", "positive_along_track"]
+state_velocity_difference_definition = "v_laser(t)-v_no_laser(t), projected into the no-laser target RTN basis; norm is the ECI difference magnitude"
+status = "complete"
+
+[figure_checksums]
+"OE_from_feather_combined_e0.0000_nu1.0000_80orbits_h_cols.pdf" = "67711ab6174005dc96205e6a74b34936bd6efe99c1617fc1f5387fb2c8f196b4"
+"OE_from_feather_combined_e0.0000_nu1.0000_80orbits_h_cols.png" = "f422ee01198637c5719ecb3d1597d850cff413c13cf37457e15be22fa87c283c"
+"dv_RTN_split_N_from_feather_combined_e0.0000_nu1.0000_80orbits_h_cols.pdf" = "62033063301a4ce72018e957536c51f03408f25053fe0415f54fd210066cde1a"
+"dv_RTN_split_N_from_feather_combined_e0.0000_nu1.0000_80orbits_h_cols.png" = "1fa4bb2c1db492957a5919d138fce55f7f725047986273e5d440aee36a28e758"

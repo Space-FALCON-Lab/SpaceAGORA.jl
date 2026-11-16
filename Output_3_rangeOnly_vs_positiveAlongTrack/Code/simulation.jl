@@ -260,7 +260,9 @@ function save_case(s::Settings, schedule::Symbol, root)
         "settings" => settings_dict(s), "julia_version" => string(VERSION),
         "julia_threads" => Threads.nthreads(), "started_utc" => string(now(UTC)),
         "source_sha256" => Dict(name => filehash(joinpath(@__DIR__, name))
-            for name in ("layout.jl", "gravity_kernel.jl", "scheduling_policies.jl", "simulation.jl")),
+            for name in ("layout.jl", "gravity_kernel.jl", "scheduling_policies.jl", "simulation.jl",
+                relpath(joinpath(LIBRARY_ROOT, "src", "models", "satellite_interlink",
+                    "4_single_target_policies.jl"), @__DIR__))),
         "gravity_source" => relpath(GRAVITY_SOURCE, @__DIR__),
         "gravity_source_sha256" => filehash(GRAVITY_SOURCE),
         "project_sha256" => filehash(joinpath(LIBRARY_ROOT, "Project.toml")),

@@ -1,0 +1,17 @@
+OE_definition = "osculating OE_on(t)-OE_off(t); RAAN independently unwrapped over all saved rows; equatorial RAAN is undefined"
+comparison_id = "dc29c01029bebc72eac43088647b067efdf47ffb43649095423647639d9ca3bf"
+created_utc = "2026-11-09T09:48:47.721"
+difference_order = "laser_on_minus_no_laser"
+difference_trajectory_sha256 = "7cab735dd28f8f83ead81300055f55eb6cb073778d618d5167afb26b58a462ea"
+exact_time_alignment = true
+identical_initial_states = true
+laser_RTN_baseline_is_zero = true
+laser_run_id = "f8129e5100975f02cd5ff0f151ce84710569213c3a5e7fd62e924afdd5e9999e"
+laser_trajectory = "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Output_3_rangeOnly_vs_positiveAlongTrack/Output/paper_plot_mode/h1000km_t1000km/ih0.0deg_it0.5deg/N500/T630712s/naive_next_entering_e0.0000_nu1.0000/trajectory.feather"
+laser_trajectory_sha256 = "7d3a60ff12fe8b82e1229eb194998389273264d01ce3c50ce550a29a95a1fedd"
+no_laser_run_id = "37db211e9c05feb780823155b20853989e30701cca652cf0fc4791815be133f8"
+no_laser_trajectory = "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Output_4_no_laser/Output/paper_plot_mode/h1000km_t1000km/ih0.0deg_it0.5deg/N500/T630712s/no_laser_e0.0000_nu1.0000/trajectory.feather"
+no_laser_trajectory_sha256 = "e28fdc51c8ae7a0056c35056909366592e7baad674bac1b72a70e289647771fa"
+rows = 1001
+status = "complete"
+velocity_difference_definition = "project v_on(t)-v_off(t) into the same RTN basis built from r_off(t),v_off(t); includes induced gravitational trajectory changes"

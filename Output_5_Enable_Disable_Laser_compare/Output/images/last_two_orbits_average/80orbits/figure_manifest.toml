@@ -1,0 +1,31 @@
+OE_definition = "OE_laser(t)-OE_no_laser(t)"
+RAAN_definition = "independently unwrapped at every saved row; undefined equatorial RAAN omitted"
+aggregation = "time_weighted_mean"
+averaging_orbits = 2
+cases = 162
+difference = true
+laser_RTN_definition = "laser-only RTN integrals minus zero no-laser integrals; not a state-velocity difference"
+method = "trapezoidal integration of saved samples divided by elapsed window time"
+operation_order = "compute instantaneous changes/differences and RTN projections first, then average"
+orbits = 80
+period_definition = "initial Keplerian target period; not counted revolutions"
+sample_count = [21]
+schedulers = ["naive_next_entering", "positive_along_track"]
+state_velocity_difference_definition = "v_laser(t)-v_no_laser(t), projected into the no-laser target RTN basis; norm is the ECI difference magnitude"
+status = "complete"
+window_end_orbits = 80
+window_start_orbits = 78
+
+[csv_checksums]
+"continuous_access_thresholds.csv" = "c254f60947999cfb8573fb0be9c2fd8a51e056cdf60dcffcb6c43715fb5dfb2f"
+"mean_last2orbits_laser_minus_no_laser_cumulative_dv_RT_N_branches_80orbits.csv" = "d7d85258422510bc91e5ae9efb6c3d913d96ed9a69df7bc628dc10bcf247ac7e"
+"mean_last2orbits_laser_minus_no_laser_orbital_element_deltas_80orbits.csv" = "c040da3ddfe54a86d7a42c82075d8a1ad2adbd2cea6e7d8746ca19d35d1373d7"
+"mean_last2orbits_velocity_difference_RTN_80orbits.csv" = "662aa6d33b1a95208e250e93aff9e1649922b6ce87a75f7be06b269ecc6f0fd2"
+
+[figure_checksums]
+"mean_last2orbits_laser_minus_no_laser_OE_from_feather_combined_e0.0000_nu1.0000_80orbits_h_cols.pdf" = "9f491e1ac8648a8a09d383f6ac8577812a19377501f3bd176753a02b91d106d6"
+"mean_last2orbits_laser_minus_no_laser_OE_from_feather_combined_e0.0000_nu1.0000_80orbits_h_cols.png" = "5370cc80f456b1d140b2a250ed1103bf2529c1e515daa5d28c4f5358e4d23aba"
+"mean_last2orbits_laser_minus_no_laser_dv_RTN_split_N_from_feather_combined_e0.0000_nu1.0000_80orbits_h_cols.pdf" = "a88bbe8ebb3ab523a957dc25837db26bd810af7938f72e95d42d0351243ed174"
+"mean_last2orbits_laser_minus_no_laser_dv_RTN_split_N_from_feather_combined_e0.0000_nu1.0000_80orbits_h_cols.png" = "368fd1463254ce81935e4b1a6bc1b24d233aa3d85131f2fa24130a81c31cafc5"
+"mean_last2orbits_velocity_difference_RTN_laser_minus_no_laser_80orbits_h_cols.pdf" = "8d375da088e930274cf3efaa8f63a0c99d418f81a9b7a19e0910af40b2e8245c"
+"mean_last2orbits_velocity_difference_RTN_laser_minus_no_laser_80orbits_h_cols.png" = "f361441061cf549e2c4b91817b0b84ec8a2cf1b59e64c74123164d6fe5a516f3"

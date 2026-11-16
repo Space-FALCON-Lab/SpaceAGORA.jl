@@ -1,5 +1,14 @@
 # Absolute R/N campaign
 
+The production infrastructure is also reused by the
+[Output 3/4 comparison](../../Output_3_rangeOnly_vs_positiveAlongTrack/Code/README.md).
+The default `absolute_rn` grid, settings, schema and GVE behavior remain unchanged.
+`StudyConfig` additionally defines `range_along` (162 cases) and `no_laser`
+(81 cases); the shared runner accepts additional provenance hashes, and batch
+execution accepts a campaign worker/source-hash function. Encounter evaluation
+accepts `--campaign`. Existing result files are not modified. The source-safe
+resume guard intentionally still rejects a case generated with different code.
+
 This is a separate, fresh campaign. The original `Simulation` workspace and its
 results are not changed or reused. The interrupted old 700-helper campaign stays
 stopped; its four verified cases remain intact.

@@ -1,5 +1,11 @@
 # Paper figures
 
+The renderer also accepts optional `policies`, `policy_labels`, `specification`,
+`orbit_window`, `endpoint_row` and `source_limits` keywords for the Output 3/4/5
+campaigns. Defaults retain this folder's original data, styles and rendering.
+Alternate campaigns supply their own complete grids, correctly named legends
+and fitted limits; they do not overwrite the figures or CSVs here.
+
 [plot_paper_results.jl](plot_paper_results.jl) contains a local adaptation of the
 original grid renderer. It recreates only the selected 100-orbit OE and split-N
 delta-v figures from the three copied CSVs here, without importing the original

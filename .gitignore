@@ -49,6 +49,10 @@ secrets.toml
 # These LFS pointers reference pretrained models larger than the limit.
 /9_SpaceAGORA.jl-main_full integration/data/GRAM_surrogate/*.jls
 
+# Oversized, incomplete binary outputs from the interrupted simulation remain local.
+/Output_3_rangeOnly_vs_positiveAlongTrack/Output/_interrupted/20261105T191205Z-reboot/paper_plot_mode/h1000km_t1050km/ih0.0deg_it1.0deg/N800/T637134s/naive_next_entering_e0.0000_nu1.0000/encounter_states.bin.partial
+/Output_3_rangeOnly_vs_positiveAlongTrack/Output/_interrupted/20261105T191205Z-reboot/paper_plot_mode/h1000km_t1050km/ih0.0deg_it1.0deg/N800/T637134s/naive_next_entering_e0.0000_nu1.0000/trajectory.feather.partial
+
 # CSV dumps above 50 MiB remain local; smaller result tables are included.
 /Tests/results/N20_encounter_recording_validation/i0/baseline/simulation_results.csv
 /Tests/results/N20_encounter_recording_validation/i0/recorded/simulation_results.csv

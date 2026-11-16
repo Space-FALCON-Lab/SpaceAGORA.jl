@@ -261,7 +261,10 @@ function write_report(output)
         println(io, "| Laser-on within an encounter | `firing_range_audit.feather` | Derived by summing saved within-range segment durations for each encounter; includes zero for encounters never fired upon. |\n")
         println(io, "## Scope and interpretation\n")
         println(io, "- All **$(nrow(cases)) verified cases**, each spanning **100 initial target periods**; target-helper pairs only. Helpers start at 1000 km and 0 deg. Here i and h are the **initial target** inclination and altitude, not their evolving values.")
-        println(io, "- Exact grid: i = 0, 0.5, 1 deg; h = 900, 950, 1000, 1050, 1100 km; helpers = 1, 100, 200, 300, 400, 500, 600, 700, 800; schedulers = `gve_sma`, `gve_inc`.")
+        println(io, "- Exact grid: i = $(join(sort(unique(cases.target_inclination_deg)), ", ")) deg; ",
+            "h = $(join(sort(unique(cases.target_altitude_km)), ", ")) km; ",
+            "helpers = $(join(sort(unique(cases.helper_count)), ", ")); ",
+            "schedulers = $(join(sort(unique(cases.scheduler)), ", ")).")
         println(io, "- Each table pools events over the other three dimensions. **Event-weighted, not equal-case-weighted or time-weighted**: cases producing more events contribute more. These are marginal descriptive comparisons, not isolated causal scheduler effects.")
         println(io, "- Speed/range-rate extrema use **10-second samples plus exact boundary states**. They are sampled estimates, not guaranteed continuous-time extrema. Full speed/range-rate time histories for every encounter are not retained; only the longest-encounter tracks are saved. Do not interpret the extrema distributions as instantaneous-speed distributions.")
         println(io, "- Main tables include boundary-clipped intervals as observed, without extrapolating full lifetimes. Both start- and end-clipping flags are exported; `unclipped_only` distributions are also in the CSV.")
@@ -298,7 +301,7 @@ function write_report(output)
         println(io, "\n## Reproducibility and exported data\n")
         println(io, "- [Encounter events](target_helper_encounters.csv): one row per target-helper encounter, with clipping flags, sampled extrema, duration, and accumulated within-encounter laser-on.")
         println(io, "- [Laser-on events](target_helper_laser_intervals.csv): one row per uninterrupted firing interval, with within/outside-range durations.")
-        println(io, "- [Case summary and provenance](case_summary.csv): all 270 cases, including zero-event cases, totals, source directories, and source checksums.")
+        println(io, "- [Case summary and provenance](case_summary.csv): all $(nrow(cases)) cases, including zero-event cases, totals, source directories, and source checksums.")
         println(io, "- [Distributions](distributions.csv): all numerical distribution tables, plus unclipped-only sensitivity results. `contributing_cases`, `clipped_events` and `zero_events` accompany each distribution.")
         println(io, "- [Evaluation code](../../Code/evaluate_encounters.jl); [tests](../../../Tests/absolute_RN/test_encounter_evaluation.jl).\n")
         println(io, "From the project root:\n\n```bash\njulia --startup-file=no --threads=1 --gcthreads=1 Simulation_absolute_RN/Code/evaluate_encounters.jl\n```")
@@ -308,15 +311,21 @@ end
 
 function main(args=ARGS)
     input, output, report_only = DEFAULT_OUTPUT, OUTPUT, false
+    campaign = "absolute_rn"
     k = 1
     while k <= length(args)
         option = args[k]
         if option == "--report-only"
             report_only = true
-        elseif option in ("--input", "--output")
+        elseif option in ("--input", "--output", "--campaign")
             k < length(args) || error("Missing value for $option")
             k += 1
-            option == "--input" ? (input = abspath(args[k])) : (output = abspath(args[k]))
+            if option == "--campaign"
+                campaign = args[k]
+                campaign_settings(campaign)
+            else
+                option == "--input" ? (input = abspath(args[k])) : (output = abspath(args[k]))
+            end
         else
             error("Unknown option: $option")
         end
@@ -324,15 +333,16 @@ function main(args=ARGS)
     end
     if !report_only
         encounters, firing, cases = DataFrame(), DataFrame(), NamedTuple[]
-        for (index, c) in enumerate(grid_cases())
+        selected_cases = grid_cases(campaign)
+        for (index, c) in enumerate(selected_cases)
             e, l, row = read_case(input, c)
             append!(encounters, e; cols=:union)
             append!(firing, l; cols=:union)
             push!(cases, row)
-            index % 30 == 0 && println("Validated $index / 270 cases")
+            index % 30 == 0 && println("Validated $index / $(length(selected_cases)) cases")
         end
-        length(cases) == 270 && allunique(row.run_id for row in cases) ||
-            error("Expected 270 unique cases")
+        length(cases) == length(selected_cases) && allunique(row.run_id for row in cases) ||
+            error("Expected $(length(selected_cases)) unique cases")
         mkpath(output)
         CSV.write(joinpath(output, "target_helper_encounters.csv"), encounters)
         CSV.write(joinpath(output, "target_helper_laser_intervals.csv"), firing)

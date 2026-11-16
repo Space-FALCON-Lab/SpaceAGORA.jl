@@ -583,6 +583,7 @@ function run_simulation(
         fill!(graph.available, false)
         fill!(graph.active, false)
         args.scheduling_policy_model.matching = nothing
+        args.scheduling_policy_model.single_target = nothing
     end
     if !isempty(extra_callback_factories)
         extra_callbacks = _callbacks_from_factories(extra_callbacks, extra_callback_factories, args)

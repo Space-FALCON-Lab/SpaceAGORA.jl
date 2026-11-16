@@ -1,0 +1,28 @@
+OE_definition = "OE(t)-OE(0)"
+RAAN_definition = "independently unwrapped at every saved row; undefined equatorial RAAN omitted"
+aggregation = "time_weighted_mean"
+averaging_orbits = 2
+cases = 162
+difference = false
+laser_RTN_definition = "laser-only integrals in instantaneous target RTN; signed R/T and positive/negative N"
+method = "trapezoidal integration of saved samples divided by elapsed window time"
+operation_order = "compute instantaneous changes/differences and RTN projections first, then average"
+orbits = 80
+period_definition = "initial Keplerian target period; not counted revolutions"
+sample_count = [21]
+schedulers = ["naive_next_entering", "positive_along_track"]
+state_velocity_difference_definition = "v_laser(t)-v_no_laser(t), projected into the no-laser target RTN basis; norm is the ECI difference magnitude"
+status = "complete"
+window_end_orbits = 80
+window_start_orbits = 78
+
+[csv_checksums]
+"continuous_access_thresholds.csv" = "c254f60947999cfb8573fb0be9c2fd8a51e056cdf60dcffcb6c43715fb5dfb2f"
+"mean_last2orbits_cumulative_dv_RT_N_branches_80orbits.csv" = "0b1a6a89369fadf83470cd6a196ae983c941610150babffb8a848f442ee014fa"
+"mean_last2orbits_orbital_element_deltas_80orbits.csv" = "aa00de03d04fc0b4ded3d6714bfb65c79041c8da9134394d8df02ede191d8242"
+
+[figure_checksums]
+"mean_last2orbits_OE_from_feather_combined_e0.0000_nu1.0000_80orbits_h_cols.pdf" = "415f8c776cea379556dbf96e8bd12fcf78d9a11277dc67bc091ee1f00d4b5bf1"
+"mean_last2orbits_OE_from_feather_combined_e0.0000_nu1.0000_80orbits_h_cols.png" = "1dac51fd25b2c8380b87dfaef9cbc0f7761af9a0d1a5ea77366cc0cbbb131602"
+"mean_last2orbits_dv_RTN_split_N_from_feather_combined_e0.0000_nu1.0000_80orbits_h_cols.pdf" = "a3a76b7d0a92303fbfabbb0d2e71424fb871260d1133935ec9c2f7c65124cd42"
+"mean_last2orbits_dv_RTN_split_N_from_feather_combined_e0.0000_nu1.0000_80orbits_h_cols.png" = "a63b10022460fc89312b0b77b1bbb6f26ebfbd4987c15dd981a9ac3a4452b3b4"

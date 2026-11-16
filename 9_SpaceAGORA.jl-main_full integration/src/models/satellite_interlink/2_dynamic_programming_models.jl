@@ -4,6 +4,7 @@ using LinearAlgebra
 using DiffEqBase
 import PythonCall
 using ..InterLinkModels
+include("4_single_target_policies.jl")
 
 export SchedulingPolicyModel, score_candidates!
 export select_interlinks!, schedule_interlinks!, interlink_scheduler_callback
@@ -38,21 +39,31 @@ precedence over `target_idx`; all selected indices must exist in the simulation 
 `:gve_inc` scores physical inclination rate in radians/s relative to the inertial
 xy plane, using actual force/mass. Exactly equatorial states use the forward
 one-sided rate (positive at zero inclination, negative at pi).
+
+`:naive_next_entering` and `:positive_along_track` retain one target-helper
+link according to the shared single-target state machines. These policies
+require terminal 1, one link per helper, and a common selection range.
+`:no_laser` selects no links. Applied forces still follow the usual held-link
+integration rule; selection is updated at initialization and accepted steps.
 """
 mutable struct SchedulingPolicyModel
 	const policy::Symbol
 	const target_idx::Union{Nothing, Int}
 	const target_idxs::Union{Nothing, Vector{Int}}
 	matching::Union{Nothing, InterLinkMatchingWorkspace}
+	single_target::Union{Nothing, Tuple{InterLinkGraph, ComparisonPolicies.LaserPolicy}}
 
 	function SchedulingPolicyModel(policy::Symbol; target_idx::Union{Nothing, Integer}=1,
 		target_idxs::Union{Nothing, AbstractVector{<:Integer}}=nothing)
-		policy in (:gve_sma, :gve_inc, :gve_eccentricity, :gve_sma_first_index) ||
-			throw(ArgumentError("Supported scheduling policies: :gve_sma, :gve_inc, :gve_eccentricity, and :gve_sma_first_index."))
+		policy in (:gve_sma, :gve_inc, :gve_eccentricity, :gve_sma_first_index,
+			:naive_next_entering, :positive_along_track, :no_laser) ||
+			throw(ArgumentError("Unsupported scheduling policy: $policy"))
 		target_idxs === nothing || policy in (:gve_sma, :gve_inc) ||
 			throw(ArgumentError("target_idxs is supported only by the :gve_sma and :gve_inc policies."))
 		target_idx === nothing || target_idx > 0 ||
 			throw(ArgumentError("target_idx must be nothing or a positive spacecraft vector index."))
+		policy in (:naive_next_entering, :positive_along_track) && target_idx === nothing &&
+			throw(ArgumentError("Single-target policies require target_idx."))
 		target_indices = target_idxs === nothing ? nothing : Int[target_idxs...]
 		if target_indices !== nothing
 			isempty(target_indices) && throw(ArgumentError("target_idxs must not be empty."))
@@ -61,7 +72,7 @@ mutable struct SchedulingPolicyModel
 				throw(ArgumentError("target_idxs must not contain duplicates."))
 			sort!(target_indices)
 		end
-		new(policy, target_idx === nothing ? nothing : Int(target_idx), target_indices, nothing)
+		new(policy, target_idx === nothing ? nothing : Int(target_idx), target_indices, nothing, nothing)
 	end
 end
 
@@ -255,10 +266,45 @@ function select_interlinks!(model::ConstellationInterLinkModel, policy::Scheduli
 end
 
 # 4. Overall scheduling function to schedule interlinks based on the current state and scoring policy
+function select_single_target_links!(model::ConstellationInterLinkModel,
+	policy::SchedulingPolicyModel, state)
+	graph = model.graph
+	fill!(graph.active, false)
+	policy.policy === :no_laser && return InterLinkKey[]
+	isempty(graph.edges) && throw(ArgumentError("Single-target scheduling requires allowed links."))
+	target = something(policy.target_idx)
+	cache = policy.single_target
+	if cache === nothing || cache[1] !== graph ||
+			length(cache[2].helper_indices) != length(graph.edges)
+		link_keys = sort!(collect(keys(graph.edge_index_lookup)))
+		all(key -> (target, 1) in key && all(endpoint -> endpoint[2] == 1, key), link_keys) ||
+			throw(ArgumentError("Single-target policies require target-helper links on terminal 1."))
+		range_m = first(graph.edge_properties).range
+		all(parameters -> parameters.range == range_m, graph.edge_properties) ||
+			throw(ArgumentError("Single-target policies require a common selection range."))
+		helpers = sort!([key[1][1] == target ? key[2][1] : key[1][1] for key in link_keys])
+		cache = (graph, ComparisonPolicies.LaserPolicy(policy.policy;
+			target_idx=target, helper_indices=helpers, range_m))
+		policy.single_target = cache
+	end
+	selector = cache[2]
+	eligible = [graph.available[graph.edge_index_lookup[minmax((helper, 1), (target, 1))]]
+		for helper in selector.helper_indices]
+	helper = ComparisonPolicies.update_schedule!(selector,
+		[sc.pos for sc in state.sc], [sc.vel for sc in state.sc]; eligible)
+	helper == 0 && return InterLinkKey[]
+	key = minmax((helper, 1), (target, 1))
+	graph.active[graph.edge_index_lookup[key]] = true
+	InterLinkKey[key]
+end
+
 function schedule_interlinks!(model::ConstellationInterLinkModel, policy::SchedulingPolicyModel,
 	spacecraft, state, mu::Real; candidate_force, is_active=nothing)
 	# step 1. update the availability of each interlink based on the current state
 	update_availability!(model, spacecraft, state; is_active)
+	if policy.policy in (:naive_next_entering, :positive_along_track, :no_laser)
+		return select_single_target_links!(model, policy, state)
+	end
 
 	# step 2. compute the score of each interlink based on the scheduling policy / scoring policy
 	score_candidates!(model, policy, state, mu; candidate_force) 

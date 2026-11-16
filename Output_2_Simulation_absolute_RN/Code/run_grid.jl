@@ -58,12 +58,13 @@ function case_disk_requirement(case)
     5 * 1024^3 + dense_spool + raw_trajectory + 64 * 1024^2
 end
 
-function simulation_command(output_root, case)
+function simulation_command(output_root, case; script=joinpath(@__DIR__, "run_case.jl"))
     julia = Base.julia_cmd()
-    `$julia --startup-file=no --threads=1 --gcthreads=1 $(joinpath(@__DIR__, "run_case.jl")) $output_root $(case.altitude_km) $(case.inclination_deg) $(case.helpers) $(case.policy) $(case.orbits) $(case.power_W) $(case.helper_altitude_km)`
+    `$julia --startup-file=no --threads=1 --gcthreads=1 $script $output_root $(case.altitude_km) $(case.inclination_deg) $(case.helpers) $(case.policy) $(case.orbits) $(case.power_W) $(case.helper_altitude_km)`
 end
 
-function run_grid(output_root; available_space=free_disk_bytes, campaign="absolute_rn")
+function run_grid(output_root; available_space=free_disk_bytes, campaign="absolute_rn",
+    source_hashes_fn=source_hashes, simulation_script=joinpath(@__DIR__, "run_case.jl"))
     output_root = abspath(output_root)
     selection = campaign_settings(campaign)
     batch = joinpath(output_root, selection.batch_directory)
@@ -81,7 +82,7 @@ function run_grid(output_root; available_space=free_disk_bytes, campaign="absolu
     atomic_toml(joinpath(lock, "owner.toml"), Dict("pid" => getpid(), "started_utc" => string(now(UTC))))
     status_path = joinpath(batch, "status.toml")
     cases = grid_cases(campaign)
-    hashes = source_hashes()
+    hashes = source_hashes_fn()
     signature = source_signature(hashes)
     status = Dict{String,Any}("status" => "running", "pid" => getpid(),
         "campaign" => campaign, "helper_counts" => collect(selection.helper_counts),
@@ -99,7 +100,7 @@ function run_grid(output_root; available_space=free_disk_bytes, campaign="absolu
                 append_progress(output_root, "BATCH_PAUSED", "stop-after-case requested"; campaign)
                 break
             end
-            batch_source_hashes(source_hashes()) == batch_source_hashes(hashes) ||
+            batch_source_hashes(source_hashes_fn()) == batch_source_hashes(hashes) ||
                 error("Production code changed during the batch; stopping to avoid mixed versions")
             directory = case_directory(output_root, case)
             available, required = available_space(output_root), case_disk_requirement(case)
@@ -135,7 +136,7 @@ function run_grid(output_root; available_space=free_disk_bytes, campaign="absolu
                     campaign, elapsed_s=info["wall_elapsed_s"],
                     detail="previous simulation elapsed time; verifying saved files again")
             else
-                command = simulation_command(output_root, case)
+                command = simulation_command(output_root, case; script=simulation_script)
                 tracked_child(command, log, status_path, status, output_root, scenario, "SIMULATION"; campaign)
             end
             julia = Base.julia_cmd()
@@ -170,7 +171,7 @@ function run_grid(output_root; available_space=free_disk_bytes, campaign="absolu
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
-    length(ARGS) <= 2 || error("Usage: julia run_grid.jl [OUTPUT_ROOT] [absolute_rn]")
+    length(ARGS) <= 2 || error("Usage: julia run_grid.jl [OUTPUT_ROOT] [absolute_rn|range_along|no_laser]")
     run_grid(isempty(ARGS) ? DEFAULT_OUTPUT : ARGS[1];
         campaign=length(ARGS) == 2 ? ARGS[2] : "absolute_rn")
 end

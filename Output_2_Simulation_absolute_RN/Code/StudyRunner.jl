@@ -183,12 +183,12 @@ function check_firing_history(laser, history, power)
 end
 
 function run_case(c::StudyCase; output_root=DEFAULT_OUTPUT, record_events=true,
-    observer=nothing, save_schedule=false)
+    observer=nothing, save_schedule=false, provenance=source_hashes())
     directory = case_directory(output_root, c)
     ispath(directory) && error("Refusing to overwrite $directory; resume through run_grid.jl")
     mkpath(dirname(directory))
     mkdir(directory)
-    hashes = source_hashes()
+    hashes = provenance
     info = Dict{String,Any}("status" => "running", "run_id" => case_signature(c),
         "settings" => case_settings(c), "source_hashes" => hashes,
         "source_signature" => source_signature(hashes), "julia_version" => string(VERSION),

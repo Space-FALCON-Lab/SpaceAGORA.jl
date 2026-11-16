@@ -42,7 +42,8 @@ struct StudyCase
     power_W::Float64
     helper_altitude_km::Float64
     function StudyCase(altitude, inclination, helpers, policy;
-        orbits=100.0, power_W=10_000.0, helper_altitude_km=1000.0)
+        orbits=100.0, power_W=policy === :no_laser ? 0.0 : 10_000.0,
+        helper_altitude_km=1000.0)
         altitude in TARGET_ALTITUDES_KM ||
             throw(ArgumentError("Target altitude is outside the study grid"))
         helper_altitude_km == 1000 ||
@@ -51,25 +52,34 @@ struct StudyCase
             throw(ArgumentError("Target inclination is outside the study grid"))
         helpers in HELPER_COUNTS ||
             throw(ArgumentError("Helper count is outside the study grid"))
-        policy in (:gve_sma, :gve_inc) || throw(ArgumentError("Unsupported scheduler"))
+        policy in (:gve_sma, :gve_inc, :naive_next_entering, :positive_along_track, :no_laser) ||
+            throw(ArgumentError("Unsupported scheduler"))
         isfinite(orbits) && orbits > 0 || throw(ArgumentError("Orbits must be positive and finite"))
         isfinite(power_W) && power_W >= 0 || throw(ArgumentError("Power must be nonnegative and finite"))
+        policy === :no_laser && power_W != 0 &&
+            throw(ArgumentError("The no_laser campaign requires zero laser power"))
         new(altitude, inclination, helpers, policy, orbits, power_W, helper_altitude_km)
     end
 end
 
 function campaign_settings(campaign::AbstractString)
-    campaign == "absolute_rn" || throw(ArgumentError("Unknown campaign '$campaign'; use absolute_rn"))
-    (target_altitudes_km=TARGET_ALTITUDES_KM, helper_altitudes_km=(1000,),
+    campaign == "absolute_rn" && return (
+        target_altitudes_km=TARGET_ALTITUDES_KM, helper_altitudes_km=(1000,),
         helper_counts=HELPER_COUNTS, batch_directory="_batch_absolute_RN",
-        progress_file="simulation_progress_absolute_RN.log")
+        progress_file="simulation_progress_absolute_RN.log", policies=(:gve_sma, :gve_inc))
+    campaign in ("range_along", "no_laser") || throw(ArgumentError(
+        "Unknown campaign '$campaign'; use absolute_rn, range_along, or no_laser"))
+    (target_altitudes_km=(1000, 1050, 1100), helper_altitudes_km=(1000,),
+        helper_counts=HELPER_COUNTS, batch_directory="_batch_$campaign",
+        progress_file="simulation_progress_$campaign.log",
+        policies=campaign == "range_along" ? (:naive_next_entering, :positive_along_track) : (:no_laser,))
 end
 
 function grid_cases(campaign::AbstractString="absolute_rn")
     selection = campaign_settings(campaign)
     [StudyCase(h, i, n, p; helper_altitude_km=helper_h)
         for helper_h in selection.helper_altitudes_km for h in selection.target_altitudes_km
-        for i in (0, 0.5, 1) for n in selection.helper_counts for p in (:gve_sma, :gve_inc)]
+        for i in (0, 0.5, 1) for n in selection.helper_counts for p in selection.policies]
 end
 
 mission_duration(c::StudyCase) = c.orbits * 2pi * sqrt((EARTH_RADIUS_M + c.altitude_km * 1000)^3 / MU)
@@ -132,9 +142,10 @@ end
 
 filehash(path) = open(io -> bytes2hex(sha256(io)), path)
 
-function source_hashes()
+function source_hashes(; additional_roots=())
     result = Dict{String,String}()
-    for root in (joinpath(LIBRARY_ROOT, "src"), joinpath(LIBRARY_ROOT, "ext"), @__DIR__)
+    for root in (joinpath(LIBRARY_ROOT, "src"), joinpath(LIBRARY_ROOT, "ext"), @__DIR__,
+            additional_roots...)
         for (folder, _, files) in walkdir(root), name in sort(files)
             endswith(name, ".jl") || endswith(name, ".sh") || continue
             path = joinpath(folder, name)

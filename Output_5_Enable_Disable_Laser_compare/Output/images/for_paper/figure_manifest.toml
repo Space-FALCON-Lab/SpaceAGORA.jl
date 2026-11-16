@@ -1,0 +1,17 @@
+OE_definition = "OE_laser(t)-OE_no_laser(t)"
+RAAN_definition = "independently unwrapped at every saved row; undefined equatorial RAAN omitted"
+cases = 162
+difference = true
+laser_RTN_definition = "laser-only RTN integrals minus zero no-laser integrals; not a state-velocity difference"
+orbits = 100
+schedulers = ["naive_next_entering", "positive_along_track"]
+state_velocity_difference_definition = "v_laser(t)-v_no_laser(t), projected into the no-laser target RTN basis; norm is the ECI difference magnitude"
+status = "complete"
+
+[figure_checksums]
+"laser_minus_no_laser_OE_from_feather_combined_e0.0000_nu1.0000_100orbits_h_cols.pdf" = "4a9ff6c8ef93a59c709c6e9705e098a024d58046a5aa97b02bfc40ed9ee7330c"
+"laser_minus_no_laser_OE_from_feather_combined_e0.0000_nu1.0000_100orbits_h_cols.png" = "8366d4692bbf3a91a956ec4823f4017a53e40d4eab6448963053dd961692cdbb"
+"laser_minus_no_laser_dv_RTN_split_N_from_feather_combined_e0.0000_nu1.0000_100orbits_h_cols.pdf" = "2a92354be90918c3d4ca545c8bc4723f893be84327efacc658e3153859e0bb3b"
+"laser_minus_no_laser_dv_RTN_split_N_from_feather_combined_e0.0000_nu1.0000_100orbits_h_cols.png" = "bf9aff58b2efba1bd443313459ef581c0a7f7e97901c92382eb1608064d22704"
+"velocity_difference_RTN_laser_minus_no_laser_100orbits_h_cols.pdf" = "12639c3e0ce8b60046e2b21dd8c067111c389adb04e88c5f2bbd3611c29f4ca6"
+"velocity_difference_RTN_laser_minus_no_laser_100orbits_h_cols.png" = "bff614d27c51cc6de339c98403bdd03cd6b06d362d3b61cca22cd00742166002"

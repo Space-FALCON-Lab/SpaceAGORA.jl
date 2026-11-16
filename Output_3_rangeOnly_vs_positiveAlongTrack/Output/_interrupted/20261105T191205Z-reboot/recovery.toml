@@ -1,0 +1,11 @@
+interrupted_case_archive = "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Output_3_rangeOnly_vs_positiveAlongTrack/Output/_interrupted/20261105T191205Z-reboot/paper_plot_mode/h1000km_t1050km/ih0.0deg_it1.0deg/N800/T637134s/naive_next_entering_e0.0000_nu1.0000"
+interrupted_case_index = 107
+previous_controller_pid = 1688843
+previous_worker_pid = 2011726
+reason = "machine reboot on 2026-11-05 at 19:12:05 UTC"
+recovered_utc = "2026-11-08T11:11:49.423"
+restart_case_path = "/home/space-falcon-3/Desktop/ORACLE_SciTech_2027/Output_3_rangeOnly_vs_positiveAlongTrack/Output/paper_plot_mode/h1000km_t1050km/ih0.0deg_it1.0deg/N800/T637134s/naive_next_entering_e0.0000_nu1.0000"
+restart_mode = "reverify completed cases; restart interrupted case from t=0; continue remaining phases"
+simulation_sources_unchanged = true
+verified_cases_preserved = 106
+verified_product_checksums = 530

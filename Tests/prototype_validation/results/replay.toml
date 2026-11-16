@@ -1,0 +1,67 @@
+completed_utc = "2026-11-11T20:17:26.338"
+duration_orbits = 100
+geometry = "1 helper at 1000 km; target 1050 km, 0.5 deg, anomaly 1 deg"
+matched_force_scope = "Native ver3 run with half input power ONLY in this test, compensating its 2BP/c formula to isolate continuous-vs-accepted-step gating. Source files unchanged. Repeated with dtmax 1 s."
+native_scope = "Original ver2 range gating and ver3 positive-T gating at every RHS evaluation; native ver3 has twice production force at the same power."
+passed = true
+prototype_root = "/home/space-falcon-3/Desktop/Kuang's Prototype Code"
+reference_solver = "Vern9, rtol=atol=1e-12, dtmax=10 s"
+replay_scope = "Original prototype dynamics/forces, matched constants and recorded firing times. Not an independent scheduling test."
+
+[comparison_counts]
+RTN_branch_sum_mps = 9009
+exact_time_grid_s = 3003
+independent_initial_state = 84
+initial_position_m = 9
+initial_velocity_mps = 9
+matched_force_native_dt_convergence_sma_m = 1001
+replay_Output5_semimajor_axis_m = 3003
+replay_RAAN_deg = 3003
+replay_eccentricity = 3003
+replay_inclination_deg = 3003
+replay_laser_dv_N_mps = 3003
+replay_laser_dv_R_mps = 3003
+replay_laser_dv_T_mps = 3003
+replay_position_norm_m = 3003
+replay_semimajor_axis_m = 3003
+replay_velocity_norm_mps = 3003
+target_J2_energy_minus_work_J = 3003
+ver2_BP_over_c_force_N = 1
+ver2_recoil_force_N = 3
+ver3_recoil_force_N = 3
+ver3_twice_BP_over_c_force_N = 1
+
+[max_residuals]
+RTN_branch_sum_mps = 4.163336342344337e-17
+exact_time_grid_s = 0.0
+independent_initial_state = 9.313225746154785e-10
+initial_position_m = 0.0
+initial_velocity_mps = 0.0
+matched_force_native_dt_convergence_sma_m = 4.824250936508179e-7
+replay_Output5_semimajor_axis_m = 4.2729079723358154e-6
+replay_RAAN_deg = 2.779039220968116e-9
+replay_eccentricity = 1.474664116404671e-11
+replay_inclination_deg = 8.02419242162955e-12
+replay_laser_dv_N_mps = 5.486778462127084e-10
+replay_laser_dv_R_mps = 6.992727195898052e-10
+replay_laser_dv_T_mps = 2.2798953506347752e-9
+replay_position_norm_m = 0.0909049437816239
+replay_semimajor_axis_m = 0.00019546318799257278
+replay_velocity_norm_mps = 8.978222084517186e-5
+target_J2_energy_minus_work_J = 0.1574955535324989
+ver2_BP_over_c_force_N = 0.0
+ver2_recoil_force_N = 0.0
+ver3_recoil_force_N = 0.0
+ver3_twice_BP_over_c_force_N = 0.0
+
+[prototype_hashes]
+"/home/space-falcon-3/Desktop/Kuang's Prototype Code/functions/1_LOS_Metrics.jl" = "531c1a97dde0a1369fd4e9d36fb1e4b455c5c3fabb28e0f009bcd37f0eb73136"
+"/home/space-falcon-3/Desktop/Kuang's Prototype Code/functions/2_Laser_Forces_ver2.jl" = "310956f7b1fe10402a1a5e68d3a4631e4886b8c36ef8818a698785d8eb308b67"
+"/home/space-falcon-3/Desktop/Kuang's Prototype Code/functions/2_Laser_Forces_ver3.jl" = "8bb3f338f3e567a48a97af1476edccfe304cc090fb9f092f1c09ab60da3ec3ca"
+"/home/space-falcon-3/Desktop/Kuang's Prototype Code/functions/3_Dynamics.jl" = "7bb16b4e5fc86b43886248595aabcf3c6fa484ee734b3f727dd5b0487c5d7a3f"
+"/home/space-falcon-3/Desktop/Kuang's Prototype Code/functions/5_OE_Converters.jl" = "92ea4c534eda171523b13395f8be26914085c4abcb8f530b2e5f7957f4976aef"
+
+[thresholds]
+position_m = 0.1
+sma_m = 0.001
+velocity_mps = 0.0001

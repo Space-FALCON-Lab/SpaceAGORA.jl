@@ -138,12 +138,14 @@ const CONSTRAINTS = mpc_constraints(:heat_rate, :heat_load, :drag, :slew)
 
 # QP weights and solver settings. The cost is
 #   TARGET_ENERGY_WEIGHT * (E_N - E*)^2      with E in J/kg
-# + SLACK_WEIGHT * sum(sigma^2)              sigma: violation divided by the QP limit
+# + SLACK_LINEAR_WEIGHT * sum(sigma) + SLACK_WEIGHT * sum(sigma^2)
+#                                           sigma: violation divided by the QP limit
 # + AREA_WEIGHT * sum(dA^2) + AREA_SLEW_WEIGHT * sum((dA_{k+1} - dA_k)^2).
 # The QP adds 1e-10 to the diagonal of its Hessian to keep it positive definite.
 const AREA_WEIGHT = 0.0
 const AREA_SLEW_WEIGHT = 0.0
 const SLACK_WEIGHT = 1.0e5
+const SLACK_LINEAR_WEIGHT = parse(Float64, get(ENV, "SPACEAGORA_MPC_SLACK_LINEAR_WEIGHT", "1.0"))
 const TARGET_ENERGY_WEIGHT = 5.0e-10
 const OSQP_EPS_ABS = 1.0e-7
 const OSQP_EPS_REL = 1.0e-7
@@ -195,6 +197,7 @@ function targeting_config(target_energy_mj_kg)
         area_weight=AREA_WEIGHT,
         area_slew_weight=AREA_SLEW_WEIGHT,
         slack_weight=SLACK_WEIGHT,
+        slack_linear_weight=SLACK_LINEAR_WEIGHT,
         target_energy_weight=TARGET_ENERGY_WEIGHT,
         max_depletion_energy_weight=0.0,
         osqp_eps_abs=OSQP_EPS_ABS,
@@ -398,7 +401,7 @@ function main()
             "heat_rate_limit_w_cm2", "heat_load_limit_j_cm2", "drag_force_limit_n",
             "area_slew_limit_m2_s", "heat_rate_qp_backoff_w_cm2", "heat_load_qp_backoff_j_cm2",
             "drag_force_qp_backoff_n", "area_slew_qp_backoff_m2_s", "constraints",
-            "area_weight", "area_slew_weight", "slack_weight", "target_energy_weight",
+            "area_weight", "area_slew_weight", "slack_weight", "slack_linear_weight", "target_energy_weight",
             "osqp_eps_abs", "osqp_eps_rel", "osqp_max_iter", "target_energy_mj_kg",
             "target_energy_source", "nominal_area_m2", "interface_altitude_m",
             "ks_fictitious_time_step_s_per_m", "qp_max_nodes",
@@ -413,7 +416,7 @@ function main()
             AREA_SLEW_LIMIT_M2_S, HEAT_RATE_QP_BACKOFF_W_CM2, HEAT_LOAD_QP_BACKOFF_J_CM2,
             DRAG_FORCE_QP_BACKOFF_N, AREA_SLEW_QP_BACKOFF_M2_S,
             join(String.(constraint_names(CONSTRAINTS)), "+"),
-            AREA_WEIGHT, AREA_SLEW_WEIGHT, SLACK_WEIGHT, TARGET_ENERGY_WEIGHT,
+            AREA_WEIGHT, AREA_SLEW_WEIGHT, SLACK_WEIGHT, SLACK_LINEAR_WEIGHT, TARGET_ENERGY_WEIGHT,
             OSQP_EPS_ABS, OSQP_EPS_REL, OSQP_MAX_ITER, target_energy,
             REQUESTED_TARGET_ENERGY_MJ_KG === nothing ? "midpoint_of_reachable_range" : "setting",
             MAXIMUM_AREA_M2, ATMOSPHERIC_CUTOFF_ALTITUDE_M,

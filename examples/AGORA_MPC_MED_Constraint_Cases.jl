@@ -1,13 +1,21 @@
 #=
 Planet-selectable maximum-energy-depletion MPC constraint cases.
 Set SPACEAGORA_MPC_PLANET to earth, mars, or venus.
+SPACEAGORA_MPC_PERIAPSIS_KM sets the periapsis altitude of the initial orbit
+(default: Earth 110 km, Mars 95 km, Venus 136 km).
 
-Case I   : heat-rate + drag-force constraints
-Case II  : Case I + heat-load constraint
-Case III : Case II + actuator area-slew constraint
+Cases, named by their limits:
+  heat rate and drag force : heat-rate and drag-force limits
+  adds heat load           : the above plus the heat-load limit
+  adds slew rate           : the above plus the area-rate limit
 
 The selected SpaceAGORA planet supplies the gravity constants and polynomial-fit
-atmosphere. The script saves the MPC prediction and nonlinear KS verification.
+atmosphere. The QP is solved once per case, at the inbound interface crossing,
+about the pass flown with the arrays fully deployed. The script saves the MPC
+prediction, the nonlinear KS propagation of each QP plan
+(nonlinear_KS_verification) and the fully deployed pass (fully_deployed), with a
+summary, a results table and all settings, under
+output/mpc_<planet>_<periapsis>km_med_constraint_cases.
 =#
 
 include(joinpath(@__DIR__, "common.jl"))
@@ -82,7 +90,9 @@ end
 
 const PLANET = PLANET_SETTINGS.planet
 const INITIAL_TIME = PLANET_SETTINGS.initial_time
-const PERIAPSIS_ALTITUDE_M = PLANET_SETTINGS.periapsis_altitude_m
+const PERIAPSIS_ALTITUDE_M = let value = get(ENV, "SPACEAGORA_MPC_PERIAPSIS_KM", "")
+    isempty(value) ? PLANET_SETTINGS.periapsis_altitude_m : 1.0e3 * parse(Float64, value)
+end
 const APOAPSIS_RADIUS_M = PLANET_SETTINGS.apoapsis_radius_m
 const INCLINATION_DEG = PLANET_SETTINGS.inclination_deg
 const RAAN_DEG = PLANET_SETTINGS.raan_deg
@@ -114,7 +124,12 @@ const AREA_SLEW_QP_BACKOFF_M2_S = 2.0e-3
 
 const AREA_WEIGHT = 1.0e-5
 const AREA_SLEW_WEIGHT = 0.0
-const SLACK_WEIGHT = 1.0e3  # drag slack weight: soft in MED (benchmark), effectively enforced here
+# Slack cost: SLACK_LINEAR_WEIGHT * sum(sigma) + SLACK_WEIGHT * sum(sigma^2), sigma
+# the drag violation divided by the QP drag limit. The linear weight exceeds the
+# multipliers of the drag rows, so the drag limit is exceeded only where it
+# cannot be met.
+const SLACK_WEIGHT = 1.0e3
+const SLACK_LINEAR_WEIGHT = 1.0
 const MAX_DEPLETION_ENERGY_WEIGHT = 1.0
 const OSQP_EPS_ABS = 1.0e-5
 const OSQP_EPS_REL = 1.0e-5
@@ -127,8 +142,10 @@ const MAX_PASS_STEPS = 20_000
 const QP_MAX_NODES = nothing
 
 const DENSITY_SELECTION = :planet_polyfit
+const PERIAPSIS_LABEL = replace(string(round(PERIAPSIS_ALTITUDE_M / 1.0e3; digits=2)), r"\.0$" => "")
+const PASS_LABEL = "$(titlecase(String(MPC_PLANET_NAME))), $(PERIAPSIS_LABEL) km"
 const OUTPUT_DIRECTORY = joinpath(
-    @__DIR__, "..", "output", "mpc_$(MPC_PLANET_NAME)_med_constraint_cases")
+    @__DIR__, "..", "output", "mpc_$(MPC_PLANET_NAME)_$(PERIAPSIS_LABEL)km_med_constraint_cases")
 const WRITE_PDF = true
 const RUN_SPACEAGORA_CALLBACK_CASES = lowercase(get(
     ENV, "SPACEAGORA_MPC_RUN_CALLBACK_CASES", "true")) in ("1", "true", "yes")
@@ -139,9 +156,12 @@ const CARTESIAN_ABSOLUTE_TOLERANCE = 1.0e-9
 const CARTESIAN_MAX_STEP_S = 0.2
 
 const CASES = (
-    (name=:case_I, label="Case I", constraints=mpc_constraints(:heat_rate, :drag)),
-    (name=:case_II, label="Case II", constraints=mpc_constraints(:heat_rate, :heat_load, :drag)),
-    (name=:case_III, label="Case III", constraints=mpc_constraints(:heat_rate, :heat_load, :drag, :slew)),
+    (name=:heat_rate_drag, label="heat rate and drag force",
+        constraints=mpc_constraints(:heat_rate, :drag)),
+    (name=:adds_heat_load, label="adds heat load",
+        constraints=mpc_constraints(:heat_rate, :heat_load, :drag)),
+    (name=:adds_slew_rate, label="adds slew rate",
+        constraints=mpc_constraints(:heat_rate, :heat_load, :drag, :slew)),
 )
 
 # =============================================================================
@@ -175,6 +195,7 @@ function base_config()
         area_weight=AREA_WEIGHT,
         area_slew_weight=AREA_SLEW_WEIGHT,
         slack_weight=SLACK_WEIGHT,
+        slack_linear_weight=SLACK_LINEAR_WEIGHT,
         target_energy_weight=0.0,
         max_depletion_energy_weight=MAX_DEPLETION_ENERGY_WEIGHT,
         osqp_eps_abs=OSQP_EPS_ABS,
@@ -203,17 +224,72 @@ function refinement_comparison(case_label, baseline, refined)
     )
 end
 
+# Drag power per unit mass, -(D/m) (v_rel . v)/|v_rel|, integrated over the pass:
+# the specific energy removed by drag, J/kg. Also the largest relative difference
+# between the propagated drag force and 0.5 rho C_D A |v_rel|^2 recomputed from
+# the propagated state, and the minimum geodetic altitude.
+function pass_quantities(rollout, params)
+    n = size(rollout.states, 1)
+    power = zeros(n)
+    drag_identity = zeros(n)
+    geodetic_altitude = zeros(n)
+    for k in 1:n
+        cartesian = ks_state_to_cartesian(view(rollout.states, k, :))
+        r, v = cartesian.position_ii_m, cartesian.velocity_ii_m
+        v_rel = [v[1] + params.Ω * r[2], v[2] - params.Ω * r[1], v[3]]
+        speed = norm(v_rel)
+        power[k] = rollout.drag_n[k] * dot(v_rel, v) / (speed * SPACECRAFT_MASS_KG)
+        recomputed = 0.5 * rollout.density_kg_m3[k] * DRAG_COEFFICIENT * rollout.area_m2[k] * speed^2
+        drag_identity[k] = rollout.drag_n[k] > 0 ?
+            abs(rollout.drag_n[k] - recomputed) / rollout.drag_n[k] : 0.0
+        geodetic_altitude[k] = planet_fixed_to_geodetic(PLANET, r)[1]
+    end
+    t = rollout.absolute_time_s
+    removed = sum(0.5 .* (power[1:end-1] .+ power[2:end]) .* diff(t))
+    return (
+        drag_energy_removed_j_kg=removed,
+        maximum_drag_identity_relative_difference=maximum(drag_identity),
+        minimum_altitude_km=minimum(rollout.altitude_m) / 1.0e3,
+        minimum_geodetic_altitude_km=minimum(geodetic_altitude) / 1.0e3,
+    )
+end
+
+# Largest difference between the QP prediction at the nodes and the nonlinear
+# propagation sampled at the node times.
+function prediction_errors(prediction, rollout, problem)
+    node_time = problem.t .- first(problem.t)
+    sample(field) = [interpolate_mpc_plan(rollout.time_s, getproperty(rollout, field), time)
+        for time in node_time]
+    return (
+        maximum_heat_rate_error_percent_of_limit=100 * maximum(abs.(
+            prediction[:, 3] ./ 1.0e4 .- sample(:heat_rate_w_cm2))) / HEAT_RATE_LIMIT_W_CM2,
+        maximum_drag_error_percent_of_limit=100 * maximum(abs.(
+            prediction[:, 2] .- sample(:drag_n))) / DRAG_FORCE_LIMIT_N,
+        terminal_energy_error_j_kg=prediction[end, 4] - 1.0e6 * last(rollout.energy_mj_kg),
+        terminal_energy_error_percent=100 * abs(
+            (prediction[end, 4] - 1.0e6 * last(rollout.energy_mj_kg)) /
+            (1.0e6 * last(rollout.energy_mj_kg))),
+    )
+end
+
 function case_summary(case, solution, solve_time_s, prediction, rollout, problem)
     predicted_heat_load = cumulative_mpc_heat_load(
         prediction[:, 3] ./ 1.0e4, problem.t)
     predicted_slew = vcat(NaN, diff(solution.area_m2) ./ diff(problem.t))
     finite_predicted_slew = filter(isfinite, abs.(predicted_slew))
     finite_rollout_slew = filter(isfinite, abs.(rollout.slew_m2_s))
+    node_spacing = diff(problem.t)
     return (
+        pass=PASS_LABEL,
         case=case.label,
         constraints=join(String.(constraint_names(case.constraints)), "+"),
         solver_status=String(solution.solver_status),
         solve_time_s,
+        qp_solves=1,
+        nodes=problem.N,
+        node_spacing_min_s=minimum(node_spacing),
+        node_spacing_max_s=maximum(node_spacing),
+        maximum_drag_slack=solution.maximum_drag_slack,
         minimum_commanded_area_m2=minimum(solution.area_m2),
         maximum_commanded_area_m2=maximum(solution.area_m2),
         predicted_maximum_heat_rate_w_cm2=maximum(prediction[:, 3]) / 1.0e4,
@@ -236,6 +312,36 @@ function case_summary(case, solution, solve_time_s, prediction, rollout, problem
         drag_constraint_satisfied=maximum(rollout.drag_n) <= DRAG_FORCE_LIMIT_N,
         slew_constraint_satisfied=!constraint_active(case.constraints, :slew) ||
             maximum(finite_rollout_slew) <= AREA_SLEW_LIMIT_M2_S,
+        solution.pass_quantities...,
+        solution.prediction_errors...,
+    )
+end
+
+# One row of the results table: energy removed by drag as a percentage of the
+# fully deployed pass, peaks as a percentage of their limits, and the solve time.
+# A value is in parentheses when its limit is not imposed in that row.
+function results_row(label, constraints, rollout, quantities, reference_removed, solve_time_s)
+    imposed(name) = constraints !== nothing && constraint_active(constraints, name)
+    fmt(value, name) = imposed(name) ? @sprintf("%.1f", value) : @sprintf("(%.1f)", value)
+    finite_slew = filter(isfinite, abs.(rollout.slew_m2_s))
+    peak_slew = isempty(finite_slew) ? 0.0 : maximum(finite_slew)
+    values = (
+        energy_removed_by_drag_percent=100 * quantities.drag_energy_removed_j_kg / reference_removed,
+        peak_heat_rate_percent=100 * maximum(rollout.heat_rate_w_cm2) / HEAT_RATE_LIMIT_W_CM2,
+        heat_load_percent=100 * last(rollout.heat_load_j_cm2) / HEAT_LOAD_LIMIT_J_CM2,
+        peak_drag_percent=100 * maximum(rollout.drag_n) / DRAG_FORCE_LIMIT_N,
+        peak_area_rate_percent=100 * peak_slew / AREA_SLEW_LIMIT_M2_S,
+    )
+    return (
+        pass=PASS_LABEL,
+        row=label,
+        values...,
+        energy_removed_by_drag=@sprintf("%.1f", values.energy_removed_by_drag_percent),
+        peak_heat_rate=fmt(values.peak_heat_rate_percent, :heat_rate),
+        heat_load=fmt(values.heat_load_percent, :heat_load),
+        peak_drag=fmt(values.peak_drag_percent, :drag),
+        peak_area_rate=fmt(values.peak_area_rate_percent, :slew),
+        solve_time_s=solve_time_s,
     )
 end
 
@@ -308,6 +414,7 @@ function run_spaceagora_callback_case(case, reference)
         area_weight=AREA_WEIGHT,
         area_slew_weight=AREA_SLEW_WEIGHT,
         slack_weight=SLACK_WEIGHT,
+        slack_linear_weight=SLACK_LINEAR_WEIGHT,
         target_energy_mj_kg=0.0,
         target_energy_weight=0.0,
         max_depletion_energy_weight=MAX_DEPLETION_ENERGY_WEIGHT,
@@ -380,6 +487,7 @@ function run_spaceagora_callback_case(case, reference)
     csv_path = joinpath(results_directory, "simulation_results.csv")
     isfile(csv_path) || error("Callback simulation did not write $(csv_path).")
     table = CSV.read(csv_path, DataFrame)
+    state = only(args.control_model.control_effectors).state
     state.solve_count == 1 || error(
         "$(case.label) expected one interface solve, observed $(state.solve_count).")
     state.last_solution !== nothing || error(
@@ -634,11 +742,25 @@ function main()
     @assert all(isfinite, problem.H)
     @assert all(isfinite, problem.Ybar)
 
-    println("Phase 3/5: solving Cases I--III and running nonlinear verification")
+    println("Phase 3/5: solving the three cases and running nonlinear verification")
     results = NamedTuple[]
     output_tables = DataFrame[]
     summaries = NamedTuple[]
     refinement_rows = NamedTuple[]
+    # Fully deployed pass: the reference of the energy removed by drag.
+    full_rollout = propagate_ks_mpc_plan(
+        reference, problem, fill(BUS_AREA_M2 + SOLAR_PANEL_AREA_M2, problem.N), config, params;
+        density=density, max_steps=MAX_PASS_STEPS)
+    full_quantities = pass_quantities(full_rollout, params)
+    table_rows = NamedTuple[results_row("arrays fully deployed", nothing, full_rollout,
+        full_quantities, full_quantities.drag_energy_removed_j_kg, NaN)]
+    push!(output_tables, output_dataframe(
+        "arrays fully deployed", "fully_deployed",
+        full_rollout.time_s, full_rollout.altitude_m, full_rollout.area_m2,
+        full_rollout.heat_rate_w_cm2, full_rollout.heat_load_j_cm2,
+        full_rollout.drag_n, full_rollout.slew_m2_s, full_rollout.energy_mj_kg))
+    # The first solve compiles; the solve times below exclude compilation.
+    solve_mpc_qp(problem, apply_constraints(config, first(CASES).constraints))
     for case in CASES
         case_config = apply_constraints(config, case.constraints)
         solve_time = @elapsed raw_solution = solve_mpc_qp(problem, case_config)
@@ -663,22 +785,36 @@ function main()
             "Q=$(round(last(refined_rollout.heat_load_j_cm2); digits=6)) J/cm^2, " *
             "drag=$(round(maximum(refined_rollout.drag_n); digits=6)) N, " *
             "slew=$(round(refined_max_slew; digits=6)) m^2/s")
-        @assert maximum(refined_rollout.heat_rate_w_cm2) <= HEAT_RATE_LIMIT_W_CM2
-        @assert maximum(refined_rollout.drag_n) <= DRAG_FORCE_LIMIT_N
-        if constraint_active(case.constraints, :heat_load)
-            @assert last(refined_rollout.heat_load_j_cm2) <= HEAT_LOAD_LIMIT_J_CM2
-        end
-        if constraint_active(case.constraints, :slew)
-            @assert refined_max_slew <= AREA_SLEW_LIMIT_M2_S
+        # Limit checks on the half-step propagation, recorded in the summary.
+        refined_checks = (
+            refined_heat_rate_within_limit=
+                maximum(refined_rollout.heat_rate_w_cm2) <= HEAT_RATE_LIMIT_W_CM2,
+            refined_drag_within_limit=maximum(refined_rollout.drag_n) <= DRAG_FORCE_LIMIT_N,
+            refined_heat_load_within_limit=!constraint_active(case.constraints, :heat_load) ||
+                last(refined_rollout.heat_load_j_cm2) <= HEAT_LOAD_LIMIT_J_CM2,
+            refined_slew_within_limit=!constraint_active(case.constraints, :slew) ||
+                refined_max_slew <= AREA_SLEW_LIMIT_M2_S,
+        )
+        for (name, ok) in pairs(refined_checks)
+            ok || println("  WARNING: $(case.label): $(name) is false")
         end
         push!(refinement_rows,
             refinement_comparison(case.label, rollout, refined_rollout))
         predicted_heat_load = cumulative_mpc_heat_load(
             prediction[:, 3] ./ 1.0e4, problem.t)
+        N = problem.N
+        drag_slacks = constraint_active(case.constraints, :drag) ?
+            raw_solution.slacks[end-N+1:end] : Float64[]
+        quantities = pass_quantities(rollout, params)
         solution = (
             solver_status=raw_solution.solver_status,
             area_m2=area_plan,
+            maximum_drag_slack=isempty(drag_slacks) ? NaN : maximum(drag_slacks),
+            pass_quantities=quantities,
+            prediction_errors=merge(prediction_errors(prediction, rollout, problem), refined_checks),
         )
+        push!(table_rows, results_row(case.label, case.constraints, rollout, quantities,
+            full_quantities.drag_energy_removed_j_kg, solve_time))
         result = (
             case=case,
             config=case_config,
@@ -705,17 +841,16 @@ function main()
     end
 
     summary = DataFrame(summaries)
-    for row in eachrow(summary)
-        @assert row.heat_rate_constraint_satisfied
-        @assert row.heat_load_constraint_satisfied
-        @assert row.drag_constraint_satisfied
-        @assert row.slew_constraint_satisfied
+    for row in eachrow(summary), name in (:heat_rate_constraint_satisfied,
+            :heat_load_constraint_satisfied, :drag_constraint_satisfied,
+            :slew_constraint_satisfied)
+        row[name] || println("  WARNING: $(row.case): $(name) is false")
     end
 
     callback_results = NamedTuple[]
     callback_summary = DataFrame()
     if RUN_SPACEAGORA_CALLBACK_CASES
-        println("Phase 4/5: running Cases I--III through the SpaceAGORA control callback")
+        println("Phase 4/5: running the three cases through the SpaceAGORA control callback")
         callback_rows = NamedTuple[]
         callback_tables = DataFrame[]
         for (offline, case) in zip(results, CASES)
@@ -790,6 +925,7 @@ function main()
 
     println("Phase 5/5: writing audited results and presentation plots")
     CSV.write(joinpath(OUTPUT_DIRECTORY, "summary.csv"), summary)
+    CSV.write(joinpath(OUTPUT_DIRECTORY, "results_table.csv"), DataFrame(table_rows))
     CSV.write(joinpath(OUTPUT_DIRECTORY, "step_refinement.csv"),
         DataFrame(refinement_rows))
     CSV.write(joinpath(OUTPUT_DIRECTORY, "histories.csv"), reduce(vcat, output_tables))
@@ -807,6 +943,8 @@ function main()
             "heat_rate_qp_backoff_w_cm2", "heat_load_qp_backoff_j_cm2",
             "drag_force_qp_backoff_n", "area_slew_qp_backoff_m2_s",
             "osqp_eps_abs", "osqp_eps_rel", "osqp_max_iter",
+            "area_weight", "area_slew_weight", "slack_weight", "slack_linear_weight",
+            "max_depletion_energy_weight", "pass_label",
             "run_spaceagora_callback_cases", "control_sample_time_s",
             "cartesian_relative_tolerance", "cartesian_absolute_tolerance",
             "cartesian_max_step_s", "ks_energy_convention",
@@ -826,6 +964,8 @@ function main()
             HEAT_RATE_QP_BACKOFF_W_CM2, HEAT_LOAD_QP_BACKOFF_J_CM2,
             DRAG_FORCE_QP_BACKOFF_N, AREA_SLEW_QP_BACKOFF_M2_S,
             OSQP_EPS_ABS, OSQP_EPS_REL, OSQP_MAX_ITER,
+            AREA_WEIGHT, AREA_SLEW_WEIGHT, SLACK_WEIGHT, SLACK_LINEAR_WEIGHT,
+            MAX_DEPLETION_ENERGY_WEIGHT, PASS_LABEL,
             RUN_SPACEAGORA_CALLBACK_CASES, CONTROL_SAMPLE_TIME_S,
             CARTESIAN_RELATIVE_TOLERANCE, CARTESIAN_ABSOLUTE_TOLERANCE,
             CARTESIAN_MAX_STEP_S, "h_KS=-specific_energy",

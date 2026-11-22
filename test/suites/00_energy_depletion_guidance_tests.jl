@@ -10,3 +10,4 @@ include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "energy_depletion_life
 include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "energy_depletion_ownership_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "edg_guidance_family_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "mpc_campaign_tests.jl"))
+include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "mpc_slack_linear_weight_tests.jl"))

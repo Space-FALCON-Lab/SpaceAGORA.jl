@@ -38,6 +38,9 @@ Settings of one aerobraking MPC (keyword constructor; every field is required).
 - `area_weight`, `area_slew_weight`, `slack_weight`: quadratic penalties on the
   area increment, its node-to-node change and the constraint slacks.
 - `osqp_eps_abs`, `osqp_eps_rel`, `osqp_max_iter`: OSQP settings.
+- `slack_linear_weight` (default `0.0`): linear penalty on the constraint slacks, added
+  to the quadratic `slack_weight` one. With a weight above the multipliers of the
+  hard-constrained problem, a softened limit is exceeded only where it cannot be met.
 
 Build one from a configuration with [`mpc_config_from_spaceagora`](@ref).
 """
@@ -65,6 +68,9 @@ Base.@kwdef struct AerobrakingMPCConfig{M <: AerobrakingMPCMode}
     osqp_eps_abs::Float64
     osqp_eps_rel::Float64
     osqp_max_iter::Int
+    # Linear (exact-penalty) term on the constraint slacks. Zero by default, which
+    # keeps the quadratic-only slack cost.
+    slack_linear_weight::Float64 = 0.0
 end
 
 """

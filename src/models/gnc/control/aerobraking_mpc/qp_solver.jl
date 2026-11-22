@@ -38,7 +38,7 @@ end
 Solve the condensed MPC quadratic program with OSQP for the objective of
 `config.mode` under the area bounds and the active limits of `config`. The
 heat-rate rows also bound the predicted heat rate below by zero. Slacks
-(weighted by `slack_weight`) soften the heat-rate upper bound, heat load and
+(weighted by `slack_weight`, plus the linear `slack_linear_weight`) soften the heat-rate upper bound, heat load and
 drag in [`TargetEnergyMode`](@ref), and only the drag limit in
 [`MaxEnergyDepletionMode`](@ref). `solution.slacks` always holds `N` heat-rate,
 one heat-load and `N` drag entries for the active limits, in that order.
@@ -96,6 +96,12 @@ function solve_mpc_qp(problem::AerobrakingMPCProblem, config::AerobrakingMPCConf
     Q = Matrix(Symmetric(Q + 1.0e-10 * Matrix(I, nz, nz)))
     q = zeros(nz)
     q[1:nU] .= q_u_vec
+    # Linear slack term (zero by default). With a weight above the multipliers of
+    # the hard-constrained problem, a softened limit is exceeded only where it
+    # cannot be met; the quadratic term alone leaves a violation whenever it is active.
+    config.slack_linear_weight >= 0.0 ||
+        throw(ArgumentError("slack_linear_weight must be nonnegative."))
+    ns > 0 && (q[nU+1:nz] .= config.slack_linear_weight)
 
     rows = Vector{Vector{Float64}}()
     lower = Float64[]

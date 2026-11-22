@@ -83,7 +83,8 @@ end
         constraints, drag_coefficient, qdot_max_w_cm2, heat_load_max_j_cm2,
         drag_max_n, area_slew_max_m2_s, target_energy_mj_kg, area_weight,
         area_slew_weight, slack_weight, target_energy_weight,
-        max_depletion_energy_weight, osqp_eps_abs, osqp_eps_rel, osqp_max_iter)
+        max_depletion_energy_weight, osqp_eps_abs, osqp_eps_rel, osqp_max_iter,
+        slack_linear_weight=0.0)
 
 An [`AerobrakingMPCConfig`](@ref) whose areas and mass come from spacecraft
 `spacecraft_index` of `args`: the controlled panel links give the controllable
@@ -109,6 +110,7 @@ function mpc_config_from_spaceagora(
     osqp_eps_abs::Real,
     osqp_eps_rel::Real,
     osqp_max_iter::Integer,
+    slack_linear_weight::Real=0.0,
 )
     args = _mpc_scenario_args(obj)
     sc = args.dynamics_model.spacecraft[Int(spacecraft_index)]
@@ -133,5 +135,6 @@ function mpc_config_from_spaceagora(
         osqp_eps_abs=Float64(osqp_eps_abs),
         osqp_eps_rel=Float64(osqp_eps_rel),
         osqp_max_iter=Int(osqp_max_iter),
+        slack_linear_weight=Float64(slack_linear_weight),
     )
 end

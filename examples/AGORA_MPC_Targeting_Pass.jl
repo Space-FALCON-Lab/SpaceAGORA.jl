@@ -6,7 +6,7 @@ The MPC runs in energy-targeting mode (TargetEnergyMode). The QP is solved once,
 at the inbound interface crossing, about the pass flown with the arrays fully
 deployed. Its cost drives the predicted end-of-pass specific energy to the
 target energy. The heat-rate, heat-load and drag-force limits are soft
-(penalized slacks); the area bounds are hard.
+(penalized slacks); the area bounds and the area-rate limit are hard.
 
 Optional settings:
   SPACEAGORA_MPC_PERIAPSIS_KM         periapsis altitude of the initial orbit, km
@@ -131,8 +131,10 @@ const HEAT_LOAD_QP_BACKOFF_J_CM2 = 5.0e-2
 const DRAG_FORCE_QP_BACKOFF_N = 2.0e-2
 const AREA_SLEW_QP_BACKOFF_M2_S = 2.0e-3
 
-# Active limits. The area-rate limit is not active.
-const CONSTRAINTS = mpc_constraints(:heat_rate, :heat_load, :drag)
+# Active limits. With the area-rate limit, the first area change of the plan
+# is zero and each later change is bounded by the QP rate limit times the node
+# spacing.
+const CONSTRAINTS = mpc_constraints(:heat_rate, :heat_load, :drag, :slew)
 
 # QP weights and solver settings. The cost is
 #   TARGET_ENERGY_WEIGHT * (E_N - E*)^2      with E in J/kg

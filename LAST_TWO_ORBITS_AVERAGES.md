@@ -164,7 +164,7 @@ are checked before averaging. Missing or mismatched data cause an error.
 Implementation:
 [ComparisonResults.jl](Output_3_rangeOnly_vs_positiveAlongTrack/Code/ComparisonResults.jl)
 and the shared
-[paper renderer](Output_2_Simulation_absolute_RN/Output/images/for_paper/plot_paper_results.jl).
+[paper renderer](Results_For_Paper/plot_paper_results.jl).
 
 Tests:
 

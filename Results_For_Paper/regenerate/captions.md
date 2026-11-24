@@ -1,0 +1,7 @@
+# Figure captions
+
+**[Orbital-element changes](OE_from_feather_combined_e0.0000_nu1.0000_100orbits_h_cols.pdf).**
+Changes in semi-major axis, eccentricity, inclination, and longitude of the ascending node after 100 orbits for targets at 1000, 1050, and 1100 km (left to right). Circles show a-max simulations and filled triangles show i-max simulations, with J2 on; matching lines show model predictions. Colors distinguish the rule and initial relative inclination. Dashed vertical lines mark the helper count for continuous access. Eccentricity has no closed-form prediction. The node change is the links-on result minus the matching links-off result; it is undefined for equatorial targets. At 1000 km and fewer than 232 helpers, the a-max semi-major-axis prediction uses a phase-resolved numerical extension of leapfrog; this model does not predict inclination or node changes.
+
+**[Signed RTN velocity changes](dv_RTN_split_N_from_feather_combined_e0.0000_nu1.0000_100orbits_h_cols.pdf).**
+Cumulative radial, tangential, positive-normal, and negative-normal velocity changes after 100 orbits for targets at 1000, 1050, and 1100 km (left to right). Circles show a-max simulations and filled triangles show i-max simulations, with J2 on. Matching lines show closed-form predictions except for a-max at 1000 km with fewer than 232 helpers, where a phase-resolved numerical extension of leapfrog integrates all four impulses from the known initial gap. Colors distinguish the rule and initial relative inclination. The coplanar normal predictions are zero.

@@ -9,8 +9,7 @@ const NO_LASER_CODE = joinpath(PROJECT_ROOT, "Output_4_no_laser", "Code")
 const NO_LASER_OUTPUT = normpath(joinpath(NO_LASER_CODE, "..", "Output"))
 const DIFFERENCE_CODE = joinpath(PROJECT_ROOT, "Output_5_Enable_Disable_Laser_compare", "Code")
 const DIFFERENCE_OUTPUT = normpath(joinpath(DIFFERENCE_CODE, "..", "Output"))
-const PAPER_CODE = joinpath(PROJECT_ROOT, "Output_2_Simulation_absolute_RN",
-    "Output", "images", "for_paper")
+const PAPER_CODE = joinpath(PROJECT_ROOT, "Results_For_Paper")
 const JOB_DIRECTORY = joinpath(OUTPUT, "_comparison_job")
 
 campaign_sources(hash_function) = hash_function(; additional_roots=(

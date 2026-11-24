@@ -16,8 +16,8 @@ using .OracleStudy.EncounterTimingRecorder: bisect_crossing
 
 const SC = OracleStudy.StudyConfig
 const OUTPUT = joinpath(SC.DEFAULT_OUTPUT, "encounter_evaluation", "sma500_closest_approach")
-const REPORT = joinpath(SC.DEFAULT_OUTPUT, "images", "for_paper",
-    "parameter_pages_sma_500_helpers.md")
+const REPORT = normpath(joinpath(@__DIR__, "..", "..", "Results_For_Paper",
+    "parameter_pages_sma_500_helpers.md"))
 const ALTITUDES = (1000, 1050, 1100)
 const INCLINATIONS = (0.0, 0.5, 1.0)
 
@@ -201,7 +201,7 @@ function write_report()
         end
         println(io, "| ", @sprintf("%.1f", inclination), " | ", join(cells, " | "), " |")
     end
-    println(io, "\n**Closest-approach data:** [Per-encounter times, separations and speeds](../../encounter_evaluation/sma500_closest_approach/encounters.csv); [full-precision summary and counts](../../encounter_evaluation/sma500_closest_approach/summary.csv). Signed range rate in parameter 2 remains measured at entry.\n")
+    println(io, "\n**Closest-approach data:** [Per-encounter times, separations and speeds](../Output_2_Simulation_absolute_RN/Output/encounter_evaluation/sma500_closest_approach/encounters.csv); [full-precision summary and counts](../Output_2_Simulation_absolute_RN/Output/encounter_evaluation/sma500_closest_approach/summary.csv). Signed range rate in parameter 2 remains measured at entry.\n")
     text = read(REPORT, String)
     pattern = r"(?s)## 1\. Encounter speed.*?(?=## 2\.)"
     length(collect(eachmatch(pattern, text))) == 1 || error("Expected one encounter-speed section")

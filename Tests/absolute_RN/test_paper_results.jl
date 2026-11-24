@@ -2,7 +2,7 @@ import Pkg
 const PROJECT = normpath(joinpath(@__DIR__, "..", ".."))
 Pkg.activate(joinpath(PROJECT, "9_SpaceAGORA.jl-main_full integration"))
 using Test, CSV, Plots
-const PAPER = joinpath(PROJECT, "Simulation_absolute_RN", "Output", "images", "for_paper")
+const PAPER = joinpath(PROJECT, "Results_For_Paper")
 include(joinpath(PAPER, "plot_paper_results.jl"))
 const PP = PaperPlots
 
@@ -51,13 +51,14 @@ function check_legend_geometry(figure, show_access, settings)
 end
 
 @testset "Paper source data are exact copies" begin
+    source_images = joinpath(PROJECT, "Output_2_Simulation_absolute_RN", "Output", "images")
     sources = (
         "orbital_element_deltas_100orbits.csv" => "orbital_elements/4_combined_1000_1050_1100km",
         "cumulative_dv_RT_N_branches_100orbits.csv" => "delta_v_RTN/6_signed_RT_positive_negative_N_1000_1050_1100km",
         "continuous_access_thresholds.csv" => "orbital_elements/4_combined_1000_1050_1100km",
     )
     for (file, directory) in sources
-        @test read(joinpath(PAPER, file)) == read(joinpath(dirname(PAPER), directory, file))
+        @test read(joinpath(PAPER, file)) == read(joinpath(source_images, directory, file))
     end
 end
 

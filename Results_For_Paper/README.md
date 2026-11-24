@@ -1,5 +1,49 @@
 # Paper figures
 
+For the **closed-form overlays**, run `julia Results_For_Paper/regenerate/regenerate.jl`
+from the project root. To redraw from the existing prediction tables, run
+`julia Results_For_Paper/regenerate/plot_overlays.jl`. Both use the original Julia
+paper renderer for fonts, axes, subplot spacing and legends. The
+[regenerate directory](regenerate/) contains the figures, [captions](regenerate/captions.md),
+the raw prediction grid and the predictions used in the plots. The overlay legends
+separate simulation markers (circles for a-max, triangles for i-max) from prediction
+lines (solid for a-max, dotted for i-max). Each section puts Δa-max on the first row
+and Δi-max on the second, with Δi = 0.0°, Δi = 0.5°, and Δi = 1.0° across each row.
+A thin black frame and dividers separate the legend sections and columns.
+The overlay legend is centered on the full image by default. To nudge both
+legends left, change `legend_x_offset=0.0` to `-0.01` in
+[plot_overlays.jl](regenerate/plot_overlays.jl) and redraw. This moves the whole
+box by 1% of the footer width without moving the data panels; positive moves right.
+Section and rule labels are centered in their cells. Markers are centered over the
+line samples, and each Δi label aligns down its column. The footer adds space above
+and below each row without reducing the font size. The OE legend labels the
+dashed continuous-access lines in a merged left cell as
+**Threshold,** $N_{\mathrm{cont}}$.
+At 1000 km, a-max below 232 helpers uses `leapfrog`: the target starts at +1 degree
+and the trailing helper at 0 degrees throughout this sparse grid. The `leapfrog_rtn`
+rows use a numerical extension of the scalar leapfrog formula. At each step it resolves
+the trailing helper's along-track gap, checks the 3D range, and projects the push onto
+the local radial, tangential and normal axes. The two normal branches are integrated
+separately. Tangential impulse and semi-major-axis gain are recomputed consistently;
+inclination and node changes are not predicted by this fixed-plane model.
+The new lines use no simulated impulses or fitted values. The node comparison
+subtracts the matching Output 4 links-off endpoint from each simulated endpoint.
+
+The original leapfrog [Δv figure](../Output_6_Close_Form_Solution/dv_RTN_original_leapfrog_100orbits.png)
+and [orbital-element figure](../Output_6_Close_Form_Solution/OE_original_leapfrog_100orbits.png)
+use the same 100-orbit J2-on simulation markers and the same prediction grid. For
+1000 km Δa-max cases below 232 helpers, the original formula predicts only tangential
+Δv and semi-major-axis change (Δa). Gaps in the radial, signed-normal, inclination,
+and node lines mean **not predicted**, not zero. Eccentricity shows simulation markers only.
+Run `julia Output_6_Close_Form_Solution/plot_original_leapfrog.jl` from the project
+root to recreate both original-model figures as PNG and PDF without changing the extended-model figures.
+
+The [combined 100-orbit CSV](combined_paper_data_100orbits.csv) contains one row
+per case for both figures. Regenerate it from this directory with
+`python3 combine_paper_data.py`. Inclination is the initial target inclination;
+the negative normal impulse retains its sign, and blank Delta Omega means
+RAAN is undefined for the equatorial orbit.
+
 The renderer also accepts optional `policies`, `policy_labels`, `specification`,
 `orbit_window`, `endpoint_row` and `source_limits` keywords for the Output 3/4/5
 campaigns. Defaults retain this folder's original data, styles and rendering.
@@ -14,7 +58,7 @@ plotting code or rereading the simulation trajectories.
 Run from the project root:
 
 ```bash
-julia --startup-file=no --threads=1 --gcthreads=1 Simulation_absolute_RN/Output/images/for_paper/plot_paper_results.jl
+julia --startup-file=no --threads=1 --gcthreads=1 Results_For_Paper/plot_paper_results.jl
 ```
 
 Edit the settings at the top:

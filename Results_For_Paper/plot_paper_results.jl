@@ -2,7 +2,7 @@
 
 if abspath(PROGRAM_FILE) == @__FILE__
     import Pkg
-    Pkg.activate(normpath(joinpath(@__DIR__, "..", "..", "..", "..",
+    Pkg.activate(normpath(joinpath(@__DIR__, "..",
         "9_SpaceAGORA.jl-main_full integration")))
 end
 
@@ -129,7 +129,7 @@ function make_plot(kind; directory=@__DIR__, output=directory,
         colors=LINE_COLORS, styles=LINE_STYLES, policies=POLICIES,
         policy_labels=(gve_sma="\$\\Delta a\$-max", gve_inc="\$\\Delta i\$-max"),
         specification=nothing, orbit_window=100, endpoint_row=1001, source_limits=nothing,
-        averaging_orbits::Int=0)
+        averaging_orbits::Int=0, rows=nothing, prediction_curve=nothing)
     kind in (:oe, :dv) || throw(ArgumentError("Expected :oe or :dv"))
     all(isfinite, (legend_settings.x_offset, legend_settings.y_offset,
         legend_settings.row_spacing)) && legend_settings.row_spacing > 0 ||
@@ -139,7 +139,7 @@ function make_plot(kind; directory=@__DIR__, output=directory,
         error("Paper figures require four quantity rows")
     !isempty(policies) && length(unique(policies)) == length(policies) && length(policies) <= 2 ||
         error("Paper figures require one or two distinct schedulers")
-    rows = collect(CSV.File(joinpath(directory, spec.csv)))
+    rows = isnothing(rows) ? collect(CSV.File(joinpath(directory, spec.csv))) : rows
     expected = Set((p, h, i, n) for p in policies for h in ALTITUDES
         for i in INCLINATIONS for n in HELPERS)
     length(rows) == length(expected) &&
@@ -161,6 +161,7 @@ function make_plot(kind; directory=@__DIR__, output=directory,
     ranges = source_limits === nothing ?
         (kind == :oe ? merge(Y_LIMITS, (draan_deg=raan_limits(rows),)) : Y_LIMITS) : source_limits
     thresholds = show_access ? collect(CSV.File(joinpath(directory, "continuous_access_thresholds.csv"))) : []
+    simulation_marker(policy) = !isnothing(prediction_curve) && policy == "gve_inc" ? :utriangle : :circle
     panels = Plots.Plot[]
     for (r, field) in enumerate(spec.fields), (c, altitude) in enumerate(ALTITUDES)
         scale = spec.scales[r]
@@ -190,10 +191,21 @@ function make_plot(kind; directory=@__DIR__, output=directory,
             end
             all(v -> isfinite(v) && limits[1] <= v <= limits[2], values) ||
                 error("Invalid or clipped data for $field, $policy, $altitude km, $inclination deg")
-            plot!(panel, [row.helpers for row in curve], values;
-                color=getproperty(colors, Symbol(policy))[k],
-                linestyle=getproperty(styles, Symbol(policy))[k],
-                lw=LINE_WIDTH, marker=:circle, ms=MARKER_SIZE, markerstrokewidth=0)
+            color = getproperty(colors, Symbol(policy))[k]
+            linestyle = getproperty(styles, Symbol(policy))[k]
+            plot!(panel, [row.helpers for row in curve], values; color, linestyle,
+                seriestype=isnothing(prediction_curve) ? :path : :scatter,
+                lw=LINE_WIDTH, marker=simulation_marker(policy), ms=MARKER_SIZE, markerstrokewidth=0)
+            if !isnothing(prediction_curve)
+                prediction = prediction_curve(field, policy, altitude, inclination)
+                if !isnothing(prediction)
+                    helpers, source_values = prediction
+                    predicted = source_values .* scale
+                    all(v -> isnan(v) || limits[1] <= v <= limits[2], predicted) ||
+                        error("Prediction outside $field axis: $policy, $altitude km, $inclination deg")
+                    plot!(panel, helpers, predicted; color, linestyle, lw=LINE_WIDTH, marker=:none)
+                end
+            end
         end
         if show_access
             for (k, inclination) in enumerate(INCLINATIONS)
@@ -211,31 +223,17 @@ function make_plot(kind; directory=@__DIR__, output=directory,
     footer = plot(; title="", framestyle=:none, ticks=nothing, legend=false, grid=false,
         xlims=(0, 1), ylims=(0, 1), margin=1Plots.mm,
         top_margin=spacing.legend_top_margin_mm*Plots.mm, bottom_margin=0Plots.mm)
-    base_y = show_access ? (0.85, 0.85-0.33, 0.17) : (0.78, 0.78-0.50)
+    base_y = if isnothing(prediction_curve)
+        show_access ? (0.85, 0.85-0.33, 0.17) : (0.78, 0.78-0.50)
+    else
+        row_count = 2*length(policies) + show_access
+        extra_rows = 2*(length(policies)-1)
+        footer_height = settings.footer_height + 16*extra_rows + 5*row_count
+        settings = merge(settings, (; footer_height))
+        [1 - (r-0.5)/(row_count+1) for r in 1:row_count]
+    end
     row_y = map(y -> first(base_y) + legend_settings.y_offset +
         (y-first(base_y))*legend_settings.row_spacing, base_y)
-    for (j, policy) in enumerate(policies), (k, inclination) in enumerate(INCLINATIONS)
-        x = 0.06 + legend_settings.x_offset + (k-1)/3
-        y = row_y[j]
-        plot!(footer, [x, x+0.065], [y, y];
-            color=getproperty(colors, Symbol(policy))[k],
-            linestyle=getproperty(styles, Symbol(policy))[k], lw=LINE_WIDTH,
-            marker=:circle, ms=MARKER_SIZE, markerstrokewidth=0)
-        label = "$(getproperty(policy_labels, Symbol(policy))), $inclination\u00b0"
-        annotate!(footer, x+0.08, y, text(label, FONT_SIZE, :left, FONT_FAMILY))
-    end
-    if show_access
-        for (k, inclination) in enumerate(INCLINATIONS)
-            x = 0.06 + legend_settings.x_offset + (k-1)/3
-            y = row_y[3]
-            plot!(footer, [x, x+0.065], [y, y];
-                color=getproperty(colors, Symbol(first(policies)))[k],
-                linestyle=:dash, lw=ACCESS_LINE_WIDTH, alpha=0.75)
-            annotate!(footer, x+0.08, y,
-                text("\$N_{\\mathrm{cont}},\\; $inclination^\\circ\$",
-                    FONT_SIZE, :left, FONT_FAMILY))
-        end
-    end
     geometry = canvas_geometry(settings)
     layout = grid(2, 1; heights=[1-geometry.footer_fraction, geometry.footer_fraction])
     layout[1, 1] = grid(4, 3)
@@ -246,6 +244,101 @@ function make_plot(kind; directory=@__DIR__, output=directory,
         (geometry.size[1] + 90, geometry.size[2])
     figure = plot(panels..., footer; layout, size=canvas_size, dpi=DPI,
         fontfamily=FONT_FAMILY, average_title...)
+    footer = last(figure.subplots)
+    left = isnothing(prediction_curve) ? 0.06 + legend_settings.x_offset : 0.06
+    if isnothing(prediction_curve)
+        for (j, policy) in enumerate(policies), (k, inclination) in enumerate(INCLINATIONS)
+            x = 0.06 + legend_settings.x_offset + (k-1)/3
+            y = row_y[j]
+            plot!(footer, [x, x+0.065], [y, y];
+                color=getproperty(colors, Symbol(policy))[k],
+                linestyle=getproperty(styles, Symbol(policy))[k], lw=LINE_WIDTH,
+                marker=simulation_marker(policy), ms=MARKER_SIZE, markerstrokewidth=0)
+            label = "$(getproperty(policy_labels, Symbol(policy))), $inclination\u00b0"
+            annotate!(footer, x+0.08, y, text(label, FONT_SIZE, :left, FONT_FAMILY))
+        end
+    else
+        # The grid footer inherits the y-axis gutter. Keep its allocated size and
+        # height, but anchor the actual legend directly to the full canvas.
+        Plots.prepare_output(figure)
+        area = Plots.plotarea(footer)
+        inset = Plots.bbox(legend_settings.x_offset*Plots.width(area), Plots.top(area),
+            Plots.width(area), Plots.height(area); h_anchor=:center)
+        plot!(figure; inset_subplots=inset, subplot=length(figure.subplots)+1,
+            framestyle=:none, ticks=nothing, legend=false, grid=false, margin=0Plots.mm)
+        footer = last(figure.subplots)
+        pitch = row_y[1] - row_y[2]
+        top = first(row_y) + 0.6*pitch
+        bottom = last(row_y) - (show_access ? 0.95 : 0.6)*pitch
+        x0, x1 = left - 0.012, left + 0.98
+        source_edge, policy_edge = left + 0.146, left + 0.292
+        boundary(i) = (row_y[i] + row_y[i+1])/2
+        sim_bottom = boundary(length(policies))
+        policy_bottom = show_access ? boundary(2*length(policies)) : bottom
+        section_edges = (top, sim_bottom, policy_bottom)
+        cell_width = (x1-policy_edge)/length(INCLINATIONS)
+        function draw_key!(k, y, color; marker=:none, linestyle=:solid, lw=LINE_WIDTH, alpha=1)
+            # Reserve the same sample slot in every row so the angle labels align.
+            inset = 0.13
+            sample_width = 0.048
+            sample_left = policy_edge + (k-1+inset)*cell_width
+            # GR's right anchor includes the degree glyph's trailing side bearing.
+            text_right = policy_edge + (k-inset)*cell_width + 0.004
+            if marker == :none
+                plot!(footer, [sample_left, sample_left+sample_width], [y, y]; color, linestyle, lw, alpha, marker=:none)
+            else
+                scatter!(footer, [sample_left+sample_width/2], [y]; color, marker, ms=MARKER_SIZE, markerstrokewidth=0)
+            end
+            label = "\$\\Delta i=$(INCLINATIONS[k])^\\circ\$"
+            annotate!(footer, text_right, y, text(label, FONT_SIZE, :right, FONT_FAMILY))
+        end
+        for (i, source) in enumerate(("Simulation", "Prediction"))
+            upper, lower = section_edges[i], section_edges[i+1]
+            annotate!(footer, (x0+source_edge)/2, (upper+lower)/2,
+                text(source, FONT_SIZE, :center, FONT_FAMILY))
+            for (j, policy) in enumerate(policies)
+                y = upper - (j-0.5)*(upper-lower)/length(policies)
+                key = Symbol(policy)
+                annotate!(footer, (source_edge+policy_edge)/2, y,
+                    text(policy_labels[key], FONT_SIZE, :center, FONT_FAMILY))
+                for k in eachindex(INCLINATIONS)
+                    draw_key!(k, y, colors[key][k]; linestyle=styles[key][k],
+                        marker=i == 1 ? simulation_marker(policy) : :none)
+                end
+            end
+        end
+        if show_access
+            y = (policy_bottom+bottom)/2
+            # The mixed text/math label has the same right bearing, at half weight.
+            annotate!(footer, (x0+policy_edge)/2 + 0.002, y,
+                text("Threshold, \$N_{\\mathrm{cont}}\$", FONT_SIZE, :center, FONT_FAMILY))
+            for k in eachindex(INCLINATIONS)
+                draw_key!(k, y, colors[Symbol(first(policies))][k]; linestyle=:dash, lw=ACCESS_LINE_WIDTH, alpha=0.75)
+            end
+        end
+    end
+    if show_access && isnothing(prediction_curve)
+        y = last(row_y)
+        for (k, inclination) in enumerate(INCLINATIONS)
+            x = left + (k-1)/3
+            plot!(footer, [x, x+0.065], [y, y];
+                color=getproperty(colors, Symbol(first(policies)))[k],
+                linestyle=:dash, lw=ACCESS_LINE_WIDTH, alpha=0.75)
+            label = "\$N_{\\mathrm{cont}},\\; $inclination^\\circ\$"
+            annotate!(footer, x+0.08, y, text(label, FONT_SIZE, :left, FONT_FAMILY))
+        end
+    end
+    if !isnothing(prediction_curve)
+        xlims!(footer, (x0-0.007, x1+0.007))
+        ylims!(footer, (min(0, bottom-0.01), max(1, top+0.01)))
+        rule!(xs, ys) = plot!(footer, xs, ys; color=:black, lw=0.6, marker=:none)
+        rule!([x0, x1, x1, x0, x0], [top, top, bottom, bottom, top])
+        rule!([x0, x1], fill(sim_bottom, 2))
+        # The threshold label spans the source and policy columns.
+        show_access && rule!([x0, x1], fill(policy_bottom, 2))
+        rule!(fill(source_edge, 2), [top, policy_bottom])
+        rule!(fill(policy_edge, 2), [top, bottom])
+    end
     # Anchor titles to the same canvas coordinate, not each row's tick-label width.
     Plots.prepare_output(figure)
     for (r, label) in enumerate(spec.labels)

@@ -16,7 +16,7 @@ Closest approach is found from the replayed solver's dense states: compare encou
 | 0.5 | 64.125 | 79.6525 | 207.788 | 26.0824 | 62.0826 | 163.645 | 37.8677 | 71.6085 | 168.847 |
 | 1.0 | 128.24 | 188.775 | 237.552 | 112.499 | 135.961 | 197.66 | 46.3077 | 121.672 | 201.887 |
 
-**Closest-approach data:** [Per-encounter times, separations and speeds](../../encounter_evaluation/sma500_closest_approach/encounters.csv); [full-precision summary and counts](../../encounter_evaluation/sma500_closest_approach/summary.csv). Signed range rate in parameter 2 remains measured at entry.
+**Closest-approach data:** [Per-encounter times, separations and speeds](../Output_2_Simulation_absolute_RN/Output/encounter_evaluation/sma500_closest_approach/encounters.csv); [full-precision summary and counts](../Output_2_Simulation_absolute_RN/Output/encounter_evaluation/sma500_closest_approach/summary.csv). Signed range rate in parameter 2 remains measured at entry.
 
 ## 2. Signed range rate at entry (m/s)
 
@@ -48,7 +48,7 @@ Duration of each uninterrupted firing interval, including held out-of-range firi
 | 0.5 | 4.93912 | 5682.09 | 38169.2 | 412.095 | 1067.23 | 1887.83 | 350.066 | 588.28 | 858.705 |
 | 1.0 | 7.21679 | 2815.68 | 23157.5 | 527.241 | 1090.98 | 2320 | 127.827 | 595.716 | 1219.16 |
 
-**Sources:** [Encounter records](../../encounter_evaluation/target_helper_encounters.csv) for parameters 2-3; [laser-interval records](../../encounter_evaluation/target_helper_laser_intervals.csv) for parameter 4. Records are filtered to `scheduler = gve_sma`, `helper_count = 500`, and the target altitude/inclination shown in each cell. Each scenario's event counts are checked against the [case summary](../../encounter_evaluation/case_summary.csv).
+**Sources:** [Encounter records](../Output_2_Simulation_absolute_RN/Output/encounter_evaluation/target_helper_encounters.csv) for parameters 2-3; [laser-interval records](../Output_2_Simulation_absolute_RN/Output/encounter_evaluation/target_helper_laser_intervals.csv) for parameter 4. Records are filtered to `scheduler = gve_sma`, `helper_count = 500`, and the target altitude/inclination shown in each cell. Each scenario's event counts are checked against the [case summary](../Output_2_Simulation_absolute_RN/Output/encounter_evaluation/case_summary.csv).
 
 ### Total laser-on duration inside each encounter (s)
 
@@ -65,7 +65,7 @@ Duration of each uninterrupted firing interval, including held out-of-range firi
 | INC | 0.5 | 0 | 5081.11 | 191186 | 0 | 628.348 | 1601.99 | 0 | 317.084 | 792.569 |
 | INC | 1.0 | 0 | 1674.77 | 233920 | 0 | 627.246 | 1585.32 | 0 | 317.042 | 792.886 |
 
-**Duration data:** Calculated from the [per-encounter records](../../encounter_evaluation/target_helper_encounters.csv) for the same 18 cases used in the percentage tables below. Event counts, zero-firing counts and summed in-range firing times are checked against the [case summary](../../encounter_evaluation/case_summary.csv).
+**Duration data:** Calculated from the [per-encounter records](../Output_2_Simulation_absolute_RN/Output/encounter_evaluation/target_helper_encounters.csv) for the same 18 cases used in the percentage tables below. Event counts, zero-firing counts and summed in-range firing times are checked against the [case summary](../Output_2_Simulation_absolute_RN/Output/encounter_evaluation/case_summary.csv).
 
 ### Laser-on duration percentage within each encounter
 
@@ -89,4 +89,4 @@ Duration of each uninterrupted firing interval, including held out-of-range firi
 | 0.5 | 0.0% | 1.5% | 30.3% | 0.0% | 12.5% | 35.2% | 0.0% | 14.2% | 38.8% |
 | 1.0 | 0.0% | 1.2% | 37.1% | 0.0% | 14.0% | 35.7% | 0.0% | 16.4% | 46.4% |
 
-**Percentage data:** Calculated directly from the [per-encounter records](../../encounter_evaluation/target_helper_encounters.csv), filtered to `helper_count = 500` and the scheduler, altitude and inclination shown in each cell. Event and zero-firing counts are checked against the [case summary](../../encounter_evaluation/case_summary.csv): 10,376 encounters across 18 cases, including 1,873 zero-firing encounters. INC at 0.0 deg has no firing, so its encounter percentages are all 0.0%.
+**Percentage data:** Calculated directly from the [per-encounter records](../Output_2_Simulation_absolute_RN/Output/encounter_evaluation/target_helper_encounters.csv), filtered to `helper_count = 500` and the scheduler, altitude and inclination shown in each cell. Event and zero-firing counts are checked against the [case summary](../Output_2_Simulation_absolute_RN/Output/encounter_evaluation/case_summary.csv): 10,376 encounters across 18 cases, including 1,873 zero-firing encounters. INC at 0.0 deg has no firing, so its encounter percentages are all 0.0%.

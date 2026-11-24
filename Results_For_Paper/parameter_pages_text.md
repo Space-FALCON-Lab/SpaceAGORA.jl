@@ -29,7 +29,7 @@
 - These bounds describe **speed at encounter entry**, not closest-approach speed, encounter-average speed, or the maximum speed reached later. For encounters already in range at simulation start, entry refers to the initial saved state.
 - SMA and INC min-max ranges overlap in **9 of 9** matched altitude/inclination cells with observations from both. Min/max alone describe extremes, not typical behavior, statistical uncertainty, or scheduler superiority.
 
-*Data: [full-precision table values and counts](../../encounter_evaluation/parameter_pages_min_max.csv); [source CSV checksums](../../encounter_evaluation/parameter_pages_sources.csv). Tables and conclusions are generated from the exported table CSV.*
+*Data: [full-precision table values and counts](../Output_2_Simulation_absolute_RN/Output/encounter_evaluation/parameter_pages_min_max.csv); [source CSV checksums](../Output_2_Simulation_absolute_RN/Output/encounter_evaluation/parameter_pages_sources.csv). Tables and conclusions are generated from the exported table CSV.*
 
 
 ---
@@ -62,7 +62,7 @@
 - There are **324 positive entry range-rate observations**, of which **324** are start-clipped. A positive value therefore must not automatically be interpreted as a normal inward range crossing; an encounter may already be in range at t = 0.
 - SMA and INC min-max ranges overlap in **9 of 9** matched altitude/inclination cells with observations from both. Min/max alone describe extremes, not typical behavior, statistical uncertainty, or scheduler superiority.
 
-*Data: [full-precision table values and counts](../../encounter_evaluation/parameter_pages_min_max.csv); [source CSV checksums](../../encounter_evaluation/parameter_pages_sources.csv). Tables and conclusions are generated from the exported table CSV.*
+*Data: [full-precision table values and counts](../Output_2_Simulation_absolute_RN/Output/encounter_evaluation/parameter_pages_min_max.csv); [source CSV checksums](../Output_2_Simulation_absolute_RN/Output/encounter_evaluation/parameter_pages_sources.csv). Tables and conclusions are generated from the exported table CSV.*
 
 
 ---
@@ -96,7 +96,7 @@
 - **938 of 74130 encounters are boundary-clipped**, including **81 spanning the full run**. Long observed durations can be limited by the simulation window; they are not necessarily complete encounter lifetimes.
 - SMA and INC min-max ranges overlap in **8 of 9** matched altitude/inclination cells with observations from both. Min/max alone describe extremes, not typical behavior, statistical uncertainty, or scheduler superiority.
 
-*Data: [full-precision table values and counts](../../encounter_evaluation/parameter_pages_min_max.csv); [source CSV checksums](../../encounter_evaluation/parameter_pages_sources.csv). Tables and conclusions are generated from the exported table CSV.*
+*Data: [full-precision table values and counts](../Output_2_Simulation_absolute_RN/Output/encounter_evaluation/parameter_pages_min_max.csv); [source CSV checksums](../Output_2_Simulation_absolute_RN/Output/encounter_evaluation/parameter_pages_sources.csv). Tables and conclusions are generated from the exported table CSV.*
 
 
 ---
@@ -145,7 +145,7 @@
 | 0.5 | 0.0% | 2.6% | 60.4% | 0.0% | 13.6% | 64.4% | 0.0% | 15.2% | 88.4% |
 | 1.0 | 0.0% | 1.3% | 66.3% | 0.0% | 15.0% | 65.7% | 0.0% | 17.4% | 99.7% |
 
-**Percentage data:** Calculated directly from the [per-encounter records](../../encounter_evaluation/target_helper_encounters.csv), with event and zero-firing counts checked against the [case summary](../../encounter_evaluation/case_summary.csv): 74,130 encounters across 162 cases, including 13,440 zero-firing encounters. INC at 0.0 deg therefore has 0% laser-on duration, even though its uninterrupted-firing statistics above are N/A because no firing intervals exist.
+**Percentage data:** Calculated directly from the [per-encounter records](../Output_2_Simulation_absolute_RN/Output/encounter_evaluation/target_helper_encounters.csv), with event and zero-firing counts checked against the [case summary](../Output_2_Simulation_absolute_RN/Output/encounter_evaluation/case_summary.csv): 74,130 encounters across 162 cases, including 13,440 zero-firing encounters. INC at 0.0 deg therefore has 0% laser-on duration, even though its uninterrupted-firing statistics above are N/A because no firing intervals exist.
 
 ## Conclusion
 
@@ -155,4 +155,4 @@
 - Longer uninterrupted firing is not, by itself, evidence of better orbital control. Compare with total duty fraction and the scheduler's intended orbital-change objective.
 - SMA and INC min-max ranges overlap in **6 of 6** matched altitude/inclination cells with observations from both. Min/max alone describe extremes, not typical behavior, statistical uncertainty, or scheduler superiority.
 
-*Uninterrupted-duration data: [full-precision table values and counts](../../encounter_evaluation/parameter_pages_min_max.csv); [source CSV checksums](../../encounter_evaluation/parameter_pages_sources.csv). The uninterrupted-duration tables and conclusions are generated from the exported table CSV; the percentage tables use the per-encounter records linked above.*
+*Uninterrupted-duration data: [full-precision table values and counts](../Output_2_Simulation_absolute_RN/Output/encounter_evaluation/parameter_pages_min_max.csv); [source CSV checksums](../Output_2_Simulation_absolute_RN/Output/encounter_evaluation/parameter_pages_sources.csv). The uninterrupted-duration tables and conclusions are generated from the exported table CSV; the percentage tables use the per-encounter records linked above.*

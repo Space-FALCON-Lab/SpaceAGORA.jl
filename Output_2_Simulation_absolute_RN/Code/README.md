@@ -78,7 +78,7 @@ Independent pilot validation and measured residuals are stored below.
 
 [write_sma500_closest_approach.jl](write_sma500_closest_approach.jl) updates only
 the encounter-speed section of
-[the 500-helper SMA report](../Output/images/for_paper/parameter_pages_sma_500_helpers.md).
+[the 500-helper SMA report](../../Results_For_Paper/parameter_pages_sma_500_helpers.md).
 It uses one relative-speed magnitude at minimum helper-target separation per
 observed encounter, not minimum speed or entry speed. The other three parameters
 remain unchanged, including signed range rate **at entry**.

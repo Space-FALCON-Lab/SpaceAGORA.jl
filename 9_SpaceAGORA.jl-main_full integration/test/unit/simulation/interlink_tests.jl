@@ -222,6 +222,35 @@ withenv("SPACEAGORA_RHS_CALIBRATE" => "off", "SPACEAGORA_RHS_IDENTIFY" => "0",
         end
     end
 
+    @testset "Range-based target-helper selection" begin
+        spacecraft = [SpacecraftModel(n_terminal=2) for _ in 1:3]
+        state = (sc=[(pos=[0.0, y, 0.0],) for y in (-8.0, 0.0, 4.0)],)
+        model = ConstellationInterLinkModel()
+        params = InterLinkParameters(range=10.0)
+        right = register_allowed_link!(model, spacecraft, (2, 2), (3, 1); parameters=params)
+        left = register_allowed_link!(model, spacecraft, (1, 1), (2, 1); parameters=params)
+        register_allowed_link!(model, spacecraft, (1, 2), (3, 2))
+        policy = SchedulingPolicyModel(:range_based; target_idx=2)
+        select_links() = schedule_interlinks!(model, policy, spacecraft, state, 1.0;
+            candidate_force=(_...) -> error("Range selection must not evaluate force"))
+
+        @test select_links() == [right]
+        state.sc[1].pos[2] = -2.0
+        @test select_links() == [left]  # Switch while the previous helper is still in range.
+        @test model.graph.active == [false, true, false]
+        state.sc[1].pos[2] = -4.0
+        @test select_links() == [left]  # Equal distance; canonical key wins.
+        state.sc[1].pos[2] = -11.0
+        state.sc[3].pos[2] = 10.0
+        @test select_links() == [right]  # Exactly at maximum range.
+        state.sc[3].pos[2] = nextfloat(10.0)
+        @test isempty(select_links())
+        @test !any(model.graph.active)
+        state.sc[1].pos[2] = -9.0
+        @test select_links() == [left]
+        @test_throws ArgumentError SchedulingPolicyModel(:range_based; target_idx=nothing)
+    end
+
     @testset "Forces and GVE policies" begin
         spacecraft, state, model, key, runtime = endpoint_fixture()
         mu = runtime.args.environment_model.planet.μ

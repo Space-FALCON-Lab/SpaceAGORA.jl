@@ -327,6 +327,9 @@ the current stage positions with the last accepted selection.
 
 Supported policies:
 
+- `:range_based`: at each selection, link `target_idx` (default 1) to the nearest
+  available helper, regardless of force direction. The link is off only when no
+  target-helper link is available. Equal distances are resolved by canonical endpoint order.
 - `:gve_sma`: maximize the summed semimajor-axis rate of `target_idxs`, one
   `target_idx` (default 1), or both endpoints when `target_idx=nothing`.
 - `:gve_inc`: maximize physical inclination rate (radians/s) relative to the

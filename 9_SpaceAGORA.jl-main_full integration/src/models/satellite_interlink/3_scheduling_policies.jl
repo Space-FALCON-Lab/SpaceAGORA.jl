@@ -133,3 +133,25 @@ function score_gve_sma_first_index!(model::ConstellationInterLinkModel, policy::
 	end
 	return nothing
 end
+
+"""Select one nearest available target-helper link; break distance ties by canonical endpoint key."""
+function select_range_based!(model::ConstellationInterLinkModel, policy::SchedulingPolicyModel, state)
+	target = something(policy.target_idx)
+	target <= length(state.sc) || throw(ArgumentError("target_idx is outside the spacecraft state vector."))
+	graph = model.graph
+	best_key, best_distance = nothing, Inf
+	for (key, edge) in graph.edge_index_lookup
+		graph.available[edge] || continue
+		first, second = key[1][1], key[2][1]
+		(target == first || target == second) || continue
+		distance = norm(state.sc[first].pos - state.sc[second].pos)
+		if best_key === nothing || distance < best_distance || (distance == best_distance && key < best_key)
+			best_key, best_distance = key, distance
+		end
+	end
+
+	fill!(graph.active, false)
+	best_key === nothing && return InterLinkKey[]
+	graph.active[graph.edge_index_lookup[best_key]] = true
+	return InterLinkKey[best_key]
+end

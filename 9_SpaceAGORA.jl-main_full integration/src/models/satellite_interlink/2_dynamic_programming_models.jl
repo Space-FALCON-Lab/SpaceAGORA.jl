@@ -43,6 +43,8 @@ one-sided rate (positive at zero inclination, negative at pi).
 `:naive_next_entering` and `:positive_along_track` retain one target-helper
 link according to the shared single-target state machines. These policies
 require terminal 1, one link per helper, and a common selection range.
+`:range_based` selects the nearest available helper for `target_idx` at every
+selection, regardless of force direction. If none is available, the link is off.
 `:no_laser` selects no links. Applied forces still follow the usual held-link
 integration rule; selection is updated at initialization and accepted steps.
 """
@@ -56,13 +58,13 @@ mutable struct SchedulingPolicyModel
 	function SchedulingPolicyModel(policy::Symbol; target_idx::Union{Nothing, Integer}=1,
 		target_idxs::Union{Nothing, AbstractVector{<:Integer}}=nothing)
 		policy in (:gve_sma, :gve_inc, :gve_eccentricity, :gve_sma_first_index,
-			:naive_next_entering, :positive_along_track, :no_laser) ||
+			:naive_next_entering, :positive_along_track, :range_based, :no_laser) ||
 			throw(ArgumentError("Unsupported scheduling policy: $policy"))
 		target_idxs === nothing || policy in (:gve_sma, :gve_inc) ||
 			throw(ArgumentError("target_idxs is supported only by the :gve_sma and :gve_inc policies."))
 		target_idx === nothing || target_idx > 0 ||
 			throw(ArgumentError("target_idx must be nothing or a positive spacecraft vector index."))
-		policy in (:naive_next_entering, :positive_along_track) && target_idx === nothing &&
+		policy in (:naive_next_entering, :positive_along_track, :range_based) && target_idx === nothing &&
 			throw(ArgumentError("Single-target policies require target_idx."))
 		target_indices = target_idxs === nothing ? nothing : Int[target_idxs...]
 		if target_indices !== nothing
@@ -302,7 +304,9 @@ function schedule_interlinks!(model::ConstellationInterLinkModel, policy::Schedu
 	spacecraft, state, mu::Real; candidate_force, is_active=nothing)
 	# step 1. update the availability of each interlink based on the current state
 	update_availability!(model, spacecraft, state; is_active)
-	if policy.policy in (:naive_next_entering, :positive_along_track, :no_laser)
+	if policy.policy === :range_based
+		return select_range_based!(model, policy, state)
+	elseif policy.policy in (:naive_next_entering, :positive_along_track, :no_laser)
 		return select_single_target_links!(model, policy, state)
 	end
 
